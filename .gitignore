@@ -7,3 +7,4 @@ __pycache__/
 *.log
 /backups/
 /vps-site/apps/botty-*/
+!/vps-site/apps/botty-native/

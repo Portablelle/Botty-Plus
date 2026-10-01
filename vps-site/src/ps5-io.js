@@ -33,9 +33,10 @@ export class PS5IO {
     if (bytes.length >= ptr.backing.length) throw Error('Path too long.');
     ptr.backing.fill(0); ptr.backing.set(bytes); return ptr;
   }
+  checkedPath(path) { return checkedPath(path); }
   async close(fd) { if (fd >= 0) await this.call('close', fd); }
   async mkdirs(path) {
-    checkedPath(path + '/check');
+    this.checkedPath(path + '/check');
     const components = path.split('/').filter(Boolean);
     for (let i = 2; i <= components.length; i++) {
       const part = '/' + components.slice(0, i).join('/');
@@ -47,7 +48,7 @@ export class PS5IO {
     }
   }
   async readFile(path, limit = 2 * 1024 * 1024) {
-    checkedPath(path);
+    this.checkedPath(path);
     const fd = await this.call('open', this.string(path), 0x100, 0);
     if (fd < 0) return null; // Creation uses O_EXCL, so unreadable files are never replaced.
     const chunks = []; let length = 0;
@@ -79,7 +80,7 @@ export class PS5IO {
     }
   }
   async writeFile(path, bytes, exclusive = false) {
-    checkedPath(path);
+    this.checkedPath(path);
     const target = exclusive ? path : path + '.part';
     // O_WRONLY | O_CREAT | O_NOFOLLOW | (O_EXCL or O_TRUNC)
     const fd = await this.call('open', this.string(target), 1 | 0x200 | 0x100 | (exclusive ? 0x800 : 0x400), 0o600);
@@ -127,7 +128,7 @@ export class PS5IO {
     throw Error('Temporary websrv has not stopped. Restart the PS5.');
   }
   async connect(port) {
-    if (![8080, 8088, 9091, 9021].includes(port)) throw Error('Unsupported local port.');
+    if (![2121, 8080, 8088, 9091, 9021].includes(port)) throw Error('Unsupported local port.');
     const fd = await this.call('socket', 2, 1, 0);
     if (fd < 0) throw Error('Cannot create local socket.');
     try {

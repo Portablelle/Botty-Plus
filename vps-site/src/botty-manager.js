@@ -44,7 +44,7 @@ export async function installAndStartManager(io,options={}) {
     if(file.path==='botty-manager.elf')executable=data;
   }
   if(!executable)throw Error('Botty executable missing.');
-  report('Installing Botty and its controller interface…');
+  report(staged.length ? 'Installing Botty service…' : 'Botty service files already installed.');
   await io.mkdirs(APP+'/ui');
   for(const {file,data} of staged) {
     await io.writeFile(APP+'/'+file.path,data);

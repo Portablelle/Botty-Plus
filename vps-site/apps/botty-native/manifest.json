@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "app": "Botty Native Preview",
+  "titleId": "PPSA99071",
+  "version": "00.003.002",
+  "milestone": 4,
+  "hardwareValidated": false,
+  "registrationVerified": false,
+  "identityStatus": "provisional-until-console-inventory",
+  "readOnly": false,
+  "files": [
+    {
+      "path": "assets/Manrope-OFL.txt",
+      "size": 4387,
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+    },
+    {
+      "path": "assets/build.txt",
+      "size": 79,
+      "sha256": "f68a9ce48222e0b848e51acb59ac2a242b7b2f54cd993559ee5d85e6c6870204"
+    },
+    {
+      "path": "assets/ui-font.bin",
+      "size": 526811,
+      "sha256": "c2b6891a746f62c9ee8ed68ebd2074fbff0d40aea70e78b1c85c1cc200e56845"
+    },
+    {
+      "path": "eboot.bin",
+      "size": 13104476,
+      "sha256": "7da2cd50c38427f9d91d6f230602027fa59c89566ecaf4442e66a7f173267962"
+    },
+    {
+      "path": "sce_module/libc.prx",
+      "size": 1284674,
+      "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
+    },
+    {
+      "path": "sce_sys/icon0.png",
+      "size": 4246,
+      "sha256": "f84f3a673dd9b53b2b7b3608058cbd2b983dc9cb649dbe306d53f36e205ea080"
+    },
+    {
+      "path": "sce_sys/param.json",
+      "size": 856,
+      "sha256": "dd6666a7ceff84bf133c08d9178b57c6a4713379d41b633de5917a8fc08865e0"
+    }
+  ]
+}
