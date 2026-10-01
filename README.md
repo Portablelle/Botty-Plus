@@ -7,7 +7,7 @@
 <p align="center">Your downloads. Your library. On PS5.</p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/tag/v1.01">Download v1.01</a> ·
+  <a href="https://github.com/Portablelle/botty-ps5/releases/tag/v1.01-deletion-feedback">Download the latest release</a> ·
   <a href="deployment/README.md">Deployment guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility &amp; validation</a>
 </p>
@@ -84,7 +84,7 @@ Use the stack only on consoles and content you are authorized to manage. Keep co
 
 ## Download 1.01
 
-Get the ready-to-host portal and native application from the [v1.01 release](https://github.com/Portablelle/botty-ps5/releases/tag/v1.01). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
+Get the ready-to-host portal and native application from the [latest release](https://github.com/Portablelle/botty-ps5/releases/tag/v1.01-deletion-feedback). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
 
 ## Get the repository
 
