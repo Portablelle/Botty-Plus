@@ -126,6 +126,20 @@ int main(){
   id=randomId();extractRar(fixtures/"app.rar",paths.extracted/id,[](const Progress&){});
   fails([&]{movePrepared(paths,json{{"id",id},{"status","ready"}});});
   assert(fs::exists(paths.extracted/id/"Demo/eboot.bin"));
+  const auto outside=root/"keep-outside";fs::create_directories(outside);std::ofstream(outside/"keep")<<"keep";
+  fs::create_directory_symlink(outside,app/"unsafe-link");
+  fails([&]{deleteLibraryGame(paths,moved);});assert(fs::exists(app/"eboot.bin"));assert(fs::exists(outside/"keep"));
+  fs::remove(app/"unsafe-link");
+  auto forged=moved;forged["destination"]=paths.library.string();fails([&]{deleteLibraryGame(paths,forged);});
+  forged=moved;forged["content"]["titleId"]="PPSA99071";fails([&]{deleteLibraryGame(paths,forged);});
+  forged=moved;forged["status"]="ready";fails([&]{deleteLibraryGame(paths,forged);});
+  fs::rename(app,root/"held-game");fs::create_directory_symlink(root/"held-game",app);
+  fails([&]{deleteLibraryGame(paths,moved);});fs::remove(app);fs::rename(root/"held-game",app);
+  // Missing metadata after an interrupted removal must not prevent retry.
+  fs::remove(app/"sce_sys/param.json");deleteLibraryGame(paths,moved);
+  assert(!fs::exists(app));assert(fs::exists(outside/"keep"));
+  assert(fs::exists(paths.extracted/id/"Demo/eboot.bin"));
+  deleteLibraryGame(paths,moved); // Already removed externally: idempotent cleanup.
   std::cout<<"Core tests passed: real extraction, 163-volume r/s transition, missing volumes, CRC errors, traversal, symlinks, classification and no-overwrite moves.\n";
  }catch(...){fs::remove_all(root);throw;}
  fs::remove_all(root);

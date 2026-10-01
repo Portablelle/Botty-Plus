@@ -119,3 +119,7 @@ remove `/data/botty` to uninstall the native title. Keep the console awake durin
 work; rest-mode support is not established.
 
 During a slow local refresh, the app keeps its last catalog with a Reconnecting indicator and disables mutations until a fresh response arrives. Transmission RPC failures preserve the previous downloads while extraction jobs continue updating. Transient failures retry automatically after one second; the receive timeout allows five seconds under disk load.
+
+### Library deletion
+
+For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Extracted** only hides an extraction row and is no longer offered in Library.

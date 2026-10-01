@@ -312,4 +312,18 @@ int main() {
     flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(encodeCommand(flow.command,encoded.data(),encoded.size(),encodedSize));assert(std::string_view(encoded.data())==R"({"id":9,"action":"remove-data","confirmed":true})");
     catalog.extracting=true;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));catalog.extracting=false;catalog.torrentRemovalSupported=false;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));
     std::cout<<"Protocol fragmentation, failure cleanup, bounded responses, API versions, focus and input tests passed\n";
+    {
+        Catalog lib;assert(parseCatalog(R"({"freeBytes":1,"libraryDeletionSupported":true,"transmissionReady":true,"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Test game","status":"moved","dismissed":true,"content":{"kind":"folder"}}]})",lib));
+        assert(lib.libraryDeletionSupported&&entryCount(lib,1,0)==0&&entryCount(lib,2,0)==1);
+        Workflow menu;menu.open(&lib.jobs[0],2,lib);
+        assert(menu.optionCount==1&&menu.options[0]==Operation::removeLibrary);
+        assert(!*unavailable(Operation::removeLibrary,&lib.jobs[0],lib));
+        assert(!menu.press(Buttons::cross,lib,false));assert(menu.panel==Workflow::Panel::confirm&&!menu.confirm);
+        menu.press(Buttons::right,lib,false);assert(menu.press(Buttons::cross,lib,false));
+        char body[256];std::size_t length=0;assert(encodeCommand(menu.command,body,sizeof(body),length));
+        assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
+        assert(std::string_view(actionPath(menu.command.operation))=="/api/delete-library-game");
+        lib.libraryDeletionSupported=false;assert(*unavailable(Operation::removeLibrary,&lib.jobs[0],lib));
+    }
+
 }

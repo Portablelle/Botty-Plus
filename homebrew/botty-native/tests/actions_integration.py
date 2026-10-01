@@ -65,6 +65,10 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   action(5,2,'broken.rar');failed=job();assert failed['status']=='failed'
   action(7,failed['id']);assert all(j['id']!=failed['id'] for j in get('/api/state')['jobs'])
   assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
+  action(15,ready['id'])
+  assert not (root/'test-library/PPSA12345-app').exists()
+  assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
+  assert not any(j['id']==ready['id'] for j in get('/api/state')['jobs'])
   assert sum(c['method']=='torrent-add' for c in calls)==1
   print('Native actions passed: pause/resume/verify/add, extraction, library move, protected deletion, failed-output deletion and source preservation.')
  finally:

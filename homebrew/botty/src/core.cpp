@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+#if defined(__PS5__) || defined(__APPLE__)
+#include <sys/mount.h>
+#endif
 namespace botty {
 std::string readText(const fs::path& path, size_t limit) {
   std::ifstream input(path, std::ios::binary);
@@ -199,4 +202,44 @@ json movePrepared(const Paths& paths, json job) {
   job["status"]="moved"; job["content"]=content; writeJson(paths.jobs/(id+".json"),job);
   return job;
 }
+void deleteLibraryGame(const Paths& paths, const json& job) {
+  const std::string id=job.at("id"),status=job.value("status","");
+  if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || (status!="moved"&&status!="library-delete-error"))
+    throw std::runtime_error("Only a game moved to Library can be deleted");
+  const auto content=job.at("content");
+  const std::string title=content.value("titleId","");
+  if(content.value("kind","")!="folder" || !std::regex_match(title,std::regex("PPSA[0-9]{5}")) || title=="PPSA99071")
+    throw std::runtime_error("Only tracked game folders can be deleted; mounted images require manual removal");
+  const std::string name=title+"-app";
+  if(content.value("destination","")!=name || job.value("destination","")!=(paths.library/name).string())
+    throw std::runtime_error("Library destination does not match the recorded game");
+  if(fs::is_symlink(fs::symlink_status(paths.library)))throw std::runtime_error("Library links cannot be deleted");
+  const auto target=paths.library/name;
+  if(!fs::exists(fs::symlink_status(target)))return; // Retry after external removal or interrupted cleanup.
+  const auto full=containedExisting(paths.library,target);
+  const auto overlaps=[&](const fs::path& path){
+    const auto value=path.lexically_normal().string(),base=full.string();
+    return value==base || value.rfind(base+"/",0)==0;
+  };
+#if defined(__PS5__) || defined(__APPLE__)
+  struct statfs* mounts=nullptr;const int count=getmntinfo(&mounts,MNT_NOWAIT);
+  if(count<=0)throw std::runtime_error("Cannot verify mounted games; deletion refused");
+  for(int i=0;i<count;++i)if(overlaps(mounts[i].f_mntonname)||overlaps(mounts[i].f_mntfromname))
+    throw std::runtime_error("Game is mounted. Close and unmount it before deleting its files");
+#else
+  std::ifstream mounts("/proc/mounts");if(!mounts)throw std::runtime_error("Cannot verify mounted games");
+  std::string source,mount,rest;while(mounts>>source>>mount){std::getline(mounts,rest);if(overlaps(source)||overlaps(mount))throw std::runtime_error("Game is mounted; unmount it before deletion");}
+#endif
+  struct stat base{};if(lstat(paths.library.c_str(),&base))throw std::runtime_error("Cannot inspect library");
+  const auto check=[&](const fs::path& path){struct stat st{};
+    if(lstat(path.c_str(),&st)||st.st_dev!=base.st_dev||(!S_ISDIR(st.st_mode)&&!S_ISREG(st.st_mode)))
+      throw std::runtime_error("Library game contains a mount, link or unsupported file; deletion refused");
+  };
+  check(full);if(!fs::is_directory(full))throw std::runtime_error("Recorded game folder is not a directory");
+  // Validate the complete tree before deleting anything. remove_all never follows links.
+  for(const auto& entry:fs::recursive_directory_iterator(full))check(entry.path());
+  fs::remove_all(full);
+  if(fs::exists(fs::symlink_status(target)))throw std::runtime_error("Game files remain; retry deletion");
+}
+
 }

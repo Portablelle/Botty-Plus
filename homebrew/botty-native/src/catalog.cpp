@@ -65,6 +65,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     {
+    out.libraryDeletionSupported=field(body,"libraryDeletionSupported")=="true";
     out.torrentRemovalSupported=field(body,"torrentRemovalSupported")=="true";
     out.catalogArtworkSupported=field(body,"catalogArtworkSupported")=="true";
     out.searchSupported=field(body,"searchSupported")=="true";out.resultCount=0;

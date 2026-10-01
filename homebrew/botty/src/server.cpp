@@ -19,7 +19,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.0.1/ui"
+#define BOTTY_UI "/data/botty/manager/1.0.2/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -266,7 +266,7 @@ int main(int argc,char** argv) {
       }
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.0.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.0.2"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -276,7 +276,7 @@ int main(int argc,char** argv) {
         {"username",credentials.at("username")},{"password",credentials.at("password")}});
     });
     server.Get("/api/state",[](const auto&,auto& res){
-      json result={{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
+      json result={{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"libraryDeletionSupported",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
       try{result["torrents"]=torrents();result["transmissionReady"]=true;}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting;}
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
@@ -388,6 +388,20 @@ int main(int argc,char** argv) {
       job["dismissed"]=true;writeJson(paths.jobs/(id+".json"),job);
       for(auto& old:jobs)if(old.at("id")==id){old=job;break;}
       reply(res,{{"ok",true}});
+    });
+    server.Post("/api/delete-library-game",[](const auto& req,auto& res){
+      const auto request=json::parse(req.body);
+      if(!request.value("confirmed",false))throw std::runtime_error("Confirm deletion of the installed game; archives are kept");
+      const auto id=request.at("id").template get<std::string>();
+      std::lock_guard<std::mutex> guard(lock);if(extracting)throw std::runtime_error("Wait for the active extraction to finish");
+      auto job=findJob(id);
+      for(const auto& other:jobs)if(other.at("id")!=id&&other.value("destination","")==job.value("destination","")&&other.value("status","")=="moved")
+        throw std::runtime_error("Another job uses this library destination; manual review required");
+      deleteLibraryGame(paths,job);
+      // Keep the record until deletion completes; failed or interrupted requests can be retried.
+      fs::remove(paths.jobs/(id+".json"));
+      for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}
+      reply(res,{{"ok",true},{"archivesKept",true}});
     });
     server.Post("/api/delete-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();

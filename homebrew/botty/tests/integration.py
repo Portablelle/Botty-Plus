@@ -207,6 +207,14 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert json.loads(task.read_text())['status']=='deletion-requested'
         assert all(t['id']!=1 for t in request('/api/state')['torrents'])
         assert any(j['status']=='moved' for j in request('/api/state')['jobs'])
+        assert request('/api/state')['libraryDeletionSupported']
+        request('/api/delete-library-game',{'id':job['id'],'confirmed':True},auth=False,expected=403)
+        request('/api/delete-library-game',{'id':job['id']},expected=400)
+        assert (root/'test-library/PPSA12345-app/eboot.bin').exists()
+        request('/api/delete-library-game',{'id':job['id'],'confirmed':True})
+        assert not (root/'test-library/PPSA12345-app').exists()
+        assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
+        assert not any(j['id']==job['id'] for j in request('/api/state')['jobs'])
         print('HTTP integration passed: local access controls, real RPC handshake, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
     finally:
         if process and process.poll() is None:stop()

@@ -22,6 +22,7 @@ void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, b
 std::string randomId();
 json classify(const fs::path& extracted);
 json movePrepared(const Paths&, json job);
+void deleteLibraryGame(const Paths&, const json& job);
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };
 using Reporter = std::function<void(const Progress&)>;
 // Progress callbacks are serialized; cancellation may be queried concurrently.

@@ -3,10 +3,10 @@
 #include <cstdio>
 namespace botty {
 const char* operationLabel(Operation op) noexcept {
- switch(op){case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Download and prepare";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Extracted";default:return "Actions";}
+ switch(op){case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Download and prepare";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Extracted";default:return "Actions";}
 }
 const char* actionPath(Operation op) noexcept {
- switch(op){case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
+ switch(op){case Operation::removeLibrary:return "/api/delete-library-game";case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
 }
 bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t& length) noexcept {
  length=0;bool ok=true;
@@ -20,9 +20,10 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
  else if(cmd.operation==Operation::add){if(!std::string_view(cmd.text.data()).starts_with("magnet:?"))return false;append("\"action\":\"add\",\"magnet\":");quote(cmd.text.data());}
  else {
   append("\"id\":");
-  if(cmd.operation==Operation::move||cmd.operation==Operation::remove||cmd.operation==Operation::cancel||cmd.operation==Operation::dismiss){if(!cmd.id[0])return false;quote(cmd.id.data());}
+  if(cmd.operation==Operation::removeLibrary||cmd.operation==Operation::move||cmd.operation==Operation::remove||cmd.operation==Operation::cancel||cmd.operation==Operation::dismiss){if(!cmd.id[0])return false;quote(cmd.id.data());}
   else {std::string_view id=cmd.id.data();if(id.empty()||id.size()>10||(id.size()>1&&id.front()=='0'))return false;unsigned long long value=0;for(char c:id){if(c<'0'||c>'9')return false;value=value*10+c-'0';}if(value>2147483647)return false;append(id);}
-  if(cmd.operation==Operation::extract){if(!cmd.archive[0]||std::string_view(cmd.text.data()).size()>1024)return false;append(",\"archive\":");quote(cmd.archive.data());append(",\"password\":");quote(cmd.text.data());}
+  if(cmd.operation==Operation::removeLibrary)append(",\"confirmed\":true");
+  else if(cmd.operation==Operation::extract){if(!cmd.archive[0]||std::string_view(cmd.text.data()).size()>1024)return false;append(",\"archive\":");quote(cmd.archive.data());append(",\"password\":");quote(cmd.text.data());}
   else if(cmd.operation!=Operation::move&&cmd.operation!=Operation::remove&&cmd.operation!=Operation::cancel&&cmd.operation!=Operation::dismiss){append(",\"action\":");if(cmd.operation==Operation::removeTorrent){quote("remove-data");append(",\"confirmed\":true");}else quote(cmd.operation==Operation::pause?"pause":cmd.operation==Operation::resume?"resume":"verify");}
  }
  append("}");if(length<capacity)out[length]=0;return ok;
@@ -43,6 +44,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if((op==Operation::cancel||op==Operation::dismiss)&&!c.extractionControls)return "Start the updated Botty service next session to use this action.";
  const auto status=std::string_view(e->status.data());
  if(op==Operation::cancel)return status=="extracting"?"":"This extraction is no longer running.";
+ if(op==Operation::removeLibrary){if(!c.libraryDeletionSupported)return "Update Botty to enable game deletion.";if(c.extracting)return "Wait for extraction to finish.";if(status!="moved")return "Only games moved to Library can be deleted.";return std::string_view(e->kind.data())=="folder"?"":"Image files require unmounting and manual removal.";}
  if(op==Operation::dismiss)return status=="ready"||status=="moved"||status=="failed"||status=="cancelled"||status=="interrupted"?"":"Only finished extractions can be removed from the list.";
  if(c.extracting)return "Wait for the active extraction to finish.";
  if(op==Operation::move){if(status!="ready")return "Only ready extractions can be moved.";if(!e->kind[0]||std::string_view(e->kind.data())=="unsupported")return "This extraction does not contain a supported game format.";}
@@ -53,8 +55,8 @@ void Workflow::close() noexcept {panel=Panel::closed;unicodeInput=false;codepoin
 const Entry* Workflow::target(const Catalog& c) const noexcept {const auto& list=targetTab==0?c.torrents:c.jobs;const auto count=targetTab==0?c.torrentCount:c.jobCount;for(unsigned i=0;i<count;++i)if(std::string_view(list[i].id.data())==targetId.data())return &list[i];return nullptr;}
 void Workflow::open(const Entry* e,unsigned tab,const Catalog&) noexcept {
  close();panel=Panel::menu;selected=0;targetTab=tab;targetId.fill(0);targetName.fill(0);optionCount=0;
- if(e&&tab<3){targetId=e->id;targetName=e->name;if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;options[optionCount++]=Operation::removeTorrent;}else{if(e->active)options[optionCount++]=Operation::cancel;options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}}
- options[optionCount++]=Operation::add;
+ if(e&&tab<3){targetId=e->id;targetName=e->name;if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;options[optionCount++]=Operation::removeTorrent;}else if(tab==2){if(std::string_view(e->status.data())=="ready"){options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;}else options[optionCount++]=Operation::removeLibrary;}else{if(e->active)options[optionCount++]=Operation::cancel;options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}}
+ if(tab!=2)options[optionCount++]=Operation::add;
 }
 void Workflow::search() noexcept {close();command=Command{};command.operation=Operation::search;panel=Panel::keyboard;selected=0;keyPage=0;}
 void Workflow::grab(const Entry& e,bool exploration) noexcept {close();command=Command{};command.operation=exploration?Operation::exploreGrab:Operation::grab;command.id=e.id;targetName=e.name;panel=Panel::confirm;confirm=false;}

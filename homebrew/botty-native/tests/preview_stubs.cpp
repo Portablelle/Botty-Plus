@@ -77,6 +77,7 @@ int sceNetRecv(int,void* b,std::size_t n,int){
                 if(fixture)body.assign(std::istreambuf_iterator<char>(fixture),std::istreambuf_iterator<char>());
             }
         }
+        if(is("delete-game")&&socketRequest.find("GET /api/state ")==0){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");body.insert(1,"\"libraryDeletionSupported\":true,");}
         if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
         socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
@@ -112,8 +113,10 @@ int scePadRead(int,PS5_PadData* p,int){
     if((reads==13||reads==15)&&is("password"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==7&&is("result"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==9&&is("result"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if((reads==3||reads==5)&&(is("job-actions")||is("move-confirm")))p->buttons=PS5_PAD_BUTTON_R1;
+    if((reads==3||reads==5)&&(is("job-actions")||is("move-confirm")||is("delete-game")))p->buttons=PS5_PAD_BUTTON_R1;
     if(reads==7&&(is("job-actions")||is("move-confirm")))p->buttons=PS5_PAD_BUTTON_OPTIONS;
+    if(reads==7&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_RIGHT;
+    if(reads==9&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
     if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}
     if(is("buffered-password")&&p->buttons){p[1]=p[0];p[1].buttons=0;++p[1].timestamp;return 2;}

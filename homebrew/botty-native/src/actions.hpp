@@ -2,7 +2,7 @@
 #pragma once
 #include "catalog.hpp"
 namespace botty {
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent };
+enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary };
 struct Command {
     Operation operation=Operation::none;
     bool refresh=false;

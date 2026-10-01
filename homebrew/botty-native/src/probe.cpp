@@ -187,6 +187,7 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
     case Operation::dismiss:message("Removed from Extracted. Partial files from unsuccessful jobs were deleted.");break;
+    case Operation::removeLibrary:message("Game files deleted from Library. Torrent and original archives were kept.");break;
     case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
     default:break;
@@ -198,7 +199,7 @@ bool Network::submit(const Command& command) noexcept {
     // One pending request, never replayed by reconnect or retry.
     if(busy_.exchange(true)){gate_.clear(std::memory_order_release);return false;}
     pending_=command;
-    deletion_.store(command.operation==Operation::removeTorrent?Deletion::deleting:Deletion::idle);
+    deletion_.store((command.operation==Operation::removeTorrent||command.operation==Operation::removeLibrary)?Deletion::deleting:Deletion::idle);
     queued_.store(true);gate_.clear(std::memory_order_release);return true;
 }
 void Network::publish(Connection next,const Catalog* catalog) noexcept {
@@ -237,7 +238,7 @@ void* Network::worker(void* context) noexcept {
             command=self.pending_;self.pending_=Command{};
             self.gate_.clear(std::memory_order_release);
             result=performCommand(command);acted=true;
-            if(command.operation==Operation::removeTorrent&&result.status==ActionResult::Status::uncertain){
+            if((command.operation==Operation::removeTorrent||command.operation==Operation::removeLibrary)&&result.status==ActionResult::Status::uncertain){
                 // The service may still hold its catalog lock while unlinking.
                 // Keep the operation visible until a fresh state arrives. Never
                 // replay the destructive POST or infer success from a timeout.
@@ -251,7 +252,7 @@ void* Network::worker(void* context) noexcept {
         if(checkingDeletion&&((next.valid&&next.transmissionReady)||platform::now()>=deletionDeadline)){
             checkingDeletion=false;result=deletionResult;acted=true;
             std::snprintf(result.message.data(),result.message.size(),"%s",next.valid&&next.transmissionReady?
-                "Deletion response lost. The list is now up to date; check the torrent before trying again.":
+                "Deletion response lost. The list is now up to date; check the item before trying again.":
                 "Deletion is taking longer than expected or Botty is unavailable. Its outcome is not confirmed. Check the refreshed list before trying again.");
         }
         if(next.valid&&!next.transmissionReady&&self.catalog_.valid) {
