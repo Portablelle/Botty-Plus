@@ -2,12 +2,12 @@
   <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
 </p>
 
-<h1 align="center">Botty+ 1.0</h1>
+<h1 align="center">Botty+ 1.01</h1>
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/tag/v1.0.0">Download v1.0.0</a> ·
+  <a href="https://github.com/Portablelle/botty-ps5/releases/tag/v1.01">Download v1.01</a> ·
   <a href="deployment/README.md">Deployment guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility &amp; validation</a>
 </p>
@@ -18,7 +18,7 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Version 1.0:** this release includes service **1.0.0**, native title **01.000.000** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
+**Version 1.01:** this release includes service **1.0.1**, native title **01.000.001** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
 
 ## Features
 
@@ -51,9 +51,9 @@ Normal extraction and library publication retain the original torrent archives f
 
 Use the stack only on consoles and content you are authorized to manage. Keep console services on the trusted LAN; no router port forwarding is needed.
 
-## Download 1.0
+## Download 1.01
 
-Get the ready-to-host portal and native application from the [v1.0.0 release](https://github.com/Portablelle/botty-ps5/releases/tag/v1.0.0). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
+Get the ready-to-host portal and native application from the [v1.01 release](https://github.com/Portablelle/botty-ps5/releases/tag/v1.01). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
 
 ## Get the repository
 
