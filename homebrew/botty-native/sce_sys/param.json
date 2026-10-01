@@ -10,7 +10,7 @@
   "conceptId": "99071",
   "contentBadgeType": 1,
   "contentId": "UP9000-PPSA99071_00-BOTTYNATIVE00001",
-  "contentVersion": "00.003.002",
+  "contentVersion": "00.005.003",
   "downloadDataSize": 256,
   "gameIntent": {
     "permittedIntents": [
@@ -22,7 +22,7 @@
   "localizedParameters": {
     "defaultLanguage": "en-US",
     "en-US": {
-      "titleName": "Botty Native Preview"
+      "titleName": "Botty+"
     }
   },
   "masterVersion": "01.00",

@@ -59,7 +59,10 @@ int sceNetRecv(int,void* b,std::size_t n,int){
             body=R"({"apiVersion":1,"url":"http://192.168.1.50:9091","username":"botty","password":"B7mQ2x"})";
         }
         if(socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"library":"/data/shadowmount","transmissionReady":true,"extracting":true,"extractionControls":true,"torrents":[{"id":1,"name":"Open source game collection - Volume 1","status":4,"peersConnected":42,"peersSendingToUs":8,"peersGettingFromUs":3,"percentDone":0.64,"leftUntilDone":4638564679,"totalSize":12884901888,"rateDownload":8388608,"rateUpload":262144,"errorString":""},{"id":2,"name":"Homebrew showcase archive","status":0,"percentDone":0.22,"leftUntilDone":4187593114,"totalSize":5368709120,"rateDownload":0,"rateUpload":0},{"id":3,"name":"Community demo assets","files":[{"name":"Community Demo.part1.rar"},{"name":"Community Demo.part2.rar"}],"status":6,"percentDone":1,"leftUntilDone":0,"totalSize":1073741824,"rateDownload":0,"rateUpload":65536}],"jobs":[{"id":"job-1","name":"Homebrew showcase archive","status":"extracting","phase":"Extracting and checking CRC","bytes":2147483648,"total":5368709120,"extractionRate":25165824,"eta":128},{"id":"job-2","name":"Community demo assets","status":"ready","bytes":1073741824,"total":1073741824,"content":{"kind":"folder","destination":"DEMO00001-app"}},{"id":"job-3","name":"Open source sample","status":"moved","destination":"/data/shadowmount/SAMPLE001-app","content":{"kind":"folder"}}]})";
-        if(is("password")||is("job-actions")||is("move-confirm")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
+        if(is("search")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"Homebrew","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Homebrew demo collection - PS5","size":1073741824,"seeders":24,"leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"leechers":1,"added":true}]}})";
+        if(is("explore")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Elden Ring - PS5","size":1073741824,"seeders":24,"completed":642,"published":"2026-09-30T00:00:00Z","leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"completed":91,"published":"2026-09-28T00:00:00Z","leechers":1,"added":false}]}})";
+        if(is("delete-torrent")&&socketRequest.find("GET /api/state ")==0){body.insert(1,"\"torrentRemovalSupported\":true,");}
+        if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
         socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
     }
@@ -73,11 +76,16 @@ int scePadOpen(int,int,int,void*){return 1;}
 int scePadRead(int,PS5_PadData* p,int){
     *p={};p->connected=1;p->leftStick.x=p->leftStick.y=128;p->timestamp=2*++reads;
     if((reads==3&&(is("diagnostics")||is("extracted")||is("library")||is("connections")))||(reads==5&&(is("library")||is("connections")))||(reads==7&&is("connections")))p->buttons=PS5_PAD_BUTTON_R1;
+    if((reads==3||reads==5)&&is("search"))p->buttons=PS5_PAD_BUTTON_L1;
+    if(reads==3&&is("explore"))p->buttons=PS5_PAD_BUTTON_L1;
     if(reads==3&&(is("quit")||is("exit")))p->buttons=PS5_PAD_BUTTON_CIRCLE;
     if(reads==4&&is("exit"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==5&&is("exit"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==5&&is("details"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==3&&(is("actions")||is("confirm")||is("password")||is("result")))p->buttons=PS5_PAD_BUTTON_OPTIONS;
+    if(reads==3&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
+    if((reads==5||reads==7||reads==9)&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_DOWN;
+    if(reads==11&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==3&&is("keyboard"))p->buttons=PS5_PAD_BUTTON_SQUARE;
     if(reads==5&&(is("confirm")||is("result")))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==3&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;

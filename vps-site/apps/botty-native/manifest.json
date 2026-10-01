@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "app": "Botty Native Preview",
+  "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "00.003.002",
+  "version": "00.005.003",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -16,8 +16,8 @@
     },
     {
       "path": "assets/build.txt",
-      "size": 79,
-      "sha256": "f68a9ce48222e0b848e51acb59ac2a242b7b2f54cd993559ee5d85e6c6870204"
+      "size": 65,
+      "sha256": "01c65b020d94008c85f52ef06d6374e463d7a25be2a97ea392bf03e787970e67"
     },
     {
       "path": "assets/ui-font.bin",
@@ -26,8 +26,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 13104476,
-      "sha256": "7da2cd50c38427f9d91d6f230602027fa59c89566ecaf4442e66a7f173267962"
+      "size": 15841132,
+      "sha256": "e8b5f8662dbe57df696e591370de9213020e15afdab6e2a965aa53d589491fec"
     },
     {
       "path": "sce_module/libc.prx",
@@ -36,13 +36,18 @@
     },
     {
       "path": "sce_sys/icon0.png",
-      "size": 4246,
-      "sha256": "f84f3a673dd9b53b2b7b3608058cbd2b983dc9cb649dbe306d53f36e205ea080"
+      "size": 471819,
+      "sha256": "b04611b29f7fbd980d6ea550379df4cc897d077bed06b69eaaa59ec58ea2987d"
     },
     {
       "path": "sce_sys/param.json",
-      "size": 856,
-      "sha256": "dd6666a7ceff84bf133c08d9178b57c6a4713379d41b633de5917a8fc08865e0"
+      "size": 842,
+      "sha256": "a86ac3d5186f5c21048c5292a1b3cae011d04d5eaa623aabb14a5a562e7d1547"
+    },
+    {
+      "path": "sce_sys/pic0.dds",
+      "size": 8294548,
+      "sha256": "1005350b9f1feecdd6eb1006c389a6bd738d31b1090325deecaf799c8c695724"
     }
   ]
 }

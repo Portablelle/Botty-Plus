@@ -442,6 +442,14 @@ void Canvas::clear(Color color) noexcept
     fill_rect(pixels_, 0, 0, frame_width, frame_height, color);
 }
 
+void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept {
+    if(rgb.size()!=160*240*3||!width||!height)return;
+    for(unsigned row=0;row<height&&y+row<frame_height;++row)for(unsigned col=0;col<width&&x+col<frame_width;++col){
+        const auto source=((row*240/height)*160+col*160/width)*3;
+        fill_rect(pixels_,x+col,y+row,1,1,static_cast<Color>(0xff000000U|rgb[source]|(rgb[source+1]<<8)|(rgb[source+2]<<16)));
+    }
+}
+
 void Canvas::rectangle(unsigned x, unsigned y, unsigned width, unsigned height,
                        Color color) noexcept
 {

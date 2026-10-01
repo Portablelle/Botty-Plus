@@ -1,22 +1,22 @@
 import { sha256 } from './transmission.js';
 import { sleep } from './ps5-io.js';
 export const MANAGER_ROOT='/data/botty/manager';
-const VERSION='0.1.5';
+const VERSION='0.3.3';
 const APP=MANAGER_ROOT+'/'+VERSION;
 const BASE='./apps/botty/';
-const HASH='8f82b8a8b45f209c0633e56e44720b0e22629edda546476d8691e34c7295026e';
+const HASH='7ff3b588e3b71a1d91d8b424ffe1c8d37e72611c83497f4da2227de326535905';
 const encoder=new TextEncoder();
 export async function managerInstalled(io) {
   const bytes=await io.readFile(MANAGER_ROOT+'/installed.json',4096);
   if(!bytes)return false;
-  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4',VERSION].includes(data.version);}
+  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0','0.3.1','0.3.2',VERSION].includes(data.version);}
   catch(_){throw Error('Botty installation record is damaged. Reinstall Botty from its button.');}
 }
 async function health(io) {
   const response=await io.http(8088,'/health');
   if(response.status!==200)throw Error('Botty is not responding.');
   const data=JSON.parse(response.body);
-  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
+  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0','0.3.1','0.3.2',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
   return data;
 }
 export async function installAndStartManager(io,options={}) {
@@ -28,7 +28,7 @@ export async function installAndStartManager(io,options={}) {
   const bytes=new Uint8Array(await response.arrayBuffer());
   if(await digest(bytes)!==HASH)throw Error('Botty manifest verification failed.');
   const manifest=JSON.parse(new TextDecoder().decode(bytes));
-  const allowed=['botty-manager.elf','icon0.png','ui/index.html','ui/app.js','ui/style.css'];
+  const allowed=['botty-manager.elf','icon0.png','ui/index.html','ui/app.js','ui/style.css','cacert.pem'];
   if(manifest.schema!==1||manifest.id!==VERSION||manifest.files.length!==allowed.length)throw Error('Unexpected Botty package.');
   const staged=[];let executable;
   for(const file of manifest.files) {
@@ -51,7 +51,7 @@ export async function installAndStartManager(io,options={}) {
     const disk=await io.readFile(APP+'/'+file.path,file.size);
     if(!disk||await digest(disk)!==file.sha256)throw Error('Botty installation verification failed.');
   }
-  report('Starting Botty and registering its home screen icon…');
+  report('Starting Botty service…');
   if(await io.listening(8088))return await health(io);
   await io.sendElf(executable);
   let result;

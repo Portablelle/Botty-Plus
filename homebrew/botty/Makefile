@@ -16,12 +16,13 @@ build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp
-	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@
-build/botty-manager.elf: src/server.cpp src/core.cpp src/rar.cpp src/launcher.cpp $(PS5_OBJ) src/unicode.hpp src/progress.hpp
-	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lSceSystemService -lSceUserService -lSceAppInstUtil
-build/core-test: tests/core-test.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp
-	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@
+build/botty-native: src/server.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl
+build/botty-manager.elf: src/server.cpp src/core.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp
+	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+build/core-test: tests/core-test.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl
 test: build/core-test build/botty-native
 	./build/core-test
 	python3 tests/integration.py
+	python3 tests/search_integration.py

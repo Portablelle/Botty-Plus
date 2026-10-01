@@ -32,6 +32,13 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
             if self.headers.get('X-Transmission-Session-Id')!='test123':self.send_response(409);self.send_header('X-Transmission-Session-Id','test123');self.send_header('Content-Length','0');self.end_headers();return
             if body['method']=='torrent-get':
                 assert {'eta','sizeWhenDone','peersConnected','peersSendingToUs','peersGettingFromUs'} <= set(body['arguments']['fields'])
+            if body['method']=='torrent-remove':
+                assert body['arguments']['delete-local-data'] is True
+                removed=[t for t in entries if t['hashString'] in body['arguments']['ids']]
+                assert len(removed)==1
+                for t in removed:
+                    for file in t['files']:(pathlib.Path(t['downloadDir'])/file['name']).unlink(missing_ok=True)
+                    entries.remove(t)
             output=json.dumps(dict(result='success',arguments=dict(torrents=entries) if body['method']=='torrent-get' else {})).encode()
             self.send_response(200);self.send_header('Content-Length',str(len(output)));self.end_headers();self.wfile.write(output)
     rpc=ThreadingHTTPServer(('127.0.0.1',0),RPC);threading.Thread(target=rpc.serve_forever,daemon=True).start()
@@ -122,6 +129,7 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         cancel=request('/api/extract',{'id':3,'archive':'cancel.rar'},expected=202)
         request('/api/dismiss-extraction',{'id':cancel['id']},expected=400)
         request('/api/cancel-extraction',{'id':cancel['id']},auth=False,expected=403)
+        request('/api/torrent',{'action':'remove-data','id':3,'confirmed':True},expected=400)
         request('/api/cancel-extraction',{'id':cancel['id']},expected=202)
         stopped=wait_job(cancel['id']);assert stopped['status']=='cancelled',stopped
         request('/api/dismiss-extraction',{'id':cancel['id']})
@@ -136,6 +144,24 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert restored['status']=='interrupted'
         request('/api/dismiss-extraction',{'id':interrupted});assert not partial.exists()
         assert (root/'test-library/PPSA12345-app/eboot.bin').exists()
+        assert request('/api/state')['torrentRemovalSupported']
+        request('/api/torrent',{'action':'remove-data','id':1},expected=400)
+        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},auth=False,expected=403)
+        original=entries[0]['downloadDir'];entries[0]['downloadDir']=str(root/'test-library')
+        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
+        entries[0]['downloadDir']=original
+        original_name=entries[0]['files'][0]['name'];entries[0]['files'][0]['name']='../outside.rar'
+        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
+        entries[0]['files'][0]['name']='linked/eboot.bin';(complete/'linked').symlink_to(root/'test-library/PPSA12345-app')
+        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
+        (complete/'linked').unlink();entries[0]['files'][0]['name']=original_name
+        task=root/'automatic'/('1'*40+'.json');task.write_text(json.dumps({'hash':'1'*40,'status':'tracked'}))
+        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True})
+        assert not (complete/'app.rar').exists() and (complete/'bad.rar').exists()
+        assert (root/'test-library/PPSA12345-app/eboot.bin').read_bytes()==b'original test bytes'*400
+        assert json.loads(task.read_text())['status']=='deletion-requested'
+        assert all(t['id']!=1 for t in request('/api/state')['torrents'])
+        assert any(j['status']=='moved' for j in request('/api/state')['jobs'])
         print('HTTP integration passed: local access controls, real RPC handshake, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
     finally:
         if process and process.poll() is None:stop()

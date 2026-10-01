@@ -42,12 +42,12 @@ void networkError(const char* operation,int result) noexcept {
     log(line);
 }
 int connectLocal() noexcept {
-    static bool initialized=false;
-    if(!initialized) {
+    static const bool initialized=[] {
         const int result=sceNetInit();
         log(result==0?"Network initialized":"Network initialization returned nonzero - checking socket access");
-        initialized=true;
-    }
+        return true;
+    }();
+    (void)initialized;
     const int fd=sceNetSocket("botty_read_only",2,1,6);
     if(fd<0){networkError("socket",fd);return -1;}
     constexpr int timeout=1500000;

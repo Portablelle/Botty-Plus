@@ -1,0 +1,58 @@
+import importlib.util, io, json, os, pathlib, tempfile, unittest
+from PIL import Image
+class Covers(unittest.TestCase):
+ def setUp(self):
+  self.temp=tempfile.TemporaryDirectory();root=pathlib.Path(self.temp.name);(root/'key').write_text('test')
+  os.environ['BOTTY_ARTWORK_KEY_FILE']=str(root/'key');os.environ['BOTTY_ARTWORK_CACHE']=str(root)
+  spec=importlib.util.spec_from_file_location('artwork',pathlib.Path(__file__).with_name('server.py'));self.module=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.module)
+ def tearDown(self):self.temp.cleanup()
+ def test_exact_cover_and_cache(self):
+  image=io.BytesIO();Image.new('RGB',(20,30),(20,60,80)).save(image,format='PNG');calls=[]
+  def fetch(url,limit):
+   calls.append(url)
+   return json.dumps({'query':{'pages':[{'title':"Marvel's Demo",'thumbnail':{'source':'https://upload.wikimedia.org/test.png'}}]}}).encode() if 'api.php' in url else image.getvalue()
+  self.module.fetch=fetch
+  result=self.module.cover('marvels demo incl DLC');self.assertEqual(len(result),115200);self.assertEqual(self.module.cover('marvels demo incl DLC'),result);self.assertEqual(len(calls),3)
+ def test_never_substitutes_sequel(self):
+  self.module.fetch=lambda *_:json.dumps({'query':{'pages':[{'title':'Demo 2','thumbnail':{'source':'https://upload.wikimedia.org/test.png'}}]}}).encode()
+  self.assertEqual(self.module.cover('demo'),b'')
+ def test_accents_and_punctuation(self):
+  self.assertEqual(self.module.normalize("Ghost of Yōtei"), self.module.normalize("ghost of yotei"))
+  self.assertEqual(self.module.normalize("Marvel's Wolverine"), self.module.normalize("marvels wolverine"))
+ def test_release_names(self):
+  self.assertEqual(self.module.clean_title('Little Nightmares III The Shores'), 'Little Nightmares III')
+  self.assertEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares 3'))
+  self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
+  self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
+ def test_steam_and_fallback(self):
+  image=io.BytesIO();Image.new('RGB',(20,30),(20,60,80)).save(image,format='PNG')
+  def fetch(url,limit):
+   if 'storesearch' in url:return json.dumps({'items':[{'id':1,'name':'Demo II'},{'id':2,'name':'Demo III'}]}).encode()
+   if '/apps/2/' in url:return image.getvalue()
+   raise AssertionError('Wrong sequel or unnecessary fallback')
+  self.module.fetch=fetch
+  self.assertEqual(len(self.module.cover('Demo 3')),115200)
+ def test_temporary_failure_retried(self):
+  self.module.steam_candidates=lambda _:iter([])
+  def offline(_):raise OSError('offline')
+  self.module.wikipedia_candidates=offline
+  with self.assertRaises(RuntimeError):self.module.cover('Example')
+  self.module.wikipedia_candidates=lambda _:iter([{'provider':'Wikipedia','image':'https://upload.wikimedia.org/example.png'}])
+  self.module.raster=lambda _:b'x'*115200
+  self.assertEqual(len(self.module.cover('Example')),115200)
+ def test_persistent_alias(self):
+  aliases=pathlib.Path(self.temp.name)/'aliases.json';aliases.write_text(json.dumps({'regionalname':'Canonical Game'}));self.module.ALIASES=aliases
+  names=[]
+  def candidate(title):names.append(title);yield {'provider':'Steam','image':'https://cdn.akamai.steamstatic.com/example.jpg'}
+  self.module.steam_candidates=candidate;self.module.raster=lambda _:b'x'*115200
+  self.assertEqual(len(self.module.cover('Regional Name')),115200);self.assertEqual(names,['Canonical Game'])
+ def test_playstation_identity(self):
+  sources=pathlib.Path(self.temp.name)/'sources.json';sources.write_text(json.dumps({'nhl27':'https://store.playstation.com/en-us/product/TEST/'}));self.module.SOURCES=sources
+  self.module.fetch=lambda *_:b'<script type="application/ld+json">{"@type":"Product","name":"NHL&#174; 27 Standard Edition PS5","image":"https://image.api.playstation.com/test.png"}</script>'
+  self.assertEqual(len(list(self.module.playstation_candidates('EA SPORTS™ NHL™ 27'))),1)
+  self.assertEqual(list(self.module.playstation_candidates('NHL 26')),[])
+  self.module.fetch=lambda *_:b'<script type="application/ld+json">{"@type":"Product","name":"NHL 26","image":"https://image.api.playstation.com/test.png"}</script>'
+  self.assertEqual(list(self.module.playstation_candidates('NHL 27')),[])
+ def test_origin_confinement(self):
+  with self.assertRaises(ValueError):self.module.fetch('http://localhost/private',100)
+if __name__=='__main__':unittest.main()

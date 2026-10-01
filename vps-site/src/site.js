@@ -88,7 +88,7 @@ button.addEventListener("click", async () => {
       report,
     });
     button.textContent = "READY";
-    status.textContent = "Press PS and open Botty Native Preview. Allow time for the home screen to refresh.";
+    status.textContent = "Press PS and open Botty+. Allow time for the home screen to refresh.";
     document.body.dataset.state = "ready";
   } catch (error) {
     button.textContent = "STOPPED";

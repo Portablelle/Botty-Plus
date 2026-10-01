@@ -47,7 +47,7 @@ double number(std::string_view s){double n=0,scale=1;bool fraction=false,negativ
     if(p<s.size()&&(s[p]=='e'||s[p]=='E')){++p;bool neg=p<s.size()&&s[p]=='-';if(p<s.size()&&(s[p]=='-'||s[p]=='+'))++p;unsigned e=0;for(;p<s.size();++p){e=e*10+s[p]-'0';if(e>308)return 0;}while(e--)n*=neg?.1:10;}
     if(n>1e30)return 0;return negative?-n:n;
 }
-bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&e.dismissed)return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
+bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
 }
 bool responseObject(std::string_view body,std::array<char,512>& error) noexcept {
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
@@ -64,6 +64,19 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    {
+    out.torrentRemovalSupported=field(body,"torrentRemovalSupported")=="true";
+    out.searchSupported=field(body,"searchSupported")=="true";out.resultCount=0;
+    const auto search=field(body,"search");out.searchBusy=field(search,"busy")=="true";out.searchAdding=field(search,"adding")=="true";
+    decode(field(search,"query"),out.searchQuery);decode(field(search,"error"),out.searchError);decode(field(search,"notice"),out.searchNotice);
+    auto results=field(search,"results");if(!results.empty()) {JSON items{results};if(!items.take('['))return false;if(!items.take(']')){do{items.ws();auto start=items.p;if(!items.value())return false;auto row=slice(results,start,items.p-start);if(out.resultCount==out.results.size())continue;auto& e=out.results[out.resultCount++];e=Entry{};if(!decode(field(row,"id"),e.id,true))return false;decode(field(row,"name"),e.name);e.total=number(field(row,"size"));e.peers=static_cast<int>(number(field(row,"seeders")));e.downloadingPeers=static_cast<int>(number(field(row,"leechers")));e.complete=field(row,"added")=="true";}while(items.take(','));if(!items.take(']'))return false;}}
+    }
+    {
+    out.exploreSupported=field(body,"exploreSupported")=="true";out.exploreCount=0;
+    const auto search=field(body,"explore");out.exploreBusy=field(search,"busy")=="true";out.exploreAdding=field(search,"adding")=="true";
+    decode(field(search,"sort"),out.exploreSort);decode(field(search,"error"),out.exploreError);decode(field(search,"notice"),out.exploreNotice);
+    auto results=field(search,"results");if(!results.empty()) {JSON items{results};if(!items.take('['))return false;if(!items.take(']')){do{items.ws();auto start=items.p;if(!items.value())return false;auto row=slice(results,start,items.p-start);if(out.exploreCount==out.exploreResults.size())continue;auto& e=out.exploreResults[out.exploreCount++];e=Entry{};if(!decode(field(row,"id"),e.id,true))return false;decode(field(row,"name"),e.name);e.total=number(field(row,"size"));e.peers=static_cast<int>(number(field(row,"seeders")));e.downloadingPeers=static_cast<int>(number(field(row,"leechers")));e.completedCount=static_cast<int>(number(field(row,"completed")));decode(field(row,"published"),e.published);e.complete=field(row,"added")=="true";}while(items.take(','));if(!items.take(']'))return false;}}
+    }
     out.freeBytes=number(field(body,"freeBytes"));decode(field(body,"library"),out.library);decode(field(body,"error"),out.error);
     for(unsigned type=0;type<2;++type){auto array=type?jobs:torrents;JSON j{array};j.take('[');if(j.take(']'))continue;
         do{j.ws();auto start=j.p;if(!j.value())return false;auto obj=slice(array,start,j.p-start);if(obj.empty()||obj.front()!='{')return false;

@@ -95,6 +95,27 @@ json classify(const fs::path& root) {
   if (candidates.size() != 1) return {{"kind","unsupported"},{"reason",candidates.empty()?"No supported app folder or exFAT image found. PKG installation is not included.":"Multiple app/image candidates found. Manual selection is required."}};
   return candidates.front();
 }
+// Extraction stays private; only verified content being published becomes readable
+// by the game sandbox. Refuse links and special files, and never follow a leaf link.
+static void prepareLibraryPermissions(const fs::path& source) {
+  const auto prepare=[](const fs::path& path) {
+    int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK);
+    if(fd<0)throw std::runtime_error("Cannot open library content for permission preparation");
+    struct stat info{};
+    if(fstat(fd,&info)||(!S_ISDIR(info.st_mode)&&!S_ISREG(info.st_mode))){close(fd);throw std::runtime_error("Unsupported library entry");}
+    const auto ext=path.extension().string();
+    const bool executable=path.filename()=="eboot.bin"||ext==".elf"||ext==".self"||ext==".prx"||ext==".sprx";
+    const mode_t mode=S_ISDIR(info.st_mode)||executable?0755:0644;
+    const int result=fchmod(fd,mode);close(fd);
+    if(result)throw std::runtime_error("Cannot prepare library permissions; content was not moved");
+  };
+  if(fs::is_symlink(fs::symlink_status(source)))throw std::runtime_error("Extracted links are not allowed");
+  prepare(source);
+  if(fs::is_directory(source))for(const auto& entry:fs::recursive_directory_iterator(source)){
+    if(entry.is_symlink())throw std::runtime_error("Extracted links are not allowed");
+    prepare(entry.path());
+  }
+}
 json movePrepared(const Paths& paths, json job) {
   if (job.value("status", "") != "ready") throw std::runtime_error("Extraction is not ready to move");
   const std::string id = job.at("id");
@@ -110,6 +131,7 @@ json movePrepared(const Paths& paths, json job) {
   if (fs::is_symlink(fs::symlink_status(paths.library))) throw std::runtime_error("Library directory is a symbolic link");
   const auto target = paths.library/name;
   if (fs::exists(fs::symlink_status(target))) throw std::runtime_error("Destination already exists; nothing was replaced");
+  prepareLibraryPermissions(source);
   // Journal the move before it starts, so a crash is reported as uncertain on restart.
   job["status"]="moving"; job["destination"]=target.string(); writeJson(paths.jobs/(id+".json"),job);
   try {

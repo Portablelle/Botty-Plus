@@ -38,6 +38,7 @@ class Canvas final
     }
     bool take_resumed() noexcept {const bool result=resumed_;resumed_=false;return result;}
     bool take_dirty() noexcept {const bool result=dirty_;dirty_=false;return result;}
+    void poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
     void clear(Color color) noexcept;
     void shade(unsigned alpha) noexcept;
     void rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept;

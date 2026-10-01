@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "progress.hpp"
+#include "search.hpp"
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
 #include <chrono>
@@ -17,10 +18,9 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/0.1.5/ui"
+#define BOTTY_UI "/data/botty/manager/0.3.3/ui"
 #endif
 #ifdef __PS5__
-void installHomeIcon();
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
 __attribute__((constructor(101))) static void startupLog() {
   int fd=open("/data/botty/manager/startup.log",O_WRONLY|O_CREAT|O_TRUNC,0600);
@@ -31,6 +31,7 @@ __attribute__((constructor(101))) static void startupLog() {
 
 #endif
 namespace {
+Search search,explore;
 std::mutex lock;
 json jobs=json::array(); bool extracting=false;
 std::atomic<bool> cancelExtraction{false}; std::string activeJob;
@@ -111,7 +112,7 @@ void recoverJobs() {
     }catch(...){/* Do not overwrite unknown or damaged state. */}
   }
 }
-json startExtraction(const json& request) {
+json startExtraction(const json& request, bool automatic=false) {
   const int id=request.at("id").get<int>();
   const std::string name=request.at("archive").get<std::string>();
   const std::string password=request.value("password","");
@@ -135,7 +136,7 @@ json startExtraction(const json& request) {
   for(const auto& job:jobs)if(job.value("hash","")==torrent.at("hashString") && job.value("archive","")==name &&
       (job.value("status","")=="ready" || job.value("status","")=="moved"))throw std::runtime_error("This archive was already extracted");
   json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},
-    {"status","extracting"},{"phase","Starting"},{"bytes",0},{"total",0},{"error",""}};
+    {"automatic",automatic},{"status","extracting"},{"phase","Starting"},{"bytes",0},{"total",0},{"error",""}};
   writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);jobs.push_back(job);cancelExtraction=false;activeJob=job.at("id");extracting=true;
   try {
     std::thread([job,archive,password]()mutable{
@@ -154,6 +155,11 @@ json startExtraction(const json& request) {
         },password,[]{return cancelExtraction.load();});
         if(cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
         fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
+        if(job.value("automatic",false)){
+          publishJob(job);
+          try{job=movePrepared(paths,job);job["phase"]="Ready in Library";}
+          catch(const std::exception& failure){job=json::parse(readText(paths.jobs/(job.at("id").get<std::string>()+".json")));job["error"]=failure.what();job["phase"]="Needs attention";}
+        }
       }catch(const std::exception& error){job["status"]=cancelExtraction.load()?"cancelled":"failed";job["error"]=cancelExtraction.load()?"":error.what();if(cancelExtraction.load())job["phase"]="Cancelled; partial files kept";}
       job["extractionRate"]=0;job["eta"]=job["status"]=="ready"?0:-1;
       try{publishJob(job);}catch(const std::exception& error){std::cerr<<"Job state save failed: "<<error.what()<<'\n';}
@@ -161,6 +167,48 @@ json startExtraction(const json& request) {
     }).detach();
   }catch(...){extracting=false;activeJob.clear();throw;}
   return job;
+}
+// Only explicitly requested Prowlarr downloads enter this durable queue.
+json queueDownload(const std::string& method,const json& arguments){
+  auto result=rpc(method,arguments);
+  auto torrent=result.contains("torrent-added")?result.at("torrent-added"):result.at("torrent-duplicate");
+  auto hash=torrent.at("hashString").get<std::string>();
+  if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))throw std::runtime_error("Invalid torrent confirmation");
+  auto file=paths.root/"automatic"/(hash+".json");
+  if(!fs::exists(file))writeJson(file,{{"hash",hash},{"status","waiting"}});
+  return result;
+}
+void automaticDownloads(){
+  for(;;){
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    try{
+      {std::lock_guard<std::mutex> guard(lock);if(extracting)continue;}
+      auto entries=torrents();
+      for(const auto& file:fs::directory_iterator(paths.root/"automatic")){
+        if(file.path().extension()!=".json")continue;
+        auto task=json::parse(readText(file.path()));if(task.value("status","")!="waiting")continue;
+        bool existing=false;
+        {std::lock_guard<std::mutex> guard(lock);for(const auto& job:jobs)if(job.value("automatic",false)&&job.at("hash")==task.at("hash"))existing=true;}
+        if(existing){task["status"]="tracked";writeJson(file.path(),task);continue;}
+        for(const auto& torrent:entries){
+          if(torrent.at("hashString")!=task.at("hash")||torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)!=0||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
+          std::vector<std::string> archives;
+          for(const auto& item:torrent.at("files")){
+            std::string name=item.at("name");if(fs::path(name).extension()!=".rar")continue;
+            std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)continue;
+            archives.push_back(name);
+          }
+          if(archives.size()!=1){
+            json job={{"id",randomId()},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",archives.empty()?"No supported RAR archive found. Automatic installation supports one RAR set containing an app folder or exFAT image.":"Multiple RAR sets found. Choose the archive manually from Torrents."}};
+            publishJob(job);task["status"]="attention";writeJson(file.path(),task);break;
+          }
+          auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives[0]}},true);
+          task["job"]=job.at("id");task["status"]="tracked";writeJson(file.path(),task);break;
+        }
+        {std::lock_guard<std::mutex> guard(lock);if(extracting)break;}
+      }
+    }catch(...){/* Service/Transmission temporarily unavailable: retry without changing downloads. */}
+  }
 }
 void reply(httplib::Response& response,const json& body,int status=200){response.status=status;response.set_content(body.dump(),"application/json");}
 }
@@ -177,9 +225,10 @@ int main(int argc,char** argv) {
     }
     if(paths.root=="/data/botty")throw std::runtime_error("Native testing requires --root");
 #endif
+    if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw std::runtime_error("HTTPS initialization failed");
     umask(0077);signal(SIGPIPE,SIG_IGN);
     stage="creating working directories";
-    fs::create_directories(paths.jobs);fs::create_directories(paths.extracted);fs::create_directories(paths.complete);
+    fs::create_directories(paths.root/"automatic");fs::create_directories(paths.jobs);fs::create_directories(paths.extracted);fs::create_directories(paths.complete);
     stage="locking the manager";
     const auto lockPath=paths.root/"manager.lock";
     const int fd=open(lockPath.c_str(),O_WRONLY|O_CREAT|O_NOFOLLOW,0600);
@@ -202,7 +251,7 @@ int main(int argc,char** argv) {
       }
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","0.1.5"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","0.3.3"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -212,11 +261,25 @@ int main(int argc,char** argv) {
         {"username",credentials.at("username")},{"password",credentials.at("password")}});
     });
     server.Get("/api/state",[](const auto&,auto& res){
-      json result={{"extractionControls",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
+      json result={{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
       try{result["torrents"]=torrents();result["transmissionReady"]=true;}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting;}
+      std::set<std::string> owned;
+      for(const auto& item:result["torrents"])owned.insert(Search::gameKey(item.value("name","")));
+      for(const auto& item:result["jobs"])if(item.value("status","")=="ready"||item.value("status","")=="moved"||item.value("status","")=="extracting")owned.insert(Search::gameKey(item.value("name","")));
+      // Read only native metadata: never recursively walk large game content.
+      try{unsigned count=0;for(const auto& item:fs::directory_iterator(paths.library)){
+        if(++count>2048)break;const auto param=item.path()/"sce_sys/param.json";
+        try{auto data=json::parse(readText(containedExisting(paths.library,param),65536));auto labels=data.at("localizedParameters");auto language=labels.value("defaultLanguage","en-US");owned.insert(Search::gameKey(labels.at(language).at("titleName").get<std::string>()));}catch(...){}
+      }}catch(...){}
+      result["torrentRemovalSupported"]=true;result["exploreSupported"]=true;result["explore"]=explore.state(owned);
       reply(res,result);
     });
+    server.Get("/api/explore/artwork",[](const auto& req,auto& res){auto data=explore.artwork(paths,req.get_param_value("id"));if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}else res.set_content(data,"application/octet-stream");});
+    server.Post("/api/explore",[](const auto& req,auto& res){const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
+    server.Post("/api/explore/add",[](const auto& req,auto& res){explore.add(paths,json::parse(req.body).at("id").template get<std::string>(),queueDownload);reply(res,{{"ok",true}},202);});
+    server.Post("/api/search",[](const auto& req,auto& res){search.start(paths,json::parse(req.body).at("query").template get<std::string>());reply(res,{{"ok",true}},202);});
+    server.Post("/api/search/add",[](const auto& req,auto& res){search.add(paths,json::parse(req.body).at("id").template get<std::string>(),queueDownload);reply(res,{{"ok",true}},202);});
     server.Post("/api/torrent",[](const auto& req,auto& res){
       auto body=json::parse(req.body);const auto action=body.at("action").template get<std::string>();
       if(action=="add") {
@@ -226,6 +289,30 @@ int main(int argc,char** argv) {
       }
       const int id=body.at("id").template get<int>();
       if(id<0)throw std::runtime_error("Invalid torrent ID");
+      if(action=="remove-data") {
+        if(!body.value("confirmed",false))throw std::runtime_error("Confirm deletion of the torrent and downloaded files");
+        std::lock_guard<std::mutex> guard(lock);
+        if(extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
+        const auto torrent=getTorrent(id);
+        const auto downloadRoot=paths.root/"downloads";
+        const auto directory=containedExisting(downloadRoot,torrent.at("downloadDir").template get<std::string>());
+        std::vector<fs::path> locations{directory};
+        const auto session=rpc("session-get");
+        if(session.value("incomplete-dir-enabled",false))locations.push_back(containedExisting(downloadRoot,session.at("incomplete-dir").template get<std::string>()));
+        for(const auto& location:locations)for(const auto& file:torrent.at("files")){
+          const auto relative=safeRelative(file.at("name").template get<std::string>());
+          for(const auto& suffix:{"", ".part"}){
+            auto candidate=location;
+            for(const auto& part:fs::path(relative.string()+suffix)){candidate/=part;if(fs::is_symlink(fs::symlink_status(candidate)))throw std::runtime_error("Cannot delete downloads through symbolic links");}
+            if(fs::exists(candidate)&&!fs::is_regular_file(candidate))throw std::runtime_error("Unexpected download entry; deletion refused");
+          }
+        }
+        const auto hash=torrent.at("hashString").template get<std::string>();
+        if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))throw std::runtime_error("Invalid torrent identity");
+        const auto queue=paths.root/"automatic"/(hash+".json");
+        if(fs::exists(queue))writeJson(queue,{{"hash",hash},{"status","deletion-requested"}});
+        reply(res,rpc("torrent-remove",{{"ids",{hash}},{"delete-local-data",true}}));return;
+      }
       const std::map<std::string,std::string> methods={{"pause","torrent-stop"},{"resume","torrent-start"},{"verify","torrent-verify"}};
       const auto method=methods.find(action);if(method==methods.end())throw std::runtime_error("Unsupported torrent action");
       reply(res,rpc(method->second,{{"ids",{id}}}));
@@ -267,10 +354,7 @@ int main(int argc,char** argv) {
     server.set_exception_handler([](const auto&,auto& res,std::exception_ptr error){try{std::rethrow_exception(error);}catch(const std::exception& failure){reply(res,{{"error",failure.what()}},400);}catch(...){reply(res,{{"error","Operation failed"}},500);}});
     stage="binding HTTP port";
     if(!server.bind_to_port("127.0.0.1",port))throw std::runtime_error("Botty port is already in use");
-#ifdef __PS5__
-    stage="registering home screen icon";
-    installHomeIcon();
-#endif
+    std::thread(automaticDownloads).detach();
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';
     return server.listen_after_bind()?0:1;

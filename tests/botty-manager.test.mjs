@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { installAndStartManager, managerInstalled, MANAGER_ROOT } from '../vps-site/src/botty-manager.js';
-function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='0.1.5'}={}) {
+function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='0.3.3'}={}) {
  const files=new Map(),writes=[],events=[];let running=occupied||existingBotty;
  const io={readFile:async path=>files.get(path)||null,mkdirs:async()=>{},writeFile:async(path,data)=>{files.set(path,data);writes.push(path);},listening:async()=>running,
   sendElf:async bytes=>{assert.equal(bytes[0],127);events.push('sent');running=!noStartup;},
@@ -12,7 +12,7 @@ function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false,
 }
 test('verified manager installation records opt-in only after native service responds',async()=>{
  const f=fixture();assert.equal(await managerInstalled(f.io),false);await installAndStartManager(f.io,f.options);
- assert.equal(await managerInstalled(f.io),true);assert.equal(f.writes.length,6);assert.equal(f.writes.at(-1),MANAGER_ROOT+'/installed.json');assert.deepEqual(f.events,['sent']);
+ assert.equal(await managerInstalled(f.io),true);assert.equal(f.writes.length,7);assert.equal(f.writes.at(-1),MANAGER_ROOT+'/installed.json');assert.deepEqual(f.events,['sent']);
 });
 for(const corrupt of ['manifest.json','botty-manager.elf','ui/app.js'])test('corrupt Botty artifact prevents all writes: '+corrupt,async()=>{
  const f=fixture({corrupt});await assert.rejects(installAndStartManager(f.io,f.options),/verification failed/);assert.equal(f.writes.length,0);assert.equal(f.events.length,0);

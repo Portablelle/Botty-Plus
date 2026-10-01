@@ -19,7 +19,7 @@ def main():
     files = [dict(path=str(p.relative_to(app)), size=p.stat().st_size,
                   sha256=hashlib.sha256(p.read_bytes()).hexdigest())
              for p in sorted(app.rglob('*')) if p.is_file()]
-    manifest = dict(schema=1, app='Botty Native Preview', titleId=title,
+    manifest = dict(schema=1, app='Botty+', titleId=title,
                     version=param['contentVersion'], milestone=4,
                     hardwareValidated=False, registrationVerified=False,
                     identityStatus='provisional-until-console-inventory',

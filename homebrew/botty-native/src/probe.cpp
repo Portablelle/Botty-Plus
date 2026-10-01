@@ -169,6 +169,9 @@ ActionResult performCommand(const Command& command) noexcept {
     if(error[0]){message(error.data());return result;}
     result.status=ActionResult::Status::success;
     switch(command.operation){
+    case Operation::explore:message("Explore updated.");break;
+    case Operation::search:message("Search started. Results will appear in Search.");break;
+    case Operation::exploreGrab:case Operation::grab:message("Download requested. Botty will extract and prepare supported content automatically.");break;
     case Operation::pause:message("Torrent paused.");break;
     case Operation::resume:message("Torrent resumed.");break;
     case Operation::verify:message("Verification requested. Extraction waits until verification finishes.");break;
@@ -177,6 +180,7 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
     case Operation::dismiss:message("Removed from Extracted. Partial files from unsuccessful jobs were deleted.");break;
+    case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
     default:break;
     }
@@ -229,4 +233,48 @@ void* Network::worker(void* context) noexcept {
     }
     return nullptr;
 }
+void Artwork::start() noexcept {stop_.store(false);(void)platform::startWorker(worker,this,&thread_);}
+void Artwork::stop() noexcept {stop_.store(true);if(thread_){platform::joinWorker(thread_);thread_=nullptr;}}
+void Artwork::request(const CoverIds& ids) noexcept {
+    if(gate_.test_and_set(std::memory_order_acquire))return;
+    if(ids!=requested_){requested_=ids;++requestRevision_;}
+    gate_.clear(std::memory_order_release);
+}
+bool Artwork::read(ArtworkPage& out) noexcept {
+    if(gate_.test_and_set(std::memory_order_acquire))return false;
+    const bool changed=out.revision!=page_.revision;if(changed)out=page_;
+    gate_.clear(std::memory_order_release);return changed;
+}
+void* Artwork::worker(void* context) noexcept {
+    auto& self=*static_cast<Artwork*>(context);unsigned handled=0;
+    while(!self.stop_.load()){
+        CoverIds ids;unsigned requestRevision;
+        while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+        ids=self.requested_;requestRevision=self.requestRevision_;self.gate_.clear(std::memory_order_release);
+        if(requestRevision==handled){platform::sleep(100000);continue;}handled=requestRevision;
+        while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+        self.page_.ids=ids;self.page_.ready.fill(false);++self.page_.revision;self.gate_.clear(std::memory_order_release);
+        Response bootstrap;FlatJSON json;
+        if(get("/api/bootstrap",{},bootstrap,platform::now()+5000000)!=Probe::ready||!json.parse(bootstrap.view()))continue;
+        const auto token=json.string("token");if(token.size()!=32)continue;
+        std::array<bool,6> done{};bool stale=false;
+        for(unsigned attempt=0;attempt<20&&!self.stop_.load()&&!stale;++attempt){
+        for(unsigned i=0;i<ids.size()&&!self.stop_.load();++i){
+            if(done[i])continue;
+            if(!ids[i][0])continue;char path[160];std::snprintf(path,sizeof(path),"/api/explore/artwork?id=%s",ids[i].data());
+            static Response<160*240*3+1> response;response.status=0;response.length=0;
+            const bool ready=get(path,token,response,platform::now()+14000000)==Probe::ready&&response.length==160*240*3;
+            while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+            stale=self.requestRevision_!=requestRevision;
+            done[i]=ready||response.status==404;
+            if(!stale&&ready){for(unsigned b=0;b<response.length;++b)self.page_.pixels[i][b]=static_cast<unsigned char>(response.body[b]);self.page_.ready[i]=true;++self.page_.revision;}
+            self.gate_.clear(std::memory_order_release);if(stale)break;
+        }
+        bool complete=true;for(unsigned i=0;i<6;++i)if(ids[i][0]&&!done[i])complete=false;if(complete)break;
+        for(unsigned wait=0;wait<20&&!self.stop_.load();++wait)platform::sleep(100000);
+        }
+    }
+    return nullptr;
+}
+
 }

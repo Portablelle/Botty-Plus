@@ -102,7 +102,7 @@ int main() {
     assert(catalog.torrents[1].peers==-1&&catalog.torrents[1].downloadingPeers==-1);
     assert(std::string_view(catalog.torrents[0].files.data())=="folder/file.rar\n");
     assert(entryCount(catalog,0,1)==1&&entryCount(catalog,0,2)==1);
-    assert(entryCount(catalog,1,0)==3&&entryCount(catalog,2,0)==2);
+    assert(entryCount(catalog,1,0)==2&&entryCount(catalog,2,0)==2);
     assert(std::string_view(entryAt(catalog,2,0,1)->id.data())=="j2");
     char formatted[64];formatETA(catalog.torrents[0],formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA ~17 min");
     formatETA(catalog.torrents[1],formatted,sizeof(formatted));assert(std::string_view(formatted)=="Completed");
@@ -231,5 +231,23 @@ int main() {
     for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision==1&&result.status==ActionResult::Status::success);queued.stop();workerAllowed=false;
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
+    // Search is a fifth tab, with bounded input and explicit grab confirmation.
+    Model searchModel;searchModel.press(Buttons::l1);assert(searchModel.tab==5);searchModel.press(Buttons::l1);assert(searchModel.tab==4);
+    searchModel.press(Buttons::r1);assert(searchModel.tab==5);assert(searchModel.press(Buttons::triangle)==Model::Action::explore);assert(searchModel.exploreSort==1);searchModel.press(Buttons::r1);assert(searchModel.tab==0);
+    assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"demo","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Demo","size":100,"seeders":9,"leechers":2,"added":false}]}})",catalog));
+    assert(catalog.searchSupported&&catalog.resultCount==1&&catalog.results[0].peers==9);
+    flow.search();flow.append('a');flow.selected=48;assert(flow.press(Buttons::cross,catalog,false));
+    assert(flow.command.operation==Operation::search);
+    flow.grab(catalog.results[0]);assert(!flow.press(Buttons::cross,catalog,false));
+    flow.grab(catalog.results[0]);flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));
+    assert(flow.command.operation==Operation::grab);
+    assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"completed","busy":false,"results":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Demo PS5","size":123,"seeders":4,"completed":77,"published":"2026-10-01T12:00:00Z"}]}})",catalog));
+    assert(catalog.exploreSupported&&catalog.exploreCount==1&&catalog.exploreResults[0].completedCount==77);
+    flow.grab(catalog.exploreResults[0],true);flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(flow.command.operation==Operation::exploreGrab);
+    command=Command{};command.operation=Operation::explore;std::snprintf(command.text.data(),command.text.size(),"completed");assert(encodeCommand(command,encoded.data(),encoded.size(),encodedSize));
+    assert(parseCatalog(actionable,catalog));catalog.torrentRemovalSupported=true;
+    flow.open(&catalog.torrents[0],0,catalog);assert(flow.options[3]==Operation::removeTorrent);flow.selected=3;assert(!flow.press(Buttons::cross,catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(encodeCommand(flow.command,encoded.data(),encoded.size(),encodedSize));assert(std::string_view(encoded.data())==R"({"id":9,"action":"remove-data","confirmed":true})");
+    catalog.extracting=true;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));catalog.extracting=false;catalog.torrentRemovalSupported=false;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));
     std::cout<<"Protocol fragmentation, failure cleanup, bounded responses, API versions, focus and input tests passed\n";
 }

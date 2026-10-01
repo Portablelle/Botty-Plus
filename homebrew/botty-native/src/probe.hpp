@@ -41,4 +41,26 @@ public:
         out=connection_;if(result)*result=result_;if(catalog&&catalog->revision!=catalog_.revision)*catalog=catalog_;gate_.clear(std::memory_order_release);return true;
     }
 };
+using CoverIds=std::array<std::array<char,96>,6>;
+struct ArtworkPage {
+    CoverIds ids{};
+    std::array<std::array<unsigned char,160*240*3>,6> pixels{};
+    std::array<bool,6> ready{};
+    unsigned revision=0;
+};
+class Artwork final {
+    std::atomic<bool> stop_{false};
+    std::atomic_flag gate_=ATOMIC_FLAG_INIT;
+    CoverIds requested_{};
+    unsigned requestRevision_=0;
+    ArtworkPage page_{};
+    void* thread_=nullptr;
+    static void* worker(void*) noexcept;
+public:
+    void start() noexcept;
+    void stop() noexcept;
+    void request(const CoverIds&) noexcept;
+    bool read(ArtworkPage&) noexcept;
+};
+
 }

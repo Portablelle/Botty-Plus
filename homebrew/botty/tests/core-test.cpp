@@ -83,8 +83,16 @@ int main(){
   fails([&]{extractRar(missing/"sample.rar",root/"missing-out",[](const Progress&){});});
   Paths paths(root/"data",root/"library");fs::create_directories(paths.extracted);fs::create_directories(paths.jobs);
   std::string id=randomId();fs::rename(root/"app",paths.extracted/id);
+  const auto privateApp=paths.extracted/id/"Demo";
+  fs::permissions(privateApp,fs::perms::owner_all);
+  fs::permissions(privateApp/"eboot.bin",fs::perms::owner_read|fs::perms::owner_write);
   json job={{"id",id},{"status","ready"}};auto moved=movePrepared(paths,job);
   assert(moved["status"]=="moved");assert(fs::exists(paths.library/"PPSA12345-app/sce_sys/param.json"));
+  const auto app=paths.library/"PPSA12345-app";
+  assert((fs::status(app).permissions()&fs::perms::all)==static_cast<fs::perms>(0755));
+  assert((fs::status(app/"eboot.bin").permissions()&fs::perms::all)==static_cast<fs::perms>(0755));
+  assert((fs::status(app/"sce_sys").permissions()&fs::perms::all)==static_cast<fs::perms>(0755));
+  assert((fs::status(app/"sce_sys/param.json").permissions()&fs::perms::all)==static_cast<fs::perms>(0644));
   id=randomId();extractRar(fixtures/"app.rar",paths.extracted/id,[](const Progress&){});
   fails([&]{movePrepared(paths,json{{"id",id},{"status","ready"}});});
   assert(fs::exists(paths.extracted/id/"Demo/eboot.bin"));

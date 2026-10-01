@@ -1,0 +1,45 @@
+# Include inside the botty.example.com server. Prowlarr enforces X-Api-Key.
+location = /botty-indexer/api/v1/search {
+    if ($scheme != https) { return 403; }
+    limit_except GET { deny all; }
+    access_log off;
+    proxy_pass http://127.0.0.1:9696/api/v1/search;
+    proxy_set_header Host 127.0.0.1:9696;
+    proxy_set_header Cookie "";
+    proxy_read_timeout 110s;
+}
+location = /botty-indexer/1/download {
+    if ($scheme != https) { return 403; }
+    limit_except GET { deny all; }
+    access_log off;
+    proxy_pass http://127.0.0.1:9696/1/download;
+    proxy_set_header Host 127.0.0.1:9696;
+    proxy_set_header Cookie "";
+    proxy_read_timeout 110s;
+}
+location = /botty-indexer/2/download {
+    if ($scheme != https) { return 403; }
+    limit_except GET { deny all; }
+    access_log off;
+    proxy_pass http://127.0.0.1:9696/2/download;
+    proxy_set_header Host 127.0.0.1:9696;
+    proxy_set_header Cookie "";
+    proxy_read_timeout 110s;
+}
+location = /botty-indexer/3/download {
+    if ($scheme != https) { return 403; }
+    limit_except GET { deny all; }
+    access_log off;
+    proxy_pass http://127.0.0.1:9696/3/download;
+    proxy_set_header Host 127.0.0.1:9696;
+    proxy_set_header Cookie "";
+    proxy_read_timeout 110s;
+}
+location = /botty-indexer/artwork {
+    if ($scheme != https) { return 403; }
+    limit_except GET { deny all; }
+    access_log off;
+    proxy_pass http://127.0.0.1:9697/artwork;
+    proxy_set_header Cookie "";
+    proxy_read_timeout 12s;
+}

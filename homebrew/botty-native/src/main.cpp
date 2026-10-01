@@ -1,4 +1,4 @@
-// Botty Native preview. SPDX-License-Identifier: GPL-3.0-or-later
+// Botty+. SPDX-License-Identifier: GPL-3.0-or-later
 #include "renderer.hpp"
 #include "model.hpp"
 #include "probe.hpp"
@@ -25,6 +25,8 @@ botty::Model model;
 botty::InputEvents input;
 bool discardPadBatch=false;
 botty::Network network;
+botty::Artwork artwork;
+botty::ArtworkPage covers;
 botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
@@ -191,12 +193,12 @@ void drawWorkflow(Canvas& c) noexcept {
         shortLabel(c,140,853,workflow.notice.data(),24,1640,accent);c.label(140,901,"Up / down: Choose    Cross: Select    Circle: Cancel",22,muted);
     }else if(workflow.panel==Panel::keyboard){
         const bool password=workflow.command.operation==Op::extract;
-        c.label(140,316,workflow.unicodeInput?"Unicode code point (hex)":password?"Archive password (optional)":"Add a magnet link",40,ink);
+        c.label(140,316,workflow.unicodeInput?"Unicode code point (hex)":password?"Archive password (optional)":workflow.command.operation==Op::search?"Search games":"Add a magnet link",40,ink);
         const auto text=std::string_view(workflow.unicodeInput?workflow.codepoint.data():workflow.command.text.data());std::array<char,128> visible{};
         if(password&&!workflow.passwordVisible&&!workflow.unicodeInput){const unsigned n=text.size()>90?90:static_cast<unsigned>(text.size());for(unsigned i=0;i<n;++i)visible[i]='*';}
         else {auto tail=botty::slice(text,text.size()>90?text.size()-90:0);for(unsigned i=0;i<tail.size();++i)visible[i]=tail[i];}
         c.rounded(140,382,1640,76,12,background);shortLabel(c,162,402,visible.data(),26,1580,ink);
-        char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:password?1024:16384,text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
+        char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:workflow.command.operation==Op::search?200:password?1024:16384,text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
         auto keys=botty::Workflow::keys(workflow.keyPage);
         for(unsigned i=0;i<40;++i){const unsigned x=140+(i%10)*164,y=508+(i/10)*60;const bool focus=workflow.selected==i;
             c.rounded(x,y,150,50,10,focus?accent:background);c.label(x+62,y+9,botty::slice(keys,i,1),28,focus?background:ink);}
@@ -209,6 +211,8 @@ void drawWorkflow(Canvas& c) noexcept {
         char title[128];std::snprintf(title,sizeof(title),"%s?",botty::operationLabel(workflow.command.operation));c.label(140,322,title,40,ink);
         shortLabel(c,140,392,workflow.command.operation==Op::add?workflow.command.text.data():workflow.targetName.data(),28,1640,ink);
         const char* explanation="This request will be sent to Transmission.";
+        if(workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation="Download, extract and prepare in Library automatically. Original torrents are kept for seeding.";
+        if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
         if(workflow.command.operation==Op::verify)explanation="Transmission will recheck downloaded pieces. Extraction waits until verification finishes.";
         if(workflow.command.operation==Op::extract){explanation="Extract on this PS5. Original archive volumes are kept for seeding.";shortLabel(c,140,448,workflow.command.archive.data(),24,1640,accent);}
         if(workflow.command.operation==Op::move){explanation="Move verified content. Existing files will not be replaced. ShadowMount may need a scan.";char destination[1100];std::snprintf(destination,sizeof(destination),"%s/%s",catalog.library.data(),target?target->destination.data():"");shortLabel(c,140,448,destination,24,1640,accent);}
@@ -227,6 +231,9 @@ bool draw(Canvas& c) noexcept {
         input.reset();discardPadBatch=true;network.retry();
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
+    static bool exploreRequested=false,quietExplore=false,exploreRefresh=false;
+    static const char* exploreSorts[]={"seeders","completed","newest"};
+    const unsigned oldTab=model.tab;
     const unsigned edge=pollPad(now);if(edge)++displayRevision;
     if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
     else if(workflow.panel!=botty::Workflow::Panel::closed){
@@ -238,8 +245,16 @@ bool draw(Canvas& c) noexcept {
         const auto action=model.press(edge);
         if(action==botty::Model::Action::retry)network.retry();
         if(action==botty::Model::Action::quit){if(!network.busy())return false;model.quitDialog=false;actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Wait for the pending request before quitting.");showResult=true;}
-        if(action==botty::Model::Action::menu)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
-        if(action==botty::Model::Action::add)workflow.add();
+        if(model.tab==4&&!model.quitDialog){
+            if(action==botty::Model::Action::add||action==botty::Model::Action::menu||action==botty::Model::Action::retry)workflow.search();
+            if(model.details){model.details=false;if(model.selected<catalog.resultCount&&!catalog.results[model.selected].complete)workflow.grab(catalog.results[model.selected]);}
+        }
+        if(model.tab==5&&!model.quitDialog){
+            if(action==botty::Model::Action::explore||action==botty::Model::Action::add||action==botty::Model::Action::retry||action==botty::Model::Action::menu){exploreRequested=true;exploreRefresh=action!=botty::Model::Action::explore;}
+            if(model.details){model.details=false;if(!catalog.exploreBusy&&!catalog.exploreAdding&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.grab(catalog.exploreResults[model.selected],true);}
+        }
+        if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
+        if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
     }
     std::array<char,96> focused{};
     if(model.tab<3){const auto* old=botty::entryAt(catalog,model.tab,model.filter,model.selected);if(old)focused=old->id;}
@@ -247,7 +262,7 @@ bool draw(Canvas& c) noexcept {
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
     (void)network.read(connection,&catalog,&receivedResult);
-    if(receivedResult.revision!=resultRevision){actionResult=receivedResult;showResult=true;++displayRevision;}
+    if(receivedResult.revision!=resultRevision){actionResult=receivedResult;showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;}
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     if(previousRevision!=catalog.revision)++displayRevision;
     if(model.tab<3) {
@@ -259,6 +274,20 @@ bool draw(Canvas& c) noexcept {
         }
         if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
     }
+    if(model.tab==4){model.count=catalog.resultCount;if(model.selected>=model.count)model.selected=model.count?model.count-1:0;}
+    if(model.tab==5){
+        if(oldTab!=5&&!catalog.exploreSort[0])exploreRequested=true;
+        if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==botty::Workflow::Panel::closed&&!showResult){
+            botty::Command command;command.operation=botty::Operation::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",exploreSorts[model.exploreSort]);
+            if(network.submit(command)){exploreRequested=false;quietExplore=true;}
+        }
+        model.count=std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]?catalog.exploreCount:0;
+        if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
+    }
+    if(model.tab==5){botty::CoverIds ids{};const unsigned first=(model.selected/6)*6;for(unsigned i=0;i<6&&first+i<model.count;++i)ids[i]=catalog.exploreResults[first+i].id;artwork.request(ids);if(artwork.read(covers))++displayRevision;}
+#ifdef BOTTY_HOST_PREVIEW
+    if(model.tab==5&&model.count){static bool loaded=false;if(!loaded){FILE* file=std::fopen("build/preview-cover.rgb","rb");if(file){covers.ready[0]=std::fread(covers.pixels[0].data(),1,covers.pixels[0].size(),file)==covers.pixels[0].size();std::fclose(file);covers.ids[0]=catalog.exploreResults[0].id;}loaded=true;}}
+#endif
     static auto previousPanel=botty::Workflow::Panel::closed;
     if(previousPanel!=workflow.panel){previousPanel=workflow.panel;
         const char* panels[]={"Workflow: closed","Workflow: menu","Workflow: archive chooser","Workflow: keyboard","Workflow: confirmation"};
@@ -278,12 +307,41 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
     c.clear(background);
     c.rounded(96,70,64,64,19,accent);downloadIcon(c,104,78,background);
-    c.label(180,69,"Botty",44,ink);
+    c.label(180,69,"Botty+",44,ink);
     statusDot(c,1438,96,online?accent:muted);c.label(1468,81,state,24,online?accent:muted);
-    const char* tabs[]={"Torrents","Extracted","Library","Connections"};
-    for(unsigned i=0;i<4;++i){c.rounded(96+i*432,166,408,58,15,model.tab==i?accent:card);c.label(124+i*432,177,tabs[i],28,model.tab==i?background:ink);}
+    const char* tabs[]={"Torrents","Extracted","Library","Connections","Search","Explore"};
+    for(unsigned i=0;i<6;++i){c.rounded(96+i*288,166,272,58,15,model.tab==i?accent:card);c.label(116+i*288,177,tabs[i],28,model.tab==i?background:ink);}
     if(model.tab<3)drawCatalog(c);
-    else {
+    else if(model.tab==4){
+        c.label(96,260,"IPTorrents  /  Console/PS3",28,accent);
+        shortLabel(c,96,309,catalog.searchQuery[0]?catalog.searchQuery.data():"Press Square to search for a game.",26,1728,ink);
+        const unsigned first=(model.selected/6)*6;
+        for(unsigned i=first;i<catalog.resultCount&&i<first+6;++i){const auto& e=catalog.results[i];unsigned y=366+(i-first)*80;
+            c.rounded(96,y,1728,72,12,i==model.selected?selected:card);shortLabel(c,116,y+6,e.name.data(),24,1400,i==model.selected?accent:ink);
+            char line[160],size[48];botty::formatBytes(e.total,size,sizeof(size));std::snprintf(line,sizeof(line),"%s   Seeds: %d   Peers: %d%s",size,e.peers,e.downloadingPeers,e.complete?"   Added":"");c.label(116,y+40,line,20,muted);
+        }
+        const char* state=!catalog.searchSupported?"Update the Botty service to enable search.":catalog.searchBusy?"Searching IPTorrents...":catalog.searchAdding?"Adding torrent...":catalog.searchError[0]?catalog.searchError.data():catalog.searchNotice[0]?catalog.searchNotice.data():catalog.searchQuery[0]&&!catalog.resultCount?"No results. Press Square to try another name.":"Cross: Download and prepare   Square: New search";
+        shortLabel(c,96,894,state,24,1728,accent);
+        char count[100];std::snprintf(count,sizeof(count),"%u results (up to 100), sorted by seeders",catalog.resultCount);c.label(96,934,count,20,muted);
+    }else if(model.tab==5){
+        const char* sorts[]={"Most seeded","Most completed","Newest"};
+        for(unsigned i=0;i<3;++i){c.rounded(96+i*576,260,558,58,12,model.exploreSort==i?accent:card);c.label(116+i*576,274,sorts[i],26,model.exploreSort==i?background:ink);}
+        c.label(96,330,"PS5 only  /  Console/PS3  /  Games you already have are hidden",22,muted);
+        const unsigned first=(model.selected/6)*6;
+        for(unsigned i=first;i<model.count&&i<first+6;++i){const auto& e=catalog.exploreResults[i];const unsigned slot=i-first,x=96+slot*288;const bool focus=i==model.selected;
+            c.rounded(x-5,377,266,394,14,focus?accent:border);c.rectangle(x,382,256,384,card);
+            if(covers.ready[slot]&&covers.ids[slot]==e.id)c.poster(x,382,256,384,covers.pixels[slot]);
+            else {c.label(x+20,414,"PS5",38,accent);unsigned offset=0;const auto name=std::string_view(e.name.data());for(unsigned line=0;line<6&&offset<name.size();++line){unsigned count=0;while(offset+count<name.size()&&c.text_width(botty::slice(name,offset,count+1),26)<216)++count;if(!count)break;if(offset+count<name.size()){unsigned word=count;while(word&&name[offset+word]!=' ')--word;if(word)count=word;}while(offset+count<name.size()&&(static_cast<unsigned char>(name[offset+count])&0xc0)==0x80)--count;if(!count)break;c.label(x+20,498+line*32,botty::slice(name,offset,count),26,ink);offset+=count;while(offset<name.size()&&name[offset]==' ')++offset;}c.label(x+20,725,"Cover unavailable",18,muted);}
+            char metric[80];std::snprintf(metric,sizeof(metric),"%d seeds",e.peers);
+            if(model.exploreSort==1)std::snprintf(metric,sizeof(metric),"%d completed",e.completedCount);
+            if(model.exploreSort==2)std::snprintf(metric,sizeof(metric),"%.10s",e.published.data());
+            c.label(x+4,787,metric,22,focus?accent:muted);
+        }
+        if(model.count){const auto& e=catalog.exploreResults[model.selected];shortLabel(c,96,839,e.name.data(),30,1728,ink);}
+        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing PS5 games...":"Loading PS5 games..."):catalog.exploreError[0]?catalog.exploreError.data():!model.count?"No new PS5 games found in this selection.":"Cross: Download and prepare   Arrows: Browse   Triangle: Sort   Square: Refresh";
+        shortLabel(c,96,901,state,22,1728,accent);
+        char footer[180];std::snprintf(footer,sizeof(footer),"%u games  /  Page %u  /  Already owned hidden  /  Artwork: Steam / Wikipedia / PlayStation",model.count,model.count?first/6+1:0);c.label(96,944,footer,18,muted);
+    }else {
     c.label(96,257,"Connect from Mac or iPhone",40,ink);
     c.rounded(96,339,1728,416,26,card);
     c.label(140,377,"Address",24,muted);
@@ -307,9 +365,9 @@ bool draw(Canvas& c) noexcept {
     key(c,96,988,"X");c.label(146,993,"Select",20,muted);
     key(c,263,988,"O");c.label(313,993,"Back",20,muted);
     key(c,440,988,"L1 / R1",108);c.label(562,993,"Tabs",20,muted);
-    c.label(710,993,"Options: Actions",20,muted);
-    c.label(1030,993,"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1570,992,"00.003.002",20,muted);
+    c.label(710,993,model.tab==5?"Options: Refresh":model.tab==4?"Options: Search":"Options: Actions",20,muted);
+    c.label(1030,993,model.tab==5?"Triangle: Sort   Square: Refresh":model.tab==4?"Square / Triangle: Search":"Square: Add   Triangle: Refresh",20,muted);
+    c.label(1570,992,"00.005.002",20,muted);
     if(network.busy())c.label(420,90,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(showResult){
@@ -336,14 +394,18 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty Native 00.003.002 - main entered");
+    botty::platform::log("Botty+ 00.005.002 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();
     botty::platform::log(padResult==0?"Pad initialized":"Pad initialization returned nonzero");
     botty::platform::log(ps5::demo::load_font()?"Manrope font loaded":"Font unavailable - bitmap fallback");
     (void)network.start();
-    ps5::demo::run(draw,"Botty Native preview ready");
+#ifndef BOTTY_HOST_PREVIEW
+    artwork.start();
+#endif
+    ps5::demo::run(draw,"Botty+ ready");
+    artwork.stop();
     network.stop();
     if(pad>=0)(void)scePadClose(pad);
     botty::platform::log("Resources released - requesting application exit");

@@ -1,0 +1,15 @@
+[Unit]
+Description=Botty game cover cache
+After=network-online.target
+[Service]
+User=botty-artwork
+Group=botty-artwork
+ExecStart=/usr/bin/python3 /opt/botty-artwork/server.py
+Restart=on-failure
+CacheDirectory=botty-artwork
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

@@ -2,9 +2,10 @@
 #pragma once
 #include "catalog.hpp"
 namespace botty {
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss };
+enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent };
 struct Command {
     Operation operation=Operation::none;
+    bool refresh=false;
     std::array<char,96> id{};
     std::array<char,4096> archive{};
     std::array<char,16385> text{}; // magnet or archive password; never logged
@@ -32,6 +33,8 @@ struct Workflow {
     unsigned optionCount=0;
     void open(const Entry*,unsigned,const Catalog&) noexcept;
     void add() noexcept;
+    void search() noexcept;
+    void grab(const Entry&,bool exploration=false) noexcept;
     void close() noexcept;
     const Entry* target(const Catalog&) const noexcept;
     // True emits one confirmed command. Caller queues it, then clears input.

@@ -53,10 +53,10 @@ struct InputEvents {
     }
 };
 struct Model {
-    unsigned tab=0, selected=0, count=0, filter=0, detailPage=0;
+    unsigned tab=0, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
     bool details=false;
     bool quitDialog=false, confirmQuit=false;
-    enum class Action { none, retry, quit, menu, add };
+    enum class Action { none, retry, quit, menu, add, explore };
     Action press(unsigned edge) noexcept {
         if (quitDialog) {
             if (edge & Buttons::circle) { quitDialog=false; return Action::none; }
@@ -72,14 +72,21 @@ struct Model {
             return Action::none;
         }
         if (edge & (Buttons::l1|Buttons::r1)) {
-            tab=(tab+((edge&Buttons::r1)?1:3))%4;selected=0;details=false;return Action::none;
+            tab=(tab+((edge&Buttons::r1)?1:5))%6;selected=0;details=false;return Action::none;
         }
+        if(tab==5&&(edge&Buttons::triangle)){exploreSort=(exploreSort+1)%3;selected=0;return Action::explore;}
         if(edge & Buttons::options)return Action::menu;
         if(edge & Buttons::triangle)return Action::retry;
         if(edge & Buttons::square)return Action::add;
         if(tab==3) {
             if(edge&(Buttons::up|Buttons::down|Buttons::left|Buttons::right))selected=1-selected;
             if(edge&Buttons::cross){if(selected==0)return Action::retry;quitDialog=true;confirmQuit=false;}
+        }else if(tab==5){
+            if((edge&Buttons::right)&&selected+1<count)++selected;
+            if((edge&Buttons::left)&&selected)--selected;
+            if((edge&Buttons::down)&&selected+6<count)selected+=6;
+            if((edge&Buttons::up)&&selected>=6)selected-=6;
+            if((edge&Buttons::cross)&&count)details=true;
         }else if(details) {
             if(edge&Buttons::down)++detailPage;
             if((edge&Buttons::up)&&detailPage)--detailPage;

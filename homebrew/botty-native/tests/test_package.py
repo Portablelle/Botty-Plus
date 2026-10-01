@@ -18,7 +18,7 @@ class PackageTests(unittest.TestCase):
         files={'eboot.bin':bytes.fromhex('4f153d1d')+b'fixture',
                'sce_module/libc.prx':bytes.fromhex('5414f5ee')+b'runtime',
                'sce_sys/param.json':json.dumps(self.param).encode(),
-               'sce_sys/icon0.png':b'icon','assets/ui-font.bin':b'font',
+               'sce_sys/icon0.png':b'icon','sce_sys/pic0.dds':b'background','assets/ui-font.bin':b'font',
                'assets/Manrope-OFL.txt':b'license','assets/build.txt':b'preview'}
         for name,data in files.items():
             p=self.app/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
@@ -31,7 +31,7 @@ class PackageTests(unittest.TestCase):
     def write_manifest(self):
         (self.dist/'manifest.json').write_text(json.dumps(self.manifest))
     def test_complete_package(self):
-        self.assertEqual(module.verify(self.dist,self.param),7)
+        self.assertEqual(module.verify(self.dist,self.param),8)
     def test_rejected_console_download_reservation(self):
         self.param['downloadDataSize']=16
         with self.assertRaisesRegex(ValueError,'downloadDataSize'):
