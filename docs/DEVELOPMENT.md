@@ -100,7 +100,7 @@ executable source: rebuild first so the source and binary correspond.
 
 ### ShadowMountPlus recovery build
 
-The portal ships `1.7beta2-botty.1`, with guarded TitleDir hook recovery. Follow
+The portal ships `1.7beta3-botty.1`, with guarded TitleDir hook recovery. Follow
 [its build and test instructions](../homebrew/shadowmountplus/README.md), then run
 `python3 scripts/package-shadowmount.py` and regenerate the portal manifest.
 This packages the complete source recipe and GPL notices alongside the payload.

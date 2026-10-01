@@ -1,4 +1,4 @@
-# ShadowMountPlus 1.7beta2-botty.1
+# ShadowMountPlus 1.7beta3-botty.1
 
 Botty's narrow patch to ShadowMountPlus fixes a TitleDir bridge that remained
 unusable for the entire session after one failed hook check. This is a modified
@@ -59,3 +59,18 @@ Do not restart ShadowMount while an application or extraction is active.
 - Recovery from injected hook loss was tested with isolated host memory doubles;
   deliberate ShellCore corruption was not performed on the user's console.
   Long-running hardware recurrence remains unverified.
+
+## 1.7beta3 integration
+
+The upstream 1.7beta3 release is pinned at `f0d15ffc46e9237d41cc3555b1cf11362d9a32e0`.
+It corrects custom-path backport discovery, restores the 1.6 ffpfsc mount
+parameters, and skips icon creation when the API is disabled. Upstream did not
+change the ShellCore hook implementation; the existing Botty recovery patch
+applies without changes. Previous hardware results above refer to beta2.
+
+Validation on 2026-10-02: TitleDir production-code regressions and the PS5
+cross-build passed, as did 107 portal Node tests and eight Python tests. FTP
+read-back matched the built payload. On firmware 13.00, a controlled restart
+logged `1.7beta3-botty.1`, all three installed hooks, completed library sync and
+API readiness. The console configuration was retained and no active extraction
+was interrupted. Game launch after this upgrade remains to be checked.

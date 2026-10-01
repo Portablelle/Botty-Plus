@@ -1,12 +1,12 @@
 {
   "upstream": "https://github.com/drakmor/ShadowMountPlus",
-  "revision": "13a8223b1e75c6d5b2cc0d30355b6566c80a2552",
-  "version": "1.7beta2-botty.1",
+  "revision": "f0d15ffc46e9237d41cc3555b1cf11362d9a32e0",
+  "version": "1.7beta3-botty.1",
   "sdkStubsRevision": "f7fd02e6e195902a449b5e664917be8c01888b34",
   "sdkStubsUpstream": "https://github.com/ps5-payload-dev/sdk",
   "sha256": {
     "vendor/sdk-stubs/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "vendor/sdk-stubs/libkernel_sys.c": "bf48b2a70948abbdd01bd8976586c75501836a08943db4f13c2b0ab728b824fa",
-    "vendor/shadowmountplus-13a8223.tar.gz": "6d70cbbbeda687aac07948c1d483d2cb3914a1074b96ebad221c8067e4b727b5"
+    "vendor/shadowmountplus-f0d15ff.tar.gz": "7b176606cbe0f2374a01d51380319d1ab1e7270b568e10c0eec1d74e701ac863"
   }
 }

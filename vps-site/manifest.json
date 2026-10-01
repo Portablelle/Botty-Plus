@@ -1,5 +1,5 @@
 {
-  "release": "v1.07",
+  "release": "v1.07-shadowmount-beta3",
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
@@ -85,9 +85,9 @@
     "payloads/kexp_2026_05_25.bin": "7cfb3a8cb86db67893c360ae3531f460f800e9f24039797038e6e81fc50f18a9",
     "payloads/kstuff.elf": "ab9a6cb4d3b1daf139d4d646e402b1cf569071acd64599c936d7a3a6164dc779",
     "payloads/shadowmountplus-LICENSE.txt": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-    "payloads/shadowmountplus-NOTICE.md": "cabf128239b375dcfd7b6e2ec973c6d6c31564abb6fac04c07bbd2dac97656fc",
-    "payloads/shadowmountplus-source.tar.gz": "3d25f642015be6c24ae42ecef8ecc1579c9bc5479d32f6f2325f4b68bde2c57c",
-    "payloads/shadowmountplus.elf": "9bd206c7f36f452e873b43d9a7d13293c6a772077b3ea4cee3559bcd4a68e379",
+    "payloads/shadowmountplus-NOTICE.md": "18224cddf6103b949feada0c633653585ce5b1af0456bbb0e764e4f24bd83218",
+    "payloads/shadowmountplus-source.tar.gz": "5dfcb8a1d592814d3b78f095d08646ffb82767a02c22596eabeb8de879a8935a",
+    "payloads/shadowmountplus.elf": "d6645b7022f6de46128dad752b1fd00e407971795031fd4d650a244f6bf85514",
     "portal.css": "a53090d8f7572504b3e3b56622780758ef1ae94ed8481609560a02b877c14d85",
     "src/botty-manager.js": "a656f8213cc2be6a2ccf63236978fa701b402401ccaebf21b9ebaf6b174c5b54",
     "src/botty-native.js": "e725507fd88f0310786abb8570046a66d299b92060e2880f742e071173c96466",

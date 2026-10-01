@@ -15,7 +15,7 @@ build = root / 'build'
 if build.exists():
     raise SystemExit('Build directory already exists; use a fresh checkout or preserve it before preparing again')
 build.mkdir()
-with tarfile.open(root / 'vendor/shadowmountplus-13a8223.tar.gz') as archive:
+with tarfile.open(root / 'vendor/shadowmountplus-f0d15ff.tar.gz') as archive:
     archive.extractall(build, filter='data')
 subprocess.run(['patch', '-p1', '--batch', '--fuzz=0', '-i',
                 str(root / 'patches/title-dir-recovery.patch')], cwd=build, check=True)

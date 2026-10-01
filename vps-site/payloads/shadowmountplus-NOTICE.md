@@ -1,8 +1,8 @@
 # Modified ShadowMountPlus
 
-Version: 1.7beta2-botty.1
+Version: 1.7beta3-botty.1
 
-Upstream: https://github.com/drakmor/ShadowMountPlus, revision `13a8223b1e75c6d5b2cc0d30355b6566c80a2552`.
+Upstream: https://github.com/drakmor/ShadowMountPlus, revision `f0d15ffc46e9237d41cc3555b1cf11362d9a32e0`.
 
 Botty modification: guarded automatic TitleDir hook recovery and transient read handling. This is not the unmodified upstream release.
 
