@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <dirent.h>
 #include <fstream>
 #include <regex>
 #include <stdexcept>
@@ -83,11 +84,38 @@ long relativeFileCall(long number,int fd,const char* path,long argument,long fla
 int openDirectoryAt(int fd,const char* name){return int(relativeFileCall(499,fd,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW));}
 int statFileAt(int fd,const char* name,struct stat* info){return int(relativeFileCall(493,fd,name,reinterpret_cast<long>(info),AT_SYMLINK_NOFOLLOW));}
 int unlinkFileAt(int fd,const char* name){return int(relativeFileCall(503,fd,name,0));}
+int unlinkDirectoryAt(int fd,const char* name){return int(relativeFileCall(503,fd,name,AT_REMOVEDIR));}
 #else
 int openDirectoryAt(int fd,const char* name){return openat(fd,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);}
 int statFileAt(int fd,const char* name,struct stat* info){return fstatat(fd,name,info,AT_SYMLINK_NOFOLLOW);}
 int unlinkFileAt(int fd,const char* name){return unlinkat(fd,name,0);}
+int unlinkDirectoryAt(int fd,const char* name){return unlinkat(fd,name,AT_REMOVEDIR);}
 #endif
+void removeDirectoryAt(int parent,const char* name,dev_t device) {
+  const int fd=openDirectoryAt(parent,name);
+  if(fd<0){if(errno==ENOENT)return;throw std::runtime_error("Cannot open game folder for deletion");}
+  struct stat opened{};
+  if(fstat(fd,&opened)||opened.st_dev!=device){close(fd);throw std::runtime_error("Game folder crosses a filesystem boundary");}
+  DIR* dir=fdopendir(fd);if(!dir){close(fd);throw std::runtime_error("Cannot enumerate game folder");}
+  try {
+    while(true){
+      errno=0;auto* entry=readdir(dir);
+      if(!entry){if(errno)throw std::runtime_error("Cannot read game folder");break;}
+      if(!strcmp(entry->d_name,".")||!strcmp(entry->d_name,".."))continue;
+      struct stat info{};if(statFileAt(fd,entry->d_name,&info))throw std::runtime_error("Cannot inspect game file");
+      if(info.st_dev!=device)throw std::runtime_error("Mounted game files cannot be removed");
+      if(S_ISDIR(info.st_mode))removeDirectoryAt(fd,entry->d_name,device);
+      else if(!S_ISREG(info.st_mode))throw std::runtime_error("Game links and special files cannot be removed");
+      else if(unlinkFileAt(fd,entry->d_name))throw std::runtime_error("Cannot remove game file: "+std::string(strerror(errno)));
+    }
+    struct stat current{};
+    if(statFileAt(parent,name,&current)||current.st_dev!=opened.st_dev||current.st_ino!=opened.st_ino)
+      throw std::runtime_error("Game folder changed during deletion");
+    if(unlinkDirectoryAt(parent,name))throw std::runtime_error("Cannot remove game folder: "+std::string(strerror(errno)));
+    closedir(dir);
+  }catch(...){closedir(dir);throw;}
+}
+
 }
 void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove) {
   for(const auto& file:files) {
@@ -236,9 +264,11 @@ void deleteLibraryGame(const Paths& paths, const json& job) {
       throw std::runtime_error("Library game contains a mount, link or unsupported file; deletion refused");
   };
   check(full);if(!fs::is_directory(full))throw std::runtime_error("Recorded game folder is not a directory");
-  // Validate the complete tree before deleting anything. remove_all never follows links.
+  // Validate the complete tree before deleting anything, then use checked descriptor-relative syscalls.
   for(const auto& entry:fs::recursive_directory_iterator(full))check(entry.path());
-  fs::remove_all(full);
+  const int parent=open(paths.library.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+  if(parent<0)throw std::runtime_error("Cannot open library for deletion");
+  try{removeDirectoryAt(parent,name.c_str(),base.st_dev);close(parent);}catch(...){close(parent);throw;}
   if(fs::exists(fs::symlink_status(target)))throw std::runtime_error("Game files remain; retry deletion");
 }
 
