@@ -216,8 +216,9 @@ browser access to the HTTPS portal does not need custom DNS.
    sudo systemctl reload nginx
    ```
 
-6. Set the PS5's primary and secondary DNS to the reachable dedicated resolver
-   and open the User's Guide. A certificate warning or browser refusal may occur
+6. Follow the [PS5 DNS and User's Guide walkthrough](../README.md#open-the-portal-through-the-users-guide)
+   to set the console's DNS fields and open the portal from Settings. Give users
+   the reachable resolver IP and the expected HTTPS portal URL. A certificate warning or browser refusal may occur
    at the Guide hop; this route still needs real-console validation. The target
    Botty HTTPS domain must have its own trusted certificate.
 
