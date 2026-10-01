@@ -1,4 +1,4 @@
-# Botty+ native application — 01.000.000
+# Botty+ native application — 01.000.001
 
 Botty+ is a C++20 native PS5 title with a 1920×1080 software renderer, bundled
 Manrope font and DualSense navigation. Its title ID is `PPSA99071`. It connects to
@@ -117,3 +117,5 @@ service survival still require the remaining hardware acceptance checks.
 Closing the UI is intended to leave Transmission and extraction running. Do not
 remove `/data/botty` to uninstall the native title. Keep the console awake during
 work; rest-mode support is not established.
+
+During a slow local refresh, the app keeps its last catalog with a Reconnecting indicator and disables mutations until a fresh response arrives. Transmission RPC failures preserve the previous downloads while extraction jobs continue updating. Transient failures retry automatically after one second; the receive timeout allows five seconds under disk load.

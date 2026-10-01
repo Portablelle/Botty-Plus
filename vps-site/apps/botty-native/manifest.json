@@ -2,7 +2,7 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.000.000",
+  "version": "01.000.001",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -46,8 +46,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 15877548,
-      "sha256": "f4d1f13c75fa3cbb5104947316739e9e3004381f874295a0ef74088c1ae44a82"
+      "size": 15883148,
+      "sha256": "15d5633b7e14fd33669c99e92c4edbe218e7dcaf8c47ddadc492be78e7ab26b0"
     },
     {
       "path": "sce_module/libc.prx",
@@ -62,7 +62,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "7903b6dbc81ebde82f8ab6f04edc182539d436acce28c4173408100546083852"
+      "sha256": "b970d333ee63d8f6ff40193de6e0b6ff65e142069aa06af61653b97feb4a640e"
     },
     {
       "path": "sce_sys/pic0.dds",

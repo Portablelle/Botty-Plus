@@ -20,8 +20,15 @@ template<std::size_t N=1025> struct Response {std::array<char,N> body{};unsigned
     std::string_view view() const noexcept{return {body.data(),length};}
 };
 template<std::size_t N> Probe get(std::string_view path,std::string_view token,Response<N>& out,std::uint64_t deadline,std::string_view payload={},bool* sent=nullptr) noexcept {
-    if(platform::now()>deadline)return Probe::unavailable;
-    Socket s{platform::connectLocal()}; if(s.fd<0)return Probe::unavailable;
+    const auto started=platform::now();
+    const auto unavailable=[&](const char* reason) noexcept {
+        const auto endpoint=slice(path,0,path.find('?'));
+        char message[160];std::snprintf(message,sizeof(message),"API %.*s: %s after %llu ms",int(endpoint.size()),endpoint.data(),reason,
+            static_cast<unsigned long long>((platform::now()-started)/1000));
+        platform::log(message);return Probe::unavailable;
+    };
+    if(platform::now()>deadline)return unavailable("deadline exceeded");
+    Socket s{platform::connectLocal()}; if(s.fd<0)return unavailable("connection failed");
     std::array<char,512> requestBytes{};std::size_t requestSize=0;
     const auto append=[&](std::string_view text){for(char c:text){if(requestSize<requestBytes.size())requestBytes[requestSize++]=c;}};
     append(payload.empty()?"GET ":"POST ");append(path);append(" HTTP/1.1\r\nHost: 127.0.0.1:8088\r\nAccept: application/json\r\nConnection: close\r\n");
@@ -30,9 +37,9 @@ template<std::size_t N> Probe get(std::string_view path,std::string_view token,R
     append("\r\n");
     const std::string_view request{requestBytes.data(),requestSize};
     for(auto part:{request,payload})for(std::size_t offset=0;offset<part.size();) {
-        if(platform::now()>deadline)return Probe::unavailable;
+        if(platform::now()>deadline)return unavailable("deadline exceeded");
         const int n=platform::send(s.fd,part.data()+offset,part.size()-offset);
-        if(n<=0)return Probe::unavailable;
+        if(n<=0)return unavailable("send failed");
         if(sent)*sent=true;
         offset+=static_cast<unsigned>(n);
     }
@@ -40,10 +47,10 @@ template<std::size_t N> Probe get(std::string_view path,std::string_view token,R
     std::size_t used=0, bodyStart=0, length=0;
     bool headers=false;
     while(used<buffer.size()) {
-        if(platform::now()>deadline)return Probe::unavailable;
+        if(platform::now()>deadline)return unavailable("deadline exceeded");
         const int n=platform::receive(s.fd,buffer.data()+used,buffer.size()-used);
-        if(n<0)return Probe::unavailable;
-        if(n==0)return Probe::malformed;
+        if(n<0)return unavailable("receive timeout or failure");
+        if(n==0)return unavailable("response interrupted");
         used+=static_cast<unsigned>(n);
         const std::string_view data{buffer.data(),used};
         if(!headers) {
@@ -80,10 +87,10 @@ template<std::size_t N> Probe get(std::string_view path,std::string_view token,R
             if(received>length)return Probe::malformed;
             for(std::size_t i=0;i<received;++i)out.body[i]=data[bodyStart+i];
             while(received<length) {
-                if(platform::now()>deadline)return Probe::unavailable;
+                if(platform::now()>deadline)return unavailable("deadline exceeded");
                 const int n=platform::receive(s.fd,out.body.data()+received,length-received);
-                if(n<0)return Probe::unavailable;
-                if(n==0)return Probe::malformed;
+                if(n<0)return unavailable("receive timeout or failure");
+                if(n==0)return unavailable("response interrupted");
                 received+=static_cast<unsigned>(n);
             }
             out.length=length;return Probe::ready;
@@ -128,21 +135,21 @@ Connection probeConnection(Catalog* catalog) noexcept {
     if(out.status!=Probe::ready)return out;
     out.status=parseHealth(health.view());
     if(out.status!=Probe::ready)return out;
-    Response bootstrap;out.status=get("/api/bootstrap",{},bootstrap,deadline);
+    Response bootstrap;out.status=get("/api/bootstrap",{},bootstrap,platform::now()+5000000);
     if(out.status!=Probe::ready)return out;
     FlatJSON json;
     if(!json.parse(bootstrap.view())||json.number("apiVersion")!=1){out.status=Probe::incompatible;return out;}
     const auto token=json.string("token");
     if(token.size()!=32){out.status=Probe::malformed;return out;}
     for(char c:token)if(!((c>='a'&&c<='f')||(c>='0'&&c<='9'))){out.status=Probe::malformed;return out;}
-    Response response;out.status=get("/api/connections",token,response,deadline);
+    Response response;out.status=get("/api/connections",token,response,platform::now()+5000000);
     if(response.status==400)out.status=Probe::transmissionUnavailable;
     if(out.status==Probe::ready&&!parseConnection(response.view(),out))out.status=Probe::malformed;
     if(catalog&&(out.status==Probe::ready||out.status==Probe::transmissionUnavailable)) {
         // Worker-only storage avoids putting a large response on the PS5 thread stack.
         static Response<1048577> state;
         state.status=0;state.length=0;
-        const auto result=get("/api/state",token,state,platform::now()+5000000);
+        const auto result=get("/api/state",token,state,platform::now()+10000000);
         if(result!=Probe::ready)out.status=result;
         else if(!parseCatalog(state.view(),*catalog))out.status=Probe::malformed;
     }
@@ -187,7 +194,7 @@ ActionResult performCommand(const Command& command) noexcept {
     return result;
 }
 bool Network::submit(const Command& command) noexcept {
-    if(!thread_||busy_.load()||gate_.test_and_set(std::memory_order_acquire))return false;
+    if(!thread_||state_.load()!=Probe::ready||busy_.load()||gate_.test_and_set(std::memory_order_acquire))return false;
     // One pending request, never replayed by reconnect or retry.
     if(busy_.exchange(true)){gate_.clear(std::memory_order_release);return false;}
     pending_=command;queued_.store(true);gate_.clear(std::memory_order_release);return true;
@@ -195,7 +202,12 @@ bool Network::submit(const Command& command) noexcept {
 void Network::publish(Connection next,const Catalog* catalog) noexcept {
     while(gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
     next.revision=connection_.revision+1;connection_=next;
-    if(catalog)catalog_=*catalog;else catalog_.valid=false;
+    if((next.status==Probe::unavailable||next.status==Probe::checking)&&catalog_.valid) {
+        // A slow refresh must not hide an extraction that is still running.
+        // Keep the last snapshot, explicitly stale, until a fresh response.
+        catalog_.stale=true;
+    } else if(catalog){catalog_=*catalog;catalog_.stale=false;}
+    else {catalog_.valid=false;catalog_.stale=false;}
     catalog_.revision=next.revision;
     gate_.clear(std::memory_order_release);
     if(state_.exchange(next.status)!=next.status)platform::log(probeText(next.status));
@@ -223,13 +235,21 @@ void* Network::worker(void* context) noexcept {
             result=performCommand(command);command=Command{};acted=true;
         }
         const auto connection=probeConnection(&next);
+        if(next.valid&&!next.transmissionReady&&self.catalog_.valid) {
+            // The Botty service can answer while its Transmission RPC times out.
+            // Keep only the previous torrent snapshot; extraction jobs stay live.
+            next.torrents=self.catalog_.torrents;next.torrentCount=self.catalog_.torrentCount;
+            next.archives=self.catalog_.archives;next.archiveCount=self.catalog_.archiveCount;
+            next.transmissionStale=true;
+        }
         self.publish(connection,&next);
         if(acted){
             while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
             result.revision=self.result_.revision+1;self.result_=result;
             self.gate_.clear(std::memory_order_release);self.busy_.store(false);
         }
-        for(unsigned i=0;i<50&&!self.stop_.load()&&!self.retry_.load()&&!self.queued_.load();++i)platform::sleep(100000);
+        const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale?10:50;
+        for(unsigned i=0;i<delay&&!self.stop_.load()&&!self.retry_.load()&&!self.queued_.load();++i)platform::sleep(100000);
     }
     return nullptr;
 }

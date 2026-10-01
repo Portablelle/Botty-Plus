@@ -170,7 +170,8 @@ void drawCatalog(Canvas& c) noexcept {
         c.label(140,565,connection.status==botty::Probe::checking?"Connecting to Botty on your PS5...":"Open the Botty portal and select Start session.",28,muted);
         c.label(140,667,"Triangle  /  Retry connection",24,accent);return;
     }
-    if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"Transmission offline - start it from the portal.",24,warning);
+    if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
+    else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"Transmission not responding. Retrying...",22,warning);
     const auto* entry=botty::entryAt(catalog,model.tab,model.filter,model.selected);
     if(model.details&&entry) {
         surface(c,96,408,1728,506);unsigned line=0;
@@ -411,11 +412,11 @@ bool draw(Canvas& c) noexcept {
     const auto status=connection.status;
     if(!c.needs_update(displayRevision))return true;
     const bool online=status==botty::Probe::ready;
-    const char* state=online?"Connected":status==botty::Probe::checking?"Connecting":
-        status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Transmission offline":"Offline";
+    const char* state=catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
+        status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Reconnecting":"Offline";
     const char* detail=status==botty::Probe::legacy?"Update Botty from the portal to show your login details.":
         status==botty::Probe::unavailable?"Open the Botty portal and select Start session.":
-        status==botty::Probe::transmissionUnavailable?"Start Transmission from the Botty portal.":
+        status==botty::Probe::transmissionUnavailable?"Transmission is not responding. Retrying automatically.":
         status==botty::Probe::rejected?"Access rejected. Retry to reconnect.":
         status==botty::Probe::incompatible?"Update Botty from the portal.":
         status==botty::Probe::workerError?"Close and reopen Botty.":
@@ -505,7 +506,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.000.000",20,muted);
+    c.label(1620,1004,"01.000.001",20,muted);
     if(network.busy())c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(showResult){
@@ -536,7 +537,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.000.000 - main entered");
+    botty::platform::log("Botty+ 01.000.001 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

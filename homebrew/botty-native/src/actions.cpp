@@ -28,14 +28,15 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
  append("}");if(length<capacity)out[length]=0;return ok;
 }
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
+ if(c.stale)return "Reconnecting to Botty. Wait for an updated status before making changes.";
  if(!c.valid)return "Reconnect to Botty before performing an action.";
- if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy||c.exploreAdding)return "Wait for the current Explore request.";return op==Operation::explore||c.transmissionReady?"":"Start Transmission from the portal first.";}
- if(op==Operation::search||op==Operation::grab){if(!c.searchSupported)return "Update the Botty service to enable search.";if(c.searchBusy||c.searchAdding)return "Wait for the current search or download request.";if(op==Operation::search)return "";return c.transmissionReady?"":"Start Transmission from the portal first.";}
- if(op==Operation::add)return c.transmissionReady?"":"Start Transmission from the portal first.";
+ if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy||c.exploreAdding)return "Wait for the current Explore request.";return op==Operation::explore||c.transmissionReady?"":"Wait for Transmission to reconnect.";}
+ if(op==Operation::search||op==Operation::grab){if(!c.searchSupported)return "Update the Botty service to enable search.";if(c.searchBusy||c.searchAdding)return "Wait for the current search or download request.";if(op==Operation::search)return "";return c.transmissionReady?"":"Wait for Transmission to reconnect.";}
+ if(op==Operation::add)return c.transmissionReady?"":"Wait for Transmission to reconnect.";
  if(!e)return "This item is no longer available. Close this menu and refresh.";
- if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Start Transmission from the portal first.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
+ if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Wait for Transmission to reconnect.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
  if(op==Operation::pause||op==Operation::resume||op==Operation::verify||op==Operation::extract){
-  if(!c.transmissionReady)return "Start Transmission from the portal first.";
+  if(!c.transmissionReady)return "Wait for Transmission to reconnect.";
   if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount)return e->archivesOmitted?"Archive names exceed the display limit.":"No first RAR volume found in this torrent.";}
   return "";
  }

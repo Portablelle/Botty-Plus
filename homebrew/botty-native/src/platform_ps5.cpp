@@ -50,9 +50,9 @@ int connectLocal() noexcept {
     (void)initialized;
     const int fd=sceNetSocket("botty_read_only",2,1,6);
     if(fd<0){networkError("socket",fd);return -1;}
-    constexpr int timeout=1500000;
     // SceNet options use integer microseconds (BSD timeval is incompatible).
     for(const int option:{0x1105,0x1106,0x1109}) {
+        const int timeout=option==0x1106?5000000:1500000;
         const int result=sceNetSetsockopt(fd,0xffff,option,&timeout,sizeof(timeout));
         if(result<0) {
             networkError(option==0x1105?"send timeout":option==0x1106?"receive timeout":"connect timeout",result);

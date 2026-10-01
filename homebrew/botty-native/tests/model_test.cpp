@@ -34,7 +34,7 @@ int send(int,const void* bytes,std::size_t size) noexcept {
 }
 int receive(int,void* bytes,std::size_t size) noexcept {
     clockUs+=receiveCost;
-    if(receiveError)return -1;
+    if(receiveError||response=="#timeout")return -1;
     const auto n=std::min({size,chunk,response.size()-offset});
     std::memcpy(bytes,response.data()+offset,n);offset+=n;return static_cast<int>(n);
 }
@@ -61,7 +61,7 @@ int main() {
     }
     reset("");connected=false;assert(probeService()==Probe::unavailable);assert(closes==0);
     reset(wire(legacy));receiveError=true;assert(probeService()==Probe::unavailable);assert(closes==1);
-    reset(wire(legacy));response.pop_back();assert(probeService()==Probe::malformed);assert(closes==1);
+    reset(wire(legacy));response.pop_back();assert(probeService()==Probe::unavailable);assert(closes==1);
     reset("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");assert(probeService()==Probe::rejected);
     reset("HTTP/1.1 500 Error\r\nContent-Length: 0\r\n\r\n");assert(probeService()==Probe::incompatible);
     reset("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n");assert(probeService()==Probe::malformed);
@@ -231,6 +231,27 @@ int main() {
     for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision==1&&result.status==ActionResult::Status::success);queued.stop();workerAllowed=false;
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
+    reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),"#timeout",wire(health),wire(boot),wire(login),wire(actionable)};
+    workerAllowed=true;Network recovering;assert(recovering.start());
+    for(unsigned i=0;i<200;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::ready&&catalog.valid&&!catalog.stale);
+    const auto savedJobs=catalog.jobCount;recovering.retry();
+    for(unsigned i=0;i<200;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::unavailable)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::unavailable&&catalog.valid&&catalog.stale&&catalog.jobCount==savedJobs);
+    assert(!recovering.submit(command));assert(*unavailable(Operation::pause,&catalog.torrents[0],catalog));
+    // No Triangle press: the next automatic poll restores live data.
+    for(unsigned i=0;i<800;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::ready&&catalog.valid&&!catalog.stale);recovering.stop();workerAllowed=false;
+    reset("");chunk=4096;responses={wire(health),wire(boot),wire(login),wire(actionable),wire(health),wire(boot),"HTTP/1.1 400 Error\r\nContent-Length: 0\r\n\r\n",wire(huge),wire(health),wire(boot),wire(login),wire(actionable)};
+    workerAllowed=true;Network transmissionRetry;assert(transmissionRetry.start());catalog.revision=0;
+    for(unsigned i=0;i<200;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    const auto savedTorrents=catalog.torrentCount;assert(savedTorrents>0);transmissionRetry.retry();
+    for(unsigned i=0;i<200;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::transmissionUnavailable)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::transmissionUnavailable&&catalog.valid&&!catalog.stale&&catalog.transmissionStale);
+    assert(catalog.torrentCount==savedTorrents&&catalog.jobCount==256&&!catalog.transmissionReady);
+    assert(!transmissionRetry.submit(command));
+    for(unsigned i=0;i<800;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::ready&&catalog.transmissionReady&&!catalog.transmissionStale);transmissionRetry.stop();workerAllowed=false;
     // Start in Explore and follow the browse -> prepare -> collect journey.
     Model searchModel;assert(searchModel.tab==5);
     searchModel.press(Buttons::r1);assert(searchModel.tab==4);

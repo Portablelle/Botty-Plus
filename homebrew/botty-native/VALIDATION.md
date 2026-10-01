@@ -99,3 +99,29 @@ both `eboot.bin` and `sce_module/libc.prx`, including permission repair when the
 installed content already matches. The console runtime's mode was repaired and
 read back as 0755. A successful relaunch on hardware is still required to confirm
 that this resolves the black screen.
+
+On the next user attempt, the screen remained black, but the native 01.000.000
+log was newly written: `main` ran, VideoOut initialized, the controller connected,
+the API connected, and eight frame submissions completed. The runtime remained
+0755 and ShadowMountPlus no longer reported the loader error. Kernel logs also
+recorded a PS-button event followed by a ShellUI focus transition to its menu.
+The active HDMI mode was 3840x2160 at 59.94 Hz with HDR/PQ and VRR Boost. These
+observations confirm progress past the original loader failure, not successful
+TV output. The remaining black screen needs a separate display-path diagnosis.
+
+The user then confirmed that switching the TV away from and back to the PS5's
+HDMI input revealed the running application. Closing Botty+ from the home screen
+and reopening it in the same console session displayed normally. Logs confirmed
+a new native process (PID 92 after PID 89 exited), with the same 4K/59.94 Hz
+HDR/PQ and VRR Boost HDMI mode as the black-screen attempt. Thus the observed
+failure was not reproduced on the second launch, and disabling VRR is not an
+established fix. The initial display transition remains unverified on a fresh
+console session; its cause has not been isolated. Comparisons with saved portal
+releases found identical Relapse, Kstuff and ShadowMountPlus artifacts and
+payload ordering; the saved 00.006.000 renderer sources match 01.000.000 exactly.
+
+A separate continuous-presentation diagnostic variant was host-tested (including idle-frame submission, buffer freshness and notification ordering) and cross-built successfully in the isolated VPS build directory `/home/ubuntu/botty-video-cadence-test`. It has not been installed on the console or published as a confirmed black-screen fix. Cold-launch hardware testing remains pending while the user-requested extraction resume is running; do not restart the console or replace the active service for video testing.
+
+### 01.000.001 reconnection handling
+
+Host worker regressions simulate transport timeouts and a failed Transmission RPC while extraction state still updates. The last catalog remains visible, stale actions are rejected, and automatic recovery clears the stale flag without controller input. A renderer preview of Reconnecting retains the download cards and displays the stale-data notice without overlap. Native actions integration and package tests pass. The PS5 package was cross-built in isolation. This release leaves the VideoOut renderer unchanged; the continuous-presentation experiment is saved separately in the ignored `build/video-cadence/` directory. The native app was closed, all staged/published file hashes were verified over FTP, the previous application tree and registered metadata were backed up, and 01.000.001 was activated without restarting the service. A new hardware log confirms 01.000.001 reached main, initialized VideoOut/controller and connected to API v1 while the extraction continued. Recovery from a naturally occurring timeout still needs observation on this build; simulated recovery is covered by the host worker tests.

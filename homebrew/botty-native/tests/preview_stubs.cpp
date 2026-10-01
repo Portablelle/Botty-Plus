@@ -16,7 +16,7 @@ extern "C" {
 }
 namespace {
 void* mapped;
-int currentBuffer=0, frames=0, reads=0;
+int currentBuffer=0, frames=0, reads=0, connections=0;
 const char* mode=std::getenv("BOTTY_PREVIEW_MODE");
 bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || ((std::strcmp(mode,"slow-password")==0||std::strcmp(mode,"buffered-password")==0)&&std::strcmp(text,"password")==0));}
 const auto mainThread=std::this_thread::get_id();
@@ -50,7 +50,7 @@ int* sceNetErrnoLoc(){static int error=0;return &error;}
 int sceNetInit(){return 0;}
 int sceNetSocket(const char*,int,int,int){offset=0;socketRequest.clear();socketResponse.clear();return 1;}
 int sceNetSetsockopt(int,int,int,const void*,std::uint32_t){return 0;}
-int sceNetConnect(int,const void*,std::uint32_t){return is("offline")?-1:0;}
+int sceNetConnect(int,const void*,std::uint32_t){return is("offline")||(is("reconnecting")&&++connections>4)?-1:0;}
 int sceNetSend(int,const void* bytes,std::size_t n,int){socketRequest.append(static_cast<const char*>(bytes),n);return static_cast<int>(n);}
 int sceNetRecv(int,void* b,std::size_t n,int){
     if(socketResponse.empty()) {
@@ -85,6 +85,7 @@ int scePadOpen(int,int,int,void*){return 1;}
 int scePadRead(int,PS5_PadData* p,int){
     *p={};p->connected=1;p->leftStick.x=p->leftStick.y=128;p->timestamp=2*++reads;
     if((reads==3&&(is("diagnostics")||is("extracted")||is("library")||is("connections")))||(reads==5&&(is("library")||is("connections")))||(reads==7&&is("connections")))p->buttons=PS5_PAD_BUTTON_R1;
+    if(reads==3&&is("reconnecting"))p->buttons=PS5_PAD_BUTTON_TRIANGLE;
     if(reads==3&&(is("quit")||is("exit")))p->buttons=PS5_PAD_BUTTON_CIRCLE;
     if(reads==4&&is("exit"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==5&&is("exit"))p->buttons=PS5_PAD_BUTTON_CROSS;

@@ -31,7 +31,7 @@ struct Catalog {
     std::array<char,512> searchQuery{},searchError{},searchNotice{};
     unsigned torrentCount=0,jobCount=0,revision=0,archiveCount=0;
     bool extracting=false,extractionControls=false,torrentRemovalSupported=false;
-    bool valid=false,transmissionReady=false,truncated=false,catalogArtworkSupported=false;
+    bool valid=false,stale=false,transmissionStale=false,transmissionReady=false,truncated=false,catalogArtworkSupported=false;
     double freeBytes=0;
     std::array<char,512> library{},error{};
 };

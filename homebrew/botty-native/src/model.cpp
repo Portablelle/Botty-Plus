@@ -15,7 +15,7 @@ const char* probeText(Probe p) noexcept {
     case Probe::checking:return "CHECKING LOCAL SERVICE";
     case Probe::ready:return "BOTTY API V1 CONNECTED";
     case Probe::legacy:return "BOTTY 0.1.0 CONNECTED";
-    case Probe::unavailable:return "SESSION REQUIRED";
+    case Probe::unavailable:return "LOCAL SERVICE NOT RESPONDING";
     case Probe::rejected:return "LOCAL ACCESS REJECTED";
     case Probe::incompatible:return "SERVICE VERSION NOT SUPPORTED";
     case Probe::malformed:return "INVALID SERVICE RESPONSE";

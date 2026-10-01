@@ -60,7 +60,7 @@ bool firstArchive(std::string_view name) noexcept {
  unsigned n=0;for(char c:digits){if(c<'0'||c>'9')return true;if(n>1)return false;n=n*10+c-'0';}return n==1;
 }
 bool parseCatalog(std::string_view body,Catalog& out) noexcept {
-    out.valid=false;JSON root{body};if(!root.value())return false;root.ws();if(root.p!=body.size())return false;
+    out.valid=false;out.stale=false;out.transmissionStale=false;JSON root{body};if(!root.value())return false;root.ws();if(root.p!=body.size())return false;
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
