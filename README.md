@@ -1,0 +1,148 @@
+# Botty+ for PS5
+
+Botty+ is a native, controller-driven download and library manager for PS5 homebrew. It combines a browser launch portal, a background Transmission daemon, a RAR extraction service and a 1080p native application.
+
+Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
+
+**Preview release:** the repository contains service **0.3.4**, native title **00.006.000** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
+
+## Features
+
+- **Explore and Search:** optional Prowlarr integration, cover artwork and a persistent download → extract → library workflow.
+- **Downloads:** progress, speeds, ETA, peer counts, magnet input, pause, resume and verification.
+- **Extracted:** multivolume RAR extraction, CRC checks, optional passwords, progress, cancellation and cleanup.
+- **Library:** publish recognized PS5 app folders or exFAT images into `/data/homebrew`, with permissions prepared for the native sandbox.
+- **Connections:** display the console's Transmission URL and credentials for another device on the same LAN.
+
+Normal extraction and library publication retain the original torrent archives for seeding. The separate **Remove torrent and files** action explicitly deletes download data after confirmation. ZIP/7z extraction, PKG installation and automatic game launching are not implemented.
+
+## Start here
+
+| Task | Guide |
+| --- | --- |
+| Host the portal with HTTPS | [Deployment](deployment/README.md#host-the-portal) |
+| Install and start on the PS5 | [Console setup](#console-setup) |
+| Configure Search, Explore and covers | [Optional services](deployment/README.md#optional-search-and-explore) |
+| Build, test and package a release | [Development](docs/DEVELOPMENT.md) |
+| Update or roll back an installation | [Updates and rollback](deployment/README.md#updates-and-rollback) |
+| Understand service boundaries | [Architecture](PLAN-BOTTY-NATIVE.md) |
+
+## Requirements
+
+- A PS5 supported by the bundled Relapse chain, connected to a trusted LAN, and a way to open your portal in its browser.
+- An HTTPS origin trusted by the PS5 browser. Package verification uses Web Crypto; ordinary HTTP on a LAN IP is insufficient for installation.
+- Enough console storage for both original downloads and extracted output. Preflight reserves an additional 512 MiB but cannot reserve space against other applications.
+- For hosting: Git, Python 3.10+ and a static web server. The Ubuntu/Nginx example also uses a domain name and a TLS certificate. Node.js 20+ runs the portal tests; Docker is needed only to rebuild PS5 binaries.
+- Optional: Prowlarr for Search/Explore and Python with Pillow for the cover resolver. These are not required for manual magnets and extraction.
+
+Use the stack only on consoles and content you are authorized to manage. Keep console services on the trusted LAN; no router port forwarding is needed.
+
+## Get the repository
+
+```sh
+git clone --recurse-submodules https://github.com/Portablelle/botty-ps5.git
+cd botty-ps5
+python3 scripts/portal-manifest.py --check
+node --test tests/*.test.mjs
+```
+
+For an existing clone, run `git submodule update --init --recursive`. The submodule preserves the pinned upstream Relapse checkout; `vps-site/` is the customized portal and already contains its browser code and deployable packages. No npm install or JavaScript bundler is required.
+
+Export a verified, self-contained site:
+
+```sh
+python3 scripts/portal-manifest.py --output dist/portal
+```
+
+Deploy **the contents of `dist/portal/`**, using the [HTTPS deployment walkthrough](deployment/README.md). The exporter excludes local backups, previous package versions, credentials and development files. Do not expose the repository root as a web directory.
+
+For a desktop visual preview only:
+
+```sh
+python3 vps-site/serve.py --bind 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000`. Launch is disabled outside a supported PS5 browser. This preview does not test the exploit or console installation.
+
+## Console setup
+
+1. Host the complete exported portal over HTTPS. Open its URL on the PS5 after a cold restart. The optional [User's Guide DNS setup](deployment/README.md#optional-users-guide-dns) provides another entry point.
+2. Select **LAUNCH** once and leave the page open. The portal runs Relapse, verifies or installs the native title, loads Kstuff and ShadowMountPlus, starts FTP, then prepares Transmission and Botty.
+3. Wait for **READY**, press PS and open **Botty+**. ShadowMountPlus discovery is asynchronous; a successful payload transfer alone does not prove home-screen registration.
+4. Open **Connections** to use Transmission from a computer or phone. Use the displayed URL, username `botty` and console-generated password. No credentials are bundled in this repository.
+5. Add a small test magnet or an authorized test download, then validate extraction and library publication before using large files.
+
+After another cold boot, repeat the portal launch before opening Botty+. Existing matching package files and running services are reused. An older recognized Botty+ installation is backed up and updated automatically with the app closed. A damaged recognized installation can be repaired; foreign titles and downgrades are refused. See [updates and rollback](deployment/README.md#updates-and-rollback).
+
+The shipped Transmission configuration permits localhost and `192.168.*.*` clients. A client on `10.*` or `172.16.*` will require a deliberate allowlist change in `vps-site/src/transmission.js` and the service's connection-discovery logic before rebuilding; do not disable authentication to work around a 403. LAN HTTP is unencrypted. Passwords are currently six generated alphanumeric characters, with migration support for older credentials.
+
+## Native controls
+
+| Control | Action |
+| --- | --- |
+| L1 / R1 | Switch Explore, Search, Downloads, Extracted, Library, Connections |
+| D-pad / stick | Navigate items, pages and the Library grid |
+| Cross / Circle | Open or confirm / go back |
+| Options | Actions for the selected item |
+| Square | Context action: refresh Explore, enter a search or add a magnet |
+| Triangle | Cycle Explore ranking or refresh other screens |
+
+The in-app keyboard supports controller input and Unicode code-point entry. Destructive actions use a separate confirmation with Cancel selected initially. See the [native application guide](homebrew/botty-native/README.md) for details.
+
+## Storage and ports
+
+| Location | Contents |
+| --- | --- |
+| `/data/homebrew/PPSA99071` | Botty+ native application |
+| `/data/botty/manager/0.3.4` | Botty service, local web assets and CA bundle |
+| `/data/botty/transmission/state` | Transmission settings, credentials, torrent and resume state |
+| `/data/botty/downloads/incomplete`, `complete` | Original downloads |
+| `/data/botty/extracted`, `jobs`, `automatic` | Extraction output, job records and automatic queue |
+| `/data/botty/prowlarr.json` | Optional private Search/Explore configuration |
+| `/data/homebrew` | Published library content |
+
+| Port | Purpose | Exposure |
+| --- | --- | --- |
+| 443 | Hosted portal and optional authenticated proxy routes | Hosting server |
+| 8088 | Botty API / legacy web UI | PS5 loopback only |
+| 9091 | Authenticated Transmission RPC and web UI | PS5 LAN, allowlisted clients |
+| 2121 | FTP payload | PS5 LAN |
+| 9021 | ELF loader | PS5 LAN |
+| 8080 | Temporary websrv launcher | PS5 LAN, stopped after daemon startup |
+| 9696 / 9697 | Prowlarr / artwork resolver | Hosting server loopback |
+
+The VPS serves software and optional search/artwork requests. Torrent data downloads directly to the PS5. Do not delete `/data/botty` to uninstall or update the native title: it contains persistent user data.
+
+## Troubleshooting
+
+| Symptom | Next step |
+| --- | --- |
+| Launch disabled on desktop | Expected; use a supported PS5 browser. |
+| HTTPS / Web Crypto error | Open the trusted HTTPS URL directly; check certificate and console clock. |
+| STOPPED, browser hang or kernel panic | Read the session log and restart the PS5 before another attempt. |
+| Package hash mismatch | Re-export a coherent release; disable CDN rewriting and stale caches. |
+| Update requires a closed app | Close Botty+ and other native apps, then start a new console session. |
+| Service update pending | The new service is staged; let current work finish before the next console restart. |
+| Update interrupted | Restart the portal session to recover from its journal; retain the backup directory. |
+| READY but no icon | Allow discovery time and check ShadowMountPlus registration; another session may be needed. |
+| Transmission 403 | Check the LAN allowlist and displayed address; preserve saved credentials. |
+| Search/Explore unavailable | Check private Prowlarr config, API key, indexer IDs/category and CA path. Manual magnets remain available. |
+| Interrupted extraction | Inspect the job, clean its partial output through Botty, then retry with the original archives. |
+
+Keep the console awake during downloads and extraction. Rest mode, long-duration downloads and simultaneous gameplay remain unvalidated. Never restart the service merely to deploy an update while an extraction is active.
+
+## Repository map
+
+- `vps-site/`: static launch portal and verified installable packages.
+- `homebrew/botty/`: C++17 service, extraction engine and legacy local web UI.
+- `homebrew/botty-native/`: C++20 native title, assets, build tools and tests.
+- `deployment/`: generic Nginx, DNS, systemd and artwork examples.
+- `scripts/`, `tests/`: packaging, export verification and installer contracts.
+- `Relapse-Exploit/`: pinned upstream submodule.
+- `payloads/`: upstream payloads for manual use, with versions and hashes.
+
+## Credits and licenses
+
+Relapse credits Sonic_Iso, Jordy, ntfargo, ufm42, Dr. Yenyen and the contributors listed in [the portal README](vps-site/README.md). Botty also uses work from the PS5 payload SDK, native app boilerplate, Transmission, UnRAR, cpp-httplib, nlohmann/json and Manrope projects.
+
+Licenses are component-specific. See [third-party notices](THIRD_PARTY.md), [service license](homebrew/botty/LICENSE), [native license](homebrew/botty-native/LICENSE), [portal license](vps-site/LICENSE) and the vendored notices. Keep those files and corresponding source with redistributions. Botty+ is an independent homebrew project and is not affiliated with Sony Interactive Entertainment.

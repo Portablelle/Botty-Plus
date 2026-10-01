@@ -18,30 +18,181 @@ test('failed FTP startup stops without blind duplicate sends', async () => {
     send: async (_, name) => sent.push(name), wait: async () => {}, transmission: async () => assert.fail('must not run') }), /FTP did not start/);
   assert.equal(sent.filter(n => n === 'ftpsrv-ps5.elf').length, 1);
 });
+const manifestBytes = new Uint8Array(await readFile(new URL('../vps-site/apps/botty-native/manifest.json', import.meta.url)));
+const {createHash} = await import('node:crypto');
+const nativeHash = createHash('sha256').update(manifestBytes).digest('hex');
+const stage = '/data/botty/native/' + nativeHash + '/PPSA99071';
+const journalPath = '/data/botty/native/update.json';
+const encode = value => new TextEncoder().encode(JSON.stringify(value));
+const decode = bytes => JSON.parse(new TextDecoder().decode(bytes));
 function nativeFixture() {
-  const files = new Map(), downloads = [], writes = []; let installed = false;
-  const io = { nativeExists: async () => installed, readFile: async p => files.get(p), mkdirs: async () => {},
-    writeFile: async (p, b) => { writes.push(p); files.set(p, b); }, publishNative: async () => {
-      installed = true; for (const [p, b] of [...files]) files.set(p.replace('/data/botty/native/PPSA99071', NATIVE_ROOT), b);
-    } };
+  const files = new Map(), downloads = [], writes = [], events = [];
+  const move = (source, target) => {
+    assert.ok([...files.keys()].some(p => p.startsWith(source + '/')), 'source must exist');
+    assert.ok(![...files.keys()].some(p => p.startsWith(target + '/')), 'never overwrite destination');
+    for (const [p, b] of [...files]) if (p.startsWith(source + '/')) {
+      files.set(target + p.slice(source.length), b); files.delete(p);
+    }
+  };
+  const io = {
+    nativeExists: async () => [...files.keys()].some(p => p.startsWith(NATIVE_ROOT + '/')),
+    readFile: async p => files.get(p), mkdirs: async () => {},
+    writeFile: async (p, b) => { writes.push(p); files.set(p, b); },
+    assertNativeStopped: async () => events.push('check-stopped'),
+    writeJournal: async (value, exclusive) => {
+      if (exclusive) assert.equal(files.has(journalPath), false);
+      await io.writeFile(journalPath, encode(value));
+    },
+    backupNative: async backup => { events.push('backup'); move(NATIVE_ROOT, backup); },
+    restoreNative: async backup => { events.push('restore'); move(backup, NATIVE_ROOT); },
+    publishNative: async () => { events.push('publish'); move(stage, NATIVE_ROOT); },
+    syncRegisteredMetadata: async () => {},
+    removeEmptyNative: async () => false,
+  };
   const options = { fetchFile: async url => { downloads.push(url); const b = new Uint8Array(await readFile(new URL('../vps-site/' + url.slice(2), import.meta.url))); return { ok: true, arrayBuffer: async () => b.buffer }; } };
-  return { files, downloads, writes, io, options };
+  const previous = async (version = '00.005.001') => {
+    await installNative(io, options);
+    const param = decode(files.get(NATIVE_ROOT + '/sce_sys/param.json'));
+    param.contentVersion = version;
+    files.set(NATIVE_ROOT + '/sce_sys/param.json', encode(param));
+    files.set(NATIVE_ROOT + '/eboot.bin', new Uint8Array([1, 2, 3]));
+    writes.length = downloads.length = events.length = 0;
+  };
+  return { files, downloads, writes, events, io, options, previous };
 }
 test('first launch installs native; second launch does not download or rewrite installed files', async () => {
   const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 12);
   f.writes.length = 0; f.downloads.length = 0; await installNative(f.io, f.options);
   assert.deepEqual(f.writes, []); assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
 });
-test('interrupted native staging resumes; corrupt installed title is preserved', async () => {
+test('interrupted native staging resumes without redownloading', async () => {
   const f = nativeFixture(); const publish = f.io.publishNative; f.io.publishNative = async () => { throw Error('interrupted'); };
   await assert.rejects(installNative(f.io, f.options), /interrupted/); f.writes.length = 0;
   f.io.publishNative = publish; await installNative(f.io, f.options); assert.equal(f.writes.length, 0);
-  f.files.set(NATIVE_ROOT + '/eboot.bin', new Uint8Array([0]));
-  await assert.rejects(installNative(f.io, f.options), /Existing title preserved/); assert.equal(f.writes.length, 0);
+});
+test('older native title updates only after staging, retains exact previous tree and user state', async () => {
+  const f = nativeFixture(); await f.previous();
+  f.files.set('/data/botty/jobs/example.json', encode({state:'extracting'}));
+  f.files.set(NATIVE_ROOT + '/extra-user-file', new Uint8Array([7]));
+  const old = new Map([...f.files].filter(([p]) => p.startsWith(NATIVE_ROOT + '/')));
+  const result = await installNative(f.io, f.options);
+  assert.equal(result.updated, true);
+  const journal = decode(f.files.get(journalPath)); assert.equal(journal.status, 'complete');
+  for (const [p, data] of old) assert.deepEqual(f.files.get(journal.backup + p.slice(NATIVE_ROOT.length)), data);
+  assert.equal(decode(f.files.get('/data/botty/jobs/example.json')).state, 'extracting');
+  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '00.006.000');
+  assert.deepEqual(f.events, ['check-stopped', 'check-stopped', 'backup', 'publish']);
+});
+test('recognized current title with damaged executable is backed up and repaired', async () => {
+  const f = nativeFixture(); await f.previous('00.006.000');
+  await installNative(f.io, f.options);
+  assert.ok(f.files.get(NATIVE_ROOT + '/eboot.bin').length > 3);
+  assert.deepEqual(f.files.get(decode(f.files.get(journalPath)).backup + '/eboot.bin'), new Uint8Array([1,2,3]));
+});
+for (const kind of ['foreign', 'newer', 'missing-metadata']) test('preserves unsupported installation: ' + kind, async () => {
+  const f = nativeFixture(); await f.previous(kind === 'newer' ? '00.999.000' : '00.005.001');
+  if (kind === 'foreign') {const p = decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json'));p.contentId='OTHER';f.files.set(NATIVE_ROOT+'/sce_sys/param.json',encode(p));}
+  if (kind === 'missing-metadata') f.files.delete(NATIVE_ROOT+'/sce_sys/param.json');
+  await assert.rejects(installNative(f.io, f.options), /recognized|Downgrade/);
+  assert.equal(f.writes.length, 0); assert.equal(f.events.length, 0);
+});
+test('running app and process inspection failures block update before staging', async () => {
+  const f = nativeFixture(); await f.previous();
+  f.io.assertNativeStopped = async () => { throw Error('app running'); };
+  await assert.rejects(installNative(f.io, f.options), /app running/);
+  assert.equal(f.writes.length, 0); assert.deepEqual(f.events, []);
+});
+test('app launched during preparation blocks the backup and preserves live title', async () => {
+  const f = nativeFixture(); await f.previous(); let checks = 0;
+  f.io.assertNativeStopped = async () => { if (++checks === 2) throw Error('app running'); };
+  await assert.rejects(installNative(f.io, f.options), /app running/);
+  assert.deepEqual(f.files.get(NATIVE_ROOT+'/eboot.bin'), new Uint8Array([1,2,3]));
+  assert.equal(f.files.has(journalPath), false); assert.deepEqual(f.events, []);
+});
+test('corrupt staged download cannot move old title', async () => {
+  const f = nativeFixture(); await f.previous(); const fetch = f.options.fetchFile;
+  f.options.fetchFile = async url => {const r=await fetch(url);if(url.endsWith('/eboot.bin'))return {ok:true,arrayBuffer:async()=>new Uint8Array([0]).buffer};return r;};
+  await assert.rejects(installNative(f.io, f.options), /verification failed/);
+  assert.equal(f.events.includes('backup'), false); assert.equal(f.files.has(journalPath), false);
+});
+test('promotion failure restores previous title without deleting staging or user data', async () => {
+  const f = nativeFixture(); await f.previous(); const publish=f.io.publishNative;
+  f.io.publishNative=async()=>{throw Error('promotion failed');};
+  await assert.rejects(installNative(f.io,f.options),/promotion failed/);
+  assert.deepEqual(f.files.get(NATIVE_ROOT+'/eboot.bin'),new Uint8Array([1,2,3]));
+  assert.equal(decode(f.files.get(journalPath)).status,'rolled-back');
+  f.io.publishNative=publish;await installNative(f.io,f.options);
+  assert.equal(decode(f.files.get(journalPath)).status,'complete');
+});
+test('next session recovers a power loss between backup and promotion', async () => {
+  const f=nativeFixture();await f.previous();const publish=f.io.publishNative,restore=f.io.restoreNative;
+  f.io.publishNative=async()=>{throw Error('power loss');};f.io.restoreNative=async()=>{throw Error('power loss');};
+  await assert.rejects(installNative(f.io,f.options),/restart to recover/);
+  assert.equal(await f.io.nativeExists(),false);assert.equal(decode(f.files.get(journalPath)).status,'pending');
+  f.io.publishNative=publish;f.io.restoreNative=restore;await installNative(f.io,f.options);
+  assert.ok(f.events.includes('restore'));assert.equal(decode(f.files.get(journalPath)).status,'complete');
+});
+test('lost completion checkpoint converges without a second replacement', async () => {
+  const f=nativeFixture();await f.previous();const write=f.io.writeJournal;
+  f.io.writeJournal=async(value,exclusive)=>{if(value.status==='complete')throw Error('checkpoint failed');await write(value,exclusive);};
+  await assert.rejects(installNative(f.io,f.options),/restart to recover/);
+  f.io.writeJournal=write;f.events.length=0;await installNative(f.io,f.options);
+  assert.equal(decode(f.files.get(journalPath)).status,'complete');assert.deepEqual(f.events,[]);
+});
+test('malformed or escaping recovery journal cannot move any title', async () => {
+  const f=nativeFixture();await f.previous();f.files.set(journalPath,encode({schema:1,status:'pending',target:nativeHash,previous:nativeHash,backup:'/data/homebrew/OTHER'}));
+  await assert.rejects(installNative(f.io,f.options),/journal is damaged/);assert.deepEqual(f.events,[]);assert.equal(f.writes.length,0);
+});
+test('real native process guard fails closed without sending a signal', async () => {
+  for(const name of ['eboot.bin','eboot','Botty+'])await assert.rejects(NativeIO.prototype.assertNativeStopped.call({processes:async()=>[{pid:123,name}]}),/Close Botty/);
+  await NativeIO.prototype.assertNativeStopped.call({processes:async()=>[{pid:123,name:'transmission-da'},{pid:321,name:'payload.elf'}]});
 });
 test('native adapter allows only its title; default service confinement remains intact', () => {
   const check = p => NativeIO.prototype.checkedPath(p);
   check(NATIVE_ROOT + '/eboot.bin');
-  for (const p of ['/data/homebrew/OTHER/eboot.bin', NATIVE_ROOT + '/../OTHER/eboot.bin', '/user/app/PPSA99071/eboot.bin']) assert.throws(() => check(p));
+  for (const p of ['/data/homebrew/OTHER/eboot.bin', NATIVE_ROOT + '/../OTHER/eboot.bin', '/user/app/PPSA99071/eboot.bin', '/user/app/OTHER/sce_sys/param.json', '/user/app/PPSA99071/sce_sys/../../OTHER/param.json']) assert.throws(() => check(p));
   assert.throws(() => checkedPath(NATIVE_ROOT + '/eboot.bin'));
+});
+
+test('registered metadata is backed up, updated, readable and confined to Botty+', async () => {
+  const f=nativeFixture();await installNative(f.io,f.options);
+  const manifest=decode(manifestBytes),old=decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json'));
+  old.contentVersion='00.005.001';
+  const path='/user/app/PPSA99071/sce_sys/param.json';
+  const oldBytes=encode(old);f.files.set(path,oldBytes);
+  f.files.set('/user/app/OTHER/sce_sys/param.json',new Uint8Array([8]));
+  const calls=[];f.io.call=async()=>1;f.io.close=async()=>{};f.io.string=p=>p;f.io.syncDirectory=async()=>{};
+  f.io.runtime={chain:{syscall:async(...args)=>{calls.push(args);return {low:0};}}};
+  const {sha256}=await import('../vps-site/src/transmission.js');
+  const backup='/data/botty/native/backups/'+'a'.repeat(32)+'/PPSA99071';
+  await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
+  assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
+  assert.equal(decode(f.files.get(path)).contentVersion,'00.006.000');
+  assert.deepEqual(f.files.get('/user/app/OTHER/sce_sys/param.json'),new Uint8Array([8]));
+  assert.ok(calls.every(([nr,p,mode])=>nr===15&&p.startsWith('/user/app/PPSA99071/')&&mode===0o644));
+  await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
+  assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
+});
+test('registered metadata with foreign identity is never overwritten',async()=>{
+  const f=nativeFixture();await installNative(f.io,f.options);f.writes.length=0;
+  f.files.set('/user/app/PPSA99071/sce_sys/param.json',encode({titleId:'OTHER'}));
+  const {sha256}=await import('../vps-site/src/transmission.js');
+  await assert.rejects(NativeIO.prototype.syncRegisteredMetadata.call(f.io,decode(manifestBytes),'/data/botty/native/backups/test',sha256),/recognized/);
+  assert.equal(f.writes.length,0);
+});
+
+test('empty first-install reservation can recover from intact verified staging',async()=>{
+ const f=nativeFixture();const publish=f.io.publishNative;f.io.publishNative=async()=>{throw Error('power loss');};
+ await assert.rejects(installNative(f.io,f.options),/power loss/);
+ f.io.nativeExists=async()=>true;f.io.removeEmptyNative=async()=>true;f.io.publishNative=publish;
+ await installNative(f.io,f.options);
+ assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'00.006.000');
+});
+test('native rename failure removes only its empty reservation and never deletes source',async()=>{
+ const events=[];const io={checkedPath:()=>{},string:p=>p,
+ call:async(name,...args)=>{events.push([name,...args]);return name==='rename'?-1:0;},
+ runtime:{chain:{syscall:async(...args)=>{events.push(args);return {low:0};}}}};
+ await assert.rejects(NativeIO.prototype.moveDirectory.call(io,'/data/botty/native/staged','/data/homebrew/PPSA99071'),/Could not move/);
+ assert.deepEqual(events.map(e=>e[0]),['mkdir','rename',137]);
+ assert.equal(events[2][1],NATIVE_ROOT);
 });

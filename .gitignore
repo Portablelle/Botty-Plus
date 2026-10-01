@@ -1,4 +1,5 @@
 .DS_Store
+._*
 __pycache__/
 *.py[cod]
 .env
@@ -6,5 +7,15 @@ __pycache__/
 !.env.example
 *.log
 /backups/
+/dist/
+/deployment/local/
+# Console state and credentials belong outside source and release packages.
+prowlarr.json
+botty-credentials*.json
+settings.json
+api-key
+*.key
+*.p12
+*.pfx
 /vps-site/apps/botty-*/
 !/vps-site/apps/botty-native/

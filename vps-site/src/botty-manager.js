@@ -9,19 +9,20 @@ const encoder=new TextEncoder();
 export async function managerInstalled(io) {
   const bytes=await io.readFile(MANAGER_ROOT+'/installed.json',4096);
   if(!bytes)return false;
-  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0','0.3.1','0.3.2',VERSION].includes(data.version);}
+  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3',VERSION].includes(data.version);}
   catch(_){throw Error('Botty installation record is damaged. Reinstall Botty from its button.');}
 }
 async function health(io) {
   const response=await io.http(8088,'/health');
   if(response.status!==200)throw Error('Botty is not responding.');
   const data=JSON.parse(response.body);
-  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0','0.3.1','0.3.2',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
+  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
   return data;
 }
 export async function installAndStartManager(io,options={}) {
   const fetchFile=options.fetchFile||fetch,digest=options.digest||sha256,wait=options.wait||sleep,report=options.report||(()=>{});
-  if(await io.listening(8088))return await health(io);
+  const running = await io.listening(8088) ? await health(io) : null;
+  if(running?.version === VERSION)return running;
   report('Verifying the Botty homebrew package…');
   const response=await fetchFile(BASE+'manifest.json',{cache:'no-store'});
   if(!response.ok)throw Error('Botty package manifest unavailable.');
@@ -51,8 +52,13 @@ export async function installAndStartManager(io,options={}) {
     const disk=await io.readFile(APP+'/'+file.path,file.size);
     if(!disk||await digest(disk)!==file.sha256)throw Error('Botty installation verification failed.');
   }
+  if(await io.listening(8088)) {
+    const active = await health(io);
+    const updatePending = active.version !== VERSION;
+    if(updatePending)report('Botty service ' + VERSION + ' is installed. Running work is preserved; it starts next console session.');
+    return {...active, updatePending, availableVersion: VERSION};
+  }
   report('Starting Botty service…');
-  if(await io.listening(8088))return await health(io);
   await io.sendElf(executable);
   let result;
   for(let attempt=0;attempt<80;attempt++) {

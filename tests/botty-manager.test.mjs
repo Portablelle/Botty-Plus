@@ -36,7 +36,7 @@ test('startup failure reports native diagnostic without recording installation',
 test('running legacy web app is reused without replacement',async()=>{
  const f=fixture({existingBotty:true,version:'0.1.0'});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'0.1.0');assert.equal(f.writes.length,0);assert.equal(f.events.length,0);
+ assert.equal(result.version,'0.1.0');assert.equal(f.writes.length,6);assert.equal(result.updatePending,true);assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);assert.equal(f.events.length,0);
 });
 test('legacy installation record continues to opt in to normal session startup',async()=>{
  const f=fixture();f.files.set(MANAGER_ROOT+'/installed.json',new TextEncoder().encode(JSON.stringify({app:'Botty',version:'0.1.0'})));
@@ -50,7 +50,7 @@ test('wrong version after payload launch cannot record the new service as instal
 test('running 0.1.1 service remains compatible during the catalog update',async()=>{
  const f=fixture({existingBotty:true,version:'0.1.1'});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'0.1.1');assert.equal(f.writes.length,0);
+ assert.equal(result.version,'0.1.1');assert.equal(f.writes.length,6);assert.equal(result.updatePending,true);assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);
 });
 test('0.1.1 installation continues to opt in to startup',async()=>{
  const f=fixture();f.files.set(MANAGER_ROOT+'/installed.json',new TextEncoder().encode(JSON.stringify({app:'Botty',version:'0.1.1'})));
@@ -60,16 +60,28 @@ test('0.1.1 installation continues to opt in to startup',async()=>{
 test('running 0.1.2 service remains compatible during the Unicode update',async()=>{
  const f=fixture({existingBotty:true,version:'0.1.2'});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'0.1.2');assert.equal(f.writes.length,0);
+ assert.equal(result.version,'0.1.2');assert.equal(f.writes.length,6);assert.equal(result.updatePending,true);assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);
 });
 
 test('active 0.1.3 extraction service is kept running during upgrade',async()=>{
  const f=fixture({existingBotty:true,version:'0.1.3'});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'0.1.3');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+ assert.equal(result.version,'0.1.3');assert.equal(f.writes.length,6);assert.equal(result.updatePending,true);assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);assert.deepEqual(f.events,[]);
 });
 
 test('active 0.1.4 service is preserved during parallel extraction upgrade',async()=>{
  const f=fixture({existingBotty:true,version:'0.1.4'});const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'0.1.4');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+ assert.equal(result.version,'0.1.4');assert.equal(f.writes.length,6);assert.equal(result.updatePending,true);assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);assert.deepEqual(f.events,[]);
+});
+
+test('current running service is reused without writes',async()=>{
+ const f=fixture({existingBotty:true});const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.3.4');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+});
+test('running 0.3.3 stages current service without stopping extraction or touching credentials',async()=>{
+ const f=fixture({existingBotty:true,version:'0.3.3'});
+ f.files.set('/data/botty/transmission/state/botty-credentials.json',new Uint8Array([9]));
+ const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.updatePending,true);assert.equal(result.availableVersion,'0.3.4');assert.deepEqual(f.events,[]);
+ assert.deepEqual(f.files.get('/data/botty/transmission/state/botty-credentials.json'),new Uint8Array([9]));
 });

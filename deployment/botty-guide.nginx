@@ -7,7 +7,7 @@ server {
     server_name manuals.playstation.net manuals.playstation.com;
     ssl_certificate /etc/nginx/botty-guide-tls/guide.crt;
     ssl_certificate_key /etc/nginx/botty-guide-tls/guide.key;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_protocols TLSv1.2 TLSv1.3;
     add_header Cache-Control "no-store" always;
     return 302 https://botty.example.com/;
 }

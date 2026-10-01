@@ -13,7 +13,7 @@ export async function launchSession(options) {
   const runtime = await options.jailbreak();
   const io = options.io || new PS5IO(runtime);
   // Publish the complete title before ShadowMountPlus scans the homebrew directory.
-  await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report });
+  const native = await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report });
   await loadRequiredPayloads(runtime, { send, wait, report, markSent() {} });
   report('Starting FTP…');
   if (!await io.listening(2121)) {
@@ -28,6 +28,7 @@ export async function launchSession(options) {
   report('Preparing Transmission…');
   await (options.transmission || installAndStart)(io, { report });
   report('Preparing Botty…');
-  await (options.manager || installAndStartManager)(io, { report });
-  report('Services ready. Waiting for home screen discovery.');
+  const manager = await (options.manager || installAndStartManager)(io, { report });
+  report(manager?.updatePending ? 'Services ready. Service update applies next console session; active work is preserved.' : 'Services ready. Waiting for home screen discovery.');
+  return {native, manager};
 }

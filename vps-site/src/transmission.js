@@ -11,7 +11,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export async function sha256(bytes) {
-  if (!globalThis.crypto || !crypto.subtle) throw Error('Open https://botty.example.com for verified installation.');
+  if (!globalThis.crypto || !crypto.subtle) throw Error('Open this portal over HTTPS for verified installation.');
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return Array.from(digest, b => b.toString(16).padStart(2, '0')).join('');
 }

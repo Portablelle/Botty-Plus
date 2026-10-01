@@ -13,6 +13,9 @@
 From the workspace root:
 
 - `node --test tests/*.test.mjs`: portal, installer, and Transmission integration contracts.
+- `python3 -m unittest discover -s tests -p 'test_*.py' -v`: public export and source-package regressions.
+- `python3 scripts/portal-manifest.py --check`: verify public files, package hashes and installer pins.
+- `python3 scripts/portal-manifest.py --output dist/portal`: export a verified site to a new directory.
 - `make -C homebrew/botty native`: build the host service.
 - `python3 homebrew/botty/tests/make_fixtures.py`: generate original RAR test fixtures.
 - `make -C homebrew/botty test`: C++ core tests and Python HTTP integration tests.
@@ -32,7 +35,7 @@ Use Node’s built-in test runner (`*.test.mjs`), Python `unittest` (`test_*.py`
 
 ## Commit & Pull Request Guidelines
 
-No root Git history is available to establish commit conventions. Use concise imperative subjects. PRs should describe the problem, resulting behavior, tests, and deployment implications. Include screenshots for UI changes and link relevant issues.
+Use concise imperative subjects. PRs should describe the problem, resulting behavior, tests, and deployment implications. Include screenshots for UI changes and link relevant issues.
 
 ## Configuration & Deployment
 

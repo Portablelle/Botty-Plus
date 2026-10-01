@@ -83,12 +83,14 @@ button.addEventListener("click", async () => {
   button.setAttribute("aria-busy", "true");
   const report = message => { status.textContent = message; writeLog(message, "info"); };
   try {
-    await launchSession({
+    const result = await launchSession({
       jailbreak: async () => { await window.offsetsReady; return await run(); },
       report,
     });
     button.textContent = "READY";
-    status.textContent = "Press PS and open Botty+. Allow time for the home screen to refresh.";
+    status.textContent = result.manager?.updatePending
+      ? "Press PS and open Botty+. Service update applies next console session; current work continues."
+      : "Press PS and open Botty+. Allow time for the home screen to refresh.";
     document.body.dataset.state = "ready";
   } catch (error) {
     button.textContent = "STOPPED";

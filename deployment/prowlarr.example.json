@@ -1,0 +1,10 @@
+{
+  "url": "https://botty.example.com/botty-indexer",
+  "apiKey": "REPLACE_WITH_YOUR_32_HEX_CHARACTER_PROWLARR_API_KEY",
+  "caFile": "/data/botty/manager/0.3.4/cacert.pem",
+  "exploreIndexers": {
+    "seeders": 1,
+    "completed": 2,
+    "newest": 3
+  }
+}

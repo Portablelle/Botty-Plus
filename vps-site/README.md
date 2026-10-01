@@ -1,39 +1,43 @@
-# PS5 Relapse Exploit
-Supported firmware: 7.00 through 13.60.
+# Botty+ launch portal
 
-## Usage
-Press **LAUNCH** once and keep the page open. The portal runs the jailbreak,
-verifies/installs Botty Native, loads Kstuff and ShadowMountPlus, starts FTP on
-2121, and prepares Transmission and the Botty service. Installed package files
-are verified and reused; running services are preserved. FTP is an in-memory
-payload, so it is loaded again after a console restart, with no disk installation.
+This directory is the customized static Relapse portal. Press **LAUNCH** once on
+a supported PS5 browser and keep the page open. The sequence verifies/installs
+Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
+Transmission and the Botty service. After **READY**, press PS and open **Botty+**.
+Home-screen registration is asynchronous. Restart after a failed session.
 
-After completion, press PS and open **Botty Native Preview**. Home screen
-discovery is asynchronous; successful payload delivery does not prove registration.
-On failure, the session log opens automatically; restart before another attempt.
-A different or damaged existing native title is preserved and requires a separate
-update. Native files are staged outside the library and published as one directory.
-The one-button installation flow still requires real-console validation.
+The bundled offset files cover 7.00–13.60. This does not establish full-stack
+compatibility across that range. Hardware observations are limited to 13.00.
 
-The default payloads are stored in `payloads/` after a successful run, the ELF loader listens on port `9021`.
+The full repository includes `README.md`, `deployment/README.md` and
+`docs/DEVELOPMENT.md` with hosting, console setup, updates and build instructions:
+[Botty+ repository](https://github.com/Portablelle/botty-ps5).
 
-## Stability notes
-Webkit may need several attempts, reload the page if the browser stalls. The kernel exploit may hang or panic the console, so reboot before trying again if that happens.
+Host the complete verified export at the root of a trusted HTTPS origin. Package
+verification requires Web Crypto. The browser fetches payloads and applications
+from relative paths; there is no maintainer-hosted domain dependency. Do not
+rewrite package contents, cache incompatible releases together or serve local
+backup directories. `manifest.json` inventories the exported files.
 
-## Exploit chain
-Browser stage uses JSC info leaks and a structured clone object pool mismatch to corrupt a typedarray. The kernel stage combines a address leak with an `aio_multi_wait` uaf race to establish kernel r/w.
+The installer preserves existing matching files and running services. A recognized older native title is updated with the app closed after staging and
+verification, with its previous directory retained in private storage. Foreign
+titles and downgrades are refused. Interrupted swaps recover through a journal.
+A newer service is staged while an old daemon continues its active work; it starts
+on the next console restart. FTP is loaded again after reboot;
+successful payload delivery is not proof that a payload initialized correctly.
 
-## Credits
-- Sonic_Iso: Kernel Exploit
-- Jordy: Webkit Exploit and Kernel Bug
-- ntfargo: Exploit Dev
-- ufm42: Exploit Dev
-- Dr. Yenyen: Testing
+## Upstream credits
 
-Other helps:
-- TheFlow, SlidyBat, Flatz, cow, nhk, bollarz, Sleirsgoevy, EchoStretch, EarthOnion.
- 
-## Disclaimer
-This project is intended for **educational and security research purposes only**. It does not endorse piracy, unauthorized access, or misuse of commercial devices. Use it only on devices you own or are authorized to test, and comply with applicable laws and regulations.
+The browser stage uses JavaScriptCore information leaks and a structured-clone
+object pool mismatch. The kernel stage combines an address leak with an
+`aio_multi_wait` use-after-free race.
 
-The software is provided as-is, without warranty. You assume the risks of using it, including system instability, data loss, and account bans. The maintainers accept no liability for resulting damage.
+- Sonic_Iso: kernel exploit.
+- Jordy: WebKit exploit and kernel bug.
+- ntfargo and ufm42: exploit development.
+- Dr. Yenyen: testing.
+- Additional contributors: TheFlow, SlidyBat, Flatz, cow, nhk, bollarz,
+  Sleirsgoevy, EchoStretch and EarthOnion.
+
+Upstream revision is recorded in `manifest.json` and in the repository's
+`Relapse-Exploit` submodule. Preserve the upstream `LICENSE` and attribution.

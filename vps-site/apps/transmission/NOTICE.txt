@@ -1,4 +1,4 @@
-Botty Transmission integration — preview, 2026-10-01
+Botty Transmission integration — preview
 
 Unmodified upstream binaries and web UI:
 https://github.com/ps5-payload-dev/websrv/releases/tag/v0.33
@@ -35,11 +35,14 @@ the VPS or stored in browser localStorage. Other root-capable console services
 (such as FTP or Prospero) may still read console files.
 
 Downloads: /data/botty/downloads/incomplete -> /data/botty/downloads/complete.
-Existing torrent/resume state is preserved. Completed files are not automatically
-moved into ShadowMount's library; use a console file manager after completion.
-Do not remove/move files still being seeded unless updating Transmission's location.
+Existing torrent/resume state is preserved. Botty can extract and publish recognized
+output separately while retaining original archives. Its automatic preparation queue
+applies only to downloads explicitly added through Search/Explore. Do not move files
+still being seeded unless updating Transmission's location.
 
-Not hardware-validated on firmware 13.00. Sustained 70 GB downloads, crash recovery,
-rest mode, playing games concurrently and memory/throughput limits remain untested.
-Keep the console awake. Use Stop safely before shutdown. Check free storage in the
-web interface before large downloads. This preview is not a production guarantee.
+Authenticated RPC and web access have been observed on firmware 13.00. Sustained
+large transfers, rest mode, playing games concurrently and memory/throughput limits
+remain unvalidated. Keep the console awake and check free storage before large
+downloads. Do not shut down during extraction. The current one-button portal has
+no separate Stop safely control; plan controlled maintenance with work idle.
+This preview is not a production guarantee.

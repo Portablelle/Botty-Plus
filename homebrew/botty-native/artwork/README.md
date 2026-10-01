@@ -19,7 +19,7 @@ sce_sys, /user/appmeta and /system_data/priv/appmeta for PPSA99071, including
 The official application registration refresh succeeded. The shell may retain
 previous art until the selection changes or the console is restarted.
 
-## Unreleased native UI refresh
+## Native UI artwork (00.006.000)
 
 Four original assets were generated with the built-in `image_gen` tool on
 2026-10-01. They are decorative Botty artwork, never substitutes presented as
