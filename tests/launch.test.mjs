@@ -143,6 +143,31 @@ for (const kind of ['foreign', 'newer', 'missing-metadata']) test('preserves uns
   await assert.rejects(installNative(f.io, f.options), /recognized|Downgrade/);
   assert.equal(f.writes.length, 0); assert.equal(f.events.length, 0);
 });
+test('launch keeps a recognized newer title untouched and starts every service', async () => {
+  const f = nativeFixture(); await f.previous('01.000.003');
+  const before = new Map(f.files), reports = [], services = [];
+  f.io.prepareNativePermissions = async () => assert.fail('must not change newer title permissions');
+  f.io.syncRegisteredMetadata = async () => assert.fail('must not change newer title metadata');
+  const result = await launchSession({ jailbreak: async () => ({}), io: {listening: async () => true}, nativeIO: f.io,
+    native: (io, options) => installNative(io, {...f.options, ...options}),
+    transmission: async () => services.push('transmission'), manager: async () => services.push('manager'),
+    send: async (_, name) => services.push(name), wait: async () => {}, report: message => reports.push(message) });
+  assert.deepEqual(result.native, {version: '01.000.003', updated: false});
+  assert.deepEqual(services, ['kstuff.elf', 'shadowmountplus.elf', 'transmission', 'manager']);
+  assert.deepEqual(f.files, before); assert.deepEqual(f.writes, []); assert.deepEqual(f.events, []);
+  assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
+  assert.ok(reports.some(message => /Keeping installed Botty\+ 01\.000\.003/.test(message)));
+});
+for (const kind of ['foreign', 'missing-metadata', 'invalid-version']) test('launch reuse still rejects invalid title: ' + kind, async () => {
+  const f = nativeFixture(); await f.previous('01.000.003');
+  const path = NATIVE_ROOT + '/sce_sys/param.json', param = decode(f.files.get(path));
+  if (kind === 'foreign') param.contentId = 'OTHER';
+  if (kind === 'invalid-version') param.contentVersion = '1.0.3';
+  f.files.set(path, encode(param));
+  if (kind === 'missing-metadata') f.files.delete(path);
+  await assert.rejects(installNative(f.io, {...f.options, reuseNewer: true}), /recognized/);
+  assert.deepEqual(f.writes, []); assert.deepEqual(f.events, []);
+});
 test('running app and process inspection failures block update before staging', async () => {
   const f = nativeFixture(); await f.previous();
   f.io.assertNativeStopped = async () => { throw Error('app running'); };

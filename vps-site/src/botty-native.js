@@ -135,7 +135,7 @@ export class NativeIO extends PS5IO {
   }
 }
 
-function identity(bytes, targetVersion) {
+function identity(bytes, targetVersion, reuseNewer = false) {
   let value;
   try { value = JSON.parse(decoder.decode(bytes)); } catch (_) {}
   if (!value || value.titleId !== 'PPSA99071' ||
@@ -143,7 +143,7 @@ function identity(bytes, targetVersion) {
       !/^\d{2}\.\d{3}\.\d{3}$/.test(value.contentVersion) ||
       !['Botty+', 'Botty Native Preview', 'Botty Native'].includes(value.localizedParameters?.['en-US']?.titleName))
     throw Error('Existing title is not a recognized Botty+ installation. Existing files were preserved.');
-  if (value.contentVersion > targetVersion)
+  if (value.contentVersion > targetVersion && !reuseNewer)
     throw Error('A newer Botty+ is already installed. Downgrade refused.');
   return value;
 }
@@ -220,7 +220,13 @@ export async function installNative(io, options = {}) {
       return {version: manifest.version, updated: false};
     }
     previous = await io.readFile(NATIVE_ROOT + '/sce_sys/param.json', 16384);
-    identity(previous, manifest.version);
+    const current = identity(previous, manifest.version, options.reuseNewer === true);
+    if (current.contentVersion > manifest.version) {
+      // Launch can reuse a recognized newer title, but must never modify it using
+      // an older package's file list, permissions, or registered metadata.
+      report('Keeping installed Botty+ ' + current.contentVersion + ' (portal: ' + manifest.version + ').');
+      return {version: current.contentVersion, updated: false};
+    }
     await io.assertNativeStopped();
     report('Preparing Botty+ update to ' + manifest.version + '…');
   } else report('Installing Botty+ ' + manifest.version + '…');

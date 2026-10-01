@@ -258,7 +258,9 @@ The portal upgrades recognized Botty installations automatically. Close Botty+ a
 other native apps, then run **LAUNCH** from a fresh console session. It verifies the
 new manifest and all twelve staged files before moving the old title. Both the
 fixed title ID/content ID and a recognized Botty title name are required; newer
-installed versions are never downgraded.
+installed versions are never downgraded. If the installed version is newer than
+the portal package, **LAUNCH** keeps it untouched and continues starting the
+services. Update the hosted portal to bring its package back in sync.
 
 The previous tree is retained at
 `/data/botty/native/backups/<transaction-id>/PPSA99071`. Previous registered metadata

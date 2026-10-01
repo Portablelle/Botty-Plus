@@ -13,7 +13,7 @@ export async function launchSession(options) {
   const runtime = await options.jailbreak();
   const io = options.io || new PS5IO(runtime);
   // Publish the complete title before ShadowMountPlus scans the homebrew directory.
-  const native = await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report });
+  const native = await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report, reuseNewer: true });
   await loadRequiredPayloads(runtime, { send, wait, report, markSent() {} });
   report('Starting FTP…');
   if (!await io.listening(2121)) {
