@@ -1,4 +1,4 @@
-# Botty+ launch portal
+# Botty+ 1.0 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs

@@ -80,17 +80,17 @@ test('older native title updates only after staging, retains exact previous tree
   const journal = decode(f.files.get(journalPath)); assert.equal(journal.status, 'complete');
   for (const [p, data] of old) assert.deepEqual(f.files.get(journal.backup + p.slice(NATIVE_ROOT.length)), data);
   assert.equal(decode(f.files.get('/data/botty/jobs/example.json')).state, 'extracting');
-  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '00.006.000');
+  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '01.000.000');
   assert.deepEqual(f.events, ['check-stopped', 'check-stopped', 'backup', 'publish']);
 });
 test('recognized current title with damaged executable is backed up and repaired', async () => {
-  const f = nativeFixture(); await f.previous('00.006.000');
+  const f = nativeFixture(); await f.previous('01.000.000');
   await installNative(f.io, f.options);
   assert.ok(f.files.get(NATIVE_ROOT + '/eboot.bin').length > 3);
   assert.deepEqual(f.files.get(decode(f.files.get(journalPath)).backup + '/eboot.bin'), new Uint8Array([1,2,3]));
 });
 for (const kind of ['foreign', 'newer', 'missing-metadata']) test('preserves unsupported installation: ' + kind, async () => {
-  const f = nativeFixture(); await f.previous(kind === 'newer' ? '00.999.000' : '00.005.001');
+  const f = nativeFixture(); await f.previous(kind === 'newer' ? '99.000.000' : '00.005.001');
   if (kind === 'foreign') {const p = decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json'));p.contentId='OTHER';f.files.set(NATIVE_ROOT+'/sce_sys/param.json',encode(p));}
   if (kind === 'missing-metadata') f.files.delete(NATIVE_ROOT+'/sce_sys/param.json');
   await assert.rejects(installNative(f.io, f.options), /recognized|Downgrade/);
@@ -167,7 +167,7 @@ test('registered metadata is backed up, updated, readable and confined to Botty+
   const backup='/data/botty/native/backups/'+'a'.repeat(32)+'/PPSA99071';
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
   assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
-  assert.equal(decode(f.files.get(path)).contentVersion,'00.006.000');
+  assert.equal(decode(f.files.get(path)).contentVersion,'01.000.000');
   assert.deepEqual(f.files.get('/user/app/OTHER/sce_sys/param.json'),new Uint8Array([8]));
   assert.ok(calls.every(([nr,p,mode])=>nr===15&&p.startsWith('/user/app/PPSA99071/')&&mode===0o644));
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
@@ -186,7 +186,7 @@ test('empty first-install reservation can recover from intact verified staging',
  await assert.rejects(installNative(f.io,f.options),/power loss/);
  f.io.nativeExists=async()=>true;f.io.removeEmptyNative=async()=>true;f.io.publishNative=publish;
  await installNative(f.io,f.options);
- assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'00.006.000');
+ assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'01.000.000');
 });
 test('native rename failure removes only its empty reservation and never deletes source',async()=>{
  const events=[];const io={checkedPath:()=>{},string:p=>p,

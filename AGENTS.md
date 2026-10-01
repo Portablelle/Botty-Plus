@@ -6,7 +6,7 @@
 - `homebrew/botty-native/`: C++20 controller-driven PS5 application. Use `src/`, `assets/`, `sce_sys/`, `tests/`, and packaging utilities in `tools/`.
 - `vps-site/`: browser portal, JavaScript ES modules in `src/`, and deployable packages in `apps/`.
 - `tests/`: portal and installer tests. Homebrew components have separate tests.
-- `scripts/` contains release packaging; `deployment/` contains server configuration. `Relapse-Exploit/` and `payloads/` hold exploit/payload components. Consult `PLAN-BOTTY-NATIVE.md` before architectural changes.
+- `scripts/` contains release packaging; `deployment/` contains server configuration. `Relapse-Exploit/` and `payloads/` hold exploit/payload components.
 
 ## Build, Test, and Development Commands
 

@@ -1,4 +1,4 @@
-# Botty service 0.3.4
+# Botty service 1.0.0
 
 Botty is the C++17 background service for **Botty+**. It listens on
 `127.0.0.1:8088`, proxies the separate Transmission process and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and Transmission. The service package lives under
-`/data/botty/manager/0.3.4`; its installed marker is in the parent directory.
+`/data/botty/manager/1.0.0`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 

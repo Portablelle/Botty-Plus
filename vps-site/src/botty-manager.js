@@ -1,22 +1,22 @@
 import { sha256 } from './transmission.js';
 import { sleep } from './ps5-io.js';
 export const MANAGER_ROOT='/data/botty/manager';
-const VERSION='0.3.4';
+const VERSION='1.0.0';
 const APP=MANAGER_ROOT+'/'+VERSION;
 const BASE='./apps/botty/';
-const HASH='582e5a6eb0d882ec55b185b344d9562953b0d1609d7ea7ee8db8b6372da94296';
+const HASH='e7c50c1dec0c544645f62d8d7a0f8403918b404de960c4acbb97e311c262ccd4';
 const encoder=new TextEncoder();
 export async function managerInstalled(io) {
   const bytes=await io.readFile(MANAGER_ROOT+'/installed.json',4096);
   if(!bytes)return false;
-  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3',VERSION].includes(data.version);}
+  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4',VERSION].includes(data.version);}
   catch(_){throw Error('Botty installation record is damaged. Reinstall Botty from its button.');}
 }
 async function health(io) {
   const response=await io.http(8088,'/health');
   if(response.status!==200)throw Error('Botty is not responding.');
   const data=JSON.parse(response.body);
-  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
+  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
   return data;
 }
 export async function installAndStartManager(io,options={}) {

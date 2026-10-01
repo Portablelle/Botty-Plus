@@ -2,7 +2,7 @@
 
 This is a consolidated record of earlier development observations as of
 2026-10-01, not a claim that every workflow or supported firmware has passed.
-Current packages: native **00.006.000**, service **0.3.4**, Transmission **4.0.6**.
+Previously observed packages: native **00.006.000**, service **0.3.4**, Transmission **4.0.6**.
 Hardware observations below were made on **PS5 firmware 13.00**.
 
 ## Host coverage
@@ -38,7 +38,7 @@ Run current checks using [the development guide](../../docs/DEVELOPMENT.md).
 | RAR engine | Isolated original fixtures passed extraction, CRC, Unicode, parallel-worker and cancellation checks | No general large-archive performance guarantee |
 | Library permissions | Isolated publication checks and launch after permission correction observed | Content compatibility remains separate |
 | Explore/artwork | All three rankings and correctly sized RGB responses observed | New selection through the complete real download pipeline remains unvalidated |
-| Current 00.006.000 / 0.3.4 delivery | Cross-builds, staged/active read-back hashes, registration refresh and API smoke checks recorded | Current DualSense visual navigation and frame rate remain unverified |
+| Current 00.006.000 / 0.3.4 delivery | Cross-builds, staged/active read-back hashes, registration refresh and API smoke checks recorded | Navigation and smoothness confirmed by the user on 13.00 |
 
 Raw binary verification through ftpsrv required disabling SELF-to-ELF conversion
 with the `SELF` command and checking its response before read-back. Previous title
@@ -57,8 +57,10 @@ validate the new updater.
 
 - [ ] Automatic native upgrade, registered metadata refresh and rollback on hardware.
 - [ ] Cold-boot **LAUNCH** through every stage on a clean console installation.
-- [ ] Current native screen layout, TV margins, readability and sustained frame rate.
-- [ ] DualSense navigation, held inputs and controller disconnect/reconnect.
+- [x] Native navigation and smoothness: confirmed by the user on PS5 13.00 on 2026-10-01.
+- [ ] TV margins/readability across displays and measured sustained frame rate.
+- [x] DualSense navigation: confirmed by the user on PS5 13.00.
+- [ ] Held-input edge cases and controller disconnect/reconnect.
 - [ ] On-screen keyboard, password entry and confirmed destructive actions.
 - [ ] Complete authorized small download → extraction → library workflow on hardware.
 - [ ] Large transfers, low-space behavior, network interruption and sustained load.
@@ -70,3 +72,17 @@ validate the new updater.
 Rest mode and simultaneous gameplay are not promised. Manifest fields
 `hardwareValidated` and `registrationVerified` remain false until the relevant
 release acceptance criteria are completed. Host tests alone must not change them.
+
+## Version 1.0 release
+
+Native 01.000.000 and service 1.0.0 promote the existing feature set to the first
+public release. Version labels, package paths, installers and release artifacts
+are updated together. This does not complete the hardware checks above; their
+status remains unchanged and manifest hardware-validation flags remain false.
+
+### User-confirmed navigation
+
+On 2026-10-01, the user confirmed that navigation is tested and smooth on the
+PS5. This validates normal controller navigation and perceived fluidity of the
+current UI. It does not assert a measured FPS value or complete the separate
+upgrade/recovery, rest-mode and long-duration workload checks.

@@ -1,10 +1,24 @@
-# Botty+ for PS5
+<p align="center">
+  <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
+</p>
+
+<h1 align="center">Botty+ 1.0</h1>
+
+<p align="center">Your downloads. Your library. On PS5.</p>
+
+<p align="center">
+  <a href="https://github.com/Portablelle/botty-ps5/releases/tag/v1.0.0">Download v1.0.0</a> ·
+  <a href="deployment/README.md">Deployment guide</a> ·
+  <a href="homebrew/botty-native/VALIDATION.md">Compatibility &amp; validation</a>
+</p>
+
+![Botty+ background artwork](homebrew/botty-native/artwork/botty-plus-background.png)
 
 Botty+ is a native, controller-driven download and library manager for PS5 homebrew. It combines a browser launch portal, a background Transmission daemon, a RAR extraction service and a 1080p native application.
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Preview release:** the repository contains service **0.3.4**, native title **00.006.000** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
+**Version 1.0:** this release includes service **1.0.0**, native title **01.000.000** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
 
 ## Features
 
@@ -25,7 +39,6 @@ Normal extraction and library publication retain the original torrent archives f
 | Configure Search, Explore and covers | [Optional services](deployment/README.md#optional-search-and-explore) |
 | Build, test and package a release | [Development](docs/DEVELOPMENT.md) |
 | Update or roll back an installation | [Updates and rollback](deployment/README.md#updates-and-rollback) |
-| Understand service boundaries | [Architecture](PLAN-BOTTY-NATIVE.md) |
 
 ## Requirements
 
@@ -36,6 +49,10 @@ Normal extraction and library publication retain the original torrent archives f
 - Optional: Prowlarr for Search/Explore and Python with Pillow for the cover resolver. These are not required for manual magnets and extraction.
 
 Use the stack only on consoles and content you are authorized to manage. Keep console services on the trusted LAN; no router port forwarding is needed.
+
+## Download 1.0
+
+Get the ready-to-host portal and native application from the [v1.0.0 release](https://github.com/Portablelle/botty-ps5/releases/tag/v1.0.0). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
 
 ## Get the repository
 
@@ -94,7 +111,7 @@ The in-app keyboard supports controller input and Unicode code-point entry. Dest
 | Location | Contents |
 | --- | --- |
 | `/data/homebrew/PPSA99071` | Botty+ native application |
-| `/data/botty/manager/0.3.4` | Botty service, local web assets and CA bundle |
+| `/data/botty/manager/1.0.0` | Botty service, local web assets and CA bundle |
 | `/data/botty/transmission/state` | Transmission settings, credentials, torrent and resume state |
 | `/data/botty/downloads/incomplete`, `complete` | Original downloads |
 | `/data/botty/extracted`, `jobs`, `automatic` | Extraction output, job records and automatic queue |
