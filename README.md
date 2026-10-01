@@ -20,6 +20,37 @@ Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from
 
 **Version 1.01:** this release includes service **1.0.1**, native title **01.000.002** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
 
+## Screenshots
+
+These screenshots use a read-only snapshot from a live Botty+ session. They show real PS5 download, library, search and Explore data at capture time; the Connections password is masked.
+
+![Botty+ live PS5 data](docs/screenshots/botty-plus-live-data.png)
+
+The Explore screen resolves real game artwork from the configured catalog:
+
+![Botty+ Explore with live covers](docs/screenshots/botty-plus-live-explore.png)
+
+<details>
+<summary>Open the individual Botty+ pages</summary>
+
+![Downloads](docs/screenshots/botty-plus-live-downloads.png)
+
+![Extracted](docs/screenshots/botty-plus-live-extracted.png)
+
+![Library](docs/screenshots/botty-plus-live-library.png)
+
+![Connections](docs/screenshots/botty-plus-live-connections.png)
+
+![Search](docs/screenshots/botty-plus-live-search.png)
+
+![Explore](docs/screenshots/botty-plus-live-explore.png)
+
+</details>
+
+The launch portal shown before opening Botty+:
+
+![Botty+ PS5 launch portal](docs/screenshots/portal-launch.png)
+
 ## Features
 
 - **Explore and Search:** optional Prowlarr integration, cover artwork and a persistent download → extract → library workflow.

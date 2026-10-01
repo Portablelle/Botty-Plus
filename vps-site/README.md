@@ -13,6 +13,13 @@ The full repository includes `README.md`, `deployment/README.md` and
 `docs/DEVELOPMENT.md` with hosting, console setup, updates and build instructions:
 [Botty+ repository](https://github.com/Portablelle/botty-ps5).
 
+## Portal screenshot
+
+This is the current launch portal shown on a supported PS5 browser. Select
+**LAUNCH** to start the setup sequence.
+
+![Botty+ PS5 launch portal](../docs/screenshots/portal-launch.png)
+
 Host the complete verified export at the root of a trusted HTTPS origin. Package
 verification requires Web Crypto. The browser fetches payloads and applications
 from relative paths; there is no maintainer-hosted domain dependency. Do not
