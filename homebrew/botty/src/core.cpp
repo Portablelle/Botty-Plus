@@ -65,6 +65,59 @@ uint64_t freeBytes(const fs::path& path) {
   if (statvfs(path.c_str(), &data)) throw std::runtime_error("Cannot read free disk space");
   return uint64_t(data.f_bavail) * uint64_t(data.f_frsize);
 }
+namespace {
+#ifdef __PS5__
+// The payload SDK's *at stubs return a positive kernel errno and leave libc
+// errno unchanged. For openat that value even looks like a valid descriptor.
+// Read the syscall carry flag and normalize to the POSIX contract we use below.
+long relativeFileCall(long number,int fd,const char* path,long argument,long flags=0) {
+  register long fourth asm("r10")=flags;
+  long result=number;bool failed;
+  asm volatile("syscall" : "+a"(result), "=@ccc"(failed)
+      : "D"(fd), "S"(path), "d"(argument), "r"(fourth) : "rcx","r11","memory");
+  if(failed){errno=int(result);return -1;}return result;
+}
+int openDirectoryAt(int fd,const char* name){return int(relativeFileCall(499,fd,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW));}
+int statFileAt(int fd,const char* name,struct stat* info){return int(relativeFileCall(493,fd,name,reinterpret_cast<long>(info),AT_SYMLINK_NOFOLLOW));}
+int unlinkFileAt(int fd,const char* name){return int(relativeFileCall(503,fd,name,0));}
+#else
+int openDirectoryAt(int fd,const char* name){return openat(fd,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);}
+int statFileAt(int fd,const char* name,struct stat* info){return fstatat(fd,name,info,AT_SYMLINK_NOFOLLOW);}
+int unlinkFileAt(int fd,const char* name){return unlinkat(fd,name,0);}
+#endif
+}
+void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove) {
+  for(const auto& file:files) {
+    const auto relative=safeRelative(file.string());
+    int fd=open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(fd<0)throw std::runtime_error("Cannot open download directory");
+    try {
+      bool missing=false;
+      for(const auto& part:relative.parent_path()) {
+        const int next=openDirectoryAt(fd,part.c_str());
+        if(next<0) {
+          if(errno==ENOENT){missing=true;break;}
+          throw std::runtime_error("Cannot access download directory safely");
+        }
+        close(fd);fd=next;
+      }
+      if(!missing) {
+        const auto name=relative.filename();struct stat info{};
+        if(statFileAt(fd,name.c_str(),&info)) {
+          if(errno!=ENOENT)throw std::runtime_error("Cannot inspect downloaded file");
+        } else {
+          if(!S_ISREG(info.st_mode))throw std::runtime_error("Unexpected download entry; deletion refused");
+          if(remove) {
+            if(unlinkFileAt(fd,name.c_str())&&errno!=ENOENT)throw std::runtime_error("Cannot delete downloaded file; torrent kept paused for retry");
+            if(statFileAt(fd,name.c_str(),&info)==0||errno!=ENOENT)
+              throw std::runtime_error("Downloaded file still exists; torrent kept paused for retry");
+          }
+        }
+      }
+      close(fd);
+    } catch(...) {close(fd);throw;}
+  }
+}
 std::string randomId() {
   unsigned char bytes[16]; arc4random_buf(bytes, sizeof bytes);
   const char* hex = "0123456789abcdef"; std::string out;

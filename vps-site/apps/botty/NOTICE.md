@@ -1,4 +1,4 @@
-# Botty service 1.0.0
+# Botty service 1.0.1
 
 Botty is the C++17 background service for **Botty+**. It listens on
 `127.0.0.1:8088`, proxies the separate Transmission process and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and Transmission. The service package lives under
-`/data/botty/manager/1.0.0`; its installed marker is in the parent directory.
+`/data/botty/manager/1.0.1`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -144,3 +144,7 @@ Rest mode, sustained large transfers and simultaneous gameplay remain unvalidate
   commit `baabe27e5449baeb059b850d0393c31fdee219b7`.
 
 Retain the component `LICENSE`, vendored notices and corresponding source archive.
+
+Torrent deletion stops the torrent before removing its exact files from the download and incomplete directories. Botty verifies removal before discarding torrent metadata; on failure the paused torrent remains available for retry. Library games and unrelated files are preserved. Transmission RPC success alone is not treated as proof that disk space was reclaimed.
+
+To resume an interrupted extraction, select the same torrent and first RAR volume and choose Extract again. The service reuses its existing job and private staging directory. Unencrypted, non-solid RAR4 output is checked against each full-file CRC (the final split header for multivolume members); only valid completed files are retained. Incomplete/corrupt files restart from their beginning. Other formats fail safely with partial files preserved. Free-space checks account for retained output and actual allocated blocks of incomplete files. Do not delete/dismiss the interrupted extraction if you intend to resume it.

@@ -9,6 +9,7 @@
 #include <iostream>
 #include <mutex>
 #include <regex>
+#include <set>
 #include <thread>
 #include <sys/file.h>
 #include <fcntl.h>
@@ -18,7 +19,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.0.0/ui"
+#define BOTTY_UI "/data/botty/manager/1.0.1/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -105,7 +106,7 @@ void recoverJobs() {
       const std::string id=job.at("id");
       if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || entry.path().stem()!=id)continue;
       if(job.value("status","")=="extracting" || job.value("status","")=="moving") {
-        job["extractionRate"]=0;job["eta"]=-1;job["status"]="interrupted";job["error"]="Previous session ended during this operation. Inspect or delete the partial extraction before retrying.";
+        job["extractionRate"]=0;job["eta"]=-1;job["status"]="interrupted";job["error"]="Previous session ended during this operation. Extract the same archive again to verify and resume supported partial output.";
         writeJson(entry.path(),job);
       }
       jobs.push_back(job);
@@ -137,9 +138,23 @@ json startExtraction(const json& request, bool automatic=false) {
       (job.value("status","")=="ready" || job.value("status","")=="moved"))throw std::runtime_error("This archive was already extracted");
   json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},
     {"automatic",automatic},{"status","extracting"},{"phase","Starting"},{"bytes",0},{"total",0},{"error",""}};
-  writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);jobs.push_back(job);cancelExtraction=false;activeJob=job.at("id");extracting=true;
+  bool resuming=false;
+  for(const auto& old:jobs) {
+    const auto status=old.value("status","");
+    if(old.value("hash","")!=torrent.at("hashString")||old.value("archive","")!=name||
+        (status!="interrupted"&&status!="cancelled"&&status!="failed")||old.value("dismissed",false))continue;
+    const auto stage=paths.extracted/(old.at("id").get<std::string>()+".working");
+    if(!fs::exists(fs::symlink_status(stage)))continue;
+    if(resuming)throw std::runtime_error("Multiple partial extractions exist; choose which partial output to keep before retrying");
+    containedExisting(paths.extracted,stage);job=old;resuming=true;
+  }
+  job["status"]="extracting";job["phase"]=resuming?"Verifying existing files for resume":"Starting";
+  job["bytes"]=0;job["total"]=0;job["error"]="";job["extractionRate"]=0;job["eta"]=-1;
+  writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);
+  if(resuming){for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;break;}}else jobs.push_back(job);
+  cancelExtraction=false;activeJob=job.at("id");extracting=true;
   try {
-    std::thread([job,archive,password]()mutable{
+    std::thread([job,archive,password,resuming]()mutable{
       const auto stage=paths.extracted/(job.at("id").get<std::string>()+".working");
       const auto final=paths.extracted/job.at("id").get<std::string>();
       ProgressSchedule progressSchedule; ExtractionEstimate estimate;
@@ -152,7 +167,7 @@ json startExtraction(const json& request, bool automatic=false) {
           if(progress.total>0){estimate.update(now,progress.bytes,progress.total);}
           job["extractionRate"]=estimate.rate;job["eta"]=estimate.eta;
           publishJob(job,decision.checkpoint);
-        },password,[]{return cancelExtraction.load();});
+        },password,[]{return cancelExtraction.load();},0,resuming);
         if(cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
         fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
         if(job.value("automatic",false)){
@@ -251,7 +266,7 @@ int main(int argc,char** argv) {
       }
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.0.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.0.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -309,19 +324,43 @@ int main(int argc,char** argv) {
         std::vector<fs::path> locations{directory};
         const auto session=rpc("session-get");
         if(session.value("incomplete-dir-enabled",false))locations.push_back(containedExisting(downloadRoot,session.at("incomplete-dir").template get<std::string>()));
-        for(const auto& location:locations)for(const auto& file:torrent.at("files")){
+        std::vector<fs::path> members;
+        for(const auto& file:torrent.at("files")){
           const auto relative=safeRelative(file.at("name").template get<std::string>());
-          for(const auto& suffix:{"", ".part"}){
-            auto candidate=location;
-            for(const auto& part:fs::path(relative.string()+suffix)){candidate/=part;if(fs::is_symlink(fs::symlink_status(candidate)))throw std::runtime_error("Cannot delete downloads through symbolic links");}
-            if(fs::exists(candidate)&&!fs::is_regular_file(candidate))throw std::runtime_error("Unexpected download entry; deletion refused");
-          }
+          for(const auto& suffix:{"", ".part"})members.emplace_back(relative.string()+suffix);
         }
+        for(const auto& location:locations)downloadedFiles(location,members,false);
         const auto hash=torrent.at("hashString").template get<std::string>();
         if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))throw std::runtime_error("Invalid torrent identity");
+        // Two torrents can refer to the same pathname. Do not remove another
+        // torrent's files, including incomplete files in the shared directory.
+        std::set<fs::path> selectedPaths;
+        for(const auto& location:locations)for(const auto& member:members)selectedPaths.insert(location/member);
+        for(const auto& other:torrents())if(other.at("hashString")!=hash) {
+          std::vector<fs::path> otherLocations{fs::path(other.at("downloadDir").template get<std::string>()).lexically_normal()};
+          if(locations.size()>1)otherLocations.push_back(locations[1]);
+          for(const auto& file:other.at("files"))for(const auto& suffix:{"", ".part"}) {
+            const auto member=fs::path(safeRelative(file.at("name").template get<std::string>()).string()+suffix);
+            for(const auto& otherLocation:otherLocations)if(selectedPaths.count(otherLocation/member))
+                throw std::runtime_error("Downloaded files are shared with another torrent; deletion refused");
+          }
+        }
         const auto queue=paths.root/"automatic"/(hash+".json");
         if(fs::exists(queue))writeJson(queue,{{"hash",hash},{"status","deletion-requested"}});
-        reply(res,rpc("torrent-remove",{{"ids",{hash}},{"delete-local-data",true}}));return;
+        rpc("torrent-stop",{{"ids",{hash}}});
+        bool stopped=false;
+        for(int attempt=0;attempt<20;++attempt) {
+          for(const auto& item:torrents())if(item.at("hashString")==hash)stopped=item.value("status",-1)==0;
+          if(stopped)break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if(!stopped)throw std::runtime_error("Torrent did not stop; no files were deleted");
+        // Transmission's RPC success only acknowledges the removal request.
+        // Unlink and verify exact members ourselves before discarding metadata,
+        // so a filesystem failure leaves a paused torrent that can be retried.
+        for(const auto& location:locations)downloadedFiles(location,members,false);
+        for(const auto& location:locations)downloadedFiles(location,members,true);
+        reply(res,rpc("torrent-remove",{{"ids",{hash}},{"delete-local-data",false}}));return;
       }
       const std::map<std::string,std::string> methods={{"pause","torrent-stop"},{"resume","torrent-start"},{"verify","torrent-verify"}};
       const auto method=methods.find(action);if(method==methods.end())throw std::runtime_error("Unsupported torrent action");

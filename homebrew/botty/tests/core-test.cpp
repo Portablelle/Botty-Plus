@@ -46,6 +46,15 @@ int main(){
   assert(safeRelative("Demo/sce_sys/param.json")=="Demo/sce_sys/param.json");
   fs::create_directories(root/"inside");fs::create_directory_symlink(root/"inside",root/"link");
   fails([&]{containedExisting(root,root/"link");});
+  fs::create_directories(root/"delete/sub");
+  {std::ofstream file(root/"delete/sub/member.part");file<<"download";}
+  downloadedFiles(root/"delete",{"sub/member.part","missing/member"},false);
+  downloadedFiles(root/"delete",{"sub/member.part","missing/member"},true);
+  assert(!fs::exists(root/"delete/sub/member.part"));
+  fs::create_directory_symlink(root/"app",root/"delete/link");
+  fails([&]{downloadedFiles(root/"delete",{"link/eboot.bin"},true);});
+  fails([&]{downloadedFiles(root/"delete",{"../outside"},true);});
+  fails([&]{downloadedFiles(root/"delete",{"sub"},true);});
   const auto fixtures=fs::path("tests/fixtures");
   std::atomic<bool> cancelled{false};
   fails([&]{extractRar(fixtures/"app.rar",root/"cancelled",[&](const Progress&p){if(p.bytes>0)cancelled=true;},"",[&]{return cancelled.load();},1);});
@@ -53,6 +62,27 @@ int main(){
   assert(fs::exists(fixtures/"app.rar"));
   extractRar(fixtures/"app.rar",root/"app",[](const Progress&){});
   assert(readText(root/"app/Demo/eboot.bin").size()==7600);
+  // Resume trusts neither file size nor the old job progress: CRC verifies
+  // existing output, including the final CRC of a member split over 163 volumes.
+  const auto resume=root/"resume";fs::copy(root/"app",resume,fs::copy_options::recursive);
+  const auto keptTime=fs::last_write_time(resume/"Demo/sce_sys/param.json");
+  {std::ofstream file(resume/"Demo/eboot.bin",std::ios::binary);file<<std::string(7600,'x');}
+  uint64_t reusedBytes=0;
+  extractRar(fixtures/"app.rar",resume,[&](const Progress& p){if(p.phase=="Verifying existing files for resume")reusedBytes=p.bytes;},"",{},0,true);
+  assert(reusedBytes==fs::file_size(resume/"Demo/sce_sys/param.json"));
+  assert(fs::last_write_time(resume/"Demo/sce_sys/param.json")==keptTime);
+  assert(readText(resume/"Demo/eboot.bin")==readText(root/"app/Demo/eboot.bin"));
+  fs::create_directories(root/"resume-multi");fs::copy_file(fixtures/"multipart-expected.bin",root/"resume-multi/content.bin");
+  const auto multiTime=fs::last_write_time(root/"resume-multi/content.bin");
+  extractRar(fixtures/"multipart/sample.rar",root/"resume-multi",[](const Progress&){},"",{},1,true);
+  assert(fs::last_write_time(root/"resume-multi/content.bin")==multiTime);
+  {std::ofstream file(resume/"unrelated");file<<"keep";}
+  fails([&]{extractRar(fixtures/"app.rar",resume,[](const Progress&){},"",{},0,true);});
+  assert(readText(resume/"unrelated")=="keep");fs::remove(resume/"unrelated");
+  fs::remove(resume/"Demo/eboot.bin");fs::create_symlink(root/"app/Demo/eboot.bin",resume/"Demo/eboot.bin");
+  fails([&]{extractRar(fixtures/"app.rar",resume,[](const Progress&){},"",{},0,true);});
+  assert(readText(root/"app/Demo/eboot.bin").size()==7600);
+  fails([&]{extractRar(fixtures/"solid.rar",resume,[](const Progress&){},"",{},0,true);});
   bool usedParallel=false;
   extractRar(fixtures/"solid.rar",root/"solid",[&](const Progress&p){if(p.phase.find("2 workers")!=std::string::npos)usedParallel=true;},"",{},2);
   assert(!usedParallel&&readText(root/"solid/one.bin")==std::string(1024,'a'));

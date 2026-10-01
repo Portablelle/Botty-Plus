@@ -13,6 +13,8 @@
 #include <exception>
 #include <stdexcept>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <zlib.h>
 namespace botty {
 namespace {
 struct Context {
@@ -83,24 +85,35 @@ void checkCode(int code, const Context& context) {
   if(code!=ERAR_SUCCESS) throw std::runtime_error(context.error.empty()?"RAR extraction failed (code "+std::to_string(code)+"). Check all volumes, CRC and password.":context.error);
 }
 }
-void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password, std::function<bool()> cancelled, unsigned workers) {
+void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password, std::function<bool()> cancelled, unsigned workers, bool resume) {
   Context context;context.parent=fs::canonical(archive.parent_path()); context.password=password; context.report=report; context.cancelled=std::move(cancelled);
   context.progress.phase="Checking archive headers";context.report(context.progress);
   std::set<std::string> names; size_t entries=0;
-  struct Member {std::string name;uint64_t size;bool directory;unsigned flags,version,method;};
+  struct Member {std::string name;uint64_t size;bool directory;unsigned flags,version,method,crc;bool checksumComplete;};
   std::vector<Member> members;bool independent=password.empty();
   {
-    Archive source(archive,RAR_OM_LIST,context);
+    Archive source(archive,RAR_OM_LIST_INCSPLIT,context);
     independent=independent && !(source.flags&(ROADF_SOLID|ROADF_ENCHEADERS));
     while(true) {
       checkCode(ERAR_SUCCESS,context);
       RARHeaderDataEx header{}; int code=RARReadHeaderEx(source.handle,&header);
       if(code==ERAR_END_ARCHIVE)break;
       checkCode(code,context); checkHeader(header);
+      const uint64_t memberSize=(uint64_t(header.UnpSizeHigh)<<32)|header.UnpSize;
+      if(header.Flags&RHDF_SPLITBEFORE) {
+        if(members.empty())throw std::runtime_error("Missing first archive volume");
+        auto& previous=members.back();
+        if(previous.checksumComplete||previous.name!=nameOf(header)||previous.size!=memberSize||previous.version!=header.UnpVer||previous.method!=header.Method)
+          throw std::runtime_error("Unexpected archive continuation");
+        // RAR4 stores the full file CRC in the FINAL split header. Earlier
+        // headers contain the packed part CRC, which cannot validate output.
+        previous.crc=header.FileCRC;previous.checksumComplete=!(header.Flags&RHDF_SPLITAFTER);
+        checkCode(RARProcessFile(source.handle,RAR_SKIP,nullptr,nullptr),context);continue;
+      }
+      if(!members.empty()&&!members.back().checksumComplete)throw std::runtime_error("Incomplete archive member");
       if(++entries>200000)throw std::runtime_error("Archive has too many entries");
       if(!names.insert(nameOf(header)).second)throw std::runtime_error("Duplicate archive paths are rejected");
-      const uint64_t memberSize=(uint64_t(header.UnpSizeHigh)<<32)|header.UnpSize;
-      members.push_back({nameOf(header),memberSize,bool(header.Flags&RHDF_DIRECTORY),header.Flags,header.UnpVer,header.Method});
+      members.push_back({nameOf(header),memberSize,bool(header.Flags&RHDF_DIRECTORY),header.Flags,header.UnpVer,header.Method,header.FileCRC,!(header.Flags&RHDF_SPLITAFTER)});
       if(header.Flags&(RHDF_SOLID|RHDF_ENCRYPTED))independent=false;
       if(!(header.Flags&RHDF_DIRECTORY) && header.UnpVer>29)independent=false;
       if(!(header.Flags&RHDF_DIRECTORY)) {
@@ -111,16 +124,65 @@ void extractRar(const fs::path& archive, const fs::path& destination, Reporter r
       checkCode(RARProcessFile(source.handle,RAR_SKIP,nullptr,nullptr),context);
     }
   }
+  if(!members.empty()&&!members.back().checksumComplete)throw std::runtime_error("Incomplete archive member");
+  std::set<std::string> reused;
+  std::vector<fs::path> replace;
+  uint64_t reclaim=0;
+  if(resume) {
+    if(!independent)throw std::runtime_error("Safe resume currently requires unencrypted, non-solid RAR4 archives; partial files were kept");
+    containedExisting(destination.parent_path(),destination);
+    // Reject unexpected content before reading or deleting anything in a stage.
+    size_t count=0;
+    for(const auto& entry:fs::recursive_directory_iterator(destination)) {
+      if(++count>400000||entry.is_symlink()||(!entry.is_directory()&&!entry.is_regular_file()))throw std::runtime_error("Unsafe partial extraction entry");
+      if(entry.is_regular_file()&&!names.count(entry.path().lexically_relative(destination).string()))throw std::runtime_error("Unexpected file in partial extraction; files were kept");
+    }
+    context.progress.phase="Verifying existing files for resume";context.report(context.progress);
+    std::vector<unsigned char> buffer(1024*1024);
+    for(const auto& member:members) {
+      checkCode(ERAR_SUCCESS,context);
+      if(member.directory)continue;
+      const auto target=destination/safeRelative(member.name);
+      if(!fs::exists(target))continue;
+      containedExisting(destination,target);
+      int fd=open(target.c_str(),O_RDONLY|O_NOFOLLOW);if(fd<0)throw std::runtime_error("Cannot read partial extraction");
+      struct stat info{};bool valid=false;
+      try {
+        if(fstat(fd,&info)||!S_ISREG(info.st_mode))throw std::runtime_error("Unexpected partial file");
+        if(uint64_t(info.st_size)==member.size) {
+          uLong crc=crc32(0,nullptr,0);uint64_t bytes=0;
+          context.progress.file=member.name;context.report(context.progress);
+          for(;;) {
+            checkCode(ERAR_SUCCESS,context);
+            const auto n=read(fd,buffer.data(),buffer.size());
+            if(n<0&&errno==EINTR)continue;
+            if(n<0)throw std::runtime_error("Cannot verify partial extraction");
+            if(!n)break;
+            crc=crc32(crc,buffer.data(),unsigned(n));bytes+=uint64_t(n);
+          }
+          valid=bytes==member.size&&crc==member.crc;
+        }
+        close(fd);fd=-1;
+      }catch(...){if(fd>=0)close(fd);throw;}
+      if(valid){reused.insert(member.name);context.progress.bytes+=member.size;context.report(context.progress);}
+      else {replace.emplace_back(member.name);if(info.st_nlink==1)reclaim+=uint64_t(info.st_blocks)*512;}
+    }
+  }
   const uint64_t margin=512ULL*1024*1024;
   const auto available=freeBytes(destination.parent_path());
-  if(available<margin || context.progress.total>available-margin)throw std::runtime_error("Not enough free space for extraction plus a 512 MiB reserve");
-  if(!fs::create_directory(destination))throw std::runtime_error("Extraction destination already exists");
+  const auto remaining=context.progress.total-context.progress.bytes;
+  if(available+reclaim<margin || remaining>available+reclaim-margin)throw std::runtime_error("Not enough free space for remaining extraction plus a 512 MiB reserve");
+  if(resume) {
+    downloadedFiles(destination,replace,false);downloadedFiles(destination,replace,true);
+    const auto after=freeBytes(destination);
+    if(after<margin||remaining>after-margin)throw std::runtime_error("Not enough free space after partial file cleanup");
+  } else if(!fs::create_directory(destination))throw std::runtime_error("Extraction destination already exists");
   auto sorted=members;std::stable_sort(sorted.begin(),sorted.end(),[](const Member&a,const Member&b){return a.size>b.size;});
   // User preference: three independent members at a time whenever safe.
   // A one/two-worker override is retained for controlled benchmarks/tests.
   const unsigned workerCount=independent?(workers==1?1:workers==2?2:3):1;
   std::map<std::string,unsigned> assignment;uint64_t loads[3]={0,0,0};
-  for(const auto& member:sorted){unsigned owner=static_cast<unsigned>(std::min_element(loads,loads+workerCount)-loads);assignment[member.name]=owner;if(!member.directory)loads[owner]+=member.size;}
+  for(const auto& member:sorted){unsigned owner=static_cast<unsigned>(std::min_element(loads,loads+workerCount)-loads);assignment[member.name]=owner;if(!member.directory&&!reused.count(member.name))loads[owner]+=member.size;}
   context.progress.phase=workerCount>1?"Extracting and checking CRC ("+std::to_string(workerCount)+" workers)":"Extracting and checking CRC";context.report(context.progress);
   std::atomic<bool> stop{false};std::mutex progressLock;std::exception_ptr failure;
   const auto externalCancel=context.cancelled;
@@ -142,7 +204,7 @@ void extractRar(const fs::path& archive, const fs::path& destination, Reporter r
     if(header.Flags&RHDF_SPLITBEFORE){
       // LIST hides continuation headers; EXTRACT exposes them when skipping a
       // member assigned to the other worker. Follow its remaining volumes.
-      if(workerCount<2||!memberIndex||members[memberIndex-1].name!=name||assignment.at(name)==worker)
+      if(!memberIndex||members[memberIndex-1].name!=name||(!reused.count(name)&&(workerCount<2||assignment.at(name)==worker)))
         throw std::runtime_error("Unexpected archive continuation");
       checkCode(RARProcessFile(source.handle,RAR_SKIP,nullptr,nullptr),context);continue;
     }
@@ -150,7 +212,7 @@ void extractRar(const fs::path& archive, const fs::path& destination, Reporter r
     const auto& expected=members[memberIndex++];
     const uint64_t size=(uint64_t(header.UnpSizeHigh)<<32)|header.UnpSize;
     if(name!=expected.name||size!=expected.size||header.Flags!=expected.flags||header.UnpVer!=expected.version||header.Method!=expected.method)throw std::runtime_error("Archive changed after inspection: member "+std::to_string(memberIndex)+" flags "+std::to_string(header.Flags)+" expected "+std::to_string(expected.flags)+" size "+std::to_string(size)+" expected "+std::to_string(expected.size));
-    if(workerCount>1 && assignment.at(name)!=worker){checkCode(RARProcessFile(source.handle,RAR_SKIP,nullptr,nullptr),context);continue;}
+    if(reused.count(name)||(workerCount>1 && assignment.at(name)!=worker)){checkCode(RARProcessFile(source.handle,RAR_SKIP,nullptr,nullptr),context);continue;}
     auto relative=safeRelative(name);const auto target=destination/relative;
     context.progress.file=relative.string(); context.written=0;
     context.expected=(uint64_t(header.UnpSizeHigh)<<32)|header.UnpSize;

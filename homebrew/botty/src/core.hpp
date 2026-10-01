@@ -17,11 +17,13 @@ void writeJson(const fs::path&, const json&);
 fs::path safeRelative(const std::string&);
 fs::path containedExisting(const fs::path& root, const fs::path& path);
 uint64_t freeBytes(const fs::path&);
+// Exact torrent members only; never recurse into a download or library folder.
+void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove);
 std::string randomId();
 json classify(const fs::path& extracted);
 json movePrepared(const Paths&, json job);
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };
 using Reporter = std::function<void(const Progress&)>;
 // Progress callbacks are serialized; cancellation may be queried concurrently.
-void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0);
+void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0, bool resume = false);
 }
