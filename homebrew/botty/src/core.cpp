@@ -77,8 +77,12 @@ namespace {
 long relativeFileCall(long number,int fd,const char* path,long argument,long flags=0) {
   register long fourth asm("r10")=flags;
   long result=number;bool failed;
-  asm volatile("syscall" : "+a"(result), "=@ccc"(failed)
-      : "D"(fd), "S"(path), "d"(argument), "r"(fourth) : "rcx","r11","memory");
+  // PS5's syscall return path also clears caller-saved argument registers.
+  // In particular, keeping a live pointer in r8 across fstatat caused an
+  // optimized recursive deletion to call a null errno getter afterwards.
+  asm volatile("syscall" : "+a"(result), "=@ccc"(failed),
+      "+D"(fd), "+S"(path), "+d"(argument), "+r"(fourth)
+      : : "rcx","r8","r9","r11","memory");
   if(failed){errno=int(result);return -1;}return result;
 }
 int openDirectoryAt(int fd,const char* name){return int(relativeFileCall(499,fd,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW));}
