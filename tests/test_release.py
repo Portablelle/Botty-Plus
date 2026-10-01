@@ -30,7 +30,7 @@ class ReleaseTests(unittest.TestCase):
         self.root.mkdir()
         for name in portal.PUBLIC_FILES:
             self.write(name)
-        for name in portal.PAYLOADS:
+        for name in (*portal.PAYLOADS, *portal.PAYLOAD_NOTICES):
             self.write('payloads/' + name)
         self.write('offsets/13.00.js')
         for package, installer, constant in (

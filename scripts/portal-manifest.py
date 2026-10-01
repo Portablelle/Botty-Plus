@@ -10,6 +10,8 @@ import shutil
 PUBLIC_FILES = ('index.html', 'portal.css', 'README.md', 'LICENSE')
 PAYLOADS = ('ProsperoMgr.elf', 'elfldr-ps5-1360.elf', 'ftpsrv-ps5.elf',
             'kexp_2026_05_25.bin', 'kstuff.elf', 'shadowmountplus.elf')
+PAYLOAD_NOTICES = ('shadowmountplus-source.tar.gz', 'shadowmountplus-LICENSE.txt',
+                   'shadowmountplus-NOTICE.md')
 PACKAGE_NOTICES = {
     'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz'),
     'botty-native': ('NOTICE.md', 'LICENSE', 'botty-native-source.tar.gz'),
@@ -20,7 +22,7 @@ PACKAGE_NOTICES = {
 
 
 def public_files(root):
-    names = list(PUBLIC_FILES) + ['payloads/' + name for name in PAYLOADS]
+    names = list(PUBLIC_FILES) + ['payloads/' + name for name in (*PAYLOADS, *PAYLOAD_NOTICES)]
     for directory in ('src', 'offsets'):
         path = root / directory
         if not path.is_dir() or path.is_symlink():

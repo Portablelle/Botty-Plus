@@ -16,7 +16,8 @@ or assign a blanket license to all files.
 | PS5 controller ABI | [SDL-derived header and zlib notice](homebrew/botty-native/vendor/NOTICE.md) |
 | Manrope | [SIL Open Font License](homebrew/botty-native/assets/Manrope-OFL.txt) and vendored font source |
 | Transmission / websrv helper | [Source, artifact hashes and licenses](vps-site/apps/transmission/NOTICE.txt), plus bundled GPL and web UI legal files |
-| Kstuff-lite, ShadowMountPlus, FTP, Prospero, etaHEN | Exact release URLs and SHA-256 values in [payload provenance](payloads/versions.json); these are upstream artifacts, not Botty-authored binaries |
+| Modified ShadowMountPlus | [Pinned upstream source, recovery patch and build recipe](homebrew/shadowmountplus/README.md); GPL-3.0 license and full corresponding source ship beside the payload |
+| Kstuff-lite, FTP, Prospero, etaHEN | Exact release URLs and SHA-256 values in [payload provenance](payloads/versions.json); these are upstream artifacts, not Botty-authored binaries |
 | SDK distributions | Component Dockerfiles and [native build environment](homebrew/botty-native/BUILD-ENVIRONMENT.json) |
 | UI artwork / PS5 mark | [Artwork provenance](homebrew/botty-native/artwork/README.md) |
 

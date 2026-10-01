@@ -1,9 +1,9 @@
 {
-  "release": "v1.01",
+  "release": "v1.01-title-dir-recovery",
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
-    "README.md": "06333e55649fe963adbb195be2878ee386c15f82c42ec5296bcf9f8902d97d54",
+    "README.md": "adfe008c9d51f735daec6e450de117356348849dc0063c27cef3386775e5ca1f",
     "apps/botty-native/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "apps/botty-native/NOTICE.md": "03599c9a66900784ed9130daab280b961371e546e36bee449e5ac930ab7f5a03",
     "apps/botty-native/assets/Manrope-OFL.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
@@ -84,7 +84,10 @@
     "payloads/ftpsrv-ps5.elf": "7d4b31c83eae4e056580482a3a074e1db25922efc74ac1e439473b45d71a5938",
     "payloads/kexp_2026_05_25.bin": "7cfb3a8cb86db67893c360ae3531f460f800e9f24039797038e6e81fc50f18a9",
     "payloads/kstuff.elf": "ab9a6cb4d3b1daf139d4d646e402b1cf569071acd64599c936d7a3a6164dc779",
-    "payloads/shadowmountplus.elf": "3f716a7b2220c7e87e87452ae05cad689ef842d3beb4cdad6c526cb6dfc2b6b5",
+    "payloads/shadowmountplus-LICENSE.txt": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "payloads/shadowmountplus-NOTICE.md": "cabf128239b375dcfd7b6e2ec973c6d6c31564abb6fac04c07bbd2dac97656fc",
+    "payloads/shadowmountplus-source.tar.gz": "3d25f642015be6c24ae42ecef8ecc1579c9bc5479d32f6f2325f4b68bde2c57c",
+    "payloads/shadowmountplus.elf": "9bd206c7f36f452e873b43d9a7d13293c6a772077b3ea4cee3559bcd4a68e379",
     "portal.css": "a53090d8f7572504b3e3b56622780758ef1ae94ed8481609560a02b877c14d85",
     "src/botty-manager.js": "78aae6a13a2de753cb426909c7f236cdc752faeedc2135fc0bbd80debc3c3594",
     "src/botty-native.js": "19e2960a7596dceb41d68fc326eb22c209fb0a937d51f505e8b5be0fe8518fbc",

@@ -98,6 +98,14 @@ Source archives omit local build caches, fixtures, credentials and private notes
 tar ownership and timestamps are normalized. Do not use this mode after changing
 executable source: rebuild first so the source and binary correspond.
 
+### ShadowMountPlus recovery build
+
+The portal ships `1.7beta2-botty.1`, with guarded TitleDir hook recovery. Follow
+[its build and test instructions](../homebrew/shadowmountplus/README.md), then run
+`python3 scripts/package-shadowmount.py` and regenerate the portal manifest.
+This packages the complete source recipe and GPL notices alongside the payload.
+Keep upstream provenance distinct from the modified binary digest.
+
 ### Transmission and upstream payloads
 
 Transmission is the pinned 4.0.6 distribution from websrv v0.33. Its notice file

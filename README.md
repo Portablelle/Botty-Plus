@@ -230,7 +230,8 @@ Keep the console awake during downloads and extraction. Rest mode, long-duration
 - `deployment/`: generic Nginx, DNS, systemd and artwork examples.
 - `scripts/`, `tests/`: packaging, export verification and installer contracts.
 - `Relapse-Exploit/`: pinned upstream submodule.
-- `payloads/`: upstream payloads for manual use, with versions and hashes.
+- `payloads/`: payloads for manual use, with versions and hashes; the modified
+  ShadowMountPlus build has a [pinned source recipe](homebrew/shadowmountplus/README.md).
 
 ## Credits and licenses
 

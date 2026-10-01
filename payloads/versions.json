@@ -10,10 +10,15 @@
     },
     {
       "file": "shadowmountplus.elf",
-      "version": "1.7beta2",
-      "published_at": "2026-09-21T21:17:04Z",
-      "url": "https://github.com/drakmor/ShadowMountPlus/releases/download/1.7beta2/shadowmountplus.elf",
-      "digest": "sha256:3f716a7b2220c7e87e87452ae05cad689ef842d3beb4cdad6c526cb6dfc2b6b5"
+      "version": "1.7beta2-botty.1",
+      "digest": "sha256:9bd206c7f36f452e873b43d9a7d13293c6a772077b3ea4cee3559bcd4a68e379",
+      "upstream_version": "1.7beta2",
+      "upstream_digest": "sha256:3f716a7b2220c7e87e87452ae05cad689ef842d3beb4cdad6c526cb6dfc2b6b5",
+      "upstream_url": "https://github.com/drakmor/ShadowMountPlus/releases/download/1.7beta2/shadowmountplus.elf",
+      "upstream_published_at": "2026-09-21T21:17:04Z",
+      "source": "homebrew/shadowmountplus",
+      "source_revision": "13a8223b1e75c6d5b2cc0d30355b6566c80a2552",
+      "corresponding_source": "vps-site/payloads/shadowmountplus-source.tar.gz"
     },
     {
       "file": "etaHEN-2.5B.bin",
