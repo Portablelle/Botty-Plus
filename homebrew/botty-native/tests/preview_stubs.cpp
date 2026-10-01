@@ -8,6 +8,8 @@
 #include <cstring>
 #include <thread>
 #include <string>
+#include <fstream>
+#include <iterator>
 #include <sys/event.h>
 extern "C" {
 #include "../vendor/ps5-pad.h"
@@ -62,6 +64,13 @@ int sceNetRecv(int,void* b,std::size_t n,int){
         if(is("search")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"Homebrew","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Homebrew demo collection - PS5","size":1073741824,"seeders":24,"leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"leechers":1,"added":true}]}})";
         if(is("explore")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Elden Ring - PS5","size":1073741824,"seeders":24,"completed":642,"published":"2026-09-30T00:00:00Z","leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"completed":91,"published":"2026-09-28T00:00:00Z","leechers":1,"added":false}]}})";
         if(is("delete-torrent")&&socketRequest.find("GET /api/state ")==0){body.insert(1,"\"torrentRemovalSupported\":true,");}
+        // Optional synthetic state for layout checks (host preview only).
+        if(socketRequest.find("GET /api/state ")==0){
+            if(const char* path=std::getenv("BOTTY_PREVIEW_STATE_FILE")){
+                std::ifstream fixture(path);
+                if(fixture)body.assign(std::istreambuf_iterator<char>(fixture),std::istreambuf_iterator<char>());
+            }
+        }
         if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
         socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
@@ -76,8 +85,6 @@ int scePadOpen(int,int,int,void*){return 1;}
 int scePadRead(int,PS5_PadData* p,int){
     *p={};p->connected=1;p->leftStick.x=p->leftStick.y=128;p->timestamp=2*++reads;
     if((reads==3&&(is("diagnostics")||is("extracted")||is("library")||is("connections")))||(reads==5&&(is("library")||is("connections")))||(reads==7&&is("connections")))p->buttons=PS5_PAD_BUTTON_R1;
-    if((reads==3||reads==5)&&is("search"))p->buttons=PS5_PAD_BUTTON_L1;
-    if(reads==3&&is("explore"))p->buttons=PS5_PAD_BUTTON_L1;
     if(reads==3&&(is("quit")||is("exit")))p->buttons=PS5_PAD_BUTTON_CIRCLE;
     if(reads==4&&is("exit"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==5&&is("exit"))p->buttons=PS5_PAD_BUTTON_CROSS;

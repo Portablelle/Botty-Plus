@@ -1,2 +1,2 @@
-Botty+ 00.005.003
+Botty+ 00.006.000
 Cached rendering and lossless controller input

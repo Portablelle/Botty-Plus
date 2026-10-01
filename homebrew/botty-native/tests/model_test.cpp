@@ -121,7 +121,7 @@ int main() {
     assert(probeConnection(&catalog).status==Probe::transmissionUnavailable&&catalog.valid);
     reset("");responses={wire(health),wire(boot),wire(login),"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"};
     assert(probeConnection(&catalog).status==Probe::rejected&&!catalog.valid);
-    Model browse;browse.count=12;browse.press(Buttons::down);assert(browse.selected==1);
+    Model browse;browse.tab=0;browse.count=12;browse.press(Buttons::down);assert(browse.selected==1);
     browse.press(Buttons::cross);assert(browse.details);browse.press(Buttons::circle);assert(!browse.details&&!browse.quitDialog);
     browse.press(Buttons::right);assert(browse.filter==1&&browse.selected==0);
     browse.press(Buttons::r1);assert(browse.tab==1&&browse.selected==0);
@@ -231,9 +231,22 @@ int main() {
     for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision==1&&result.status==ActionResult::Status::success);queued.stop();workerAllowed=false;
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
-    // Search is a fifth tab, with bounded input and explicit grab confirmation.
-    Model searchModel;searchModel.press(Buttons::l1);assert(searchModel.tab==5);searchModel.press(Buttons::l1);assert(searchModel.tab==4);
-    searchModel.press(Buttons::r1);assert(searchModel.tab==5);assert(searchModel.press(Buttons::triangle)==Model::Action::explore);assert(searchModel.exploreSort==1);searchModel.press(Buttons::r1);assert(searchModel.tab==0);
+    // Start in Explore and follow the browse -> prepare -> collect journey.
+    Model searchModel;assert(searchModel.tab==5);
+    searchModel.press(Buttons::r1);assert(searchModel.tab==4);
+    searchModel.press(Buttons::l1);assert(searchModel.tab==5);
+    assert(searchModel.press(Buttons::triangle)==Model::Action::explore);assert(searchModel.exploreSort==1);
+    searchModel.press(Buttons::r1);searchModel.press(Buttons::r1);assert(searchModel.tab==0);
+    Model library;library.tab=2;library.count=8;
+    library.press(Buttons::right);assert(library.selected==1);
+    library.press(Buttons::down);assert(library.selected==4);
+    library.press(Buttons::down);assert(library.selected==7);
+    library.press(Buttons::right);assert(library.selected==7);
+    library.press(Buttons::up);assert(library.selected==4);
+    library.press(Buttons::left);assert(library.selected==3);
+    library.press(Buttons::cross);assert(library.details);
+    library.press(Buttons::down);assert(library.detailPage==1&&library.selected==3);
+    library.press(Buttons::circle);assert(!library.details&&library.selected==3);
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"demo","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Demo","size":100,"seeders":9,"leechers":2,"added":false}]}})",catalog));
     assert(catalog.searchSupported&&catalog.resultCount==1&&catalog.results[0].peers==9);
     flow.search();flow.append('a');flow.selected=48;assert(flow.press(Buttons::cross,catalog,false));

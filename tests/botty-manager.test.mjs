@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { installAndStartManager, managerInstalled, MANAGER_ROOT } from '../vps-site/src/botty-manager.js';
-function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='0.3.3'}={}) {
+function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='0.3.4'}={}) {
  const files=new Map(),writes=[],events=[];let running=occupied||existingBotty;
  const io={readFile:async path=>files.get(path)||null,mkdirs:async()=>{},writeFile:async(path,data)=>{files.set(path,data);writes.push(path);},listening:async()=>running,
   sendElf:async bytes=>{assert.equal(bytes[0],127);events.push('sent');running=!noStartup;},

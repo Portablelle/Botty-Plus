@@ -25,6 +25,8 @@ enum class Color : std::uint32_t
 };
 
 bool load_font() noexcept;
+bool load_backdrop() noexcept;
+void load_illustrations() noexcept;
 class Canvas;
 using DrawScene = bool (*)(Canvas &) noexcept;
 void run(DrawScene draw, std::string_view ready_message) noexcept;
@@ -39,7 +41,11 @@ class Canvas final
     bool take_resumed() noexcept {const bool result=resumed_;resumed_=false;return result;}
     bool take_dirty() noexcept {const bool result=dirty_;dirty_=false;return result;}
     void poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
+    void gameCase(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
     void clear(Color color) noexcept;
+    void backdrop(bool subdued) noexcept;
+    void gradient(unsigned x,unsigned y,unsigned width,unsigned height,Color top,Color bottom) noexcept;
+    bool illustration(unsigned asset,unsigned x,unsigned y,unsigned width,unsigned height) noexcept;
     void shade(unsigned alpha) noexcept;
     void rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept;
     unsigned text_width(std::string_view text,unsigned size) const noexcept;

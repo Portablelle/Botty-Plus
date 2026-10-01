@@ -10,6 +10,7 @@
 #include "renderer.hpp"
 #include "platform.hpp"
 #include "font_data.hpp"
+#include "platform_logo.hpp"
 #include <sys/event.h>
 
 #include <array>
@@ -270,6 +271,11 @@ void put_pixel_unchecked(std::uint32_t *pixels, unsigned x, unsigned y, Color co
 }
 
 std::array<std::uint8_t,botty::font::dataSize> font_pixels{};
+// Build-time RGB conversion avoids a decoder or network dependency on console.
+std::array<std::uint8_t,960*540*3> backdrop_pixels{};
+bool backdrop_ready=false;
+std::array<std::array<std::uint8_t,512*512*4>,3> illustration_pixels{};
+std::array<bool,3> illustration_ready{};
 bool font_ready=false;
 void blend_pixel(std::uint32_t* pixels,unsigned x,unsigned y,Color color,unsigned alpha) noexcept {
     if(x>=frame_width||y>=frame_height||alpha==0)return;
@@ -388,6 +394,82 @@ bool load_font() noexcept {
     font_ready=true;
     return true;
 }
+bool load_backdrop() noexcept {
+#ifdef BOTTY_HOST_PREVIEW
+    File file{open("assets/nebula.rgb",0)};
+#else
+    File file{open("/app0/assets/nebula.rgb",0)};
+#endif
+    if(!file.valid())return false;
+    std::size_t total=0;
+    while(total<backdrop_pixels.size()) {
+        const long n=read(file.get(),backdrop_pixels.data()+total,backdrop_pixels.size()-total);
+        if(n<=0)return false;
+        total+=static_cast<std::size_t>(n);
+    }
+    char extra=0;
+    backdrop_ready=read(file.get(),&extra,1)==0;
+    return backdrop_ready;
+}
+void Canvas::backdrop(bool subdued) noexcept {
+    for(unsigned y=0;y<frame_height;++y)for(unsigned x=0;x<frame_width;++x) {
+        const auto source=((y/2)*960+x/2)*3;
+        // Darken the lower content area and chrome; keep the horizon vivid.
+        unsigned light=y<260?90+y*120/260:y<780?210-(y-260)*140/520:70;
+        if(subdued)light=light/5;
+        unsigned r=9,g=13,b=27;
+        if(backdrop_ready){
+            r+=backdrop_pixels[source]*light/255;
+            g+=backdrop_pixels[source+1]*light/255;
+            b+=backdrop_pixels[source+2]*light/255;
+        }else {
+            // Missing or damaged artwork must not make the UI unusable.
+            const unsigned glow=(x/24)*(1080-y)/1080;
+            r+=glow/2;g+=glow/3;b+=glow;
+        }
+        put_pixel_unchecked(pixels_,x,y,static_cast<Color>(0xff000000U|(r>255?255:r)|((g>255?255:g)<<8)|((b>255?255:b)<<16)));
+    }
+}
+void Canvas::gradient(unsigned x,unsigned y,unsigned width,unsigned height,Color top,Color bottom) noexcept {
+    if(!height)return;
+    const auto a=static_cast<std::uint32_t>(top),b=static_cast<std::uint32_t>(bottom);
+    for(unsigned row=0;row<height;++row){
+        std::uint32_t color=0xff000000;
+        for(unsigned shift=0;shift<24;shift+=8){
+            const unsigned channel=(((a>>shift)&255)*(height-row)+((b>>shift)&255)*row)/height;
+            color|=channel<<shift;
+        }
+        fill_rect(pixels_,x,y+row,width,1,static_cast<Color>(color));
+    }
+}
+void load_illustrations() noexcept {
+    constexpr const char* names[]={"courier","extractor","vault"};
+    for(unsigned i=0;i<illustration_pixels.size();++i){
+        char path[96];
+#ifdef BOTTY_HOST_PREVIEW
+        std::snprintf(path,sizeof(path),"assets/%s.rgba",names[i]);
+#else
+        std::snprintf(path,sizeof(path),"/app0/assets/%s.rgba",names[i]);
+#endif
+        File file{open(path,0)};if(!file.valid())continue;
+        auto& pixels=illustration_pixels[i];std::size_t total=0;
+        while(total<pixels.size()){
+            const long n=read(file.get(),pixels.data()+total,pixels.size()-total);
+            if(n<=0)break;total+=static_cast<std::size_t>(n);
+        }
+        char extra=0;illustration_ready[i]=total==pixels.size()&&read(file.get(),&extra,1)==0;
+    }
+}
+bool Canvas::illustration(unsigned asset,unsigned x,unsigned y,unsigned width,unsigned height) noexcept {
+    if(asset>=illustration_pixels.size()||!illustration_ready[asset]||!width||!height)return false;
+    const auto& pixels=illustration_pixels[asset];
+    for(unsigned row=0;row<height&&y+row<frame_height;++row)for(unsigned col=0;col<width&&x+col<frame_width;++col){
+        const auto source=((row*512/height)*512+col*512/width)*4;
+        const Color color=static_cast<Color>(0xff000000U|pixels[source]|(pixels[source+1]<<8)|(pixels[source+2]<<16));
+        if(pixels[source+3])blend_pixel(pixels_,x+col,y+row,color,pixels[source+3]);
+    }
+    return true;
+}
 void Canvas::rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept {
     if(radius>width/2)radius=width/2;
     if(radius>height/2)radius=height/2;
@@ -445,9 +527,29 @@ void Canvas::clear(Color color) noexcept
 void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept {
     if(rgb.size()!=160*240*3||!width||!height)return;
     for(unsigned row=0;row<height&&y+row<frame_height;++row)for(unsigned col=0;col<width&&x+col<frame_width;++col){
-        const auto source=((row*240/height)*160+col*160/width)*3;
-        fill_rect(pixels_,x+col,y+row,1,1,static_cast<Color>(0xff000000U|rgb[source]|(rgb[source+1]<<8)|(rgb[source+2]<<16)));
+        // Bilinear enlargement keeps the spotlight smooth at TV viewing sizes.
+        const unsigned sx=width>1?col*159*256/(width-1):0,sy=height>1?row*239*256/(height-1):0;
+        const unsigned x0=sx/256,y0=sy/256,x1=x0<159?x0+1:x0,y1=y0<239?y0+1:y0;
+        const unsigned fx=sx%256,fy=sy%256;std::uint32_t color=0xff000000U;
+        for(unsigned channel=0;channel<3;++channel){
+            const unsigned top=rgb[(y0*160+x0)*3+channel]*(256-fx)+rgb[(y0*160+x1)*3+channel]*fx;
+            const unsigned bottom=rgb[(y1*160+x0)*3+channel]*(256-fx)+rgb[(y1*160+x1)*3+channel]*fx;
+            color|=((top*(256-fy)+bottom*fy)/65536)<<(channel*8);
+        }
+        put_pixel_unchecked(pixels_,x+col,y+row,static_cast<Color>(color));
     }
+}
+void Canvas::gameCase(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept {
+    if(width<32||height<48)return;
+    const unsigned band=width/7,spine=width/45+2;
+    rounded(x,y,width,height,6,static_cast<Color>(0xffd95515));
+    rectangle(x+spine,y+3,width-spine-3,band,Color::white);
+    // Use the real platform wordmark, independently of the game's illustration.
+    const unsigned logoWidth=width*3/5,logoHeight=logoWidth*70/320;
+    const unsigned logoX=x+spine+width/10,logoY=y+3+(band-logoHeight)/2;
+    for(unsigned row=0;row<logoHeight;++row)for(unsigned col=0;col<logoWidth;++col)
+        blend_pixel(pixels_,logoX+col,logoY+row,static_cast<Color>(0xff0b0908),botty::art::ps5Logo[(row*70/logoHeight)*320+col*320/logoWidth]);
+    poster(x+spine,y+band+3,width-spine-3,height-band-6,rgb);
 }
 
 void Canvas::rectangle(unsigned x, unsigned y, unsigned width, unsigned height,

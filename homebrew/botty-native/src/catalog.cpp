@@ -66,6 +66,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     {
     out.torrentRemovalSupported=field(body,"torrentRemovalSupported")=="true";
+    out.catalogArtworkSupported=field(body,"catalogArtworkSupported")=="true";
     out.searchSupported=field(body,"searchSupported")=="true";out.resultCount=0;
     const auto search=field(body,"search");out.searchBusy=field(search,"busy")=="true";out.searchAdding=field(search,"adding")=="true";
     decode(field(search,"query"),out.searchQuery);decode(field(search,"error"),out.searchError);decode(field(search,"notice"),out.searchNotice);

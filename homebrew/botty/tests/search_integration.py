@@ -88,6 +88,19 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    with urllib.request.urlopen(req,timeout=2) as response:
     data=response.read();return data if response.status==200 else None
   assert until(artwork)==bytes([12,80,160])*(160*240)
+  def catalog_artwork(ident):
+   req=urllib.request.Request(f'http://127.0.0.1:{port}/api/artwork?id='+urllib.parse.quote(ident),headers={'X-Botty-Token':token})
+   with urllib.request.urlopen(req,timeout=2) as response:
+    data=response.read();return data if response.status==200 else None
+  assert state['catalogArtworkSupported']
+  assert until(lambda:catalog_artwork('t:1'))==bytes([12,80,160])*(160*240)
+  assert until(lambda:catalog_artwork('s:'+results[0]['id']))==bytes([12,80,160])*(160*240)
+  for invalid in ['t:999','j:unknown','https://example.com/image.jpg','../../outside']:
+   try:catalog_artwork(invalid);raise AssertionError('Unknown artwork ID accepted')
+   except urllib.error.HTTPError as e:assert e.code==404
+  try:
+   urllib.request.urlopen(f'http://127.0.0.1:{port}/api/artwork?id=t:1');raise AssertionError('Unauthenticated artwork accepted')
+  except urllib.error.HTTPError as e:assert e.code==403
   try:request('/api/explore',{'sort':'invalid'});raise AssertionError('Invalid sort accepted')
   except urllib.error.HTTPError as e:assert e.code==400
   try: request('/api/search/add',{'id':'invalid'});raise AssertionError('Invalid ID accepted')
@@ -111,6 +124,8 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   def installed():
    s=request('/api/state');return s if any(j['status']=='moved' for j in s['jobs']) else None
   state=until(installed)
+  job_id=next(j['id'] for j in state['jobs'] if j['status']=='moved')
+  assert until(lambda:catalog_artwork('j:'+job_id))==bytes([12,80,160])*(160*240)
   assert (root/'test-library/PPSA12345-app/eboot.bin').is_file()
   assert ((root/'test-library/PPSA12345-app/eboot.bin').stat().st_mode & 0o777)==0o755
   assert ((root/'test-library/PPSA12345-app/sce_sys/param.json').stat().st_mode & 0o777)==0o644

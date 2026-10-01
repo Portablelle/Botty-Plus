@@ -1,10 +1,10 @@
 import { sha256 } from './transmission.js';
 import { sleep } from './ps5-io.js';
 export const MANAGER_ROOT='/data/botty/manager';
-const VERSION='0.3.3';
+const VERSION='0.3.4';
 const APP=MANAGER_ROOT+'/'+VERSION;
 const BASE='./apps/botty/';
-const HASH='7ff3b588e3b71a1d91d8b424ffe1c8d37e72611c83497f4da2227de326535905';
+const HASH='582e5a6eb0d882ec55b185b344d9562953b0d1609d7ea7ee8db8b6372da94296';
 const encoder=new TextEncoder();
 export async function managerInstalled(io) {
   const bytes=await io.readFile(MANAGER_ROOT+'/installed.json',4096);

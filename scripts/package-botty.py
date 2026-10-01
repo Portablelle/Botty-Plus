@@ -8,7 +8,7 @@ for name in ['botty-manager.elf','icon0.png','ui/index.html','ui/app.js','ui/sty
     original=source/('build/'+name if name.endswith('.elf') else name)
     target=out/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(original,target)
     data=target.read_bytes();files.append(dict(path=name,size=len(data),sha256=hashlib.sha256(data).hexdigest()))
-manifest=(json.dumps(dict(schema=1,id='0.3.3',files=files),indent=2)+'\n').encode();(out/'manifest.json').write_bytes(manifest)
+manifest=(json.dumps(dict(schema=1,id='0.3.4',files=files),indent=2)+'\n').encode();(out/'manifest.json').write_bytes(manifest)
 digest=hashlib.sha256(manifest).hexdigest();installer=project/'vps-site/src/botty-manager.js'
 text,count=re.subn(r"const HASH='[a-f0-9]{64}';","const HASH='"+digest+"';",installer.read_text())
 assert count==1;installer.write_text(text)

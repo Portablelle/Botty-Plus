@@ -2,7 +2,7 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "00.005.003",
+  "version": "00.006.000",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -17,7 +17,22 @@
     {
       "path": "assets/build.txt",
       "size": 65,
-      "sha256": "01c65b020d94008c85f52ef06d6374e463d7a25be2a97ea392bf03e787970e67"
+      "sha256": "a41d5804a1b1e8e81af6edd6848df63ef8af5c49c889db92aa08735f3d00bbb5"
+    },
+    {
+      "path": "assets/courier.rgba",
+      "size": 1048576,
+      "sha256": "52b768f8e0a8587340508b7c7c62f2f928c5aaba3ca71fc2e23bf767fbab53d1"
+    },
+    {
+      "path": "assets/extractor.rgba",
+      "size": 1048576,
+      "sha256": "394e22655673e381a606b2a903371437aa189aa133f759590bb55095a651536f"
+    },
+    {
+      "path": "assets/nebula.rgb",
+      "size": 1555200,
+      "sha256": "86e016792eb91775163b9ffea8691314ee3a96ddeb1acacfdcc2d60a210caff1"
     },
     {
       "path": "assets/ui-font.bin",
@@ -25,9 +40,14 @@
       "sha256": "c2b6891a746f62c9ee8ed68ebd2074fbff0d40aea70e78b1c85c1cc200e56845"
     },
     {
+      "path": "assets/vault.rgba",
+      "size": 1048576,
+      "sha256": "22ce003865a105b63b886c71f81d9550e6189d4051bc8df88322fd09f984c15a"
+    },
+    {
       "path": "eboot.bin",
-      "size": 15841132,
-      "sha256": "e8b5f8662dbe57df696e591370de9213020e15afdab6e2a965aa53d589491fec"
+      "size": 15877548,
+      "sha256": "a736e0e00ee1ba6cd0c8a727d6c5382b1253491f7435abbbf7c8dbb57b2bf04b"
     },
     {
       "path": "sce_module/libc.prx",
@@ -42,7 +62,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "a86ac3d5186f5c21048c5292a1b3cae011d04d5eaa623aabb14a5a562e7d1547"
+      "sha256": "73836eaf410277c39c8703a293807d76e3bf1d92f0059d7e61b65adf89ce94bc"
     },
     {
       "path": "sce_sys/pic0.dds",

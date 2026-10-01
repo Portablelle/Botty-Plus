@@ -18,7 +18,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/0.3.3/ui"
+#define BOTTY_UI "/data/botty/manager/0.3.4/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -251,7 +251,7 @@ int main(int argc,char** argv) {
       }
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","0.3.3"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","0.3.4"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -264,6 +264,8 @@ int main(int argc,char** argv) {
       json result={{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
       try{result["torrents"]=torrents();result["transmissionReady"]=true;}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting;}
+      explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
+      result["catalogArtworkSupported"]=true;
       std::set<std::string> owned;
       for(const auto& item:result["torrents"])owned.insert(Search::gameKey(item.value("name","")));
       for(const auto& item:result["jobs"])if(item.value("status","")=="ready"||item.value("status","")=="moved"||item.value("status","")=="extracting")owned.insert(Search::gameKey(item.value("name","")));
@@ -276,6 +278,14 @@ int main(int argc,char** argv) {
       reply(res,result);
     });
     server.Get("/api/explore/artwork",[](const auto& req,auto& res){auto data=explore.artwork(paths,req.get_param_value("id"));if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}else res.set_content(data,"application/octet-stream");});
+    // Resolve only known local entries or search IDs, never client-supplied URLs/titles.
+    server.Get("/api/artwork",[](const auto& req,auto& res){
+      const auto id=req.get_param_value("id");
+      auto data=id.rfind("s:",0)==0?search.artwork(paths,id.substr(2)):explore.artwork(paths,id,true);
+      if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}
+      else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}
+      else res.set_content(data,"application/octet-stream");
+    });
     server.Post("/api/explore",[](const auto& req,auto& res){const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
     server.Post("/api/explore/add",[](const auto& req,auto& res){explore.add(paths,json::parse(req.body).at("id").template get<std::string>(),queueDownload);reply(res,{{"ok",true}},202);});
     server.Post("/api/search",[](const auto& req,auto& res){search.start(paths,json::parse(req.body).at("query").template get<std::string>());reply(res,{{"ok",true}},202);});

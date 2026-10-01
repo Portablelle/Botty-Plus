@@ -28,7 +28,7 @@ function nativeFixture() {
   return { files, downloads, writes, io, options };
 }
 test('first launch installs native; second launch does not download or rewrite installed files', async () => {
-  const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 8);
+  const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 12);
   f.writes.length = 0; f.downloads.length = 0; await installNative(f.io, f.options);
   assert.deepEqual(f.writes, []); assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
 });

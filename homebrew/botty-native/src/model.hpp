@@ -53,7 +53,9 @@ struct InputEvents {
     }
 };
 struct Model {
-    unsigned tab=0, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
+    // Browse -> find -> download -> prepare -> collect -> connect.
+    static constexpr std::array<unsigned,6> tabOrder{5,4,0,1,2,3};
+    unsigned tab=5, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
     bool details=false;
     bool quitDialog=false, confirmQuit=false;
     enum class Action { none, retry, quit, menu, add, explore };
@@ -72,7 +74,8 @@ struct Model {
             return Action::none;
         }
         if (edge & (Buttons::l1|Buttons::r1)) {
-            tab=(tab+((edge&Buttons::r1)?1:5))%6;selected=0;details=false;return Action::none;
+            unsigned index=0;while(index<tabOrder.size()&&tabOrder[index]!=tab)++index;
+            tab=tabOrder[(index+((edge&Buttons::r1)?1:5))%6];selected=0;details=false;return Action::none;
         }
         if(tab==5&&(edge&Buttons::triangle)){exploreSort=(exploreSort+1)%3;selected=0;return Action::explore;}
         if(edge & Buttons::options)return Action::menu;
@@ -87,6 +90,12 @@ struct Model {
             if((edge&Buttons::down)&&selected+6<count)selected+=6;
             if((edge&Buttons::up)&&selected>=6)selected-=6;
             if((edge&Buttons::cross)&&count)details=true;
+        }else if(tab==2&&!details) {
+            if((edge&Buttons::right)&&selected+1<count)++selected;
+            if((edge&Buttons::left)&&selected)--selected;
+            if((edge&Buttons::down)&&selected+3<count)selected+=3;
+            if((edge&Buttons::up)&&selected>=3)selected-=3;
+            if((edge&Buttons::cross)&&count){details=true;detailPage=0;}
         }else if(details) {
             if(edge&Buttons::down)++detailPage;
             if((edge&Buttons::up)&&detailPage)--detailPage;

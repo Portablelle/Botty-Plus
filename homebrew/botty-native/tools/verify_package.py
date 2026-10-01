@@ -31,8 +31,14 @@ def verify(dist, expected):
             raise ValueError('File digest/size mismatch: '+name)
         files[name]=data
     required={'eboot.bin','sce_sys/param.json','sce_sys/icon0.png','sce_sys/pic0.dds','sce_module/libc.prx',
-              'assets/ui-font.bin','assets/Manrope-OFL.txt','assets/build.txt'}
+              'assets/ui-font.bin','assets/Manrope-OFL.txt','assets/build.txt','assets/nebula.rgb',
+              'assets/courier.rgba','assets/extractor.rgba','assets/vault.rgba'}
     if set(files)!=required:raise ValueError('Unexpected title file set')
+    if len(files['assets/nebula.rgb']) != 960*540*3:
+        raise ValueError('Invalid backdrop dimensions')
+    for name in ('courier','extractor','vault'):
+        if len(files[f'assets/{name}.rgba']) != 512*512*4:
+            raise ValueError('Invalid illustration dimensions')
     if {str(p.relative_to(app)) for p in app.rglob('*') if p.is_file()}!=required:
         raise ValueError('Unlisted files in title folder')
     if json.loads(files['sce_sys/param.json'])!=expected:raise ValueError('Wrong title identity')

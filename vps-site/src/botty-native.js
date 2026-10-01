@@ -3,8 +3,8 @@ import { sha256 } from './transmission.js';
 
 export const NATIVE_ROOT = '/data/homebrew/PPSA99071';
 const STAGE = '/data/botty/native/PPSA99071';
-const HASH = 'baa4adcaf89a4541c091846b57f8f0bb4840a3ea4f73e82abfd7de1b4d9190b1';
-const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json'];
+const HASH = '4fb6290925be0d930bc86f47141996d0c36c07aa5aec2597fc3bdd21d59f3c55';
+const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json'];
 
 // Only this installer can reach the single native title; service IO stays confined.
 export class NativeIO extends PS5IO {

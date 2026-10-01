@@ -261,7 +261,14 @@ void* Artwork::worker(void* context) noexcept {
         for(unsigned attempt=0;attempt<20&&!self.stop_.load()&&!stale;++attempt){
         for(unsigned i=0;i<ids.size()&&!self.stop_.load();++i){
             if(done[i])continue;
-            if(!ids[i][0])continue;char path[160];std::snprintf(path,sizeof(path),"/api/explore/artwork?id=%s",ids[i].data());
+            if(!ids[i][0])continue;
+            std::array<char,288> encoded{};unsigned length=0;
+            constexpr char hex[]="0123456789ABCDEF";
+            for(unsigned char ch:std::string_view(ids[i].data())){
+                if((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='-')encoded[length++]=static_cast<char>(ch);
+                else {encoded[length++]='%';encoded[length++]=hex[ch>>4];encoded[length++]=hex[ch&15];}
+            }
+            char path[340];std::snprintf(path,sizeof(path),ids[i][1]==':'?"/api/artwork?id=%s":"/api/explore/artwork?id=%s",encoded.data());
             static Response<160*240*3+1> response;response.status=0;response.length=0;
             const bool ready=get(path,token,response,platform::now()+14000000)==Probe::ready&&response.length==160*240*3;
             while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);

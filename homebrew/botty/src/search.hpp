@@ -16,6 +16,7 @@ class Search {
   std::mutex mutex;
   json rows=json::array();
   std::map<std::string,std::string> covers;
+  std::map<std::string,std::string> catalogTitles;
   std::map<std::string,std::time_t> coverFailedAt;
   unsigned coversLoading=0;
   std::string query,error,notice,order;
@@ -106,9 +107,16 @@ public:
       }catch(...){std::lock_guard<std::mutex> guard(mutex);error="Search failed. Check Prowlarr, its API key and the IPTorrents session.";busy=false;}
     }).detach();}catch(...){busy=false;throw;}
   }
-  std::string artwork(const Paths& paths,const std::string& id){
+  void registerCatalogArtwork(const json& torrents,const json& jobs){
+    std::lock_guard<std::mutex> guard(mutex);catalogTitles.clear();
+    unsigned count=0;
+    for(const auto& row:torrents){if(count++==256)break;catalogTitles["t:"+std::to_string(row.at("id").get<int>())]=row.value("name","");}
+    count=0;for(const auto& row:jobs){if(count++==256)break;catalogTitles["j:"+row.at("id").get<std::string>()]=row.value("name","");}
+  }
+  std::string artwork(const Paths& paths,const std::string& id,bool catalog=false){
     std::lock_guard<std::mutex> guard(mutex);std::string title;
-    for(const auto& row:rows)if(row.at("id")==id)title=gameKey(row.value("name",""));
+    if(catalog){const auto found=catalogTitles.find(id);if(found!=catalogTitles.end())title=gameKey(found->second);}
+    else for(const auto& row:rows)if(row.at("id")==id)title=gameKey(row.value("name",""));
     if(title.empty())return {};if(title.size()>200)title.resize(200);
     unsigned long long hash=14695981039346656037ULL;for(unsigned char c:title){hash^=c;hash*=1099511628211ULL;}
     char key[17];std::snprintf(key,sizeof(key),"%016llx",hash);
