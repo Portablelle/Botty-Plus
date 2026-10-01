@@ -1,0 +1,3 @@
+[submodule "Relapse-Exploit"]
+	path = Relapse-Exploit
+	url = https://github.com/ntfargo/Relapse-Exploit.git

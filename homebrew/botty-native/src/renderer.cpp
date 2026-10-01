@@ -1,0 +1,576 @@
+/*
+ * ps5-native-app-boilerplate - CPU VideoOut demonstration implementation.
+ * Copyright (C) 2026 BlackBearReloaded
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Provides the bounded drawing surface and PS5 presentation loop used by the
+ * editable starter application.
+ */
+
+#include "renderer.hpp"
+#include "platform.hpp"
+#include "font_data.hpp"
+#include <sys/event.h>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <memory>
+#include <new>
+#include <span>
+#include <string_view>
+#include <utility>
+
+extern "C"
+{
+    std::size_t sceKernelGetDirectMemorySize();
+    int sceKernelAllocateDirectMemory(std::int64_t search_start, std::int64_t search_end,
+                                      std::size_t length, std::size_t alignment, int memory_type,
+                                      std::int64_t *physical_address);
+    int sceKernelMapDirectMemory(void **address, std::size_t length, int protection, int flags,
+                                 std::int64_t physical_address, std::size_t alignment);
+    int sceKernelSendNotificationRequest(std::uint32_t device, void *request, std::size_t size,
+                                         int blocking);
+    int sceKernelUsleep(std::uint32_t microseconds);
+    int sceSystemServiceHideSplashScreen();
+    int open(const char *path, int flags, ...);
+    long read(int descriptor, void *buffer, std::size_t size);
+    int close(int descriptor);
+    int sceKernelCreateEqueue(struct kevent **, const char *);
+    int sceKernelWaitEqueue(struct kevent*, struct kevent*, int, int*, unsigned*);
+    int sceKernelDeleteEqueue(struct kevent*);
+    int sceVideoOutAddFlipEvent(struct kevent*, int, void*);
+    int sceVideoOutDeleteFlipEvent(struct kevent*, int);
+    void sceVideoOutClose(int);
+    int sceKernelMunmap(void*, std::size_t);
+    int sceKernelReleaseDirectMemory(std::int64_t, std::size_t);
+    int sceVideoOutOpen(std::int32_t user_id, std::int32_t bus_type, std::int32_t index,
+                        const void *param);
+    int sceVideoOutSetFlipRate(std::int32_t handle, std::int32_t rate);
+    int sceVideoOutSubmitFlip(std::int32_t handle, std::int32_t buffer_index,
+                              std::uint32_t flip_mode, std::int64_t flip_argument);
+    int sceVideoOutWaitVblank(std::int32_t handle);
+    bool ps5ObserveOwnedAllocation(const void *address) noexcept;
+}
+
+namespace ps5::demo
+{
+namespace
+{
+constexpr unsigned frame_width = 1920;
+constexpr unsigned frame_height = 1080;
+constexpr std::size_t frame_bytes = 0x1000000;
+constexpr std::size_t raster_bytes=((frame_width+127)/128)*((frame_height+127)/128)*65536;
+static_assert(raster_bytes<=frame_bytes);
+constexpr std::size_t memory_bytes = frame_bytes * 2;
+constexpr std::size_t memory_alignment = 0x200000;
+constexpr int memory_type_wc_garlic = 3;
+constexpr int map_protection = 0x33;
+constexpr std::uint64_t pixel_format_rgba8_srgb = UINT64_C(0x8000000022000000);
+
+struct VideoBuffer
+{
+    void *data;
+    void *metadata;
+    void *reserved0;
+    void *reserved1;
+};
+
+struct VideoAttribute
+{
+    std::uint8_t reserved[80];
+};
+
+extern "C" void sceVideoOutSetBufferAttribute2(VideoAttribute *attribute,
+                                               std::uint64_t pixel_format,
+                                               std::uint32_t tiling_mode, std::uint32_t width,
+                                               std::uint32_t height, std::uint64_t option,
+                                               std::uint32_t dcc_control,
+                                               std::uint64_t dcc_clear_color);
+extern "C" int sceVideoOutRegisterBuffers2(std::int32_t handle, std::int32_t set_index,
+                                           std::int32_t buffer_index_start, VideoBuffer *buffers,
+                                           std::int32_t buffer_count, VideoAttribute *attribute,
+                                           std::int32_t category, void *option);
+
+struct NotificationRequest
+{
+    std::uint8_t reserved[45];
+    char message[3075];
+};
+
+struct Glyph
+{
+    char character;
+    std::array<std::uint8_t, 7> rows;
+};
+
+constexpr std::array<Glyph, 41> glyphs{{
+    {'.', {0,0,0,0,0,12,12}}, {':', {0,12,12,0,12,12,0}},
+    {'-', {0,0,0,31,0,0,0}}, {'/', {1,1,2,4,8,16,16}},
+    {' ', {0, 0, 0, 0, 0, 0, 0}},        {'0', {14, 17, 19, 21, 25, 17, 14}},
+    {'1', {4, 12, 4, 4, 4, 4, 14}},      {'2', {14, 17, 1, 2, 4, 8, 31}},
+    {'3', {30, 1, 1, 14, 1, 1, 30}},     {'4', {2, 6, 10, 18, 31, 2, 2}},
+    {'5', {31, 16, 16, 30, 1, 1, 30}},   {'6', {14, 16, 16, 30, 17, 17, 14}},
+    {'7', {31, 1, 2, 4, 8, 8, 8}},       {'8', {14, 17, 17, 14, 17, 17, 14}},
+    {'9', {14, 17, 17, 15, 1, 1, 14}},   {'A', {14, 17, 17, 31, 17, 17, 17}},
+    {'B', {30, 17, 17, 30, 17, 17, 30}}, {'C', {14, 17, 16, 16, 16, 17, 14}},
+    {'D', {30, 17, 17, 17, 17, 17, 30}}, {'E', {31, 16, 16, 30, 16, 16, 31}},
+    {'F', {31, 16, 16, 30, 16, 16, 16}}, {'G', {14, 17, 16, 23, 17, 17, 14}},
+    {'H', {17, 17, 17, 31, 17, 17, 17}}, {'I', {31, 4, 4, 4, 4, 4, 31}},
+    {'J', {7, 2, 2, 2, 18, 18, 12}},     {'K', {17, 18, 20, 24, 20, 18, 17}},
+    {'L', {16, 16, 16, 16, 16, 16, 31}}, {'M', {17, 27, 21, 21, 17, 17, 17}},
+    {'N', {17, 25, 21, 19, 17, 17, 17}}, {'O', {14, 17, 17, 17, 17, 17, 14}},
+    {'P', {30, 17, 17, 30, 16, 16, 16}}, {'Q', {14, 17, 17, 17, 21, 18, 13}},
+    {'R', {30, 17, 17, 30, 20, 18, 17}}, {'S', {15, 16, 16, 14, 1, 1, 30}},
+    {'T', {31, 4, 4, 4, 4, 4, 4}},       {'U', {17, 17, 17, 17, 17, 17, 14}},
+    {'V', {17, 17, 17, 17, 17, 10, 4}},  {'W', {17, 17, 17, 21, 21, 21, 10}},
+    {'X', {17, 17, 10, 4, 10, 17, 17}},  {'Y', {17, 17, 10, 4, 4, 4, 4}},
+    {'Z', {31, 1, 2, 4, 8, 16, 31}},
+}};
+
+class File final
+{
+  public:
+    explicit File(int descriptor = -1) noexcept : descriptor_{descriptor}
+    {
+    }
+
+    ~File()
+    {
+        reset();
+    }
+
+    File(const File &) = delete;
+    File &operator=(const File &) = delete;
+
+    File(File &&other) noexcept : descriptor_{std::exchange(other.descriptor_, -1)}
+    {
+    }
+
+    File &operator=(File &&other) noexcept
+    {
+        if (this != &other)
+        {
+            reset();
+            descriptor_ = std::exchange(other.descriptor_, -1);
+        }
+        return *this;
+    }
+
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return descriptor_ >= 0;
+    }
+
+    [[nodiscard]] int get() const noexcept
+    {
+        return descriptor_;
+    }
+
+  private:
+    void reset() noexcept
+    {
+        if (descriptor_ >= 0)
+        {
+            (void)close(descriptor_);
+            descriptor_ = -1;
+        }
+    }
+
+    int descriptor_;
+};
+
+class LifetimeProbe final
+{
+  public:
+    explicit LifetimeProbe(bool &destroyed) noexcept : destroyed_{&destroyed}
+    {
+    }
+
+    ~LifetimeProbe()
+    {
+        *destroyed_ = true;
+    }
+
+    LifetimeProbe(const LifetimeProbe &) = delete;
+    LifetimeProbe &operator=(const LifetimeProbe &) = delete;
+
+  private:
+    bool *destroyed_;
+};
+
+NotificationRequest notification{};
+
+void copy_message(std::span<char> destination, std::string_view source) noexcept
+{
+    if (destination.empty())
+        return;
+
+    const std::size_t count =
+        source.size() < destination.size() - 1 ? source.size() : destination.size() - 1;
+    for (std::size_t index = 0; index < count; ++index)
+        destination[index] = source[index];
+    destination[count] = '\0';
+}
+
+void notify(std::string_view message) noexcept
+{
+    copy_message(std::span{notification.message}, message);
+    (void)sceKernelSendNotificationRequest(0, &notification, sizeof(notification), 0);
+}
+
+[[nodiscard]] bool verify_unique_ownership() noexcept
+{
+    bool destroyed = false;
+    {
+        std::unique_ptr<LifetimeProbe> probe{new (std::nothrow_t{}) LifetimeProbe{destroyed}};
+        if (!ps5ObserveOwnedAllocation(probe.get()))
+            return false;
+    }
+    return destroyed;
+}
+
+[[noreturn]] void halt(const char* message) noexcept
+{
+    botty::platform::log(message);
+    notify(message);
+    for (;;)
+        (void)sceKernelUsleep(1000000);
+}
+
+[[nodiscard]] constexpr std::span<const std::uint8_t, 7> glyph_rows(char character) noexcept
+{
+    if(character>='a' && character<='z')character=static_cast<char>(character-'a'+'A');
+    for (const auto &glyph : glyphs)
+    {
+        if (glyph.character == character)
+            return glyph.rows;
+    }
+    return glyphs.front().rows;
+}
+
+[[nodiscard]] constexpr std::size_t tiled_byte_offset(unsigned x, unsigned y) noexcept
+{
+    const std::uint32_t offset = ((y << 4) & 0x70U) ^ ((y << 5) & 0xf00U) ^ ((y << 9) & 0x1000U) ^
+                                 ((y << 8) & 0x4000U) ^ ((x << 2) & 0xcU) ^ ((x << 5) & 0x380U) ^
+                                 ((x << 4) & 0x400U) ^ ((x << 6) & 0x800U) ^ ((x << 9) & 0xa000U);
+    const std::uint32_t blocks_per_row = (frame_width + 127U) >> 7;
+    const std::uint32_t block_index = (y >> 7) * blocks_per_row + (x >> 7);
+
+    return (static_cast<std::size_t>(block_index) << 16) + offset;
+}
+
+void put_pixel_unchecked(std::uint32_t *pixels, unsigned x, unsigned y, Color color) noexcept
+{
+    auto *bytes = reinterpret_cast<std::uint8_t *>(pixels);
+    *reinterpret_cast<std::uint32_t *>(bytes + tiled_byte_offset(x, y)) =
+        static_cast<std::uint32_t>(color);
+}
+
+std::array<std::uint8_t,botty::font::dataSize> font_pixels{};
+bool font_ready=false;
+void blend_pixel(std::uint32_t* pixels,unsigned x,unsigned y,Color color,unsigned alpha) noexcept {
+    if(x>=frame_width||y>=frame_height||alpha==0)return;
+    if(alpha==255){put_pixel_unchecked(pixels,x,y,color);return;}
+    auto* bytes=reinterpret_cast<std::uint8_t*>(pixels)+tiled_byte_offset(x,y);
+    const auto value=static_cast<std::uint32_t>(color);
+    for(unsigned channel=0;channel<3;++channel)
+        bytes[channel]=static_cast<std::uint8_t>((((value>>(channel*8))&255)*alpha+bytes[channel]*(255-alpha)+127)/255);
+    bytes[3]=255;
+}
+
+void fill_rect(std::uint32_t *pixels, unsigned x, unsigned y, unsigned width, unsigned height,
+               Color color) noexcept
+{
+    if (x >= frame_width || y >= frame_height)
+        return;
+
+    const unsigned right = width > frame_width - x ? frame_width : x + width;
+    const unsigned bottom = height > frame_height - y ? frame_height : y + height;
+    for (unsigned row = y; row < bottom; ++row)
+    {
+        for (unsigned column = x; column < right; ++column)
+            put_pixel_unchecked(pixels, column, row, color);
+    }
+}
+
+void fill_circle(std::uint32_t *pixels, unsigned center_x, unsigned center_y, unsigned radius,
+                 Color color) noexcept
+{
+    const int signed_radius = static_cast<int>(radius);
+    for (int y = -signed_radius; y <= signed_radius; ++y)
+    {
+        for (int x = -signed_radius; x <= signed_radius; ++x)
+        {
+            if (x * x + y * y <= signed_radius * signed_radius)
+            {
+                const int pixel_x = static_cast<int>(center_x) + x;
+                const int pixel_y = static_cast<int>(center_y) + y;
+                if (pixel_x >= 0 && pixel_y >= 0)
+                {
+                    const auto bounded_x = static_cast<unsigned>(pixel_x);
+                    const auto bounded_y = static_cast<unsigned>(pixel_y);
+                    if (bounded_x < frame_width && bounded_y < frame_height)
+                        put_pixel_unchecked(pixels, bounded_x, bounded_y, color);
+                }
+            }
+        }
+    }
+}
+
+void fill_triangle(std::uint32_t *pixels, unsigned center_x, unsigned top, unsigned half_width,
+                   unsigned height, Color color) noexcept
+{
+    if (height == 0 || center_x >= frame_width)
+        return;
+
+    for (unsigned row = 0; row < height; ++row)
+    {
+        const unsigned half = row * half_width / height;
+        const unsigned left = half > center_x ? 0 : center_x - half;
+        const unsigned right = half >= frame_width - center_x ? frame_width : center_x + half + 1;
+        fill_rect(pixels, left, top + row, right - left, 1, color);
+    }
+}
+
+void draw_text(std::uint32_t *pixels, unsigned x, unsigned y, std::string_view value,
+               unsigned scale, Color color) noexcept
+{
+    for (const char character : value)
+    {
+        const auto rows = glyph_rows(character);
+        for (unsigned row = 0; row < rows.size(); ++row)
+        {
+            for (unsigned column = 0; column < 5; ++column)
+            {
+                if ((rows[row] & (1U << (4 - column))) != 0)
+                    fill_rect(pixels, x + column * scale, y + row * scale, scale, scale, color);
+            }
+        }
+        x += 6 * scale;
+        if (x >= frame_width)
+            return;
+    }
+}
+
+void flush_range(void *address, std::size_t length) noexcept
+{
+    auto *at = static_cast<std::uint8_t *>(address);
+    const auto *end = at + length;
+
+#ifndef BOTTY_HOST_PREVIEW
+    for (; at < end; at += 64)
+        __asm__ volatile("clflush (%0)" : : "r"(at) : "memory");
+    __asm__ volatile("mfence" ::: "memory");
+#else
+    (void)at; (void)end;
+#endif
+}
+} // namespace
+
+bool load_font() noexcept {
+#ifdef BOTTY_HOST_PREVIEW
+    File file{open("assets/ui-font.bin",0)};
+#else
+    File file{open("/app0/assets/ui-font.bin",0)};
+#endif
+    if(!file.valid())return false;
+    std::size_t total=0;
+    while(total<font_pixels.size()) {
+        const long n=read(file.get(),font_pixels.data()+total,font_pixels.size()-total);
+        if(n<=0)return false;
+        total+=static_cast<std::size_t>(n);
+    }
+    char extra=0;
+    if(read(file.get(),&extra,1)!=0)return false;
+    font_ready=true;
+    return true;
+}
+void Canvas::rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept {
+    if(radius>width/2)radius=width/2;
+    if(radius>height/2)radius=height/2;
+    fill_rect(pixels_,x+radius,y,width-radius*2,height,color);
+    fill_rect(pixels_,x,y+radius,radius,height-radius*2,color);
+    fill_rect(pixels_,x+width-radius,y+radius,radius,height-radius*2,color);
+    for(unsigned py=0;py<radius;++py)for(unsigned px=0;px<radius;++px) {
+        unsigned inside=0;
+        for(int sy=0;sy<4;++sy)for(int sx=0;sx<4;++sx) {
+            const int dx=static_cast<int>((radius-px)*8)-sx*2-1;
+            const int dy=static_cast<int>((radius-py)*8)-sy*2-1;
+            if(dx*dx+dy*dy<=static_cast<int>(radius*radius*64))++inside;
+        }
+        const auto alpha=(inside*255+8)/16;
+        blend_pixel(pixels_,x+px,y+py,color,alpha);
+        blend_pixel(pixels_,x+width-1-px,y+py,color,alpha);
+        blend_pixel(pixels_,x+px,y+height-1-py,color,alpha);
+        blend_pixel(pixels_,x+width-1-px,y+height-1-py,color,alpha);
+    }
+}
+unsigned Canvas::text_width(std::string_view value,unsigned size) const noexcept {
+    if(!font_ready)return static_cast<unsigned>(value.size())*6*(size/8?size/8:1);
+    const botty::font::Face* face=&botty::font::faces[0];
+    for(const auto& candidate:botty::font::faces)if(candidate.size<=size)face=&candidate;
+    unsigned width=0;for(unsigned char ch:value){if(ch<32||ch>126)ch='?';width+=face->glyphs[ch-32].advance;}return width;
+}
+void Canvas::label(unsigned x,unsigned y,std::string_view value,unsigned size,Color color) noexcept {
+    if(!font_ready){text(x,y,value,size/8?size/8:1,color);return;}
+    const botty::font::Face* face=&botty::font::faces[0];
+    for(const auto& candidate:botty::font::faces)if(candidate.size<=size)face=&candidate;
+    int pen=static_cast<int>(x);
+    for(unsigned char ch:value) {
+        if(ch<32||ch>126)ch='?';
+        const auto& glyph=face->glyphs[ch-32];
+        for(unsigned gy=0;gy<glyph.height;++gy)for(unsigned gx=0;gx<glyph.width;++gx) {
+            const int dx=pen+glyph.left+static_cast<int>(gx);
+            const int dy=static_cast<int>(y)+glyph.top+static_cast<int>(gy);
+            if(dx>=0&&dy>=0)blend_pixel(pixels_,static_cast<unsigned>(dx),static_cast<unsigned>(dy),color,font_pixels[glyph.offset+gy*glyph.width+gx]);
+        }
+        pen+=glyph.advance;
+        if(pen>=static_cast<int>(frame_width))break;
+    }
+}
+
+void Canvas::shade(unsigned alpha) noexcept {
+    if(alpha>255)alpha=255;
+    for(unsigned y=0;y<frame_height;++y)for(unsigned x=0;x<frame_width;++x)
+        blend_pixel(pixels_,x,y,static_cast<Color>(0xff000000),alpha);
+}
+void Canvas::clear(Color color) noexcept
+{
+    fill_rect(pixels_, 0, 0, frame_width, frame_height, color);
+}
+
+void Canvas::rectangle(unsigned x, unsigned y, unsigned width, unsigned height,
+                       Color color) noexcept
+{
+    fill_rect(pixels_, x, y, width, height, color);
+}
+
+void Canvas::circle(unsigned center_x, unsigned center_y, unsigned radius, Color color) noexcept
+{
+    fill_circle(pixels_, center_x, center_y, radius, color);
+}
+
+void Canvas::triangle(unsigned center_x, unsigned top, unsigned half_width, unsigned height,
+                      Color color) noexcept
+{
+    fill_triangle(pixels_, center_x, top, half_width, height, color);
+}
+
+void Canvas::text(unsigned x, unsigned y, std::string_view value, unsigned scale,
+                  Color color) noexcept
+{
+    draw_text(pixels_, x, y, value, scale, color);
+}
+
+void read_asset_text(const char *path, std::span<char> destination,
+                     std::string_view fallback) noexcept
+{
+    copy_message(destination, fallback);
+    File descriptor{open(path, 0)};
+    if (!descriptor.valid() || destination.empty())
+        return;
+
+    const long count = read(descriptor.get(), destination.data(), destination.size() - 1);
+    if (count <= 0)
+        return;
+
+    std::size_t length = static_cast<std::size_t>(count);
+    while (length > 0 && (destination[length - 1] == '\r' || destination[length - 1] == '\n'))
+        --length;
+    destination[length] = '\0';
+}
+
+void run(DrawScene draw, std::string_view ready_message) noexcept
+{
+    if (!verify_unique_ownership())
+        halt("Botty Native: unique ownership failed");
+    if (draw == nullptr)
+        halt("Botty Native: scene callback missing");
+
+    (void)sceSystemServiceHideSplashScreen();
+    const int video = sceVideoOutOpen(0xff, 0, 0, nullptr);
+    if (video < 0)
+        halt("Botty Native: sceVideoOutOpen failed");
+
+    const std::size_t pool_size = sceKernelGetDirectMemorySize();
+    if (pool_size < memory_bytes)
+        halt("Botty Native: insufficient direct memory");
+
+    std::int64_t physical_address = 0;
+    int result =
+        sceKernelAllocateDirectMemory(0, static_cast<std::int64_t>(pool_size), memory_bytes,
+                                      memory_alignment, memory_type_wc_garlic, &physical_address);
+    if (result < 0)
+        halt("Botty Native: direct-memory allocation failed");
+
+    void *mapped = nullptr;
+    result = sceKernelMapDirectMemory(&mapped, memory_bytes, map_protection, 0, physical_address,
+                                      memory_alignment);
+    if (result < 0)
+        halt("Botty Native: direct-memory mapping failed");
+
+    // CPU blending must never read write-combined VideoOut memory. Draw the
+    // tiled image in ordinary cached RAM, then copy it sequentially for scanout.
+    std::unique_ptr<std::uint32_t[]> raster{new (std::nothrow_t{}) std::uint32_t[raster_bytes/4]{}};
+    if(!raster)halt("Botty Native: cached raster allocation failed");
+    Canvas canvas{raster.get()};
+    auto *second_frame = static_cast<std::uint8_t *>(mapped) + frame_bytes;
+    botty::platform::log("Cached CPU raster enabled; VideoOut buffers are write-only");
+
+    std::array<VideoBuffer, 2> buffers{{
+        {mapped, nullptr, nullptr, nullptr},
+        {second_frame, nullptr, nullptr, nullptr},
+    }};
+    VideoAttribute attribute{};
+    (void)sceVideoOutSetFlipRate(video, 0);
+    sceVideoOutSetBufferAttribute2(&attribute, pixel_format_rgba8_srgb, 0, frame_width,
+                                   frame_height, 0, 0, 0);
+
+    result = sceVideoOutRegisterBuffers2(video, 0, 0, buffers.data(),
+                                         static_cast<std::int32_t>(buffers.size()), &attribute, 0,
+                                         nullptr);
+    if (result < 0)
+        halt("Botty Native: buffer registration failed");
+    struct kevent* queue=nullptr;
+    if(sceKernelCreateEqueue(&queue,"Botty flip")<0 || sceVideoOutAddFlipEvent(queue,video,nullptr)<0)
+        halt("Botty Native: flip event initialization failed");
+    botty::platform::log("VideoOut initialized at 1920x1080");
+    notify(ready_message);
+    unsigned index=0,loggedFrames=0;
+    std::int64_t serial=1;
+    for (;;) {
+        const auto started=botty::platform::now();
+        if(!draw(canvas))break;
+        if(!canvas.take_dirty()){(void)sceKernelUsleep(16667);continue;}
+        auto* pixels=index==0 ? mapped : second_frame;
+        const auto drawn=botty::platform::now();
+        std::memcpy(pixels,raster.get(),raster_bytes);
+        flush_range(pixels,raster_bytes);
+        if(sceVideoOutSubmitFlip(video,static_cast<int>(index),1,serial++)<0)
+            halt("Botty Native: submit flip failed");
+        struct kevent event{};
+        int count=0;
+        // Wait for the submitted frame before reusing buffers. Shell suspension
+        // can delay this event; resume continues here, then refreshes input/API.
+        const auto waiting=botty::platform::now();
+        if(sceKernelWaitEqueue(queue,&event,1,&count,nullptr)<0 || count!=1)
+            halt("Botty Native: flip event failed - close using PS menu");
+        const auto finished=botty::platform::now();
+        // A long CPU draw/copy is not suspension and must not discard input.
+        if(finished-waiting>2000000)canvas.resumed_=true;
+        if(loggedFrames<8 || (drawn-started>100000 && loggedFrames<24)){
+            char timing[128];std::snprintf(timing,sizeof(timing),"Frame draw=%llu us copy=%llu us wait=%llu us",static_cast<unsigned long long>(drawn-started),static_cast<unsigned long long>(waiting-drawn),static_cast<unsigned long long>(finished-waiting));botty::platform::log(timing);++loggedFrames;
+        }
+        index=1-index;
+    }
+    (void)sceVideoOutDeleteFlipEvent(queue,video);
+    (void)sceKernelDeleteEqueue(queue);
+    sceVideoOutClose(video);
+    (void)sceKernelMunmap(mapped,memory_bytes);
+    (void)sceKernelReleaseDirectMemory(physical_address,memory_bytes);
+    botty::platform::log("VideoOut resources released");
+}
+} // namespace ps5::demo

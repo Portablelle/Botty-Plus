@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { installAndStartManager, managerInstalled, MANAGER_ROOT } from '../vps-site/src/botty-manager.js';
+function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='0.1.5'}={}) {
+ const files=new Map(),writes=[],events=[];let running=occupied||existingBotty;
+ const io={readFile:async path=>files.get(path)||null,mkdirs:async()=>{},writeFile:async(path,data)=>{files.set(path,data);writes.push(path);},listening:async()=>running,
+  sendElf:async bytes=>{assert.equal(bytes[0],127);events.push('sent');running=!noStartup;},
+  http:async()=>({status:200,body:JSON.stringify({app:occupied?'Other':'Botty',version,titleId:'BTTY00001'})})};
+ const options={wait:async()=>{},fetchFile:async url=>{const bytes=new Uint8Array(await readFile(new URL('../vps-site/'+url.slice(2),import.meta.url)));if(corrupt&&url.endsWith(corrupt))bytes[0]^=1;return {ok:true,arrayBuffer:async()=>bytes.buffer};}};
+ return {io,options,files,writes,events};
+}
+test('verified manager installation records opt-in only after native service responds',async()=>{
+ const f=fixture();assert.equal(await managerInstalled(f.io),false);await installAndStartManager(f.io,f.options);
+ assert.equal(await managerInstalled(f.io),true);assert.equal(f.writes.length,6);assert.equal(f.writes.at(-1),MANAGER_ROOT+'/installed.json');assert.deepEqual(f.events,['sent']);
+});
+for(const corrupt of ['manifest.json','botty-manager.elf','ui/app.js'])test('corrupt Botty artifact prevents all writes: '+corrupt,async()=>{
+ const f=fixture({corrupt});await assert.rejects(installAndStartManager(f.io,f.options),/verification failed/);assert.equal(f.writes.length,0);assert.equal(f.events.length,0);
+});
+test('foreign port 8088 service is not overwritten',async()=>{
+ const f=fixture({occupied:true});await assert.rejects(installAndStartManager(f.io,f.options),/unexpected service/);assert.equal(f.writes.length,0);
+});
+test('failed native startup leaves no automatic startup marker',async()=>{
+ const f=fixture({noStartup:true});await assert.rejects(installAndStartManager(f.io,f.options),/did not start/);assert.equal(await managerInstalled(f.io),false);
+});
+test('corrupt installation record fails explicitly',async()=>{
+ const f=fixture();f.files.set(MANAGER_ROOT+'/installed.json',new TextEncoder().encode('{'));await assert.rejects(managerInstalled(f.io),/damaged/);
+});
+
+test('startup failure reports native diagnostic without recording installation',async()=>{
+ const f=fixture({noStartup:true});f.files.set(MANAGER_ROOT+'/startup.log',new TextEncoder().encode('Botty failed while creating working directories: Permission denied'));
+ await assert.rejects(installAndStartManager(f.io,f.options),/creating working directories: Permission denied/);
+ assert.equal(await managerInstalled(f.io),false);
+});
+
+test('running legacy web app is reused without replacement',async()=>{
+ const f=fixture({existingBotty:true,version:'0.1.0'});
+ const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.1.0');assert.equal(f.writes.length,0);assert.equal(f.events.length,0);
+});
+test('legacy installation record continues to opt in to normal session startup',async()=>{
+ const f=fixture();f.files.set(MANAGER_ROOT+'/installed.json',new TextEncoder().encode(JSON.stringify({app:'Botty',version:'0.1.0'})));
+ assert.equal(await managerInstalled(f.io),true);
+});
+test('wrong version after payload launch cannot record the new service as installed',async()=>{
+ const f=fixture({version:'0.1.0'});
+ await assert.rejects(installAndStartManager(f.io,f.options),/previous Botty service/);
+ assert.equal(f.files.has(MANAGER_ROOT+'/installed.json'),false);
+});
+test('running 0.1.1 service remains compatible during the catalog update',async()=>{
+ const f=fixture({existingBotty:true,version:'0.1.1'});
+ const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.1.1');assert.equal(f.writes.length,0);
+});
+test('0.1.1 installation continues to opt in to startup',async()=>{
+ const f=fixture();f.files.set(MANAGER_ROOT+'/installed.json',new TextEncoder().encode(JSON.stringify({app:'Botty',version:'0.1.1'})));
+ assert.equal(await managerInstalled(f.io),true);
+});
+
+test('running 0.1.2 service remains compatible during the Unicode update',async()=>{
+ const f=fixture({existingBotty:true,version:'0.1.2'});
+ const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.1.2');assert.equal(f.writes.length,0);
+});
+
+test('active 0.1.3 extraction service is kept running during upgrade',async()=>{
+ const f=fixture({existingBotty:true,version:'0.1.3'});
+ const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.1.3');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+});
+
+test('active 0.1.4 service is preserved during parallel extraction upgrade',async()=>{
+ const f=fixture({existingBotty:true,version:'0.1.4'});const result=await installAndStartManager(f.io,f.options);
+ assert.equal(result.version,'0.1.4');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+});

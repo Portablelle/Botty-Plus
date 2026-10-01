@@ -1,0 +1,13 @@
+# Only the User's Guide hostname is redirected. Other hosted sites are unchanged.
+server {
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name manuals.playstation.net manuals.playstation.com;
+    ssl_certificate /etc/nginx/botty-guide-tls/guide.crt;
+    ssl_certificate_key /etc/nginx/botty-guide-tls/guide.key;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    add_header Cache-Control "no-store" always;
+    return 302 https://botty.example.com/;
+}

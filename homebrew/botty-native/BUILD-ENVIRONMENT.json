@@ -1,0 +1,11 @@
+{
+  "containerTag": "botty-native-build:00.001.000",
+  "containerImageId": "sha256:3e393987476d70c7d7cc5c15997706bf236b304cd8b9340ae0c13c2efb599d34",
+  "baseImage": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "boilerplateCommit": "dd44bbdc75437332ed22e3ba95126733419ef25a",
+  "payloadSDK": "0.42",
+  "payloadSDKSha256": "8cfbc7cd5811e719eb4f0c47eea668d3dc7b40bc8ab11c4a5031d40c23ec02da",
+  "runtimeSha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036",
+  "fontSourceSha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+  "hardwareValidated": false
+}

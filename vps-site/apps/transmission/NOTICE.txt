@@ -1,0 +1,45 @@
+Botty Transmission integration — preview, 2026-10-01
+
+Unmodified upstream binaries and web UI:
+https://github.com/ps5-payload-dev/websrv/releases/tag/v0.33
+Transmission.zip SHA-256 c2d579d739c4aca053cf0722681cb921a0d1fad47ec83f7a47ae631743d9d1bd
+websrv-ps5.elf SHA-256 4676a40ac4c7ca1adeb04980efa48dd33a8961446b42e6a12abfcbe96090c8ac
+
+Transmission 4.0.6 source (commit 38c164933e9f77c110b48fe745861c3b98e3d83e):
+https://github.com/transmission/transmission/tree/4.0.6
+https://github.com/transmission/transmission/releases/download/4.0.6/transmission-4.0.6.tar.xz
+Copyright: respective authors. GPL v2 or v3; see TRANSMISSION-COPYING.txt,
+GPL-2.0.txt, GPL-3.0.txt and public_html/transmission-app.js.LEGAL.txt.
+
+PS5 launcher and build recipes, commit baabe27e5449baeb059b850d0393c31fdee219b7:
+https://github.com/ps5-payload-dev/websrv/tree/v0.33
+https://github.com/ps5-payload-dev/websrv/blob/v0.33/homebrew/Transmission/build.sh
+https://github.com/ps5-payload-dev/websrv/blob/v0.33/.github/workflows/transmission.yml
+Copyright John Tornblom and contributors; see WEBSRV-LICENSE.txt.
+SDK and dependency build sources: https://github.com/ps5-payload-dev/pacbrew-repo
+The upstream build uses an unpinned SDK. Byte-for-byte rebuilding is not established.
+
+Botty changes only installation, configuration and launch orchestration. Neither
+engine fixes nor firmware compatibility changes are included. The known 4.0.6
+HTTP tracker announce bug remains; upstream 4.1.0 fixes it.
+
+The temporary websrv helper listens on LAN port 8080 without authentication
+while starting the daemon, then is terminated. Use a trusted LAN. The helper
+may register the upstream Homebrew Launcher icon; it is not removed by Botty.
+If cleanup fails, the portal reports failure and asks for a PS5 restart.
+Transmission on port 9091 requires the locally generated password and permits
+localhost and 192.168.x.x clients. HTTP does not encrypt LAN credentials.
+Secrets are saved only under /data/botty/transmission/state on the console,
+with mode 0600 in directories created with mode 0700. No secrets are sent to
+the VPS or stored in browser localStorage. Other root-capable console services
+(such as FTP or Prospero) may still read console files.
+
+Downloads: /data/botty/downloads/incomplete -> /data/botty/downloads/complete.
+Existing torrent/resume state is preserved. Completed files are not automatically
+moved into ShadowMount's library; use a console file manager after completion.
+Do not remove/move files still being seeded unless updating Transmission's location.
+
+Not hardware-validated on firmware 13.00. Sustained 70 GB downloads, crash recovery,
+rest mode, playing games concurrently and memory/throughput limits remain untested.
+Keep the console awake. Use Stop safely before shutdown. Check free storage in the
+web interface before large downloads. This preview is not a production guarantee.

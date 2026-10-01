@@ -1,0 +1,40 @@
+{
+  "checked_on": "2026-09-30",
+  "payloads": [
+    {
+      "file": "kstuff.elf",
+      "version": "v1.11",
+      "published_at": "2026-09-20T19:08:36Z",
+      "url": "https://github.com/EchoStretch/kstuff-lite/releases/download/v1.11/kstuff.elf",
+      "digest": "sha256:ab9a6cb4d3b1daf139d4d646e402b1cf569071acd64599c936d7a3a6164dc779"
+    },
+    {
+      "file": "shadowmountplus.elf",
+      "version": "1.7beta2",
+      "published_at": "2026-09-21T21:17:04Z",
+      "url": "https://github.com/drakmor/ShadowMountPlus/releases/download/1.7beta2/shadowmountplus.elf",
+      "digest": "sha256:3f716a7b2220c7e87e87452ae05cad689ef842d3beb4cdad6c526cb6dfc2b6b5"
+    },
+    {
+      "file": "etaHEN-2.5B.bin",
+      "version": "2.5B",
+      "published_at": "2025-12-25T05:31:40Z",
+      "url": "https://github.com/etaHEN/etaHEN/releases/download/2.5B/etaHEN-2.5B.bin",
+      "digest": "sha256:4845cac45095361b8983b14d6690622183b0dcfbf6d7fda16e161aa91ff0531e"
+    },
+    {
+      "file": "ProsperoMgr.elf",
+      "version": "v1.1",
+      "published_at": "2026-09-28T19:32:33Z",
+      "url": "https://github.com/notmaj0r/ProsperoMgr/releases/download/v1.1/ProsperoMgr.elf",
+      "digest": "sha256:e7a6bb544adb2fb2a61aa9cc83b0ad15f70b32d7511a3de0f1fb88812f11983c"
+    },
+    {
+      "file": "ftpsrv-ps5.elf",
+      "version": "v0.21.1",
+      "published_at": "2026-08-20T17:02:45Z",
+      "url": "https://github.com/ps5-payload-dev/ftpsrv/releases/download/v0.21.1/ftpsrv-ps5.elf",
+      "digest": "sha256:7d4b31c83eae4e056580482a3a074e1db25922efc74ac1e439473b45d71a5938"
+    }
+  ]
+}

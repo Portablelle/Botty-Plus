@@ -1,0 +1,52 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #0b1017; color: #f1f5f9; font: 18px/1.55 Arial, sans-serif; }
+main { max-width: 1280px; margin: auto; padding: 42px 60px; }
+header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #27313e; padding-bottom: 24px; }
+.brand { font-size: 24px; font-weight: bold; letter-spacing: 3px; }
+.brand span, #firmware { color: #94a4b8; font-size: 15px; }
+.intro { padding: 42px 0 24px; }
+.eyebrow, .step { color: #a9dfbf; font-size: 12px; font-weight: bold; letter-spacing: 2px; }
+h1 { font-size: 58px; line-height: 1.07; letter-spacing: -2px; margin: 18px 0; }
+.lead { color: #afbccb; font-size: 21px; }
+button { display: inline-block; cursor: pointer; border: 1px solid #526478; border-radius: 9px; padding: 13px 20px; color: #fff; background: #202c3a; font: bold 16px Arial, sans-serif; }
+button:hover:not(:disabled), button:focus { border-color: #b7f5cb; outline: 3px solid #b7f5cb; outline-offset: 4px; }
+button:disabled { opacity: .42; cursor: default; }
+.primary { background: #b7f5cb; color: #0c2117; border-color: #b7f5cb; padding: 19px 28px; font-size: 21px; min-width: 255px; }
+.primary span { margin-left: 35px; }
+.hint { color: #91a0b2; font-size: 14px; }
+.status-box { display: flex; align-items: center; background: #15241e; border: 1px solid #325143; padding: 18px 22px; border-radius: 12px; margin: 12px 0 28px; }
+.status-box p { margin: 0; }
+.dot { width: 9px; height: 9px; flex-shrink: 0; background: #b7f5cb; border-radius: 50%; margin-right: 15px; }
+.payloads { display: flex; flex-wrap: wrap; margin: -8px; }
+article { width: calc(50% - 16px); margin: 8px; padding: 24px; background: #121b26; border: 1px solid #27313e; border-radius: 12px; }
+h2 { font-size: 21px; margin: 12px 0 4px; }
+article p { color: #91a0b2; font-size: 15px; margin: 0 0 20px; }
+.logs { margin-top: 30px; }
+#console { margin-top: 12px; background: #070b10; padding: 18px; border-radius: 10px; max-height: 300px; overflow: auto; font: 13px/1.6 monospace; white-space: pre-wrap; overflow-wrap: break-word; }
+footer { color: #7b8a9c; font-size: 12px; margin-top: 28px; }
+.transmission { width: calc(100% - 16px); }
+.transmission button { margin: 0 12px 18px 0; }
+.transmission code { overflow-wrap: anywhere; color: #d4eadf; }
+.transmission a { color: #b7f5cb; }
+.transmission summary { cursor: pointer; margin-bottom: 14px; }
+#transmission-access { border: 1px solid #325143; padding: 18px; border-radius: 9px; margin-bottom: 18px; }
+#transmission-access p:last-child { margin-bottom: 0; }
+@media(max-width: 650px) { main { padding: 24px; } h1 { font-size: 44px; } article { width: calc(100% - 16px); } header { align-items: start; } }
+
+.scenarios { display: flex; margin: 4px -8px 32px; }
+.scenarios > div { flex: 1; margin: 8px; padding: 20px; border-top: 2px solid #426a55; background: #111a23; border-radius: 0 0 10px 10px; }
+.scenarios h2 { font-size: 19px; }
+.scenarios p, .section-copy { color: #afbccb; font-size: 16px; }
+.session-step { padding: 28px; border: 1px solid #426a55; border-radius: 12px; background: #121e22; margin-bottom: 20px; }
+.session-step h2, .transmission h2 { font-size: 26px; }
+.sequence { display: flex; padding: 0; margin: 24px 0; list-style: none; counter-reset: setup; }
+.sequence li { flex: 1; counter-increment: setup; border-left: 2px solid #426a55; padding: 0 16px; }
+.sequence strong::before { content: counter(setup) ". "; color: #b7f5cb; }
+.sequence span { display: block; color: #91a0b2; font-size: 14px; margin-top: 4px; }
+.session-step .status-box { margin-bottom: 0; }
+.tools { border: 1px solid #27313e; border-radius: 12px; padding: 20px 24px; margin-top: 20px; }
+summary { cursor: pointer; font-weight: bold; }
+summary:focus, a:focus { outline: 3px solid #b7f5cb; outline-offset: 5px; }
+.tools > summary { font-size: 19px; }
+.home-instruction { padding: 16px; background: #192d24; border-radius: 8px; color: #d4eadf; }
+@media(max-width: 800px) { .scenarios { flex-direction: column; } .sequence { flex-direction: column; } .sequence li { margin: 8px 0; } .session-step { padding: 22px; } }

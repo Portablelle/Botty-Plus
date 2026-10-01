@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Botty · PS5</title>
+  <link rel="stylesheet" href="./portal.css">
+</head>
+<body>
+  <main>
+    <header><span class="brand">BOTTY <span>/ PS5</span></span><span id="firmware">Checking console…</span></header>
+    <section class="intro">
+      <p class="eyebrow">YOUR PS5 ROUTINE</p>
+      <h1>Start here.<br>Then enjoy your PS5.</h1>
+      <p class="lead">One button prepares your session. No Mac needed.</p>
+    </section>
+    <section class="scenarios" aria-label="When to use this portal">
+      <div><span class="step">FIRST TIME</span><h2>Start, then install Botty</h2><p>Complete step 1 below. Then use step 2 once to add Botty Downloads to your home screen.</p></div>
+      <div><span class="step">AFTER A RESTART / POWER OFF</span><h2>Just start a session</h2><p>Use step 1 again. Installed Botty and Transmission start automatically. No reinstall needed.</p></div>
+      <div><span class="step">BACK FROM REST MODE</span><h2>Try your app or game first</h2><p>If the session is still working, continue from the home screen. If it has failed, restart the PS5 and use step 1.</p></div>
+    </section>
+    <section class="session-step" aria-labelledby="session-title">
+      <span class="step">STEP 1 / FIRST TIME &amp; AFTER EVERY FULL RESTART</span>
+      <h2 id="session-title">Prepare your session</h2>
+      <p class="section-copy">Start session runs all three steps below automatically. You do not need to load Kstuff or ShadowMountPlus separately.</p>
+      <ol class="sequence"><li><strong>Jailbreak</strong><span>Unlock the current session</span></li><li><strong>Kstuff-lite</strong><span>Load, then wait 10 seconds</span></li><li><strong>ShadowMountPlus</strong><span>Load your game library</span></li></ol>
+      <button id="jailbreak" class="primary">Start session <span aria-hidden="true">→</span></button>
+      <p class="hint">Keep this page open until setup finishes. Check the PS5 startup notifications.<br>Do not start again if this session is already active.</p>
+      <section class="status-box" aria-live="polite"><span class="dot"></span><p id="status">Ready when you are.</p></section>
+    </section>
+    <section class="payloads" aria-label="Install Botty">
+      <article class="transmission"><span class="step">STEP 2 / INSTALL ONCE · PREVIEW</span><h2>Add Botty Downloads to your home screen</h2>
+        <p>After step 1, install your controller-friendly app for torrents, archive extraction and library preparation. Transmission is included; no separate installation is needed.</p>
+        <button id="botty-install" disabled>Install &amp; start Botty app</button>
+        <p id="botty-status" aria-live="polite">Complete step 1 to enable installation. Already installed? Start session will start Botty for you.</p>
+        <p class="home-instruction"><strong>When Botty is ready:</strong> press PS and open Botty Downloads from the home screen.</p>
+        <details><summary>Features &amp; test status</summary><p>RAR multipart extraction · CRC verification · No-overwrite library moves. Archives are kept for seeding. Firmware 13.00 still requires a real-console test.</p></details>
+      </article>
+    </section>
+    <details class="tools"><summary>Optional tools &amp; manual controls</summary>
+      <p class="section-copy">Not needed for normal setup. Botty already includes Transmission. Manual payload controls are available only after a session starts.</p>
+      <section class="payloads" aria-label="Optional tools">
+      <article><span class="step">OPTIONAL / FILE TRANSFERS</span><h2>FTP server</h2><p>v0.21.1 · Port 2121</p><button disabled data-payload="ftpsrv-ps5.elf" data-label="FTP server">Start FTP</button></article>
+      <article><span class="step">OPTIONAL / FILE MANAGER</span><h2>Prospero Manager</h2><p>v1.1 · Port 7070</p><button disabled data-payload="ProsperoMgr.elf" data-label="Prospero">Start Prospero</button></article>
+      <article class="transmission"><span class="step">OPTIONAL / DOWNLOADS · PREVIEW</span><h2>Transmission</h2>
+        <p>4.0.6 · Download directly to your PS5. Installs once, preserves your queue, and starts on demand.</p>
+        <button id="transmission-start" disabled>Install &amp; start Transmission</button>
+        <button id="transmission-stop" disabled>Stop safely</button>
+        <p id="transmission-status" aria-live="polite">Start a session first. Firmware 13.00 and large downloads still need console testing.</p>
+        <div id="transmission-access" hidden>
+          <p>On your phone, connected to the same Wi-Fi, open <strong>http://YOUR-PS5-IP:9091</strong>.</p>
+          <p>Username: <strong id="transmission-user"></strong><br>Password: <code id="transmission-password"></code></p>
+          <p>Credentials stay on this PS5. Save them before leaving this page.</p>
+        </div>
+        <details><summary>Storage &amp; usage</summary>
+          <p>Files download to <code>/data/botty/downloads/incomplete</code> and move to <code>/data/botty/downloads/complete</code> when finished. They are not added to your game library automatically.</p>
+          <p>Check available storage in Transmission before adding a large download. Keep the PS5 awake. Use Stop safely before shutting down; resume after the next session with this button.</p>
+          <p>The temporary launcher may add a Homebrew Launcher icon. Its port 8080 is closed after startup. Transmission uses a password and allows localhost and 192.168.x.x clients. Do not forward console ports.</p>
+          <p>This package retains the upstream 4.0.6 engine, including its known tracker announce bug. <a href="./apps/transmission/NOTICE.txt">Package sources &amp; limitations</a></p>
+        </details>
+      </article>
+    </section>
+    </details>
+    <details class="tools"><summary>Advanced: individual session payloads</summary><p class="section-copy">Start session already sends both payloads in the correct order. These are not extra setup steps.</p><section class="payloads">      <article><span class="step">INCLUDED IN START SESSION</span><h2>Kstuff-lite</h2><p>v1.11 Beta · Loaded first</p><button disabled data-payload="kstuff.elf" data-label="Kstuff">Load Kstuff</button></article>
+      <article><span class="step">INCLUDED IN START SESSION</span><h2>ShadowMountPlus</h2><p>1.7beta2 · Your game library</p><button disabled data-payload="shadowmountplus.elf" data-label="ShadowMountPlus">Load ShadowMountPlus</button></article>
+</section></details>
+    <section class="logs"><h2>Session log</h2><div id="console" role="log" aria-live="polite"></div></section>
+    <footer>Relapse dd8e4e0 · Custom session launcher · Release 2026-10-01 · Guided setup<br>Payload delivery is reported here; confirm startup in the PS5 notifications.</footer>
+  </main>
+  <script src="./src/firmware.js"></script>
+  <script src="./src/main.js"></script>
+  <script src="./src/rop.js"></script>
+  <script src="./src/utils/syscalls.js"></script>
+  <script type="module" src="./src/site.js"></script>
+</body>
+</html>

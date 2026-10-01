@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "0.1.5",
+  "files": [
+    {
+      "path": "botty-manager.elf",
+      "size": 2789304,
+      "sha256": "959afee21474e7a5420a4720d90025d8e409507778bc76a2309c43af8773ea60"
+    },
+    {
+      "path": "icon0.png",
+      "size": 4246,
+      "sha256": "f84f3a673dd9b53b2b7b3608058cbd2b983dc9cb649dbe306d53f36e205ea080"
+    },
+    {
+      "path": "ui/index.html",
+      "size": 1722,
+      "sha256": "5aa9fbc76eca9fe3fa7da09c4f51202fdcc02c58b0d3140fffd666bb51a858ff"
+    },
+    {
+      "path": "ui/app.js",
+      "size": 11250,
+      "sha256": "3440970b68b69068f7ba743b2705f73f8dfe4d53485ee44f1167ad5c69f6db7a"
+    },
+    {
+      "path": "ui/style.css",
+      "size": 3109,
+      "sha256": "0000cb696920f5c249e9ca3f776b5b8032f644795df02a3808e6d2d9df262e8c"
+    }
+  ]
+}

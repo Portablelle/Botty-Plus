@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "id": "4.0.6-v0.33-botty1",
+  "version": "4.0.6",
+  "source": "https://github.com/ps5-payload-dev/websrv/releases/tag/v0.33",
+  "archiveSha256": "c2d579d739c4aca053cf0722681cb921a0d1fad47ec83f7a47ae631743d9d1bd",
+  "files": [
+    {
+      "path": "transmission-daemon.elf",
+      "size": 12204712,
+      "sha256": "2ca7185650dbd3076b13d370b29ea57b8da7559f70addc100e4f9c3fa5af37f3"
+    },
+    {
+      "path": "public_html/images/favicon.ico",
+      "size": 1150,
+      "sha256": "f30c0020352c9a33cfc0c3b8eb72119ef2522aadfcf6d0e807c618f2a43c390f"
+    },
+    {
+      "path": "public_html/images/webclip-icon.png",
+      "size": 10875,
+      "sha256": "f3306b6bf86ce62b1db8d8ec66f683bb60f7e9e97ac016fc1c4a5924aeeec7ee"
+    },
+    {
+      "path": "public_html/images/favicon.png",
+      "size": 841,
+      "sha256": "5004069d31ecf02e39f5c82c5cfca5159ed587a6e1b13d30c86754cce9a11055"
+    },
+    {
+      "path": "public_html/transmission-app.js",
+      "size": 208457,
+      "sha256": "6772d4cac866060bc09e3cadb118cfd5bc87e2ef2900bac7b1512f91bd0d7f61"
+    },
+    {
+      "path": "public_html/index.html",
+      "size": 9458,
+      "sha256": "a6103cc6cb423b1393ff3a2ad2204244bbab2773c65a45c158748daa7228177e"
+    },
+    {
+      "path": "public_html/transmission-app.js.LEGAL.txt",
+      "size": 467,
+      "sha256": "bbed5e88916496cc40fb040bfe8079d71f18e0977c1dc82b055befafe1039ac3"
+    },
+    {
+      "path": "public_html/transmission-app.css",
+      "size": 70661,
+      "sha256": "152ebba3d5f3025cd9777cb956f7d9c11f325fb172584aca93bb7b5977b5cf4d"
+    }
+  ],
+  "helper": {
+    "path": "websrv-ps5.elf",
+    "size": 1597248,
+    "sha256": "4676a40ac4c7ca1adeb04980efa48dd33a8961446b42e6a12abfcbe96090c8ac"
+  }
+}
