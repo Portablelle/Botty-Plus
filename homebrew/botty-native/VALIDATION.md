@@ -86,3 +86,16 @@ On 2026-10-01, the user confirmed that navigation is tested and smooth on the
 PS5. This validates normal controller navigation and perceived fluidity of the
 current UI. It does not assert a measured FPS value or complete the separate
 upgrade/recovery, rest-mode and long-duration workload checks.
+
+### Native 1.0 launch investigation
+
+On 2026-10-01, after the user reported a completed portal launch followed by a
+black screen and an unresponsive PS button, ShadowMountPlus recorded a pre-main
+loader error for `PPSA99071`: `mount flag / attribute error` on
+`/app0/sce_module/libc.prx`. The installed and mounted executable/runtime hashes
+matched the release. The runtime had mode 0644, while the previous working
+installation's copy was executable. The portal installer now assigns 0755 to
+both `eboot.bin` and `sce_module/libc.prx`, including permission repair when the
+installed content already matches. The console runtime's mode was repaired and
+read back as 0755. A successful relaunch on hardware is still required to confirm
+that this resolves the black screen.

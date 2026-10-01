@@ -109,22 +109,28 @@ export class NativeIO extends PS5IO {
       await this.syncDirectory(root);
     }
   }
-  async publishNative() {
+  async prepareNativePermissions(root) {
+    if (root !== STAGE && root !== NATIVE_ROOT) throw Error('Unexpected native permission root.');
     // The native title must be readable/executable from the application sandbox.
-    for (const path of [STAGE, STAGE + '/assets', STAGE + '/sce_module', STAGE + '/sce_sys']) {
+    for (const path of [root, root + '/assets', root + '/sce_module', root + '/sce_sys']) {
       if (((await this.runtime.chain.syscall(15, this.string(path), 0o755)).low | 0) !== 0)
         throw Error('Could not set native directory permissions.');
     }
     for (const file of FILES) {
-      if (((await this.runtime.chain.syscall(15, this.string(STAGE + '/' + file), file === 'eboot.bin' ? 0o755 : 0o644)).low | 0) !== 0)
+      // The loader also requires executable permissions on the native runtime.
+      const executable = file === 'eboot.bin' || file === 'sce_module/libc.prx';
+      if (((await this.runtime.chain.syscall(15, this.string(root + '/' + file), executable ? 0o755 : 0o644)).low | 0) !== 0)
         throw Error('Could not set native file permissions.');
     }
+    for (const path of [root + '/assets', root + '/sce_module', root + '/sce_sys', root])
+      await this.syncDirectory(path);
+  }
+  async publishNative() {
+    await this.prepareNativePermissions(STAGE);
     await this.call('mkdir', this.string('/data/homebrew'), 0o755);
     const fd = await this.call('open', this.string('/data/homebrew'), 0x20000 | 0x100, 0);
     if (fd < 0) throw Error('Cannot access the homebrew directory.');
     await this.close(fd);
-    for (const path of [STAGE + '/assets', STAGE + '/sce_module', STAGE + '/sce_sys', STAGE])
-      await this.syncDirectory(path);
     await this.moveDirectory(STAGE, NATIVE_ROOT);
   }
 }
@@ -208,6 +214,8 @@ export async function installNative(io, options = {}) {
   let previous;
   if (installed) {
     if (await matches(io, NATIVE_ROOT, manifest, digest)) {
+      // Hashes cannot detect permissions left by an older installer.
+      await io.prepareNativePermissions(NATIVE_ROOT);
       report('Botty+ ' + manifest.version + ' is already installed.');
       return {version: manifest.version, updated: false};
     }

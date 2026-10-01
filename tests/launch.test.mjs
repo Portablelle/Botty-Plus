@@ -47,6 +47,7 @@ function nativeFixture() {
     restoreNative: async backup => { events.push('restore'); move(backup, NATIVE_ROOT); },
     publishNative: async () => { events.push('publish'); move(stage, NATIVE_ROOT); },
     syncRegisteredMetadata: async () => {},
+    prepareNativePermissions: async () => {},
     removeEmptyNative: async () => false,
   };
   const options = { fetchFile: async url => { downloads.push(url); const b = new Uint8Array(await readFile(new URL('../vps-site/' + url.slice(2), import.meta.url))); return { ok: true, arrayBuffer: async () => b.buffer }; } };
@@ -64,6 +65,52 @@ test('first launch installs native; second launch does not download or rewrite i
   const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 12);
   f.writes.length = 0; f.downloads.length = 0; await installNative(f.io, f.options);
   assert.deepEqual(f.writes, []); assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
+});
+test('matching native installation repairs permissions without rewriting content', async () => {
+  const f = nativeFixture(); await installNative(f.io, f.options);
+  f.writes.length = 0; f.downloads.length = 0;
+  const roots = [];
+  f.io.prepareNativePermissions = async root => roots.push(root);
+  await installNative(f.io, f.options);
+  assert.deepEqual(roots, [NATIVE_ROOT]);
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
+  f.io.prepareNativePermissions = async () => { throw Error('Permission repair failed'); };
+  await assert.rejects(installNative(f.io, f.options), /Permission repair failed/);
+});
+test('native permissions make the executable and runtime loadable, with readable assets', async () => {
+  const calls = [], synced = [];
+  const io = { string: path => path, syncDirectory: async path => synced.push(path),
+    runtime: { chain: { syscall: async (...args) => { calls.push(args); return { low: 0 }; } } } };
+  for (const root of [stage, NATIVE_ROOT]) {
+    calls.length = 0; synced.length = 0;
+    await NativeIO.prototype.prepareNativePermissions.call(io, root);
+    assert.equal(calls.length, 16);
+    for (const [syscall, path, mode] of calls) {
+      assert.equal(syscall, 15);
+      const relative = path.slice(root.length);
+      const executable = ['', '/assets', '/sce_module', '/sce_sys', '/eboot.bin', '/sce_module/libc.prx'].includes(relative);
+      assert.equal(mode, executable ? 0o755 : 0o644, path);
+    }
+    assert.equal(synced.length, 4);
+  }
+  calls.length = 0;
+  await assert.rejects(NativeIO.prototype.prepareNativePermissions.call(io, '/data/homebrew/OTHER'), /Unexpected native permission root/);
+  assert.deepEqual(calls, []);
+  io.runtime.chain.syscall = async () => ({ low: 0xffffffff });
+  await assert.rejects(NativeIO.prototype.prepareNativePermissions.call(io, stage), /permissions/);
+});
+test('native publication prepares runtime permissions before exposing the title', async () => {
+  const events = [];
+  const io = { prepareNativePermissions: async root => events.push(['permissions', root]),
+    string: path => path, call: async () => 0, close: async () => {},
+    moveDirectory: async (...paths) => events.push(['publish', ...paths]) };
+  await NativeIO.prototype.publishNative.call(io);
+  assert.deepEqual(events, [['permissions', stage], ['publish', stage, NATIVE_ROOT]]);
+  events.length = 0;
+  io.prepareNativePermissions = async () => { throw Error('Permission setup failed'); };
+  await assert.rejects(NativeIO.prototype.publishNative.call(io), /Permission setup failed/);
+  assert.deepEqual(events, []);
 });
 test('interrupted native staging resumes without redownloading', async () => {
   const f = nativeFixture(); const publish = f.io.publishNative; f.io.publishNative = async () => { throw Error('interrupted'); };

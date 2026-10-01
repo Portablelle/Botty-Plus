@@ -7,6 +7,7 @@ import { launchSession } from "./launch.js";
 
 
 const output = document.getElementById("console");
+let launchStartedAt = null;
 
 function writeLog(message, type = "log", replace = false) {
   let line = replace ? output.lastElementChild : null;
@@ -17,7 +18,8 @@ function writeLog(message, type = "log", replace = false) {
   let marker = "*";
   if (type === "error") marker = "-";
   if (type === "info" || type === "success") marker = "+";
-  line.textContent = `[${marker}] ${message}`;
+  const elapsed = launchStartedAt === null ? "" : `${Math.floor((performance.now() - launchStartedAt) / 1000)}s `;
+  line.textContent = `${elapsed}[${marker}] ${message}`;
   output.scrollTop = output.scrollHeight;
 }
 
@@ -78,11 +80,16 @@ else button.focus();
 button.addEventListener("click", async () => {
   if (started || rejection) return;
   started = true;
+  launchStartedAt = performance.now();
+  document.body.dataset.state = "launching";
   button.disabled = true;
   button.textContent = "LAUNCHING";
   button.setAttribute("aria-busy", "true");
   const report = message => { status.textContent = message; writeLog(message, "info"); };
   try {
+    report("Starting session…");
+    // Give the browser a paint opportunity before the synchronous WebKit work.
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
     const result = await launchSession({
       jailbreak: async () => { await window.offsetsReady; return await run(); },
       report,
@@ -96,7 +103,6 @@ button.addEventListener("click", async () => {
     button.textContent = "STOPPED";
     status.textContent = "Setup stopped. Restart your PS5 before trying again.";
     writeLog(error.message || String(error), "error");
-    document.getElementById("diagnostics").open = true;
     document.body.dataset.state = "error";
   } finally {
     button.setAttribute("aria-busy", "false");
