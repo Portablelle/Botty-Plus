@@ -125,3 +125,23 @@ A separate continuous-presentation diagnostic variant was host-tested (including
 ### 01.000.001 reconnection handling
 
 Host worker regressions simulate transport timeouts and a failed Transmission RPC while extraction state still updates. The last catalog remains visible, stale actions are rejected, and automatic recovery clears the stale flag without controller input. A renderer preview of Reconnecting retains the download cards and displays the stale-data notice without overlap. Native actions integration and package tests pass. The PS5 package was cross-built in isolation. This release leaves the VideoOut renderer unchanged; the continuous-presentation experiment is saved separately in the ignored `build/video-cadence/` directory. The native app was closed, all staged/published file hashes were verified over FTP, the previous application tree and registered metadata were backed up, and 01.000.001 was activated without restarting the service. A new hardware log confirms 01.000.001 reached main, initialized VideoOut/controller and connected to API v1 while the extraction continued. Recovery from a naturally occurring timeout still needs observation on this build; simulated recovery is covered by the host worker tests.
+
+### 01.000.002 pending torrent deletion feedback
+
+The native UI displays the torrent name, elapsed time and an indeterminate activity
+indicator during deletion. A lost response changes the screen to "Checking
+deletion..." while the worker waits for a fresh catalog, without replaying the
+delete request. Duplicate actions are blocked. After two minutes without a fresh
+state, the UI reports an unconfirmed outcome instead of waiting indefinitely or
+claiming success. Other connection failures retain the existing reconnect behavior.
+
+Host worker regressions cover success, response loss, stale state, unavailable
+Transmission, recovery, the bounded wait and exactly one deletion POST. Native
+action integration and package tests pass. Actual renderer previews for
+`BOTTY_PREVIEW_MODE=deleting` and `checking-deletion` were inspected. The title
+was cross-built in isolation on the SSH host `test` with the pinned native runtime.
+Version 01.000.002 was installed with the app closed: all twelve staged and live
+files were read back and hash-verified, the previous complete title and three
+registered metadata copies were backed up, and the service was not restarted.
+The deletion screen still requires observation during a real PS5 deletion; host
+simulations do not establish hardware acceptance.

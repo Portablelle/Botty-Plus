@@ -17,6 +17,9 @@ Probe probeService() noexcept;
 Connection probeConnection(Catalog* catalog=nullptr) noexcept;
 bool parseConnection(std::string_view,Connection&) noexcept;
 class Network final {
+public:
+    enum class Deletion { idle, deleting, checking };
+private:
     std::atomic<bool> stop_{false}, retry_{false};
     std::atomic<Probe> state_{Probe::checking};
     std::atomic_flag gate_=ATOMIC_FLAG_INIT;
@@ -25,6 +28,7 @@ class Network final {
     Command pending_{};
     ActionResult result_{};
     std::atomic<bool> busy_{false},queued_{false};
+    std::atomic<Deletion> deletion_{Deletion::idle};
     void* thread_=nullptr;
     static void* worker(void*) noexcept;
     void publish(Connection,const Catalog* catalog=nullptr) noexcept;
@@ -33,6 +37,7 @@ public:
     void stop() noexcept;
     bool submit(const Command&) noexcept;
     bool busy() const noexcept {return busy_.load();}
+    Deletion deletion() const noexcept {return deletion_.load();}
     void retry() noexcept { retry_.store(true); }
     Probe state() const noexcept { return state_.load(); }
     // Rendering never waits on the worker. Keep the previous snapshot if busy.

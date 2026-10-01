@@ -197,7 +197,9 @@ bool Network::submit(const Command& command) noexcept {
     if(!thread_||state_.load()!=Probe::ready||busy_.load()||gate_.test_and_set(std::memory_order_acquire))return false;
     // One pending request, never replayed by reconnect or retry.
     if(busy_.exchange(true)){gate_.clear(std::memory_order_release);return false;}
-    pending_=command;queued_.store(true);gate_.clear(std::memory_order_release);return true;
+    pending_=command;
+    deletion_.store(command.operation==Operation::removeTorrent?Deletion::deleting:Deletion::idle);
+    queued_.store(true);gate_.clear(std::memory_order_release);return true;
 }
 void Network::publish(Connection next,const Catalog* catalog) noexcept {
     while(gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
@@ -223,6 +225,8 @@ void Network::stop() noexcept {
 }
 void* Network::worker(void* context) noexcept {
     auto& self=*static_cast<Network*>(context);
+    bool checkingDeletion=false;ActionResult deletionResult;
+    std::uint64_t deletionDeadline=0;
     while(!self.stop_.load()) {
         if(self.retry_.exchange(false))self.publish(Connection{});
         static Catalog next;
@@ -232,9 +236,24 @@ void* Network::worker(void* context) noexcept {
             while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
             command=self.pending_;self.pending_=Command{};
             self.gate_.clear(std::memory_order_release);
-            result=performCommand(command);command=Command{};acted=true;
+            result=performCommand(command);acted=true;
+            if(command.operation==Operation::removeTorrent&&result.status==ActionResult::Status::uncertain){
+                // The service may still hold its catalog lock while unlinking.
+                // Keep the operation visible until a fresh state arrives. Never
+                // replay the destructive POST or infer success from a timeout.
+                checkingDeletion=true;deletionResult=result;
+                deletionDeadline=platform::now()+120000000;
+                self.deletion_.store(Deletion::checking);acted=false;
+            }
+            command=Command{};
         }
         const auto connection=probeConnection(&next);
+        if(checkingDeletion&&((next.valid&&next.transmissionReady)||platform::now()>=deletionDeadline)){
+            checkingDeletion=false;result=deletionResult;acted=true;
+            std::snprintf(result.message.data(),result.message.size(),"%s",next.valid&&next.transmissionReady?
+                "Deletion response lost. The list is now up to date; check the torrent before trying again.":
+                "Deletion is taking longer than expected or Botty is unavailable. Its outcome is not confirmed. Check the refreshed list before trying again.");
+        }
         if(next.valid&&!next.transmissionReady&&self.catalog_.valid) {
             // The Botty service can answer while its Transmission RPC times out.
             // Keep only the previous torrent snapshot; extraction jobs stay live.
@@ -246,7 +265,8 @@ void* Network::worker(void* context) noexcept {
         if(acted){
             while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
             result.revision=self.result_.revision+1;self.result_=result;
-            self.gate_.clear(std::memory_order_release);self.busy_.store(false);
+            self.deletion_.store(Deletion::idle);self.busy_.store(false);
+            self.gate_.clear(std::memory_order_release);
         }
         const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale?10:50;
         for(unsigned i=0;i<delay&&!self.stop_.load()&&!self.retry_.load()&&!self.queued_.load();++i)platform::sleep(100000);

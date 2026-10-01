@@ -1,4 +1,4 @@
-# Botty+ native application — 01.000.001
+# Botty+ native application — 01.000.002
 
 Botty+ is a C++20 native PS5 title with a 1920×1080 software renderer, bundled
 Manrope font and DualSense navigation. Its title ID is `PPSA99071`. It connects to

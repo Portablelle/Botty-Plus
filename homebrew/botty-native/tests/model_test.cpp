@@ -34,6 +34,7 @@ int send(int,const void* bytes,std::size_t size) noexcept {
 }
 int receive(int,void* bytes,std::size_t size) noexcept {
     clockUs+=receiveCost;
+    if(response=="#long-timeout"){clockUs+=121000000;return -1;}
     if(receiveError||response=="#timeout")return -1;
     const auto n=std::min({size,chunk,response.size()-offset});
     std::memcpy(bytes,response.data()+offset,n);offset+=n;return static_cast<int>(n);
@@ -231,6 +232,33 @@ int main() {
     for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision==1&&result.status==ActionResult::Status::success);queued.stop();workerAllowed=false;
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
+    // A deletion outlives its HTTP response: retain progress and reject duplicate
+    // submissions until the catalog is fresh again, without replaying the POST.
+    for(unsigned scenario:{0u,1u,2u}){
+        const bool lost=scenario!=0;
+        reset("");chunk=4096;
+        responses={wire(health),wire(boot),wire(login),wire(actionable),wire(boot),lost?"#timeout":wire("{}")};
+        if(lost)responses.push_back(scenario==2?"#long-timeout":"#timeout");
+        if(scenario==1){
+            for(const auto& value:{wire(health),wire(boot),std::string("HTTP/1.1 400 Error\r\nContent-Length: 0\r\n\r\n"),wire(huge)})responses.push_back(value);
+        }
+        for(const auto& value:{health,boot,login,actionable})responses.push_back(wire(value));
+        workerAllowed=true;Network deleting;assert(deleting.start());catalog.revision=0;result=ActionResult{};
+        for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+        command=Command{};command.operation=Operation::removeTorrent;std::snprintf(command.id.data(),command.id.size(),"9");
+        assert(deleting.submit(command));assert(deleting.busy());assert(!deleting.submit(command));
+        if(scenario==1){
+            for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog,&result);if(catalog.stale)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+            assert(catalog.stale&&deleting.busy()&&deleting.deletion()==Network::Deletion::checking&&result.revision==0);
+            assert(!deleting.submit(command));
+        }
+        for(unsigned i=0;i<2000;++i){deleting.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+        assert(result.revision==1&&result.status==(lost?ActionResult::Status::uncertain:ActionResult::Status::success));
+        assert(catalog.valid&&catalog.stale==(scenario==2)&&!deleting.busy()&&deleting.deletion()==Network::Deletion::idle);
+        deleting.stop();workerAllowed=false;
+        const auto deletionPost=request.find("POST /api/torrent ");
+        assert(deletionPost!=std::string::npos&&request.find("POST /api/torrent ",deletionPost+1)==std::string::npos);
+    }
     reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),"#timeout",wire(health),wire(boot),wire(login),wire(actionable)};
     workerAllowed=true;Network recovering;assert(recovering.start());
     for(unsigned i=0;i<200;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}

@@ -18,13 +18,14 @@ namespace {
 void* mapped;
 int currentBuffer=0, frames=0, reads=0, connections=0;
 const char* mode=std::getenv("BOTTY_PREVIEW_MODE");
-bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || ((std::strcmp(mode,"slow-password")==0||std::strcmp(mode,"buffered-password")==0)&&std::strcmp(text,"password")==0));}
+bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || ((std::strcmp(mode,"slow-password")==0||std::strcmp(mode,"buffered-password")==0)&&std::strcmp(text,"password")==0) || ((std::strcmp(mode,"deleting")==0||std::strcmp(mode,"checking-deletion")==0)&&std::strcmp(text,"delete-torrent")==0));}
 const auto mainThread=std::this_thread::get_id();
 std::uint64_t artificialRenderTime=0;
 bool keyboardSeen=false,resumeSeen=false;
 std::size_t offset=0;
 bool videoClosed=false,padClosed=false,workerJoined=false;
 std::string socketRequest,socketResponse;
+bool deletionSent=false;
 void snapshot() {
     FILE* f=std::fopen("build/preview.ppm","wb");
     if(!f)std::exit(2);
@@ -53,6 +54,11 @@ int sceNetSetsockopt(int,int,int,const void*,std::uint32_t){return 0;}
 int sceNetConnect(int,const void*,std::uint32_t){return is("offline")||(is("reconnecting")&&++connections>4)?-1:0;}
 int sceNetSend(int,const void* bytes,std::size_t n,int){socketRequest.append(static_cast<const char*>(bytes),n);return static_cast<int>(n);}
 int sceNetRecv(int,void* b,std::size_t n,int){
+    if(socketRequest.find("POST /api/torrent ")==0){
+        deletionSent=true;
+        if(is("deleting"))std::this_thread::sleep_for(std::chrono::seconds(5));
+    }
+    if(is("checking-deletion")&&deletionSent)return -1;
     if(socketResponse.empty()) {
         std::string body=R"({"app":"Botty","version":"0.1.1","titleId":"BTTY00001","apiVersion":1})";
         if(socketRequest.find("GET /api/bootstrap ")==0)body=R"({"apiVersion":1,"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";
@@ -94,6 +100,8 @@ int scePadRead(int,PS5_PadData* p,int){
     if(reads==3&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
     if((reads==5||reads==7||reads==9)&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_DOWN;
     if(reads==11&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(reads==13&&(is("deleting")||is("checking-deletion")))p->buttons=PS5_PAD_BUTTON_RIGHT;
+    if(reads==15&&(is("deleting")||is("checking-deletion")))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==3&&is("keyboard"))p->buttons=PS5_PAD_BUTTON_SQUARE;
     if(reads==5&&(is("confirm")||is("result")))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==3&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;

@@ -36,6 +36,9 @@ botty::Catalog catalog;
 botty::Workflow workflow;
 botty::ActionResult actionResult;
 bool showResult=false;
+botty::Network::Deletion deletion=botty::Network::Deletion::idle;
+std::array<char,512> deletionName{};
+std::uint64_t deletionStarted=0;
 std::uint64_t displayRevision=0;
 int pad=-1;
 bool connected=false;
@@ -170,7 +173,8 @@ void drawCatalog(Canvas& c) noexcept {
         c.label(140,565,connection.status==botty::Probe::checking?"Connecting to Botty on your PS5...":"Open the Botty portal and select Start session.",28,muted);
         c.label(140,667,"Triangle  /  Retry connection",24,accent);return;
     }
-    if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
+    if(deletion!=botty::Network::Deletion::idle)c.label(1040,365,"Waiting for deletion to finish...",22,accent);
+    else if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
     else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"Transmission not responding. Retrying...",22,warning);
     const auto* entry=botty::entryAt(catalog,model.tab,model.filter,model.selected);
     if(model.details&&entry) {
@@ -332,10 +336,12 @@ bool draw(Canvas& c) noexcept {
     static const char* exploreSorts[]={"seeders","completed","newest"};
     const unsigned oldTab=model.tab;
     const unsigned edge=pollPad(now);if(edge)++displayRevision;
-    if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
+    if(deletion!=botty::Network::Deletion::idle){/* Keep duplicate actions out while deleting. */}
+    else if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
     else if(workflow.panel!=botty::Workflow::Panel::closed){
         if(workflow.press(edge,catalog,network.busy())){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
+            else if(workflow.command.operation==botty::Operation::removeTorrent){deletionName=workflow.targetName;deletionStarted=now;}
             workflow.command.text.fill(0);
         }
     }else {
@@ -361,6 +367,10 @@ bool draw(Canvas& c) noexcept {
     (void)network.read(connection,&catalog,&receivedResult);
     if(receivedResult.revision!=resultRevision){actionResult=receivedResult;showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;}
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
+    const auto nextDeletion=network.deletion();
+    if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}
+    static std::uint64_t deletionSecond=0;
+    if(deletion!=botty::Network::Deletion::idle&&(now-deletionStarted)/1000000!=deletionSecond){deletionSecond=(now-deletionStarted)/1000000;++displayRevision;}
     if(previousRevision!=catalog.revision)++displayRevision;
     if(model.tab<3) {
         model.count=catalog.valid?botty::entryCount(catalog,model.tab,model.filter):0;
@@ -412,7 +422,7 @@ bool draw(Canvas& c) noexcept {
     const auto status=connection.status;
     if(!c.needs_update(displayRevision))return true;
     const bool online=status==botty::Probe::ready;
-    const char* state=catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
+    const char* state=deletion==botty::Network::Deletion::deleting?"Deleting files":deletion==botty::Network::Deletion::checking?"Checking deletion":catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
         status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Reconnecting":"Offline";
     const char* detail=status==botty::Probe::legacy?"Update Botty from the portal to show your login details.":
         status==botty::Probe::unavailable?"Open the Botty portal and select Start session.":
@@ -506,9 +516,20 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.000.001",20,muted);
-    if(network.busy())c.label(1070,81,"Sending request...",24,accent);
+    c.label(1620,1004,"01.000.002",20,muted);
+    if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
+    if(deletion!=botty::Network::Deletion::idle){
+        c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
+        c.label(140,332,deletion==botty::Network::Deletion::checking?"Checking deletion...":"Deleting torrent & files...",40,ink);
+        shortLabel(c,140,420,deletionName.data(),28,1640,ink);
+        c.label(140,510,deletion==botty::Network::Deletion::checking?"Still waiting for an updated status from Botty.":"Removing downloaded files. Large downloads may take a while.",26,muted);
+        c.label(140,568,"Library games are kept. Please wait before making another change.",26,muted);
+        char elapsed[80];std::snprintf(elapsed,sizeof(elapsed),"Elapsed: %llu s",static_cast<unsigned long long>(deletionSecond));
+        c.label(140,672,elapsed,26,accent);
+        c.rounded(140,742,1640,8,4,border);c.rounded(140+(deletionSecond%8)*205,742,205,8,4,accent);
+        c.label(140,838,"The list will refresh automatically when Botty responds.",24,muted);
+    }
     if(showResult){
         c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
         c.label(140,306,actionResult.status==botty::ActionResult::Status::success?"Request confirmed":actionResult.status==botty::ActionResult::Status::uncertain?"Check the current state":"Request failed",36,ink);
@@ -537,7 +558,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.000.001 - main entered");
+    botty::platform::log("Botty+ 01.000.002 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();
