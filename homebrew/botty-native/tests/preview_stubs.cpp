@@ -18,7 +18,7 @@ namespace {
 void* mapped;
 int currentBuffer=0, frames=0, reads=0, connections=0;
 const char* mode=std::getenv("BOTTY_PREVIEW_MODE");
-bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || ((std::strcmp(mode,"slow-password")==0||std::strcmp(mode,"buffered-password")==0)&&std::strcmp(text,"password")==0) || ((std::strcmp(mode,"deleting")==0||std::strcmp(mode,"checking-deletion")==0)&&std::strcmp(text,"delete-torrent")==0));}
+bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || (std::strcmp(mode,"checking-game-deletion")==0&&std::strcmp(text,"delete-game")==0) || ((std::strcmp(mode,"slow-password")==0||std::strcmp(mode,"buffered-password")==0)&&std::strcmp(text,"password")==0) || ((std::strcmp(mode,"deleting")==0||std::strcmp(mode,"checking-deletion")==0)&&std::strcmp(text,"delete-torrent")==0));}
 const auto mainThread=std::this_thread::get_id();
 std::uint64_t artificialRenderTime=0;
 bool keyboardSeen=false,resumeSeen=false;
@@ -54,11 +54,11 @@ int sceNetSetsockopt(int,int,int,const void*,std::uint32_t){return 0;}
 int sceNetConnect(int,const void*,std::uint32_t){return is("offline")||(is("reconnecting")&&++connections>4)?-1:0;}
 int sceNetSend(int,const void* bytes,std::size_t n,int){socketRequest.append(static_cast<const char*>(bytes),n);return static_cast<int>(n);}
 int sceNetRecv(int,void* b,std::size_t n,int){
-    if(socketRequest.find("POST /api/torrent ")==0){
+    if(socketRequest.find("POST /api/torrent ")==0||socketRequest.find("POST /api/delete-library-game ")==0){
         deletionSent=true;
         if(is("deleting"))std::this_thread::sleep_for(std::chrono::seconds(5));
     }
-    if(is("checking-deletion")&&deletionSent)return -1;
+    if((is("checking-deletion")||is("checking-game-deletion"))&&deletionSent)return -1;
     if(socketResponse.empty()) {
         std::string body=R"({"app":"Botty","version":"0.1.1","titleId":"BTTY00001","apiVersion":1})";
         if(socketRequest.find("GET /api/bootstrap ")==0)body=R"({"apiVersion":1,"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";
@@ -117,6 +117,9 @@ int scePadRead(int,PS5_PadData* p,int){
     if(reads==7&&(is("job-actions")||is("move-confirm")))p->buttons=PS5_PAD_BUTTON_OPTIONS;
     if(reads==7&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==9&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
+    if(reads==11&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(reads==13&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_RIGHT;
+    if(reads==15&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}
     if(is("buffered-password")&&p->buttons){p[1]=p[0];p[1].buttons=0;++p[1].timestamp;return 2;}

@@ -45,6 +45,10 @@ void joinWorker(void* handle) noexcept {auto* thread=static_cast<std::thread*>(h
 }
 int main() {
     using namespace botty;
+    char estimate[160];
+    formatDeletionEstimate(250122412221.0,estimate,sizeof(estimate));assert(std::string_view(estimate).find("5-10 min")!=std::string_view::npos);
+    formatDeletionEstimate(100000000000.0,estimate,sizeof(estimate));assert(std::string_view(estimate).find("2-4 min")!=std::string_view::npos);
+    formatDeletionEstimate(0,estimate,sizeof(estimate));assert(std::string_view(estimate).find("several minutes")!=std::string_view::npos);
     const std::string legacy=R"({"app":"Botty","version":"0.1.0","titleId":"BTTY00001"})";
     assert(parseHealth(legacy)==Probe::legacy);
     assert(parseHealth(R"({"app":"Botty","version":"0.2.0","titleId":"BTTY00001","apiVersion":1})")==Probe::ready);
@@ -234,7 +238,7 @@ int main() {
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
     // A deletion outlives its HTTP response: retain progress and reject duplicate
     // submissions until the catalog is fresh again, without replaying the POST.
-    for(unsigned scenario:{0u,1u,2u}){
+    for(unsigned scenario:{0u,1u,2u,3u}){
         const bool lost=scenario!=0;
         reset("");chunk=4096;
         responses={wire(health),wire(boot),wire(login),wire(actionable),wire(boot),lost?"#timeout":wire("{}")};
@@ -242,22 +246,24 @@ int main() {
         if(scenario==1){
             for(const auto& value:{wire(health),wire(boot),std::string("HTTP/1.1 400 Error\r\nContent-Length: 0\r\n\r\n"),wire(huge)})responses.push_back(value);
         }
-        for(const auto& value:{health,boot,login,actionable})responses.push_back(wire(value));
+        const auto finalState=scenario==3?std::string(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[]})"):actionable;
+        for(const auto& value:{health,boot,login,finalState})responses.push_back(wire(value));
         workerAllowed=true;Network deleting;assert(deleting.start());catalog.revision=0;result=ActionResult{};
         for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
-        command=Command{};command.operation=Operation::removeTorrent;std::snprintf(command.id.data(),command.id.size(),"9");
+        command=Command{};command.operation=scenario==3?Operation::removeLibrary:Operation::removeTorrent;std::snprintf(command.id.data(),command.id.size(),"%s",scenario==3?"j3":"9");
         assert(deleting.submit(command));assert(deleting.busy());assert(!deleting.submit(command));
-        if(scenario==1){
+        if(lost){
             for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog,&result);if(catalog.stale)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
             assert(catalog.stale&&deleting.busy()&&deleting.deletion()==Network::Deletion::checking&&result.revision==0);
             assert(!deleting.submit(command));
         }
         for(unsigned i=0;i<2000;++i){deleting.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
-        assert(result.revision==1&&result.status==(lost?ActionResult::Status::uncertain:ActionResult::Status::success));
-        assert(catalog.valid&&catalog.stale==(scenario==2)&&!deleting.busy()&&deleting.deletion()==Network::Deletion::idle);
+        assert(result.revision==1&&result.status==(lost&&scenario!=3?ActionResult::Status::uncertain:ActionResult::Status::success));
+        assert(catalog.valid&&!catalog.stale&&!deleting.busy()&&deleting.deletion()==Network::Deletion::idle);
         deleting.stop();workerAllowed=false;
-        const auto deletionPost=request.find("POST /api/torrent ");
-        assert(deletionPost!=std::string::npos&&request.find("POST /api/torrent ",deletionPost+1)==std::string::npos);
+        const auto endpoint=scenario==3?"POST /api/delete-library-game ":"POST /api/torrent ";
+        const auto deletionPost=request.find(endpoint);
+        assert(deletionPost!=std::string::npos&&request.find(endpoint,deletionPost+1)==std::string::npos);
     }
     reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),"#timeout",wire(health),wire(boot),wire(login),wire(actionable)};
     workerAllowed=true;Network recovering;assert(recovering.start());

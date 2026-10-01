@@ -39,6 +39,7 @@ bool showResult=false;
 botty::Network::Deletion deletion=botty::Network::Deletion::idle;
 std::array<char,512> deletionName{};
 std::uint64_t deletionStarted=0;
+double deletionBytes=0;
 bool deletingLibrary=false;
 std::uint64_t displayRevision=0;
 int pad=-1;
@@ -323,7 +324,12 @@ void drawWorkflow(Canvas& c) noexcept {
         if(workflow.command.operation==Op::dismiss){const auto status=target?std::string_view(target->status.data()):std::string_view{};explanation=status=="failed"||status=="cancelled"||status=="interrupted"?"Remove this row and delete its partial files. Original downloads and archives are kept.":"Hide this row from Extracted. Files are kept; ready and moved content stays in Library.";}
         if(workflow.command.operation==Op::remove)explanation="Delete this extraction and any partial output. Original downloads and archives are kept.";
         shortLabel(c,140,532,explanation,24,1640,muted);
-        shortLabel(c,140,618,workflow.notice.data(),24,1640,accent);
+        if(workflow.command.operation==Op::removeLibrary||workflow.command.operation==Op::removeTorrent){
+            char estimate[160];botty::formatDeletionEstimate(target?(workflow.command.operation==Op::removeLibrary?target->total:target->bytes):0,estimate,sizeof(estimate));
+            c.label(140,602,estimate,24,muted);
+            c.label(140,645,"Large games take time to remove. Please wait for confirmation.",24,muted);
+            shortLabel(c,140,690,workflow.notice.data(),22,1640,accent);
+        }else shortLabel(c,140,618,workflow.notice.data(),24,1640,accent);
         for(unsigned i=0;i<2;++i){const bool chosen=workflow.confirm==(i==1);c.rounded(140+i*840,742,800,80,16,chosen?accent:background);c.label(180+i*840,766,i==0?"Cancel":botty::operationLabel(workflow.command.operation),28,chosen?background:ink);}
         c.label(140,892,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
     }
@@ -343,7 +349,7 @@ bool draw(Canvas& c) noexcept {
     else if(workflow.panel!=botty::Workflow::Panel::closed){
         if(workflow.press(edge,catalog,network.busy())){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
-            else if(workflow.command.operation==botty::Operation::removeTorrent||workflow.command.operation==botty::Operation::removeLibrary){deletingLibrary=workflow.command.operation==botty::Operation::removeLibrary;deletionName=workflow.targetName;deletionStarted=now;}
+            else if(workflow.command.operation==botty::Operation::removeTorrent||workflow.command.operation==botty::Operation::removeLibrary){deletingLibrary=workflow.command.operation==botty::Operation::removeLibrary;deletionName=workflow.targetName;deletionStarted=now;const auto* target=workflow.target(catalog);deletionBytes=target?(deletingLibrary?target->total:target->bytes):0;}
             workflow.command.text.fill(0);
         }
     }else {
@@ -424,7 +430,7 @@ bool draw(Canvas& c) noexcept {
     const auto status=connection.status;
     if(!c.needs_update(displayRevision))return true;
     const bool online=status==botty::Probe::ready;
-    const char* state=deletion==botty::Network::Deletion::deleting?"Deleting files":deletion==botty::Network::Deletion::checking?"Checking deletion":catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
+    const char* state=deletion!=botty::Network::Deletion::idle?"Deleting files":catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
         status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Reconnecting":"Offline";
     const char* detail=status==botty::Probe::legacy?"Update Botty from the portal to show your login details.":
         status==botty::Probe::unavailable?"Open the Botty portal and select Start session.":
@@ -518,15 +524,16 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.000.003",20,muted);
+    c.label(1620,1004,"01.000.004",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(deletion!=botty::Network::Deletion::idle){
         c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
-        c.label(140,332,deletion==botty::Network::Deletion::checking?"Checking deletion...":deletingLibrary?"Deleting game...":"Deleting torrent & files...",40,ink);
+        c.label(140,332,deletingLibrary?"Deleting game...":"Deleting torrent & files...",40,ink);
         shortLabel(c,140,420,deletionName.data(),28,1640,ink);
-        c.label(140,510,deletion==botty::Network::Deletion::checking?"Still waiting for an updated status from Botty.":deletingLibrary?"Removing installed game files. This may take a while.":"Removing downloaded files. Large downloads may take a while.",26,muted);
+        c.label(140,510,deletion==botty::Network::Deletion::checking?"Waiting for completion. Large games may take several minutes.":deletingLibrary?"Removing installed game files. This may take a while.":"Removing downloaded files. Large downloads may take a while.",26,muted);
         c.label(140,568,deletingLibrary?"Torrent and archives are kept. Please wait.":"Library games are kept. Please wait before making another change.",26,muted);
+        char estimate[160];botty::formatDeletionEstimate(deletionBytes,estimate,sizeof(estimate));c.label(140,616,estimate,24,muted);
         char elapsed[80];std::snprintf(elapsed,sizeof(elapsed),"Elapsed: %llu s",static_cast<unsigned long long>(deletionSecond));
         c.label(140,672,elapsed,26,accent);
         c.rounded(140,742,1640,8,4,border);c.rounded(140+(deletionSecond%8)*205,742,205,8,4,accent);
@@ -560,7 +567,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.000.003 - main entered");
+    botty::platform::log("Botty+ 01.000.004 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

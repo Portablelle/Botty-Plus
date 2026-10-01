@@ -2,6 +2,7 @@
 #pragma once
 #include "catalog.hpp"
 namespace botty {
+void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
 enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary };
 struct Command {
     Operation operation=Operation::none;

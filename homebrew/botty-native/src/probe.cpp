@@ -227,7 +227,8 @@ void Network::stop() noexcept {
 void* Network::worker(void* context) noexcept {
     auto& self=*static_cast<Network*>(context);
     bool checkingDeletion=false;ActionResult deletionResult;
-    std::uint64_t deletionDeadline=0;
+    Operation deletionOperation=Operation::removeLibrary;
+    std::array<char,96> deletionId{};
     while(!self.stop_.load()) {
         if(self.retry_.exchange(false))self.publish(Connection{});
         static Catalog next;
@@ -243,17 +244,24 @@ void* Network::worker(void* context) noexcept {
                 // Keep the operation visible until a fresh state arrives. Never
                 // replay the destructive POST or infer success from a timeout.
                 checkingDeletion=true;deletionResult=result;
-                deletionDeadline=platform::now()+120000000;
+                deletionOperation=command.operation;deletionId=command.id;
                 self.deletion_.store(Deletion::checking);acted=false;
             }
             command=Command{};
         }
         const auto connection=probeConnection(&next);
-        if(checkingDeletion&&((next.valid&&next.transmissionReady)||platform::now()>=deletionDeadline)){
+        if(checkingDeletion&&next.valid&&(deletionOperation==Operation::removeLibrary||next.transmissionReady)){
             checkingDeletion=false;result=deletionResult;acted=true;
-            std::snprintf(result.message.data(),result.message.size(),"%s",next.valid&&next.transmissionReady?
-                "Deletion response lost. The list is now up to date; check the item before trying again.":
-                "Deletion is taking longer than expected or Botty is unavailable. Its outcome is not confirmed. Check the refreshed list before trying again.");
+            const bool library=deletionOperation==Operation::removeLibrary;
+            const auto& entries=library?next.jobs:next.torrents;
+            const auto count=library?next.jobCount:next.torrentCount;
+            bool present=false;
+            for(unsigned i=0;i<count;++i)if(entries[i].id==deletionId){present=true;break;}
+            const bool completed=!present&&!next.truncated;
+            if(completed)result.status=ActionResult::Status::success;
+            std::snprintf(result.message.data(),result.message.size(),"%s",completed?
+                (library?"Game files deleted from Library. Torrent and original archives were kept.":"Torrent removed and download-file deletion requested. Library games are kept."):
+                "Botty has responded. Deletion could not be confirmed; check the refreshed list.");
         }
         if(next.valid&&!next.transmissionReady&&self.catalog_.valid) {
             // The Botty service can answer while its Transmission RPC times out.

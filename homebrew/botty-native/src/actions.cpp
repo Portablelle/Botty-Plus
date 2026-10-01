@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actions.hpp"
 #include <cstdio>
+#include <cmath>
 namespace botty {
+void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
+ // Coarse extrapolation from the ~250 GB Ace Combat deletion on the test PS5.
+ // This is a planning range, not measured live progress or a completion deadline.
+ if(!std::isfinite(bytes)||bytes<=0){std::snprintf(out,size,"Large games can take several minutes.");return;}
+ const double factor=bytes/250122412221.0;
+ const double low=std::fmax(1,std::ceil(factor*5)),high=std::fmax(1,std::ceil(factor*10));
+ if(low==high)std::snprintf(out,size,"Estimated total: about %.0f min. Actual time varies.",low);
+ else std::snprintf(out,size,"Estimated total: about %.0f-%.0f min. Actual time varies.",low,high);
+}
 const char* operationLabel(Operation op) noexcept {
  switch(op){case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Download and prepare";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Extracted";default:return "Actions";}
 }
