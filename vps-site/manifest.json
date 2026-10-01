@@ -1,5 +1,5 @@
 {
-  "release": "v1.02",
+  "release": "v1.03",
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
@@ -101,7 +101,7 @@
     "src/rop.js": "5e07dccb8ebf059964c8d520c5df9ba1abe13b179167da77b7553ac5e47bbdb3",
     "src/session.js": "9e9712bc3b90092d922f04dcdc7afe07c54a702b3ab21a2f33c18f26b2c566c0",
     "src/site.js": "37e6db486677d1b1c32a9fd4b6e8309967629ee49b27db1ec719c40c716ba4d1",
-    "src/transmission.js": "b8c44ce8bfc138208909eda0f2faba2061010fe8bf6840e587ddd6b4f51b05b4",
+    "src/transmission.js": "4347407a431919d603126a19df4da09a7f7956da427be4f9190bd64baf1338e5",
     "src/utils/int64.js": "0ae17a26c6280cf615acf206d013b53ffc6933bbde60066db8aad36f4ae3f015",
     "src/utils/mem.js": "250289a34f114f78e4d4893b1fc75dcc067079edb73d495318b5f897344f3513",
     "src/utils/rop_slave.js": "18f8bd08d5fcbea849d2b5253aadfd1564c94967e98ebd6ad70c1fd7db3b1924",

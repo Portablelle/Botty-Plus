@@ -95,6 +95,7 @@ test('fresh installation verifies files, configures protected isolated storage, 
   assert.equal(settings['rpc-authentication-required'], true);
   assert.equal(settings['port-forwarding-enabled'], false);
   assert.equal(settings['incomplete-dir-enabled'], true);
+  assert.equal(settings['cache-size-mb'], 32);
   assert.ok(f.events.indexOf('helper-stop') > f.events.indexOf('launch'));
   assert.ok(f.writes.every(path => path.startsWith('/data/botty/')));
   assert.equal(f.writes.length, 10);
@@ -112,6 +113,21 @@ test('restart preserves credentials, settings and queue, skips valid installed a
 test('already running instance is authenticated and reused without downloading or writing', async () => {
   const f = fixture({running: true}); await installAndStart(f.io, f.opts);
   assert.equal(f.writes.length, 0); assert.equal(f.downloads.length, 0); assert.equal(f.configured, false);
+});
+
+for (const cache of [undefined, 4, 8, 64]) test('restart persists 32 MiB cache from ' + cache + ' and preserves other settings', async () => {
+  const f = fixture();
+  const previous = {...settingsFor(credentials), 'speed-limit-down': 1234};
+  if (cache === undefined) delete previous['cache-size-mb'];
+  else previous['cache-size-mb'] = cache;
+  const original = encode(previous);
+  f.files.set(STATE + '/settings.json', original);
+  const resume = encode({sample: 'resume state'});
+  f.files.set(STATE + '/resume/sample.resume', resume);
+  await installAndStart(f.io, f.opts);
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(f.files.get(STATE + '/settings.json'))), {...previous, 'cache-size-mb': 32});
+  assert.deepEqual(f.files.get(STATE + '/settings.before-cache-32.json'), original);
+  assert.equal(f.files.get(STATE + '/resume/sample.resume'), resume);
 });
 test('unrelated port 9091 instance is not modified', async () => {
   const f = fixture({running: true, saved: false});

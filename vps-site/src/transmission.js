@@ -40,7 +40,7 @@ export function settingsFor(credentials) {
     'download-queue-size': 1,
     'peer-limit-global': 60,
     'peer-limit-per-torrent': 40,
-    'cache-size-mb': 8,
+    'cache-size-mb': 32,
     'umask': '077',
     'script-torrent-done-enabled': false,
     'script-torrent-added-enabled': false,
@@ -217,6 +217,17 @@ export async function installAndStart(io, options = {}) {
   if (!savedSettings) throw Error('Transmission settings could not be read back. Startup stopped.');
   const checkedSettings = parse(savedSettings, 'Transmission settings');
   validateSettings(checkedSettings);
+  // Persist before launch so even an unclean console shutdown keeps this value.
+  // Preserve every other setting and the original configuration for rollback.
+  if (checkedSettings['cache-size-mb'] !== 32) {
+    const backup = STATE + '/settings.before-cache-32.json';
+    if (!await io.readFile(backup, 65536)) await io.writeFile(backup, savedSettings, true);
+    checkedSettings['cache-size-mb'] = 32;
+    await io.writeFile(STATE + '/settings.json', jsonBytes(checkedSettings));
+    const persisted = parse(await io.readFile(STATE + '/settings.json', 65536), 'Transmission settings');
+    if (JSON.stringify(persisted) !== JSON.stringify(checkedSettings))
+      throw Error('Transmission cache settings could not be verified. Startup stopped.');
+  }
   credentials = await prepareShortPassword(io, credentials, checkedSettings);
   reveal(credentials);
 
