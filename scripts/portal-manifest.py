@@ -13,6 +13,7 @@ PAYLOADS = ('ProsperoMgr.elf', 'elfldr-ps5-1360.elf', 'ftpsrv-ps5.elf',
 PAYLOAD_NOTICES = ('shadowmountplus-source.tar.gz', 'shadowmountplus-LICENSE.txt',
                    'shadowmountplus-NOTICE.md')
 PACKAGE_NOTICES = {
+    'rtorrent': ('README.md', 'LICENSE', 'rtorrent-source.tar.gz'),
     'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz'),
     'botty-native': ('NOTICE.md', 'LICENSE', 'botty-native-source.tar.gz'),
     'transmission': ('NOTICE.txt', 'GPL-2.0.txt', 'GPL-3.0.txt',
@@ -65,6 +66,7 @@ def digest(path):
 def verify_packages(root):
     for package, installer, constant in (
         ('botty', 'botty-manager.js', 'HASH'),
+        ('rtorrent', 'rtorrent.js', 'HASH'),
         ('botty-native', 'botty-native.js', 'HASH'),
         ('transmission', 'transmission.js', 'MANIFEST_HASH'),
     ):

@@ -1,22 +1,22 @@
-# Botty service 1.0.1
+# Botty service 1.1.0
 
 Botty is the C++17 background service for **Botty+**. It listens on
-`127.0.0.1:8088`, proxies the separate Transmission process and manages extraction,
+port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
 automatic preparation and library publication. Its API identity remains
 `BTTY00001`; the daemon no longer registers a home-screen shortcut. The native
 application is `PPSA99071`.
 
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
-native title and Transmission. The service package lives under
-`/data/botty/manager/1.0.1`; its installed marker is in the parent directory.
+native title and rTorrent. The service package lives under
+`/data/botty/manager/1.1.0`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
 ## Capabilities
 
 - Torrent listing, progress, ETA, connected peers, magnet input, pause/resume and
-  verification through authenticated Transmission RPC.
+  verification through console-local rTorrent JSON-RPC.
 - Optional Prowlarr Search and Explore with privately provisioned configuration,
   verified HTTPS, bounded responses, opaque selection IDs and artwork caches.
 - A persistent automatic queue for downloads explicitly selected through
@@ -46,19 +46,20 @@ to data. Staging remains private. ZIP, 7z and PKG installation are not supported
 
 The API enforces Host and Origin, requires a random per-process token on its
 `/api/` endpoints except bootstrap, and does not enable CORS. API version is 1.
-Transmission credentials are read from its private state directory; the local,
-token-authenticated `/api/connections` response exposes verified credentials only
-for the native Connections screen. They are not included in public health data.
+LAN requests additionally require HTTP Basic authentication using credentials in
+`rtorrent/state/botty-credentials.json`. The local native client uses the per-process
+token. `/api/connections` supplies the authenticated web URL and saved credentials.
+The powerful rTorrent SCGI listener on port 5001 remains strictly on loopback.
 
 | Path | Purpose |
 | --- | --- |
-| `/data/botty/downloads/complete` | Original completed downloads |
+| `/data/botty/downloads/complete` | Torrent data, including partial downloads; completion is verified through rTorrent |
 | `/data/botty/extracted/<job-id>.working` | Private extraction staging |
 | `/data/botty/extracted/<job-id>` | Verified extraction output |
 | `/data/botty/jobs` | Durable progress and job records |
 | `/data/botty/automatic` | Queue entries keyed by torrent info hash |
 | `/data/botty/cache` | Explore results and cover cache |
-| `/data/botty/transmission/state` | Transmission settings and credentials |
+| `/data/botty/rtorrent/state` | rTorrent session, incoming metadata, credentials and stable IDs |
 | `/data/homebrew` | Published library |
 
 Preflight reserves 512 MiB beyond estimated expanded size. Other software can

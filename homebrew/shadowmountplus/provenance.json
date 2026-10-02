@@ -1,7 +1,7 @@
 {
   "upstream": "https://github.com/drakmor/ShadowMountPlus",
   "revision": "f0d15ffc46e9237d41cc3555b1cf11362d9a32e0",
-  "version": "1.7beta3-botty.1",
+  "version": "1.7beta3-botty.3",
   "sdkStubsRevision": "f7fd02e6e195902a449b5e664917be8c01888b34",
   "sdkStubsUpstream": "https://github.com/ps5-payload-dev/sdk",
   "sha256": {

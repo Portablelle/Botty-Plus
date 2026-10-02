@@ -85,91 +85,13 @@ function fixture(options = {}) {
   return {io, opts, files, writes, events, downloads, info, get revealed() { return revealed; }, get configured() {return configured;} };
 }
 
-test('fresh installation verifies files, configures protected isolated storage, launches and closes helper', async () => {
-  const f = fixture({saved: false});
-  const result = await installAndStart(f.io, f.opts);
-  assert.equal(result.freeBytes, 100 * 1073741824);
-  assert.equal(f.revealed.username, 'botty'); assert.match(f.revealed.password, /^[A-Za-z0-9]{6}$/);
-  const settings = JSON.parse(new TextDecoder().decode(f.files.get(STATE + '/settings.json')));
-  assert.equal(settings['rpc-password'], f.revealed.password);
-  assert.equal(settings['rpc-authentication-required'], true);
-  assert.equal(settings['port-forwarding-enabled'], false);
-  assert.equal(settings['incomplete-dir-enabled'], true);
-  assert.equal(settings['cache-size-mb'], 32);
-  assert.ok(f.events.indexOf('helper-stop') > f.events.indexOf('launch'));
-  assert.ok(f.writes.every(path => path.startsWith('/data/botty/')));
-  assert.equal(f.writes.length, 10);
-});
-test('restart preserves credentials, settings and queue, skips valid installed assets', async () => {
-  const f = fixture();
-  for (const file of manifest.files) f.files.set(app + '/' + file.path, new Uint8Array(await readFile(new URL('../vps-site/apps/transmission/' + file.path, import.meta.url))));
-  const resume = encode({sample: 'resume state'}); f.files.set(STATE + '/resume/sample.resume', resume);
-  await installAndStart(f.io, f.opts);
-  assert.equal(f.writes.length, 0);
-  assert.equal(f.downloads.length, 2); // manifest + temporary helper only
-  assert.equal(f.files.get(STATE + '/resume/sample.resume'), resume);
-  assert.deepEqual(f.revealed, credentials);
-});
-test('already running instance is authenticated and reused without downloading or writing', async () => {
-  const f = fixture({running: true}); await installAndStart(f.io, f.opts);
-  assert.equal(f.writes.length, 0); assert.equal(f.downloads.length, 0); assert.equal(f.configured, false);
-});
-
-for (const cache of [undefined, 4, 8, 64]) test('restart persists 32 MiB cache from ' + cache + ' and preserves other settings', async () => {
-  const f = fixture();
-  const previous = {...settingsFor(credentials), 'speed-limit-down': 1234};
-  if (cache === undefined) delete previous['cache-size-mb'];
-  else previous['cache-size-mb'] = cache;
-  const original = encode(previous);
-  f.files.set(STATE + '/settings.json', original);
-  const resume = encode({sample: 'resume state'});
-  f.files.set(STATE + '/resume/sample.resume', resume);
-  await installAndStart(f.io, f.opts);
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(f.files.get(STATE + '/settings.json'))), {...previous, 'cache-size-mb': 32});
-  assert.deepEqual(f.files.get(STATE + '/settings.before-cache-32.json'), original);
-  assert.equal(f.files.get(STATE + '/resume/sample.resume'), resume);
-});
-test('unrelated port 9091 instance is not modified', async () => {
-  const f = fixture({running: true, saved: false});
-  await assert.rejects(installAndStart(f.io, f.opts), /already in use/); assert.equal(f.writes.length, 0);
-});
-for (const options of [{busy8080: true}, {existingHelper: true}]) test('existing launcher or port 8080 is left untouched: ' + JSON.stringify(options), async () => {
-  const f = fixture(options); await assert.rejects(installAndStart(f.io, f.opts), /already uses/);
-  assert.equal(f.writes.length, 0); assert.ok(!f.events.includes('helper-start'));
-});
-for (const corrupt of ['manifest.json', 'transmission-daemon.elf', 'websrv-ps5.elf']) test('corrupt download fails before all writes: ' + corrupt, async () => {
-  const f = fixture({corrupt}); await assert.rejects(installAndStart(f.io, f.opts), /verification failed/);
-  assert.equal(f.writes.length, 0); assert.ok(!f.events.includes('helper-start'));
-});
-test('disk full prevents daemon and helper launch', async () => {
-  const f = fixture({diskFailure: true}); await assert.rejects(installAndStart(f.io, f.opts), /Disk full/);
-  assert.ok(!f.events.includes('helper-start'));
-});
-test('damaged existing credentials are preserved, not reset', async () => {
-  const f = fixture(); f.files.set(STATE + '/botty-credentials.json', new TextEncoder().encode('{'));
-  await assert.rejects(installAndStart(f.io, f.opts), /damaged/); assert.equal(f.writes.length, 0);
-});
-test('saved live PID prevents a second daemon even if RPC is unresponsive', async () => {
-  const f = fixture({staleProcess: true}); f.files.set(STATE + '/transmission.pid', new TextEncoder().encode('200'));
-  await assert.rejects(installAndStart(f.io, f.opts), /still present/); assert.equal(f.writes.length, 0);
-});
-test('unsafe existing settings are preserved and block startup', async () => {
-  const f = fixture(); const bad = encode({...settingsFor(credentials), 'rpc-authentication-required': false});
-  f.files.set(STATE + '/settings.json', bad);
-  await assert.rejects(installAndStart(f.io, f.opts), /settings differ/);
-  assert.equal(f.files.get(STATE + '/settings.json'), bad); assert.ok(!f.events.includes('helper-start'));
-});
-for (const [options, error] of [[{launchFailure: true}, /rejected/], [{missingUI: true}, /web interface/], [{noAuth: true}, /password-protected/]])
-  test('startup failure still cleans up helper: ' + JSON.stringify(options), async () => {
-    const f = fixture(options); await assert.rejects(installAndStart(f.io, f.opts), error);
-    assert.ok(f.events.includes('helper-stop'));
+// The retired startup entry point must reject without touching console state.
+for (const options of [{saved:false}, {}, {running:true}, {staleProcess:true}])
+  test('retired Transmission startup preserves files and processes: '+JSON.stringify(options), async () => {
+    const f=fixture(options), before=new Map(f.files);
+    await assert.rejects(installAndStart(f.io,f.opts), /Transmission startup is disabled.*rTorrent/);
+    assert.deepEqual(f.files,before);assert.deepEqual(f.events,[]);assert.deepEqual(f.writes,[]);assert.deepEqual(f.downloads,[]);
   });
-test('cleanup failure cannot be reported as running successfully', async () => {
-  const f = fixture({cleanupFailure: true}); await assert.rejects(installAndStart(f.io, f.opts), /Cannot stop helper/);
-});
-test('daemon must survive helper shutdown', async () => {
-  const f = fixture({diesWithHelper: true}); await assert.rejects(installAndStart(f.io, f.opts), /unavailable/);
-});
 test('graceful stop authenticates and keeps stored files', async () => {
   const f = fixture({running: true}); await stopTransmission(f.io, async () => {});
   assert.ok(f.events.includes('daemon-stop')); assert.equal(f.writes.length, 0); assert.equal(f.files.size, 3);
@@ -257,7 +179,7 @@ test('retrying safe stop waits for a daemon already shutting down with its port 
 
 test('blocked RPC reports HTTP 403 distinctly and preserves a running installation', async () => {
   const f = fixture({running: true, forbidden: true});
-  await assert.rejects(installAndStart(f.io, f.opts), /HTTP 403.*IP allowlist or login protection/);
+  await assert.rejects(stopTransmission(f.io, async () => {}), /HTTP 403.*IP allowlist or login protection/);
   assert.equal(f.writes.length, 0);
   assert.equal(f.downloads.length, 0);
 });
@@ -272,19 +194,11 @@ test('legacy password is shortened only while stopped; unrelated settings and re
   f.files.set(STATE+'/botty-credentials.json',encode(legacyCredentials));
   f.files.set(STATE+'/settings.json',encode(settings));
   f.files.set(STATE+'/resume/test.resume',encode({piece: 123}));
-  const result=await installAndStart(f.io,f.opts);
-  assert.match(result.credentials.password,/^[A-Za-z0-9]{6}$/);
+  const result=await prepareShortPassword(f.io,legacyCredentials,settings);
+  assert.match(result.password,/^[A-Za-z0-9]{6}$/);
   assert.equal(JSON.parse(new TextDecoder().decode(f.files.get(STATE+'/settings.json')))['speed-limit-down'],1234);
   assert.equal(JSON.parse(new TextDecoder().decode(f.files.get(STATE+'/botty-credentials.before-native.json'))).password,legacyCredentials.password);
   assert.deepEqual(f.files.get(STATE+'/resume/test.resume'),encode({piece:123}));
-});
-test('running legacy instance keeps its real password without writes or restart', async () => {
-  const f=fixture({running:true});
-  f.files.set(STATE+'/botty-credentials.json',encode(legacyCredentials));
-  f.files.set(STATE+'/settings.json',encode(settingsFor(legacyCredentials)));
-  const result=await installAndStart(f.io,f.opts);
-  assert.equal(result.credentials.password,legacyCredentials.password);assert.equal(f.writes.length,0);
-  assert.ok(!f.events.includes('daemon-stop'));
 });
 for(const interruptedPath of ['password-migration.json','settings.json','botty-credentials.json'])
   test('password migration resumes after interruption writing '+interruptedPath, async () => {
@@ -325,5 +239,5 @@ test('partial password backup blocks migration without overwriting current crede
 
 test('numeric credentials are invalid and never silently converted or overwritten', async () => {
  const f=fixture();f.files.set(STATE+'/botty-credentials.json',encode({username:'botty',password:123456}));
- await assert.rejects(installAndStart(f.io,f.opts),/Invalid saved credentials/);assert.equal(f.writes.length,0);
+ await assert.rejects(stopTransmission(f.io,async()=>{}),/Invalid saved credentials/);assert.equal(f.writes.length,0);
 });

@@ -1,0 +1,18 @@
+# Isolated prototype: never points at existing Botty downloads.
+system.daemon.set = true
+system.umask.set = 0077
+directory.default.set = /data/botty/rtorrent/benchmark
+session.path.set = /data/botty/rtorrent/state/session
+network.scgi.open_port = 127.0.0.1:5001
+network.rpc.use_jsonrpc.set = true
+network.rpc.use_xmlrpc.set = false
+network.listen.port.range.set = 51414-51414
+network.listen.port.random.set = false
+# Upstream 0.16.24 enforces a minimum 512 MiB mapping budget (not a preallocation).
+pieces.memory.max.set = 536870912
+pieces.hash.on_completion.set = true
+throttle.max_peers.normal.set = 50
+throttle.max_peers.seed.set = 50
+network.http.cacert.set = /data/botty/rtorrent/state/cacert.pem
+log.open_file = botty, /data/botty/rtorrent/state/rtorrent.log
+log.add_output = info, botty

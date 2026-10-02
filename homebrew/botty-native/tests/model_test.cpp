@@ -77,8 +77,14 @@ int main() {
     const std::string health=R"({"app":"Botty","version":"0.1.1","titleId":"BTTY00001","apiVersion":1})";
     const std::string boot=R"({"apiVersion":1,"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";
     const std::string login=R"({"apiVersion":1,"url":"http://192.168.1.50:9091","username":"botty","password":"B7mQ2x"})";
+    const std::string rtorrentLogin=R"({"apiVersion":1,"url":"http://192.168.1.50:8088","username":"botty","password":"B7mQ2x"})";
     Connection details;
     assert(parseConnection(login,details));
+    assert(parseConnection(rtorrentLogin,details));
+    assert(std::string_view(details.url.data())=="http://192.168.1.50:8088");
+    assert(!parseConnection(R"({"apiVersion":1,"url":"http://192.168.1.50:5001","username":"botty","password":"B7mQ2x"})",details));
+    assert(!parseConnection(R"({"apiVersion":1,"url":"http://192.168.1.50:8088/extra","username":"botty","password":"B7mQ2x"})",details));
+
     assert(std::string_view(details.password.data())=="B7mQ2x");
     assert(!parseConnection(R"({"apiVersion":1,"url":"http://127.0.0.1:9091","username":"botty","password":"B7mQ2x"})",details));
     assert(!parseConnection(R"({"apiVersion":1,"url":"http://192.168.999.1:9091","username":"botty","password":"B7mQ2x"})",details));
@@ -97,6 +103,10 @@ int main() {
     reset(wire(health+std::string(1,'\0')+"garbage"));assert(probeService()==Probe::malformed);
     static Catalog catalog;
     const std::string state=R"({"freeBytes":1099511627776,"library":"/data/library","transmissionReady":true,"torrents":[{"id":9,"name":"A \"quoted\" name \u00e9 \ud83d\ude80","status":4,"peersConnected":42,"peersSendingToUs":8,"peersGettingFromUs":3,"percentDone":0.5,"leftUntilDone":1073741824,"totalSize":2147483648,"rateDownload":1048576,"rateUpload":0,"files":[{"name":"folder/file.rar"}]},{"id":10,"name":"Done","status":0,"percentDone":1,"leftUntilDone":0,"totalSize":100}],"jobs":[{"id":"j1","name":"Ready","status":"ready","content":{"kind":"unsupported","reason":"No recognized content"}},{"id":"j2","name":"Moved","status":"moved","destination":"/data/library/a"},{"id":"j3","name":"Failed","status":"failed","error":"CRC error"}]})";
+    reset("");chunk=4096;responses={wire(health),wire(boot),wire(rtorrentLogin),wire(state)};
+    assert(probeConnection(&catalog).status==Probe::ready&&catalog.valid&&requests==4&&closes==4);
+    assert(catalog.torrentCount==2&&catalog.jobCount==3);
+    assert(request.find("GET /api/state ")!=std::string::npos);
     assert(parseCatalog(state,catalog));
     assert(catalog.valid&&catalog.torrentCount==2&&catalog.jobCount==3);
     assert(catalog.freeBytes==1099511627776.0);

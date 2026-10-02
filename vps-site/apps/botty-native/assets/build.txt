@@ -1,2 +1,2 @@
-Botty+ 01.000.000
-Cached rendering and lossless controller input
+Botty+ 01.000.006
+rTorrent download engine

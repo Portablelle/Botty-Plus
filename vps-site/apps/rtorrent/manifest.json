@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "0.16.24-botty2",
+  "files": [
+    {
+      "path": "rtorrent.elf",
+      "size": 19434176,
+      "sha256": "7a1bae972ec93964a8ea14777ffbb8c997a86a1487cc09444de7f05d6519aacb"
+    },
+    {
+      "path": "rtorrent.rc",
+      "size": 1053,
+      "sha256": "10c033e240594100ae6a88fbb43439ed71a08aa20f2c295aa18bb5781847eb43"
+    },
+    {
+      "path": "cacert.pem",
+      "size": 182140,
+      "sha256": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b"
+    }
+  ]
+}

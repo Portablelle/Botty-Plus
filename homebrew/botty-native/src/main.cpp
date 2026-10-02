@@ -177,7 +177,7 @@ void drawCatalog(Canvas& c) noexcept {
     }
     if(deletion!=botty::Network::Deletion::idle)c.label(1040,365,"Waiting for deletion to finish...",22,accent);
     else if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
-    else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"Transmission not responding. Retrying...",22,warning);
+    else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"rTorrent not responding. Retrying...",22,warning);
     const auto* entry=botty::entryAt(catalog,model.tab,model.filter,model.selected);
     if(model.details&&entry) {
         surface(c,96,408,1728,506);unsigned line=0;
@@ -313,11 +313,11 @@ void drawWorkflow(Canvas& c) noexcept {
     }else if(workflow.panel==Panel::confirm){
         char title[128];std::snprintf(title,sizeof(title),"%s?",botty::operationLabel(workflow.command.operation));c.label(140,322,title,40,ink);
         shortLabel(c,140,392,workflow.command.operation==Op::add?workflow.command.text.data():workflow.targetName.data(),28,1640,ink);
-        const char* explanation="This request will be sent to Transmission.";
+        const char* explanation="This request will be sent to rTorrent.";
         if(workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation="Download, extract and prepare in Library automatically. Original torrents are kept for seeding.";
         if(workflow.command.operation==Op::removeLibrary)explanation="Permanently delete the installed game files. Torrent and archives are kept. Close the game and remove it from the home screen first.";
         if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
-        if(workflow.command.operation==Op::verify)explanation="Transmission will recheck downloaded pieces. Extraction waits until verification finishes.";
+        if(workflow.command.operation==Op::verify)explanation="rTorrent will recheck downloaded pieces. Extraction waits until verification finishes.";
         if(workflow.command.operation==Op::extract){explanation="Extract on this PS5. Original archive volumes are kept for seeding.";shortLabel(c,140,448,workflow.command.archive.data(),24,1640,accent);}
         if(workflow.command.operation==Op::move){explanation="Move verified content. Existing files will not be replaced. ShadowMount may need a scan.";char destination[1100];std::snprintf(destination,sizeof(destination),"%s/%s",catalog.library.data(),target?target->destination.data():"");shortLabel(c,140,448,destination,24,1640,accent);}
         if(workflow.command.operation==Op::cancel)explanation="Stop extraction at the next safe point. Partial files and original archives are kept.";
@@ -434,7 +434,7 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Reconnecting":"Offline";
     const char* detail=status==botty::Probe::legacy?"Update Botty from the portal to show your login details.":
         status==botty::Probe::unavailable?"Open the Botty portal and select Start session.":
-        status==botty::Probe::transmissionUnavailable?"Transmission is not responding. Retrying automatically.":
+        status==botty::Probe::transmissionUnavailable?"rTorrent is not responding. Retrying automatically.":
         status==botty::Probe::rejected?"Access rejected. Retry to reconnect.":
         status==botty::Probe::incompatible?"Update Botty from the portal.":
         status==botty::Probe::workerError?"Close and reopen Botty.":
@@ -524,7 +524,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.000.004",20,muted);
+    c.label(1620,1004,"01.000.006",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(deletion!=botty::Network::Deletion::idle){
@@ -567,7 +567,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.000.004 - main entered");
+    botty::platform::log("Botty+ 01.000.006 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

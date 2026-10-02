@@ -3,7 +3,7 @@
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
 Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
-Transmission and the Botty service. After **READY**, press PS and open **Botty+**.
+rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
 The bundled offset files cover 7.00–13.60. This does not establish full-stack

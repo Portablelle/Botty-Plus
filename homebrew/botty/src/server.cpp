@@ -1,6 +1,7 @@
 #include "core.hpp"
 #include "progress.hpp"
 #include "search.hpp"
+#include "rtorrent.hpp"
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
 #include <chrono>
@@ -19,7 +20,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.0.4/ui"
+#define BOTTY_UI "/data/botty/manager/1.1.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -39,7 +40,7 @@ std::atomic<bool> cancelExtraction{false}; std::string activeJob;
 Paths paths;
 std::string uiDir=BOTTY_UI;
 std::string token;
-int rpcPort=9091, port=8088;
+int rpcPort=5001, port=8088;
 
 std::string connectionUrl() {
   ifaddrs* interfaces=nullptr;
@@ -51,32 +52,15 @@ std::string connectionUrl() {
     char address[INET_ADDRSTRLEN]{};
     const auto* addr=reinterpret_cast<const sockaddr_in*>(iface->ifa_addr);
     if(!inet_ntop(AF_INET,&addr->sin_addr,address,sizeof(address)))continue;
-    // Match the existing Transmission LAN allowlist; never show loopback to a phone.
-    if(std::string(address).rfind("192.168.",0)==0) {result="http://"+std::string(address)+":9091";break;}
+    // Advertise the authenticated Botty web interface on the private LAN.
+    if(std::string(address).rfind("192.168.",0)==0) {result="http://"+std::string(address)+":8088";break;}
   }
   freeifaddrs(interfaces);
   return result;
 }
 json rpc(const std::string& method, const json& arguments=json::object()) {
-  const auto credentials=json::parse(readText(paths.root/"transmission/state/botty-credentials.json",4096));
-  const auto username=credentials.at("username").get<std::string>(), password=credentials.at("password").get<std::string>();
-  if(username!="botty" || !std::regex_match(password,std::regex("([A-Za-z0-9]{6}|[a-f0-9]{32})")))throw std::runtime_error("Invalid saved Transmission credentials");
-  httplib::Client client("127.0.0.1",rpcPort);
-  client.set_connection_timeout(2);client.set_read_timeout(10);client.set_write_timeout(5);
-  client.set_basic_auth(username,password);
-  httplib::Headers headers;
-  const std::string body=json{{"method",method},{"arguments",arguments}}.dump();
-  auto response=client.Post("/transmission/rpc",headers,body,"application/json");
-  if(response && response->status==409) {
-    const auto session=response->get_header_value("X-Transmission-Session-Id");
-    if(session.empty() || session.find_first_of("\r\n")!=std::string::npos)throw std::runtime_error("Invalid Transmission session response");
-    headers.emplace("X-Transmission-Session-Id",session);
-    response=client.Post("/transmission/rpc",headers,body,"application/json");
-  }
-  if(!response || response->status!=200)throw std::runtime_error("Transmission is unavailable. Start it from the Botty portal.");
-  auto data=json::parse(response->body);
-  if(data.value("result","")!="success")throw std::runtime_error("Transmission: "+data.value("result","RPC error"));
-  return data.value("arguments",json::object());
+  static Rtorrent backend(paths,rpcPort);
+  return backend.request(method,arguments);
 }
 json torrents() {
   return rpc("torrent-get",{{"fields",{"id","hashString","name","status","percentDone","leftUntilDone","totalSize","sizeWhenDone","eta","downloadDir","rateDownload","rateUpload","error","errorString","files","peersConnected","peersSendingToUs","peersGettingFromUs"}}}).at("torrents");
@@ -222,7 +206,7 @@ void automaticDownloads(){
         }
         {std::lock_guard<std::mutex> guard(lock);if(extracting)break;}
       }
-    }catch(...){/* Service/Transmission temporarily unavailable: retry without changing downloads. */}
+    }catch(...){/* Service/rTorrent temporarily unavailable: retry without changing downloads. */}
   }
 }
 void reply(httplib::Response& response,const json& body,int status=200){response.status=status;response.set_content(body.dump(),"application/json");}
@@ -250,6 +234,7 @@ int main(int argc,char** argv) {
     if(fd<0 || flock(fd,LOCK_EX|LOCK_NB))throw std::runtime_error("Botty is already running or its lock is unavailable");
     stage="loading saved jobs";
     token=randomId();recoverJobs();
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.1.0"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -258,26 +243,34 @@ int main(int argc,char** argv) {
       res.set_header("Cache-Control","no-store");res.set_header("X-Content-Type-Options","nosniff");
       res.set_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'");
       const auto host=req.get_header_value("Host"), source=req.get_header_value("Origin");
-      if(host!="127.0.0.1:"+std::to_string(port) || (!source.empty() && source!=origin)) {
+      const bool local=req.remote_addr=="127.0.0.1" && host=="127.0.0.1:"+std::to_string(port);
+      const auto lan=connectionUrl();
+      const bool remote=!lan.empty() && "http://"+host==lan && req.remote_addr.rfind("192.168.",0)==0;
+      if((!local&&!remote) || (!source.empty() && source!=(local?origin:lan))) {
         reply(res,{{"error","Only the local Botty application can use this service"}},403);return httplib::Server::HandlerResponse::Handled;
+      }
+      if(!local) {
+        const auto credentials=json::parse(readText(paths.root/"rtorrent/state/botty-credentials.json",4096));
+        const auto expected="Basic "+httplib::detail::base64_encode(credentials.at("username").get<std::string>()+":"+credentials.at("password").get<std::string>());
+        if(req.get_header_value("Authorization")!=expected){res.set_header("WWW-Authenticate","Basic realm=\"Botty\"");reply(res,{{"error","Authentication required"}},401);return httplib::Server::HandlerResponse::Handled;}
       }
       if(req.path.rfind("/api/",0)==0 && req.path!="/api/bootstrap" && req.get_header_value("X-Botty-Token")!=token) {
         reply(res,{{"error","Reload Botty to reconnect"}},403);return httplib::Server::HandlerResponse::Handled;
       }
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.0.4"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.1.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
       (void)rpc("session-get"); // Do not display unverified credentials as usable.
-      const auto credentials=json::parse(readText(paths.root/"transmission/state/botty-credentials.json",4096));
+      const auto credentials=json::parse(readText(paths.root/"rtorrent/state/botty-credentials.json",4096));
       reply(res,{{"apiVersion",1},{"url",connectionUrl()},
         {"username",credentials.at("username")},{"password",credentials.at("password")}});
     });
     server.Get("/api/state",[](const auto&,auto& res){
       json result={{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"libraryDeletionSupported",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
-      try{result["torrents"]=torrents();result["transmissionReady"]=true;}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
+      try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]="rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting;}
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["catalogArtworkSupported"]=true;
@@ -355,7 +348,7 @@ int main(int argc,char** argv) {
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         if(!stopped)throw std::runtime_error("Torrent did not stop; no files were deleted");
-        // Transmission's RPC success only acknowledges the removal request.
+        // The torrent RPC success only acknowledges the removal request.
         // Unlink and verify exact members ourselves before discarding metadata,
         // so a filesystem failure leaves a paused torrent that can be retried.
         for(const auto& location:locations)downloadedFiles(location,members,false);
@@ -416,7 +409,7 @@ int main(int argc,char** argv) {
     }
     server.set_exception_handler([](const auto&,auto& res,std::exception_ptr error){try{std::rethrow_exception(error);}catch(const std::exception& failure){reply(res,{{"error",failure.what()}},400);}catch(...){reply(res,{{"error","Operation failed"}},500);}});
     stage="binding HTTP port";
-    if(!server.bind_to_port("127.0.0.1",port))throw std::runtime_error("Botty port is already in use");
+    if(!server.bind_to_port("0.0.0.0",port))throw std::runtime_error("Botty port is already in use");
     std::thread(automaticDownloads).detach();
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';

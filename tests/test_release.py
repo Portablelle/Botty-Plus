@@ -35,6 +35,7 @@ class ReleaseTests(unittest.TestCase):
         self.write('offsets/13.00.js')
         for package, installer, constant in (
             ('botty', 'botty-manager.js', 'HASH'),
+            ('rtorrent', 'rtorrent.js', 'HASH'),
             ('botty-native', 'botty-native.js', 'HASH'),
             ('transmission', 'transmission.js', 'MANIFEST_HASH'),
         ):

@@ -17,6 +17,7 @@ if build.exists():
 build.mkdir()
 with tarfile.open(root / 'vendor/shadowmountplus-f0d15ff.tar.gz') as archive:
     archive.extractall(build, filter='data')
-subprocess.run(['patch', '-p1', '--batch', '--fuzz=0', '-i',
-                str(root / 'patches/title-dir-recovery.patch')], cwd=build, check=True)
+for patch in ('title-dir-recovery.patch', 'kstuff-lite-no-legacy-control.patch', 'pin-shellcore-hooks.patch'):
+    subprocess.run(['patch', '-p1', '--batch', '--fuzz=0', '-i',
+                    str(root / 'patches' / patch)], cwd=build, check=True)
 print('Prepared ShadowMountPlus ' + meta['version'])

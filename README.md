@@ -14,9 +14,15 @@
 
 ![Botty+ background artwork](homebrew/botty-native/artwork/botty-plus-background.png)
 
-Botty+ is a native, controller-driven download and library manager for PS5 homebrew. It combines a browser launch portal, a background Transmission daemon, a RAR extraction service and a 1080p native application.
+Botty+ is a native, controller-driven download and library manager for PS5 homebrew. It combines a browser launch portal, a background rTorrent daemon, a RAR extraction service and a 1080p native application.
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
+
+**Current source update:** service **1.1.0** replaces Transmission with rTorrent
+**0.16.24**. Native title **01.000.005** updates the engine labels. Existing
+Transmission downloads require a one-time, exclusive migration and piece rehash;
+see [the port and migration notes](homebrew/rtorrent/README.md). This switch was
+requested without additional benchmarks or regression tests.
 
 **Version 1.01:** this release includes service **1.0.1**, native title **01.000.002** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
 
@@ -57,7 +63,7 @@ The launch portal shown before opening Botty+:
 - **Downloads:** progress, speeds, ETA, peer counts, magnet input, pause, resume and verification.
 - **Extracted:** multivolume RAR extraction, CRC checks, optional passwords, progress, cancellation and cleanup.
 - **Library:** publish recognized PS5 app folders or exFAT images into `/data/homebrew`, with permissions prepared for the native sandbox.
-- **Connections:** display the console's Transmission URL and credentials for another device on the same LAN.
+- **Connections:** display the console's Botty web URL and credentials for another device on the same LAN.
 
 Normal extraction and library publication retain the original torrent archives for seeding. The separate **Remove torrent and files** action explicitly deletes download data after confirmation. ZIP/7z extraction, PKG installation and automatic game launching are not implemented.
 
@@ -84,7 +90,7 @@ Use the stack only on consoles and content you are authorized to manage. Keep co
 
 ## Download 1.01
 
-Get the ready-to-host portal and native application from the [latest release](https://github.com/Portablelle/botty-ps5/releases/latest). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and Transmission services.
+Get the ready-to-host portal and native application from the [latest release](https://github.com/Portablelle/botty-ps5/releases/latest). Release assets include SHA-256 checksums and corresponding source archives. The portal bundle is the complete installation path; the native ZIP alone still needs the Botty and rTorrent services.
 
 ## Get the repository
 
@@ -189,14 +195,14 @@ setting). This also removes the Guide redirect for that connection.
 ## Console setup
 
 1. Host the complete exported portal over HTTPS. After a cold restart, open it using the [DNS and User's Guide walkthrough](#open-the-portal-through-the-users-guide), or another working browser entry point for its HTTPS URL.
-2. Select **LAUNCH** once and leave the page open. The portal runs Relapse, verifies or installs the native title, loads Kstuff and ShadowMountPlus, starts FTP, then prepares Transmission and Botty.
+2. Select **LAUNCH** once and leave the page open. The portal runs Relapse, verifies or installs the native title, loads Kstuff and ShadowMountPlus, starts FTP, then prepares rTorrent and Botty.
 3. Wait for **READY**, press PS and open **Botty+**. ShadowMountPlus discovery is asynchronous; a successful payload transfer alone does not prove home-screen registration.
-4. Open **Connections** to use Transmission from a computer or phone. Use the displayed URL, username `botty` and console-generated password. No credentials are bundled in this repository.
+4. Open **Connections** to use Botty from a computer or phone. Use the displayed URL, username `botty` and console-generated password. No credentials are bundled in this repository.
 5. Add a small test magnet or an authorized test download, then validate extraction and library publication before using large files.
 
 After another cold boot, repeat the portal launch before opening Botty+. Existing matching package files and running services are reused. An older recognized Botty+ installation is backed up and updated automatically with the app closed. A damaged recognized installation can be repaired; foreign titles and downgrades are refused. See [updates and rollback](deployment/README.md#updates-and-rollback).
 
-The shipped Transmission configuration permits localhost and `192.168.*.*` clients. A client on `10.*` or `172.16.*` will require a deliberate allowlist change in `vps-site/src/transmission.js` and the service's connection-discovery logic before rebuilding; do not disable authentication to work around a 403. LAN HTTP is unencrypted. Passwords are currently six generated alphanumeric characters, with migration support for older credentials.
+The Botty web interface permits localhost and authenticated `192.168.*.*` clients. A client on `10.*` or `172.16.*` requires a deliberate change in the service's LAN access and connection-discovery logic before rebuilding; do not disable authentication to work around a 403. LAN HTTP is unencrypted. Passwords are currently six generated alphanumeric characters, with migration support for older credentials.
 
 ## Native controls
 
@@ -216,8 +222,8 @@ The in-app keyboard supports controller input and Unicode code-point entry. Dest
 | Location | Contents |
 | --- | --- |
 | `/data/homebrew/PPSA99071` | Botty+ native application |
-| `/data/botty/manager/1.0.0` | Botty service, local web assets and CA bundle |
-| `/data/botty/transmission/state` | Transmission settings, credentials, torrent and resume state |
+| `/data/botty/manager/1.1.0` | Botty service, local web assets and CA bundle |
+| `/data/botty/rtorrent/state` | rTorrent session, credentials and original torrent metadata |
 | `/data/botty/downloads/incomplete`, `complete` | Original downloads |
 | `/data/botty/extracted`, `jobs`, `automatic` | Extraction output, job records and automatic queue |
 | `/data/botty/prowlarr.json` | Optional private Search/Explore configuration |
@@ -227,7 +233,7 @@ The in-app keyboard supports controller input and Unicode code-point entry. Dest
 | --- | --- | --- |
 | 443 | Hosted portal and optional authenticated proxy routes | Hosting server |
 | 8088 | Botty API / legacy web UI | PS5 loopback only |
-| 9091 | Authenticated Transmission RPC and web UI | PS5 LAN, allowlisted clients |
+| 5001 | rTorrent SCGI JSON-RPC | Console loopback only |
 | 2121 | FTP payload | PS5 LAN |
 | 9021 | ELF loader | PS5 LAN |
 | 8080 | Temporary websrv launcher | PS5 LAN, stopped after daemon startup |
@@ -247,7 +253,7 @@ The VPS serves software and optional search/artwork requests. Torrent data downl
 | Service update pending | The new service is staged; let current work finish before the next console restart. |
 | Update interrupted | Restart the portal session to recover from its journal; retain the backup directory. |
 | READY but no icon | Allow discovery time and check ShadowMountPlus registration; another session may be needed. |
-| Transmission 403 | Check the LAN allowlist and displayed address; preserve saved credentials. |
+| Botty web 403 | Check the LAN allowlist and displayed address; preserve saved credentials. |
 | Search/Explore unavailable | Check private Prowlarr config, API key, indexer IDs/category and CA path. Manual magnets remain available. |
 | Interrupted extraction | Inspect the job, clean its partial output through Botty, then retry with the original archives. |
 

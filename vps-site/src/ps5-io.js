@@ -1,6 +1,8 @@
 // FreeBSD/PS5 syscall adapter. All writes stay inside Botty's private data tree.
 // The ROP runtime is serialized by the portal; it must never be used concurrently.
 const ROOT = '/data/botty';
+// Shared with package installers so a verified payload can reach the ELF loader.
+export const MAX_ELF_BYTES = 32 * 1024 * 1024;
 const SYS = { read: 3, write: 4, open: 5, close: 6, kill: 37, fsync: 95,
   socket: 97, connect: 98, setsockopt: 105, rename: 128, mkdir: 136, sysctl: 202 };
 const encoder = new TextEncoder();
@@ -128,7 +130,7 @@ export class PS5IO {
     throw Error('Temporary websrv has not stopped. Restart the PS5.');
   }
   async connect(port) {
-    if (![2121, 8080, 8088, 9091, 9021].includes(port)) throw Error('Unsupported local port.');
+    if (![2121, 8080, 8088, 9091, 9021, 5001].includes(port)) throw Error('Unsupported local port.');
     const fd = await this.call('socket', 2, 1, 0);
     if (fd < 0) throw Error('Cannot create local socket.');
     try {
@@ -149,7 +151,8 @@ export class PS5IO {
     await this.close(fd); return true;
   }
   async sendElf(bytes) {
-    if (bytes.length < 4096 || bytes.length > 16 * 1024 * 1024 ||
+    if (bytes.length > MAX_ELF_BYTES) throw Error('Launcher ELF exceeds the 32 MiB limit.');
+    if (bytes.length < 4096 ||
         bytes[0] !== 127 || bytes[1] !== 69 || bytes[2] !== 76 || bytes[3] !== 70)
       throw Error('Invalid launcher ELF.');
     const fd = await this.connect(9021);

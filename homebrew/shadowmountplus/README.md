@@ -1,4 +1,4 @@
-# ShadowMountPlus 1.7beta3-botty.1
+# ShadowMountPlus 1.7beta3-botty.3
 
 Botty's narrow patch to ShadowMountPlus fixes a TitleDir bridge that remained
 unusable for the entire session after one failed hook check. This is a modified
@@ -22,8 +22,8 @@ against every installation error. Existing game retry limits remain intact.
 ## Build and test
 
 The checked-in source archive and SDK import stub are hash-pinned in
-`provenance.json`. The only upstream source modification is the reviewable patch
-in `patches/title-dir-recovery.patch`. The upstream GPL-3.0 license and SDK stub
+`provenance.json`. The upstream modifications are the reviewable patches
+in `patches/title-dir-recovery.patch` and `patches/kstuff-lite-no-legacy-control.patch`. The upstream GPL-3.0 license and SDK stub
 license are retained.
 
 ```sh
@@ -74,3 +74,30 @@ read-back matched the built payload. On firmware 13.00, a controlled restart
 logged `1.7beta3-botty.1`, all three installed hooks, completed library sync and
 API readiness. The console configuration was retained and no active extraction
 was interrupted. Game launch after this upgrade remains to be checked.
+
+## Kstuff Lite compatibility guard (botty.2)
+
+The bundled Kstuff Lite v1.11 uses copied syscall tables with canonical pointers.
+The legacy ShadowMount pointer-poisoning pause/resume protocol is incompatible:
+`0xffff` does not establish that Lite is disabled. This build disables that
+legacy runtime control, including game/focus/sleep automatic toggles, and compiles
+out its pointer writes. It leaves Kstuff Lite's own installed hooks intact.
+This guard does not fix or diagnose the separate Botty launch error 0x80940033.
+A manual legacy-control helper caused a console freeze on 2026-10-02 and must
+not be reused. The helper was never included in the portal.
+
+## Resident ShellCore hooks (botty.3)
+
+Firmware 13.00 diagnostics found the launch and install entry points back at
+their original bytes, and the bridge cave zeroed, despite a successful installation
+log. The sandbox call still targeted that cave. The physical-write path did not pin these clean executable
+pages. The new build uses the existing Kstuff remote-syscall ABI to mlock the
+16 KiB pages covering the hooks and bridge before changing them, as pinned
+Kstuff Lite v1.11 does for its own ShellCore patches. A failed lock aborts hook
+installation. Duplicate pages are locked once per installation; locks remain
+for ShellCore's lifetime to protect any outstanding bridge return addresses.
+No legacy Kstuff enable/disable operation is used.
+
+`patches/pin-shellcore-hooks.patch` contains this change. Host tests cover page
+boundaries, shared pages, missing Kstuff and failures at every lock step.
+Console acceptance must verify the bytes remain installed and Botty+ starts.

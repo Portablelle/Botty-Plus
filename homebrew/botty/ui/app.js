@@ -20,7 +20,7 @@ function torrentCard(torrent){
  if(torrent.errorString)card.appendChild(node('p',torrent.errorString,'error'));
  const actions=node('div',undefined,'actions');
  actions.appendChild(button(paused?'Resume':'Pause','torrent-'+torrent.id+'-toggle',()=>action('/api/torrent',{id:torrent.id,action:paused?'resume':'pause'},paused?'Torrent resumed.':'Torrent paused.')));
- actions.appendChild(button('Verify','torrent-'+torrent.id+'-verify',()=>modal('Verify downloaded files','Transmission will recheck downloaded pieces. Extraction waits until verification is complete.','Verify',()=>action('/api/torrent',{id:torrent.id,action:'verify'},'Verification requested.'))));
+ actions.appendChild(button('Verify','torrent-'+torrent.id+'-verify',()=>modal('Verify downloaded files','rTorrent will recheck downloaded pieces. Extraction waits until verification is complete.','Verify',()=>action('/api/torrent',{id:torrent.id,action:'verify'},'Verification requested.'))));
  if(state.torrentRemovalSupported)actions.appendChild(button("Delete torrent & files","torrent-"+torrent.id+"-delete",()=>modal("Delete torrent and downloaded files?","This permanently deletes the torrent and its downloaded archives. Games in Library are kept.","Delete",()=>action("/api/torrent",{id:torrent.id,action:"remove-data",confirmed:true},"Torrent removed; downloaded-file deletion requested.")),!!state.extracting));
  const starts=archives(torrent);
  starts.forEach((file,index)=>actions.appendChild(button(starts.length===1?'Extract':'Extract '+file.name.split('/').pop(),'torrent-'+torrent.id+'-extract-'+index,()=>modal('Extract on this PS5',file.name+'\nArchive volumes are kept for seeding. Output is checked before you can move it to the library.','Extract',password=>action('/api/extract',{id:torrent.id,archive:file.name,password},'Extraction started. Open Extractions to follow progress.'),{name:'Archive password (leave empty if none)',type:'password'}),!completed||!!torrent.error||!!state.extracting||[1,2].includes(torrent.status))));
@@ -40,7 +40,7 @@ function render(){if(!state)return;const focused=document.activeElement&&documen
  $('space').textContent=size(state.freeBytes)+' free';$('connection').hidden=state.transmissionReady;$('connection').textContent=state.error||'';
  const values=tab==='jobs'?state.jobs.filter(j=>!j.dismissed):state.torrents.filter(t=>tab!=='complete'||t.leftUntilDone===0);
  values.forEach(value=>items.appendChild(tab==='jobs'?jobCard(value):torrentCard(value)));
- if(!values.length)items.appendChild(node('p',tab==='jobs'?'No extractions yet. Choose a completed archive to get started.':'No downloads here yet. Add a magnet link or use Transmission on your phone.','empty'));
+ if(!values.length)items.appendChild(node('p',tab==='jobs'?'No extractions yet. Choose a completed archive to get started.':'No downloads here yet. Add a magnet link or use rTorrent on your phone.','empty'));
  for(const key of ['all','complete','jobs'])$('tab-'+key).setAttribute('aria-pressed',String(tab===key));
  if(focused&&$(focused)&&!$(focused).disabled)$(focused).focus({preventScroll:true});
 }

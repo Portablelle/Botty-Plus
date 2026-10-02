@@ -2,7 +2,7 @@ import { PS5IO, sleep } from './ps5-io.js';
 import { NativeIO, installNative } from './botty-native.js';
 import { sendPayload } from './payload-sender.js';
 import { loadRequiredPayloads } from './session.js';
-import { installAndStart } from './transmission.js';
+import { installAndStart } from './rtorrent.js';
 import { installAndStartManager } from './botty-manager.js';
 
 export async function launchSession(options) {
@@ -25,8 +25,8 @@ export async function launchSession(options) {
     }
     if (!ready) throw Error('FTP did not start on port 2121.');
   }
-  report('Preparing Transmission…');
-  await (options.transmission || installAndStart)(io, { report });
+  report('Preparing rTorrent…');
+  await (options.rtorrent || installAndStart)(io, { report });
   report('Preparing Botty…');
   const manager = await (options.manager || installAndStartManager)(io, { report });
   report(manager?.updatePending ? 'Services ready. Service update applies next console session; active work is preserved.' : 'Services ready. Waiting for home screen discovery.');

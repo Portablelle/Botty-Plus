@@ -111,7 +111,8 @@ bool parseConnection(std::string_view body,Connection& out) noexcept {
     if(user!="botty"||(password.size()!=6&&password.size()!=32)||url.size()>=out.url.size())return false;
     for(char c:password)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')))return false;
     if(!url.empty()) {
-        if(!url.starts_with("http://192.168.")||!url.ends_with(":9091"))return false;
+        // Botty serves the rTorrent UI on 8088; retain legacy Transmission URLs.
+        if(!url.starts_with("http://192.168.")||(!url.ends_with(":8088")&&!url.ends_with(":9091")))return false;
         const auto address=slice(url,7,url.size()-12);unsigned parts=0;std::size_t at=0;
         while(at<address.size()) {
             unsigned n=0,digits=0;while(at<address.size()&&address[at]!='.') {
@@ -264,7 +265,7 @@ void* Network::worker(void* context) noexcept {
                 "Botty has responded. Deletion could not be confirmed; check the refreshed list.");
         }
         if(next.valid&&!next.transmissionReady&&self.catalog_.valid) {
-            // The Botty service can answer while its Transmission RPC times out.
+            // The Botty service can answer while its rTorrent RPC times out.
             // Keep only the previous torrent snapshot; extraction jobs stay live.
             next.torrents=self.catalog_.torrents;next.torrentCount=self.catalog_.torrentCount;
             next.archives=self.catalog_.archives;next.archiveCount=self.catalog_.archiveCount;

@@ -8,14 +8,14 @@ import { checkedPath } from '../vps-site/src/ps5-io.js';
 for (const running of [false, true]) test('one launch prepares all components; FTP already running: ' + running, async () => {
   const events = []; let ftp = running;
   await launchSession({ jailbreak: async () => { events.push('jailbreak'); return {}; }, io: { listening: async () => ftp }, nativeIO: {},
-    native: async () => events.push('native'), transmission: async () => events.push('transmission'), manager: async () => events.push('manager'),
+    native: async () => events.push('native'), rtorrent: async () => events.push('rtorrent'), manager: async () => events.push('manager'),
     send: async (_, name) => { events.push(name); if (name === 'ftpsrv-ps5.elf') ftp = true; }, wait: async ms => events.push(ms) });
-  assert.deepEqual(events, ['jailbreak', 'native', 'kstuff.elf', 10000, 'shadowmountplus.elf', ...(running ? [] : ['ftpsrv-ps5.elf']), 'transmission', 'manager']);
+  assert.deepEqual(events, ['jailbreak', 'native', 'kstuff.elf', 10000, 'shadowmountplus.elf', ...(running ? [] : ['ftpsrv-ps5.elf']), 'rtorrent', 'manager']);
 });
 test('failed FTP startup stops without blind duplicate sends', async () => {
   const sent = [];
   await assert.rejects(launchSession({ jailbreak: async () => ({}), io: { listening: async () => false }, nativeIO: {}, native: async () => {},
-    send: async (_, name) => sent.push(name), wait: async () => {}, transmission: async () => assert.fail('must not run') }), /FTP did not start/);
+    send: async (_, name) => sent.push(name), wait: async () => {}, rtorrent: async () => assert.fail('must not run') }), /FTP did not start/);
   assert.equal(sent.filter(n => n === 'ftpsrv-ps5.elf').length, 1);
 });
 const manifestBytes = new Uint8Array(await readFile(new URL('../vps-site/apps/botty-native/manifest.json', import.meta.url)));
@@ -127,11 +127,11 @@ test('older native title updates only after staging, retains exact previous tree
   const journal = decode(f.files.get(journalPath)); assert.equal(journal.status, 'complete');
   for (const [p, data] of old) assert.deepEqual(f.files.get(journal.backup + p.slice(NATIVE_ROOT.length)), data);
   assert.equal(decode(f.files.get('/data/botty/jobs/example.json')).state, 'extracting');
-  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '01.000.004');
+  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '01.000.006');
   assert.deepEqual(f.events, ['check-stopped', 'check-stopped', 'backup', 'publish']);
 });
 test('recognized current title with damaged executable is backed up and repaired', async () => {
-  const f = nativeFixture(); await f.previous('01.000.004');
+  const f = nativeFixture(); await f.previous('01.000.006');
   await installNative(f.io, f.options);
   assert.ok(f.files.get(NATIVE_ROOT + '/eboot.bin').length > 3);
   assert.deepEqual(f.files.get(decode(f.files.get(journalPath)).backup + '/eboot.bin'), new Uint8Array([1,2,3]));
@@ -150,16 +150,16 @@ test('launch keeps a recognized newer title untouched and starts every service',
   f.io.syncRegisteredMetadata = async () => assert.fail('must not change newer title metadata');
   const result = await launchSession({ jailbreak: async () => ({}), io: {listening: async () => true}, nativeIO: f.io,
     native: (io, options) => installNative(io, {...f.options, ...options}),
-    transmission: async () => services.push('transmission'), manager: async () => services.push('manager'),
+    rtorrent: async () => services.push('rtorrent'), manager: async () => services.push('manager'),
     send: async (_, name) => services.push(name), wait: async () => {}, report: message => reports.push(message) });
   assert.deepEqual(result.native, {version: '99.000.000', updated: false});
-  assert.deepEqual(services, ['kstuff.elf', 'shadowmountplus.elf', 'transmission', 'manager']);
+  assert.deepEqual(services, ['kstuff.elf', 'shadowmountplus.elf', 'rtorrent', 'manager']);
   assert.deepEqual(f.files, before); assert.deepEqual(f.writes, []); assert.deepEqual(f.events, []);
   assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
   assert.ok(reports.some(message => /Keeping installed Botty\+ 99\.000\.000/.test(message)));
 });
 for (const kind of ['foreign', 'missing-metadata', 'invalid-version']) test('launch reuse still rejects invalid title: ' + kind, async () => {
-  const f = nativeFixture(); await f.previous('01.000.004');
+  const f = nativeFixture(); await f.previous('01.000.006');
   const path = NATIVE_ROOT + '/sce_sys/param.json', param = decode(f.files.get(path));
   if (kind === 'foreign') param.contentId = 'OTHER';
   if (kind === 'invalid-version') param.contentVersion = '1.0.3';
@@ -239,7 +239,7 @@ test('registered metadata is backed up, updated, readable and confined to Botty+
   const backup='/data/botty/native/backups/'+'a'.repeat(32)+'/PPSA99071';
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
   assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
-  assert.equal(decode(f.files.get(path)).contentVersion,'01.000.004');
+  assert.equal(decode(f.files.get(path)).contentVersion,'01.000.006');
   assert.deepEqual(f.files.get('/user/app/PPSA99071/sce_sys/snd0.at9'), f.files.get(NATIVE_ROOT+'/sce_sys/snd0.at9'));
   assert.deepEqual(f.files.get('/user/app/OTHER/sce_sys/param.json'),new Uint8Array([8]));
   assert.ok(calls.every(([nr,p,mode])=>nr===15&&p.startsWith('/user/app/PPSA99071/')&&mode===0o644));
@@ -259,7 +259,7 @@ test('empty first-install reservation can recover from intact verified staging',
  await assert.rejects(installNative(f.io,f.options),/power loss/);
  f.io.nativeExists=async()=>true;f.io.removeEmptyNative=async()=>true;f.io.publishNative=publish;
  await installNative(f.io,f.options);
- assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'01.000.004');
+ assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'01.000.006');
 });
 test('native rename failure removes only its empty reservation and never deletes source',async()=>{
  const events=[];const io={checkedPath:()=>{},string:p=>p,

@@ -2,7 +2,7 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.000.004",
+  "version": "01.000.006",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -16,8 +16,8 @@
     },
     {
       "path": "assets/build.txt",
-      "size": 65,
-      "sha256": "53c80e1e55ce6d0310ad306b63956ab9a730efd818e65a5f6aa57e213fc0f771"
+      "size": 43,
+      "sha256": "6b83be6be194a9e31e7453be2301287e382aa79358d11bd17a3045e52c395e45"
     },
     {
       "path": "assets/courier.rgba",
@@ -47,7 +47,7 @@
     {
       "path": "eboot.bin",
       "size": 15886764,
-      "sha256": "2e5f17d9c58f94ad24faf0a1137e193c68bcd1a40cd4fb4656cabbfdcb9f3d42"
+      "sha256": "f0be405714048211936f78b8ad4366127cfd96a8943647c2e5a7dbbdd80f1523"
     },
     {
       "path": "sce_module/libc.prx",
@@ -62,7 +62,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "ac6d29019527b108233af9104a415dc3c8d8904343efd8d2b9e3e7b5e4e8d46b"
+      "sha256": "4eadd0c13a57752115ed8b096f7ae6218c0be030f8d40ea82502e4897cbf40d0"
     },
     {
       "path": "sce_sys/pic0.dds",
