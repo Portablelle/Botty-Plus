@@ -64,3 +64,10 @@ kernel mount and compares all files byte for byte.
 
 Private console evidence and rollback binaries are excluded from public source
 packages. App/service rollback preserves installed games, torrent jobs and archives.
+
+A power loss or rest-mode interruption can leave hidden `.gc-compress.tmp` and
+`.gc-compress.tmp.vhash` files in the private output directory. Copy compression
+does not resume those files. With Botty service 1.2.2, select **Compress game**
+again after a failed/cancelled attempt: its tracked temporary pair is removed
+before the free-space check, then compression restarts from zero. The original
+and other games are preserved; completed images still require inspection.

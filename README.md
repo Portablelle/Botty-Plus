@@ -18,13 +18,19 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Version 1.2.1:** service **1.2.1**, native title **01.002.001** (`PPSA99071`),
+**Native app 1.2.1:** service **1.2.2**, native title **01.002.001** (`PPSA99071`),
 rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. Library can
 create a compressed PS5 folder-game image, verify all files through the PS5 mount,
 retain or restore the original, and delete the uncompressed backup after an
 explicit confirmation and a second verification. LEGO Voyagers launched from its
 compressed copy on firmware **13.00**. Other titles and firmware combinations
 require their own runtime acceptance. APR games require an existing index.
+
+Service 1.2.2 cleans a tracked failed compression's temporary image and hash file
+when **Compress game** is selected again. It checks that the worker is idle and
+the original folder still matches, frees the temporary space, then starts from
+zero. Interrupted compression cannot resume; completed images and recovery
+backups are preserved.
 
 Close Botty+ when prompted to finish mounting, verification or original deletion.
 The background service continues the operation. Saves and download archives are

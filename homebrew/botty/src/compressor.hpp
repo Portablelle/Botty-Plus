@@ -56,6 +56,31 @@ class Compressor {
     for(unsigned char c:s)if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_'||c=='.')out+=c;else {out+='%';out+=h[c>>4];out+=h[c&15];}
     return out;
   }
+  void cleanFailedCopy(const std::string& id,const std::string& title,const fs::path& source,const fs::path& output) {
+    const auto directory=output.parent_path();
+    if(!fs::exists(fs::symlink_status(directory)))return;
+    containedExisting(paths_.root,directory);
+    const fs::path temporary="."+output.filename().string()+".gc-compress.tmp";
+    const std::vector<fs::path> files={temporary,temporary.string()+".vhash"};
+    bool found=false;
+    for(const auto& name:files)found=found||fs::exists(fs::symlink_status(directory/name));
+    if(!found)return;
+    const auto previous=records_.value(id,json::object());
+    const auto status=previous.value("status","");
+    if((status!="failed"&&status!="cancelled")||previous.value("jobId","")!=id||
+       previous.value("titleId","")!=title||previous.value("source","")!=source.string()||
+       !previous.value("originalKept",false)||previous.value("verified",false)||
+       previous.contains("originalPath")||previous.value("originalDeletionStarted",false)||previous.value("gameDeletionStarted",false))
+      throw std::runtime_error("Untracked compression files require inspection before retrying");
+    if(fs::exists(fs::symlink_status(paths_.root/"compressor/originals"/id)))
+      throw std::runtime_error("An original backup exists; recover the Library operation before retrying");
+    // Validate both names before removing either; descriptor-relative deletion
+    // rejects symlinks and special files and never follows a replaced path.
+    downloadedFiles(directory,files,false);
+    downloadedFiles(directory,files,true);
+    for(const auto& name:files)if(fs::exists(fs::symlink_status(directory/name)))
+      throw std::runtime_error("Could not remove unfinished compression files");
+  }
 public:
   void init(const Paths& paths,int port=5910) {
     paths_=paths;port_=port;
@@ -120,9 +145,10 @@ public:
     }
     const auto param=json::parse(readText(containedExisting(source,source/"sce_sys/param.json"),65536));
     if(param.value("titleId","")!=title)throw std::runtime_error("Source title identity mismatch");
-    if(size>UINT64_MAX-1073741824ULL||freeBytes(paths_.root)<size+1073741824ULL)throw std::runtime_error("Not enough space to keep original and compressed copy");
     if(request("/api/status").value("bottyWorker","")!="library-1.2")throw std::runtime_error("Unexpected compression worker version");
     if(request("/api/gc/job").value("busy",true))throw std::runtime_error("Compression worker is busy");
+    cleanFailedCopy(id,title,source,output);
+    if(size>UINT64_MAX-1073741824ULL||freeBytes(paths_.root)<size+1073741824ULL)throw std::runtime_error("Not enough space to keep original and compressed copy");
     state_={{"status","starting"},{"jobId",job.at("id")},{"source",source.string()},{"titleId",title},{"startedAt",now()},{"phase","Starting compressed copy"},{"originalKept",true},{"bytes",0},{"total",size}};
     save(); // Persist intent BEFORE sending a request that may outlive its response.
     try {

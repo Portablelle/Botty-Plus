@@ -48,5 +48,42 @@ int main() {
   queued["status"]="deleting-game";queued["gameDeletionStarted"]=true;writeJson(root/"compressor/state.json",queued);
   Compressor interruptedDelete;interruptedDelete.init(paths,port);assert(interruptedDelete.state()["status"]=="uncertain"&&interruptedDelete.busy());
   rejects([&]{interruptedDelete.requestGameDeletion(id);});rejects([&]{interruptedDelete.requestRestore(id);});
+  // Retry cleans only the identified failed copy, before submitting new work.
+  const auto output=root/"compressor/output";fs::create_directories(output);
+  const auto temporary=output/".PPSA23732.ffpfsc.gc-compress.tmp";
+  const auto hashes=fs::path(temporary.string()+".vhash");
+  const auto other=output/".PPSA99999.ffpfsc.gc-compress.tmp";
+  std::ofstream(other)<<"other game";
+  json failed={{"jobId",id},{"status","failed"},{"originalKept",true},{"titleId","PPSA23732"},{"source",source.string()}};
+  auto seed=[&](const json& rec){writeJson(root/"compressor/state.json",rec);writeJson(root/"compressor/games.json",json{{id,rec}});};
+  auto retry=[&]{Compressor next;next.init(paths,port);return next.start(job);};
+  auto partial=[&]{std::ofstream(temporary)<<"unfinished";std::ofstream(hashes)<<"partial hashes";};
+  lost=false;complete=true;
+  for(const auto* status:{"failed","cancelled"}) {
+    failed["status"]=status;seed(failed);partial();const auto before=posts.load();
+    assert(retry()["status"]=="running");assert(posts==before+1);
+    assert(!fs::exists(temporary)&&!fs::exists(hashes));
+    assert(readText(other)=="other game"&&readText(source/"eboot.bin")=="original");
+  }
+  seed(failed);partial();complete=false;const auto before=posts.load();
+  rejects(retry);assert(fs::exists(temporary)&&fs::exists(hashes)&&posts==before);complete=true;
+  // A completed image, unknown owner, changed source or recovery state is kept.
+  const auto image=output/"PPSA23732.ffpfsc";std::ofstream(image)<<"finished";
+  rejects(retry);assert(fs::exists(temporary)&&readText(image)=="finished");fs::remove(image);
+  for(const auto& change:std::vector<json>{{{"source","/different/source"}},{{"titleId","PPSA99999"}},{{"jobId",std::string(32,'b')}},{{"originalKept",false}},{{"verified",true}},{{"originalPath",(root/"backup").string()}},{{"status","uncertain"}}}) {
+    auto rec=failed;rec.update(change);seed(rec);rejects(retry);assert(fs::exists(temporary)&&fs::exists(hashes)&&posts==before);
+  }
+  seed(failed);const auto backup=root/"compressor/originals"/id;fs::create_directories(backup);
+  rejects(retry);assert(fs::exists(temporary)&&fs::exists(hashes));fs::remove(backup);
+  const auto finalHashes=fs::path(image.string()+".vhash");std::ofstream(finalHashes)<<"committed hashes";
+  rejects(retry);assert(fs::exists(temporary)&&readText(finalHashes)=="committed hashes");fs::remove(finalHashes);
+  seed(json{{"status","idle"}});rejects(retry);assert(fs::exists(temporary));
+  seed(failed);fs::remove(hashes);fs::create_symlink(source/"eboot.bin",hashes);
+  rejects(retry);assert(fs::exists(temporary)&&readText(source/"eboot.bin")=="original");fs::remove(hashes);
+  fs::create_directory(hashes);rejects(retry);assert(fs::exists(temporary));fs::remove(hashes);
+  // Interrupted cleanup is idempotent: one temporary may already be absent.
+  assert(retry()["status"]=="running");assert(!fs::exists(temporary));
+  seed(failed);std::ofstream(hashes)<<"hashes only";assert(retry()["status"]=="running");assert(!fs::exists(hashes));
+  assert(readText(other)=="other game"&&readText(source/"eboot.bin")=="original");
   server.stop();thread.join();fs::remove_all(root);curl_global_cleanup();
 }

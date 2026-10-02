@@ -21,7 +21,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.2.1/ui"
+#define BOTTY_UI "/data/botty/manager/1.2.2/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -240,7 +240,7 @@ int main(int argc,char** argv) {
     if(fd<0 || flock(fd,LOCK_EX|LOCK_NB))throw std::runtime_error("Botty is already running or its lock is unavailable");
     stage="loading saved jobs";
     token=randomId();recoverJobs();compressor.init(paths,compressorPort);
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.2.1"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.2.2"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -266,7 +266,7 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.2.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.2.2"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){

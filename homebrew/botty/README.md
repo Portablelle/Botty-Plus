@@ -1,4 +1,4 @@
-# Botty service 1.2.1
+# Botty service 1.2.2
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.2.1`; its installed marker is in the parent directory.
+`/data/botty/manager/1.2.2`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -171,3 +171,9 @@ original. Saves and downloaded archives are preserved. Already-compressed games
 do not offer **Compress game**. A service capability flag prevents newer clients
 from offering deletion against an older service. Interrupted deletion stays locked
 for inspection rather than repeating automatically.
+
+In service 1.2.2, retrying failed or cancelled compression removes only that
+tracked title's unfinished temporary image and hash sidecar before checking free
+space and restarting from zero. The worker must be idle and the original source
+must still match. Completed images, untracked files and interrupted activation
+or deletion remain protected. Compression has no checkpoint resume.
