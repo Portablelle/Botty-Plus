@@ -122,6 +122,18 @@ function syscallFixture({writeError = false, fsyncError = false} = {}) {
   }}};
   return {io: new PS5IO(runtime), events, written};
 }
+test('PS5 adapter probes the Library worker over loopback port 5910', async () => {
+  const f = syscallFixture();
+  assert.equal(await f.io.listening(5910), true);
+  const connect = f.events.find(e => e.number === 98);
+  assert.deepEqual(Array.from(connect.args[1].backing.slice(0, 8)), [16, 2, 23, 22, 127, 0, 0, 1]);
+  assert.equal(f.events.at(-1).number, 6);
+});
+test('PS5 adapter rejects unsupported ports before issuing syscalls', async () => {
+  const f = syscallFixture();
+  await assert.rejects(f.io.listening(5911), /Unsupported local port/);
+  assert.deepEqual(f.events, []);
+});
 test('PS5 file adapter completes short writes, fsyncs, closes then renames', async () => {
   const f = syscallFixture(); const bytes = new Uint8Array(160001).map((_, i) => i % 251);
   await f.io.writeFile(STATE + '/file', bytes);

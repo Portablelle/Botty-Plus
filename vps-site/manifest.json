@@ -1,5 +1,5 @@
 {
-  "release": "v1.2.1",
+  "release": "v1.2.1-port-fix",
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
@@ -107,7 +107,7 @@
     "src/launch.js": "c5b775eb3e2a9872ce59ad263eac9e60c3bf1e4164d50c811f754bbda2070326",
     "src/main.js": "d6c4520c3b3cfedf08accff38a27a7d90cec00965de89b3f84f604b97736a2a5",
     "src/payload-sender.js": "d2866a5bcac5e7442d6b147c5ab2d37115862c6d2cd88e3545c6bdede86d9d0a",
-    "src/ps5-io.js": "08392374173202746295acf385582d456052a437229467900d8bf8e00cd72e4d",
+    "src/ps5-io.js": "f649d2f559cb851c5cd940eac2703b042bee73e51cdf3bd52f343c2bd7aed45f",
     "src/relapse_exploit.js": "85f2999040a9ef99c27588fb7ad0cb6d1921bec2bc000094a3de9c48e45e1d3a",
     "src/rop.js": "5e07dccb8ebf059964c8d520c5df9ba1abe13b179167da77b7553ac5e47bbdb3",
     "src/rtorrent.js": "f7dad3b5a1aa412d5406cf3d5096db5ca41fef3b5922e3a49c580020e7faa123",
