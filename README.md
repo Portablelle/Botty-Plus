@@ -2,7 +2,7 @@
   <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
 </p>
 
-<h1 align="center">Botty+ 1.2.1</h1>
+<h1 align="center">Botty+ 1.2.2</h1>
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 

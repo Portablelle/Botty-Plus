@@ -3,7 +3,7 @@
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
-    "README.md": "1dff59dae28f5224a490a4fb25c093bec5d6befcf9021fb9896c707b302e8c91",
+    "README.md": "4d68e6f5e926843a222385e36c56a1190bed974ab022c4d5b4ec1c47f8463cf9",
     "apps/botty-native/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "apps/botty-native/NOTICE.md": "fa3c99815a8ba78a7423523f8f148c6e175f94d73c4ca2cb677d13f4e667875e",
     "apps/botty-native/assets/Manrope-OFL.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
