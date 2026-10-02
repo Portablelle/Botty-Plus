@@ -18,13 +18,18 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Current source update:** service **1.1.0** replaces Transmission with rTorrent
-**0.16.24**. Native title **01.000.005** updates the engine labels. Existing
-Transmission downloads require a one-time, exclusive migration and piece rehash;
-see [the port and migration notes](homebrew/rtorrent/README.md). This switch was
-requested without additional benchmarks or regression tests.
+**Version 1.1:** service **1.1.0**, native title **01.000.006** (`PPSA99071`),
+rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. This release
+fixes missing launch hooks, the native Offline state after the rTorrent migration,
+and blank artwork placeholders. Launch, torrent/library display and the Battlefield 6
+cover were confirmed on PS5 firmware **13.00**.
 
-**Version 1.01:** this release includes service **1.0.1**, native title **01.000.002** (`PPSA99071`) and Transmission **4.0.6**. The Relapse browser chain includes firmware offsets from **7.00 to 13.60**. Botty hardware observations are limited to **13.00**; the offset range is not a compatibility guarantee for the complete stack. See the [validation record](homebrew/botty-native/VALIDATION.md) for what remains untested.
+Existing Transmission downloads require a one-time migration with both engines
+stopped and a full piece rehash; the portal refuses to start rTorrent over an
+active or unmigrated Transmission installation. See [migration notes](homebrew/rtorrent/README.md).
+The Relapse browser chain includes firmware offsets from **7.00 to 13.60**;
+this is not a compatibility guarantee for the complete stack. See the
+[validation record](homebrew/botty-native/VALIDATION.md) for remaining limits.
 
 ## Screenshots
 

@@ -145,3 +145,30 @@ files were read back and hash-verified, the previous complete title and three
 registered metadata copies were backed up, and the service was not restarted.
 The deletion screen still requires observation during a real PS5 deletion; host
 simulations do not establish hardware acceptance.
+
+
+### Release 1.1: native 01.000.006 and service 1.1.0
+
+On 2026-10-02, the user confirmed that LAUNCH reached READY and Botty+ opened
+normally with ShadowMountPlus 1.7beta3-botty.3. Its startup log reported four
+ShellCore hook/bridge pages pinned; a later read confirmed the hooks and bridge
+were still present. This addresses observed missing hook bytes without using the
+legacy Kstuff toggle protocol, which is incompatible with bundled Lite v1.11.
+Page reclamation is the leading explanation, not measured rTorrent causation.
+
+The native connection parser now accepts the service's port 8088 as well as the
+legacy 9091 URL. Native 01.000.006 was installed with the app closed, a complete
+rollback tree and all thirteen files verified in raw SELF transfer mode. The user
+confirmed that torrents and Library appear. A full probe-to-catalog host regression
+covers the port 8088 response.
+
+The user also confirmed Battlefield 6 artwork after replacing a near-uniform grey
+Steam cache entry with its verified PlayStation cover. The updated artwork resolver
+rejects near-uniform provider images and re-resolves cached placeholders. During
+cache refresh, no extraction was active; only the idle Botty service was reloaded.
+The rTorrent PID stayed unchanged and download progress increased.
+
+These observations do not complete clean-install migration, long-duration load,
+all native actions or additional firmware acceptance. Package-wide hardware
+validation flags remain unchanged. The older mock-Transmission service integration
+suite does not establish rTorrent backend coverage.

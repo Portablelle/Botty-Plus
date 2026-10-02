@@ -42,7 +42,8 @@ make -C homebrew/botty-native preview
 
 The fixture generator creates original synthetic RAR data in an ignored directory.
 It does not require user downloads. Service integration uses isolated temporary
-storage, mock Transmission, and local HTTPS fixtures. Native action integration
+storage, mock Transmission, and local HTTPS fixtures. Those older RPC mocks do
+not establish coverage of the rTorrent backend introduced in release 1.1. Native action integration
 requires the host service binary built by the earlier service test command.
 
 ## Build PS5 packages
@@ -74,7 +75,7 @@ python3 scripts/package-native.py
 
 The builder uses Python 3.12+ inside the container. The native output includes a
 complete title directory and ZIP, manifest, `SHA256SUMS`, corresponding source and
-resolved build-tool versions. Packaging verifies the twelve-file title/ZIP before
+resolved build-tool versions. Packaging verifies the thirteen-file title/ZIP before
 copying runtime files and updating the portal's native manifest pin. Increment
 `sce_sys/param.json`'s `contentVersion` for a native release and update build labels
 as appropriate. Do not change the provisional title ID casually or reduce
@@ -100,13 +101,21 @@ executable source: rebuild first so the source and binary correspond.
 
 ### ShadowMountPlus recovery build
 
-The portal ships `1.7beta3-botty.1`, with guarded TitleDir hook recovery. Follow
+The portal ships `1.7beta3-botty.3`, with guarded TitleDir recovery and resident
+ShellCore hook/bridge pages for Kstuff Lite v1.11. Follow
 [its build and test instructions](../homebrew/shadowmountplus/README.md), then run
 `python3 scripts/package-shadowmount.py` and regenerate the portal manifest.
 This packages the complete source recipe and GPL notices alongside the payload.
 Keep upstream provenance distinct from the modified binary digest.
 
-### Transmission and upstream payloads
+### rTorrent
+
+Build and package the current engine using [the port instructions](../homebrew/rtorrent/README.md)
+and `python3 scripts/package-rtorrent.py`. The portal pins the package manifest;
+the release includes the runtime, both upstream source archives and port sources.
+Existing Transmission data needs the explicit migration described in those notes.
+
+### Legacy Transmission and upstream payloads
 
 Transmission is the pinned 4.0.6 distribution from websrv v0.33. Its notice file
 records artifact URLs, hashes, source references and licenses. Given the original
