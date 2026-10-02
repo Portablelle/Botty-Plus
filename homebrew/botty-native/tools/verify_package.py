@@ -30,7 +30,7 @@ def verify(dist, expected):
         if len(data)!=item['size'] or hashlib.sha256(data).hexdigest()!=item['sha256']:
             raise ValueError('File digest/size mismatch: '+name)
         files[name]=data
-    required={'eboot.bin','sce_sys/param.json','sce_sys/icon0.png','sce_sys/pic0.dds','sce_module/libc.prx',
+    required={'eboot.bin','sce_sys/param.json','sce_sys/icon0.png','sce_sys/pic0.dds','sce_sys/snd0.at9','sce_module/libc.prx',
               'assets/ui-font.bin','assets/Manrope-OFL.txt','assets/build.txt','assets/nebula.rgb',
               'assets/courier.rgba','assets/extractor.rgba','assets/vault.rgba'}
     if set(files)!=required:raise ValueError('Unexpected title file set')

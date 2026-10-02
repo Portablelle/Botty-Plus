@@ -4,8 +4,8 @@ import { sha256 } from './transmission.js';
 export const NATIVE_ROOT = '/data/homebrew/PPSA99071';
 const JOURNAL = '/data/botty/native/update.json';
 const BACKUPS = '/data/botty/native/backups';
-const HASH = 'ec4caaf13cbfa6293aa44d3a01facf50f02a42bfec1f0399595fac6197465f7b';
-const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json'];
+const HASH = '47359a983ffbc592fa437e00a78e2349061dcc4f90ab7be0af9acf04d4f42a15';
+const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json', 'sce_sys/snd0.at9'];
 
 const STAGE = '/data/botty/native/' + HASH + '/PPSA99071';
 const encoder = new TextEncoder();
@@ -13,6 +13,8 @@ const decoder = new TextDecoder();
 const METADATA_ROOTS = ['/user/app/PPSA99071/sce_sys', '/user/appmeta/PPSA99071', '/system_data/priv/appmeta/PPSA99071'];
 const METADATA_FILES = METADATA_ROOTS.flatMap(root => ['param.json', 'icon0.png', 'pic0.dds'].map(file => root + '/' + file));
 METADATA_FILES.push('/user/app/PPSA99071/icon0.png');
+// Append to preserve existing journal backup indices.
+METADATA_FILES.push(...METADATA_ROOTS.map(root => root + '/snd0.at9'));
 
 // Only this installer can reach the single native title; service IO stays confined.
 export class NativeIO extends PS5IO {

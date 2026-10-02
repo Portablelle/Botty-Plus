@@ -62,7 +62,7 @@ function nativeFixture() {
   return { files, downloads, writes, events, io, options, previous };
 }
 test('first launch installs native; second launch does not download or rewrite installed files', async () => {
-  const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 12);
+  const f = nativeFixture(); await installNative(f.io, f.options); assert.equal(f.writes.length, 13);
   f.writes.length = 0; f.downloads.length = 0; await installNative(f.io, f.options);
   assert.deepEqual(f.writes, []); assert.deepEqual(f.downloads, ['./apps/botty-native/manifest.json']);
 });
@@ -85,7 +85,7 @@ test('native permissions make the executable and runtime loadable, with readable
   for (const root of [stage, NATIVE_ROOT]) {
     calls.length = 0; synced.length = 0;
     await NativeIO.prototype.prepareNativePermissions.call(io, root);
-    assert.equal(calls.length, 16);
+    assert.equal(calls.length, 17);
     for (const [syscall, path, mode] of calls) {
       assert.equal(syscall, 15);
       const relative = path.slice(root.length);
@@ -240,6 +240,7 @@ test('registered metadata is backed up, updated, readable and confined to Botty+
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
   assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
   assert.equal(decode(f.files.get(path)).contentVersion,'01.000.004');
+  assert.deepEqual(f.files.get('/user/app/PPSA99071/sce_sys/snd0.at9'), f.files.get(NATIVE_ROOT+'/sce_sys/snd0.at9'));
   assert.deepEqual(f.files.get('/user/app/OTHER/sce_sys/param.json'),new Uint8Array([8]));
   assert.ok(calls.every(([nr,p,mode])=>nr===15&&p.startsWith('/user/app/PPSA99071/')&&mode===0o644));
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);

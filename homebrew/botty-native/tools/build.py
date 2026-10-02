@@ -42,6 +42,7 @@ def main():
     shutil.copytree(cache / 'dist' / title, output / title)
     if (ROOT / 'sce_sys/pic0.dds').exists():
         shutil.copy2(ROOT / 'sce_sys/pic0.dds', output / title / 'sce_sys/pic0.dds')
+    shutil.copy2(ROOT / 'sce_sys/snd0.at9', output / title / 'sce_sys/snd0.at9')
     with zipfile.ZipFile(output / (title + '.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted((output / title).rglob('*')):
             if path.is_file():

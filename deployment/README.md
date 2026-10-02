@@ -256,7 +256,7 @@ pair from your backups. Never erase torrent or resume directories.
 
 The portal upgrades recognized Botty installations automatically. Close Botty+ and
 other native apps, then run **LAUNCH** from a fresh console session. It verifies the
-new manifest and all twelve staged files before moving the old title. Both the
+new manifest and all thirteen staged files before moving the old title. Both the
 fixed title ID/content ID and a recognized Botty title name are required; newer
 installed versions are never downgraded. If the installed version is newer than
 the portal package, **LAUNCH** keeps it untouched and continues starting the

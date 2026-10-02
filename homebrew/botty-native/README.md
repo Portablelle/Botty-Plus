@@ -103,7 +103,7 @@ as a ZIP or ELF payload. Keep `downloadDataSize` at **256**: firmware 13.00 reje
 the earlier value 16 before entering `main`. Inventory the target title ID before
 publication; this is a provisional homebrew identity, not a globally reserved ID.
 
-The twelve runtime files, native FSELF signatures, metadata, hashes and matching
+The thirteen runtime files, native FSELF signatures, metadata, hashes and matching
 ZIP are validated by `tools/verify_package.py`. Transfer through a staging path
 outside `/data/homebrew`, read back and hash every file, then publish atomically
 with the app closed. Preserve the full previous title for rollback.
@@ -123,3 +123,12 @@ During a slow local refresh, the app keeps its last catalog with a Reconnecting 
 ### Library deletion
 
 For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Extracted** only hides an extraction row and is no longer offered in Library.
+
+## Home-screen music
+
+`sce_sys/snd0.at9` contains the user-provided music excerpt from 01:19 to
+02:19, normalized toward -28 LUFS with short fades and an embedded whole-file
+loop. It is stereo ATRAC9 at 48 kHz / 192 kbit/s. The installer preserves its
+metadata backup indices and appends the sound to registered metadata updates.
+This asset-only update keeps the native executable version unchanged. The
+console Home Screen Music option must be enabled for playback.
