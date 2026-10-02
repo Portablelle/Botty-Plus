@@ -21,7 +21,7 @@ class Compressor {
   fs::path record() const {return paths_.root/"compressor/state.json";}
   static bool pending(const json& s) {
     const auto status=s.value("status","");
-    return status=="starting"||status=="running"||status=="uncertain"||status=="waiting-close"||status=="activating"||status=="verifying"||status=="deleting-original";
+    return status=="starting"||status=="running"||status=="uncertain"||status=="waiting-close"||status=="activating"||status=="verifying"||status=="deleting-original"||status=="deleting-game";
   }
   static long long now() {return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());}
   void save() {
@@ -64,14 +64,21 @@ public:
     enabled_=config.value("mode","")=="library-1.2";
     if(enabled_&&fs::exists(record()))state_=json::parse(readText(record(),65536));
     if(enabled_&&fs::exists(paths_.root/"compressor/games.json"))records_=json::parse(readText(paths_.root/"compressor/games.json",4*1024*1024));
-    if(enabled_&&(state_.value("status","")=="activating"||state_.value("status","")=="verifying"||state_.value("status","")=="deleting-original")){state_["status"]="uncertain";state_["error"]="Interrupted Library operation. Original backup and compressed image require recovery.";save();}
+    if(enabled_&&(state_.value("status","")=="activating"||state_.value("status","")=="verifying"||state_.value("status","")=="deleting-original"||state_.value("status","")=="deleting-game")){state_["status"]="uncertain";state_["error"]="Interrupted Library operation. Original backup and compressed image require recovery.";save();}
   }
   bool enabled() const {return enabled_;}
   bool busy() const {std::lock_guard<std::mutex> g(mutex_);return enabled_&&pending(state_);}
   void requireIdle() const {if(busy())throw std::runtime_error("Compression is active or uncertain; wait before changing files");}
-  json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;out["supported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
+  json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;out["supported"]=enabled_;out["deletionSupported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
   json game(const std::string& id) const {std::lock_guard<std::mutex> g(mutex_);return records_.value(id,json::object());}
   bool protects(const std::string& id) const {const auto s=game(id).value("status","");return !s.empty()&&s!="restored"&&s!="failed"&&s!="cancelled";}
+  json requestGameDeletion(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(!enabled_||pending(state_))throw std::runtime_error("Wait for the current file operation");
+    auto rec=records_.value(id,json::object());
+    if(rec.value("status","")!="ready"||!rec.value("verified",false))throw std::runtime_error("No verified compressed game available");
+    state_=rec;state_["deleteGameRequested"]=true;state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to delete the compressed game. Saves and archives are kept.";save();return state_;
+  }
   json requestOriginalDeletion(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
     if(pending(state_))throw std::runtime_error("Wait for the current file operation");
@@ -83,7 +90,7 @@ public:
     std::lock_guard<std::mutex> g(mutex_);
     if(pending(state_)&&state_.value("status","")!="uncertain")throw std::runtime_error("Wait for the current file operation");
     auto rec=records_.value(id,json::object());
-    if(rec.value("originalDeletionStarted",false)||!rec.value("originalKept",false)||!rec.contains("originalPath"))throw std::runtime_error("No original backup is available");
+    if(rec.value("gameDeletionStarted",false)||rec.value("originalDeletionStarted",false)||!rec.value("originalKept",false)||!rec.contains("originalPath"))throw std::runtime_error("No original backup is available");
     state_=rec;state_["restoreRequested"]=true;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to restore the original source.";save();return state_;
   }
   json start(const json& job) {
@@ -134,7 +141,7 @@ public:
       CompressionLibrary library(paths_);if(!library.idle(title))return;
       auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;save();};
       auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["phase"]="Verifying every file through the mounted compressed image";};
-      try {if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress);}else library.activate(work,checkpoint,progress);}
+      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress);}else library.activate(work,checkpoint,progress);}
       catch(const std::exception& e){work["status"]="uncertain";work["error"]=e.what();work["phase"]="Compression needs recovery before other file operations. Retained files were not automatically removed.";checkpoint();}
       return;
     }

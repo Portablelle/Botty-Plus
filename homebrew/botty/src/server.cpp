@@ -21,7 +21,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.2.0/ui"
+#define BOTTY_UI "/data/botty/manager/1.2.1/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -240,7 +240,7 @@ int main(int argc,char** argv) {
     if(fd<0 || flock(fd,LOCK_EX|LOCK_NB))throw std::runtime_error("Botty is already running or its lock is unavailable");
     stage="loading saved jobs";
     token=randomId();recoverJobs();compressor.init(paths,compressorPort);
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.2.0"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.2.1"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -266,7 +266,7 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.2.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.2.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -425,7 +425,7 @@ int main(int argc,char** argv) {
       auto job=findJob(id);
       for(const auto& other:jobs)if(other.at("id")!=id&&other.value("destination","")==job.value("destination","")&&other.value("status","")=="moved")
         throw std::runtime_error("Another job uses this library destination; manual review required");
-      if(compressor.protects(id))throw std::runtime_error("Use Delete uncompressed copy for a compressed game; archives and the compressed game are kept");
+      if(compressor.protects(id)){reply(res,compressor.requestGameDeletion(id),202);return;}
       deleteLibraryGame(paths,job);
       // Keep the record until deletion completes; failed or interrupted requests can be retried.
       downloadedFiles(paths.jobs,{id+".json"},true);
@@ -447,7 +447,15 @@ int main(int argc,char** argv) {
     stage="binding HTTP port";
     if(!server.bind_to_port("0.0.0.0",port))throw std::runtime_error("Botty port is already in use");
     std::thread(automaticDownloads).detach();
-    std::thread([]{for(;;){std::this_thread::sleep_for(std::chrono::seconds(2));compressor.poll();}}).detach();
+    std::thread([]{for(;;){
+      std::this_thread::sleep_for(std::chrono::seconds(2));compressor.poll();
+      std::lock_guard<std::mutex> guard(lock);
+      for(auto it=jobs.begin();it!=jobs.end();){
+        const auto id=it->at("id").get<std::string>();
+        if(compressor.game(id).value("status","")!="deleted"){++it;continue;}
+        try{if(!std::regex_match(id,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Invalid deleted job ID");downloadedFiles(paths.jobs,{id+".json"},true);it=jobs.erase(it);}catch(...){++it;}
+      }
+    }}).detach();
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';
     return server.listen_after_bind()?0:1;

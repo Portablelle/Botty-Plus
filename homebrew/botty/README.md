@@ -1,4 +1,4 @@
-# Botty service 1.2.0
+# Botty service 1.2.1
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.2.0`; its installed marker is in the parent directory.
+`/data/botty/manager/1.2.1`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -152,7 +152,7 @@ To resume an interrupted extraction, select the same torrent and first RAR volum
 
 ### Delete a Library game
 
-The authenticated `POST /api/delete-library-game` endpoint requires a tracked job ID and `confirmed: true`. It removes only a previously moved PPSA game folder inside the configured Library and then removes its job record. Torrent data and original archives are preserved. Missing or partially deleted game folders can be retried. Links, special files, mounted game paths, inconsistent destinations, and Botty's own title are refused. Close and unmount the game and remove its home-screen entry before deletion. Image-based games still require manual unmounting and removal.
+The authenticated `POST /api/delete-library-game` endpoint requires a tracked job ID and `confirmed: true`. It removes only a previously moved PPSA game folder inside the configured Library and then removes its job record. Torrent data and original archives are preserved. Missing or partially deleted game folders can be retried. Links, special files, mounted game paths, inconsistent destinations, and Botty's own title are refused. Close and unmount the game and remove its home-screen entry before deletion. Other image-based games still require manual unmounting and removal; verified images created by Botty compression use the queued deletion workflow below.
 
 ## Library compression (1.2)
 
@@ -163,3 +163,11 @@ the image again and retains saves, compressed content and download archives.
 **Restore uncompressed game** can return to a retained original. Existing images
 and APR games without an existing index are not supported by this workflow. See the game-compressor component
 for build instructions, dependency notices and validation limits.
+
+In 1.2.1, compressed games show **Delete game** even when the original and
+torrent archives are absent. After confirmation, close Botty+ and games so the
+service can unmount and delete the image, verification sidecar and any retained
+original. Saves and downloaded archives are preserved. Already-compressed games
+do not offer **Compress game**. A service capability flag prevents newer clients
+from offering deletion against an older service. Interrupted deletion stays locked
+for inspection rather than repeating automatically.

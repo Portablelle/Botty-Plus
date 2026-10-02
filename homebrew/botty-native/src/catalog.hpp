@@ -34,7 +34,7 @@ struct Catalog {
     unsigned torrentCount=0,jobCount=0,revision=0,archiveCount=0;
     bool extracting=false,extractionControls=false,torrentRemovalSupported=false,libraryDeletionSupported=false;
     bool valid=false,stale=false,transmissionStale=false,transmissionReady=false,truncated=false,catalogArtworkSupported=false;
-    bool compressionSupported=false,compressionBusy=false;
+    bool compressionSupported=false,compressionBusy=false,compressedDeletionSupported=false;
     std::array<char,96> compressionJob{};
     std::array<char,32> compressionStatus{};
     std::array<char,512> compressionPhase{},compressionError{};

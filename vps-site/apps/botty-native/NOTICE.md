@@ -1,4 +1,4 @@
-# Botty+ native application — 01.002.000
+# Botty+ native application — 01.002.001
 
 Botty+ is a C++20 native PS5 title with a 1920×1080 software renderer, bundled
 Manrope font and DualSense navigation. Its title ID is `PPSA99071`. It connects to
@@ -142,3 +142,11 @@ the image again and retains saves, compressed content and download archives.
 **Restore uncompressed game** can return to a retained original. Existing images
 and APR games without an existing index are not supported by this workflow. See the game-compressor component
 for build instructions, dependency notices and validation limits.
+
+In 1.2.1, compressed games show **Delete game** even when the original and
+torrent archives are absent. After confirmation, close Botty+ and games so the
+service can unmount and delete the image, verification sidecar and any retained
+original. Saves and downloaded archives are preserved. Already-compressed games
+do not offer **Compress game**. A service capability flag prevents newer clients
+from offering deletion against an older service. Interrupted deletion stays locked
+for inspection rather than repeating automatically.

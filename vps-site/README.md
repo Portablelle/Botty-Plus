@@ -1,4 +1,4 @@
-# Botty+ 1.2 launch portal
+# Botty+ 1.2.1 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -6,7 +6,7 @@ Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
 rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Release 1.2 bundles native 01.002.000, service 1.2.0, rTorrent 0.16.24-botty2
+Release 1.2.1 bundles native 01.002.001, service 1.2.1, rTorrent 0.16.24-botty2
 and ShadowMountPlus 1.7beta3-botty.3. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.

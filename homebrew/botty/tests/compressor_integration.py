@@ -66,5 +66,21 @@ with tempfile.TemporaryDirectory() as temp:
   assert sum(p=='/api/gc/compress' for p,_ in calls)==1
   req('/api/beta/shutdown',dict(confirmed=True),400)
   assert ('/api/control/shutdown',True) not in calls
+  proc.terminate();proc.wait(timeout=5)
+  ready=dict(jobId=jobid,titleId='PPSA23732',status='ready',verified=True,originalKept=False,source=str(source),output=str(root/'compressor/output/PPSA23732.ffpfsc'))
+  (root/'compressor/state.json').write_text(json.dumps(ready));(root/'compressor/games.json').write_text(json.dumps({jobid:ready}))
+  # No original, no archive and no rTorrent daemon: deletion remains a Library action.
+  import shutil
+  shutil.rmtree(source)
+  proc=subprocess.Popen([str(ROOT/'build/botty-native'),'--root',str(root),'--port',str(service_port),'--rpc-port',str(port()),'--compressor-port',str(worker.server_port)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  for _ in range(100):
+   try:token=req('/api/bootstrap',auth=False)['token'];break
+   except OSError:time.sleep(.05)
+  req('/api/delete-library-game',dict(id=jobid,confirmed=True),403,False)
+  req('/api/delete-library-game',dict(id=jobid),400)
+  native(15)
+  deletion=req('/api/state')['compression'];assert deletion['status']=='waiting-close' and deletion['deleteGameRequested'] and not deletion['originalKept']
+  req('/api/delete-library-game',dict(id=jobid,confirmed=True),400)
+  print('Compressed-only deletion queued through the native client without original, torrent or archive. Authentication, confirmation and duplicate request guards passed.')
   print('Shutdown remains refused until activation finishes. Native/API compression, authentication, confirmation, concurrent file-operation guards, cancellation, progress and source preservation passed.')
  finally:proc.terminate();proc.wait(timeout=5);worker.shutdown()

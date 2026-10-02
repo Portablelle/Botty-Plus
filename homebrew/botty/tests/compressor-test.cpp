@@ -39,5 +39,14 @@ int main() {
   fs::remove(root/"compressor/state.json");fs::remove(root/"compressor/games.json");Compressor uncertain;uncertain.init(paths,port);lost=true;
   rejects([&]{uncertain.start(job);});assert(uncertain.state()["status"]=="uncertain"&&uncertain.busy());
   Compressor afterCrash;afterCrash.init(paths,port);assert(afterCrash.busy());rejects([&]{afterCrash.start(job);});assert(posts==2);
+  const auto id=std::string(32,'a');
+  json ready={{"jobId",id},{"status","ready"},{"verified",true},{"originalKept",false},{"titleId","PPSA23732"},{"output",(root/"compressor/output/PPSA23732.ffpfsc").string()}};
+  writeJson(root/"compressor/state.json",ready);writeJson(root/"compressor/games.json",json{{id,ready}});
+  Compressor deletion;deletion.init(paths,port);assert(deletion.state()["deletionSupported"]==true);
+  auto queued=deletion.requestGameDeletion(id);assert(queued["status"]=="waiting-close"&&queued["deleteGameRequested"]==true&&deletion.busy());
+  rejects([&]{deletion.requestGameDeletion(id);});rejects([&]{deletion.requestRestore(id);});
+  queued["status"]="deleting-game";queued["gameDeletionStarted"]=true;writeJson(root/"compressor/state.json",queued);
+  Compressor interruptedDelete;interruptedDelete.init(paths,port);assert(interruptedDelete.state()["status"]=="uncertain"&&interruptedDelete.busy());
+  rejects([&]{interruptedDelete.requestGameDeletion(id);});rejects([&]{interruptedDelete.requestRestore(id);});
   server.stop();thread.join();fs::remove_all(root);curl_global_cleanup();
 }

@@ -353,7 +353,7 @@ int main() {
         assert(std::string_view(actionPath(menu.command.operation))=="/api/compress-game");
         beta.compressionBusy=true;assert(*unavailable(Operation::compress,&beta.jobs[0],beta));
         assert(*unavailable(Operation::removeLibrary,&beta.jobs[0],beta));
-        beta.compressionJob=beta.jobs[0].id;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::cancelCompression);
+        std::snprintf(beta.compressionStatus.data(),beta.compressionStatus.size(),"running");beta.compressionJob=beta.jobs[0].id;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::cancelCompression);
         beta.compressionBusy=false;std::snprintf(beta.jobs[0].titleId.data(),beta.jobs[0].titleId.size(),"PPSA31246");
         assert(!*unavailable(Operation::compress,&beta.jobs[0],beta));
     }
@@ -366,6 +366,15 @@ int main() {
         Command cmd;cmd.operation=Operation::removeOriginal;cmd.id=e.id;char body[512];size_t n=0;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
         assert(std::string_view(actionPath(cmd.operation))=="/api/delete-uncompressed");
         e.originalKept=false;assert(*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::restoreOriginal,&e,release));
+        w.open(&e,2,release);assert(w.optionCount==1&&w.options[0]==Operation::removeLibrary);
+        assert(*unavailable(Operation::removeLibrary,&e,release)); // Old service must not pretend to support deletion.
+        release.compressedDeletionSupported=true;release.transmissionReady=false;
+        assert(!*unavailable(Operation::removeLibrary,&e,release)); // No torrent or archive required.
+        assert(!w.press(Buttons::cross,release,false)&&w.panel==Workflow::Panel::confirm&&!w.confirm);
+        w.press(Buttons::right,release,false);assert(w.press(Buttons::cross,release,false));
+        assert(w.command.operation==Operation::removeLibrary);
+        release.compressionBusy=true;assert(*unavailable(Operation::removeLibrary,&e,release));
+        release.compressionBusy=false;std::snprintf(e.compressionState.data(),e.compressionState.size(),"uncertain");assert(*unavailable(Operation::removeLibrary,&e,release));
     }
 
 }

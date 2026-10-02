@@ -184,3 +184,25 @@ The service HTTP and search integration suites and native action client now use
 a rTorrent SCGI fixture and pass. This supersedes the old mock-Transmission
 coverage limitation above; it remains host validation rather than daemon/console
 acceptance for every action.
+
+## Botty+ 1.2.1 — 2026-10-02
+
+The compressed-only Library menu contains one enabled **Delete game** action.
+Compression, original deletion and restore actions are omitted when inapplicable.
+The real native command client successfully queues deletion against the actual
+service with no original, torrent daemon or archive. Authentication, explicit
+confirmation, duplicate requests and interrupted deletion are covered.
+
+Production compression-library tests also ran as an isolated PS5 payload:
+activation, comparison, restore, original deletion, compressed-only deletion and
+deletion with a retained original passed. They used tiny synthetic files and a
+loopback ShadowMount mock, not a mounted real game. Source mismatch, busy mount
+and invalid output guards were exercised. Host tests additionally exercise
+symlink guards; SDK symlink creation did not create a usable test link on PS5.
+The console test uses a fixed loopback port because the ephemeral-port lookup
+failed in this SDK. Checked descriptor-relative deletion is shared with Botty's
+existing PS5 game-folder deletion code, with post-deletion absence checks.
+
+The user's only compressed LEGO copy was explicitly excluded from destructive
+tests and retained in production. No claim of deleting a real compressed game
+on this console is made. The menu screenshot is from the actual host renderer.

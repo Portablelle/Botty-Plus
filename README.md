@@ -2,7 +2,7 @@
   <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
 </p>
 
-<h1 align="center">Botty+ 1.2</h1>
+<h1 align="center">Botty+ 1.2.1</h1>
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
@@ -18,7 +18,7 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Version 1.2:** service **1.2.0**, native title **01.002.000** (`PPSA99071`),
+**Version 1.2.1:** service **1.2.1**, native title **01.002.001** (`PPSA99071`),
 rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. Library can
 create a compressed PS5 folder-game image, verify all files through the PS5 mount,
 retain or restore the original, and delete the uncompressed backup after an
@@ -42,7 +42,7 @@ this is not a compatibility guarantee for the complete stack. See the
 The new actions retain the original until deletion is explicitly confirmed.
 This image is a host rendering of the actual native UI with a representative fixture.
 
-![Library compression actions](docs/screenshots/library-compression-1.2.png)
+![Compressed game actions](docs/screenshots/compressed-game-actions-1.2.1.png)
 
 ## Screenshots
 

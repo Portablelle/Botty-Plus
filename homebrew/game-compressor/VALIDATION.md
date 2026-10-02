@@ -88,3 +88,14 @@ compatibility.
 The user requested release publication and attested to the author's permission by
 DM to redistribute modified compressor source and binaries. No private DM is
 included; see `NOTICE.md` for the attribution and permission scope.
+
+## 1.2.1 deletion follow-up
+
+Compressed-game deletion no longer depends on retaining the original or torrent
+archives. It waits for an unmount, checks the selected image and confined paths,
+journals mutation and removes only the image, sidecar and retained original.
+The service removes the Library job only after completion. Interrupted deletion
+is locked for review. File removal uses the previously validated PS5 syscall
+wrappers rather than relying on SDK filesystem removal; absence is checked.
+See the native validation record for host and isolated PS5 test scope. LEGO's
+production compressed image was preserved throughout these tests.

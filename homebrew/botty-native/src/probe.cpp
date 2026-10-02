@@ -192,7 +192,7 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
     case Operation::dismiss:message("Removed from Extracted. Partial files from unsuccessful jobs were deleted.");break;
-    case Operation::removeLibrary:message("Game files deleted from Library. Torrent and original archives were kept.");break;
+    case Operation::removeLibrary:message(response.status==202?"Deletion queued. Close Botty+ and games to delete the compressed game. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
     case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
     default:break;

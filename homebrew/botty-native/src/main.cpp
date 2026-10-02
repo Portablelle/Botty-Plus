@@ -330,7 +330,7 @@ void drawWorkflow(Canvas& c) noexcept {
         if(workflow.command.operation==Op::restoreOriginal)explanation="Restore the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
         if(workflow.command.operation==Op::removeOriginal)explanation="Confirm you have tested the compressed game. Delete only its uncompressed backup after another full verification. The compressed game, saves and archives are kept. Close Botty+ to finish.";
         if(workflow.command.operation==Op::cancelCompression)explanation="Request cancellation and keep the original game. Wait until the compression worker stops.";
-        if(workflow.command.operation==Op::removeLibrary)explanation="Permanently delete the installed game files. Torrent and archives are kept. Close the game and remove it from the home screen first.";
+        if(workflow.command.operation==Op::removeLibrary)explanation=target&&target->compressed?"Permanently delete the compressed game and any retained uncompressed copy. Saves, torrents and archives are kept. Close Botty+ and games after confirming.":"Permanently delete the installed game files. Torrent and archives are kept. Close the game and remove it from the home screen first.";
         if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
         if(workflow.command.operation==Op::verify)explanation="rTorrent will recheck downloaded pieces. Extraction waits until verification finishes.";
         if(workflow.command.operation==Op::extract){explanation="Extract on this PS5. Original archive volumes are kept for seeding.";shortLabel(c,140,448,workflow.command.archive.data(),24,1640,accent);}
@@ -456,7 +456,7 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
     c.backdrop(model.tab!=5);
     c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
-    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,56,28,8,border);c.label(356,80,"1.2",20,ink);
+    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,56,28,8,border);c.label(356,80,"1.2.1",20,ink);
     c.rounded(1488,69,336,48,24,card);
     statusDot(c,1510,87,online?success:warning);c.label(1536,77,state,24,online?success:warning);
     const char* tabs[]={"Downloads","Extracted","Library","Connections","Search","Explore"};
@@ -539,7 +539,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.002.000",20,muted);
+    c.label(1620,1004,"01.002.001",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(deletion!=botty::Network::Deletion::idle){
@@ -582,7 +582,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.002.000 - main entered");
+    botty::platform::log("Botty+ 01.002.001 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

@@ -4,7 +4,7 @@ import { sha256 } from './transmission.js';
 export const NATIVE_ROOT = '/data/homebrew/PPSA99071';
 const JOURNAL = '/data/botty/native/update.json';
 const BACKUPS = '/data/botty/native/backups';
-const HASH='622ccc495732d39d99b2516ddf85fc842d746792f784454ae9d9fdb3945c0039';
+const HASH='6307da38c0d4c73a75d7cc7fea2e519c6548363523b4210343c1a8562b8985e9';
 const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json', 'sce_sys/snd0.at9'];
 
 const STAGE = '/data/botty/native/' + HASH + '/PPSA99071';

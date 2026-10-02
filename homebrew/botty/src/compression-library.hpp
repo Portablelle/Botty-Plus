@@ -99,6 +99,37 @@ public:
     if(!found)throw std::runtime_error("Original files restored; ShadowMount scan still needs recovery");
     rec["status"]="restored";rec["verified"]=false;rec["originalKept"]=true;rec["phase"]="Original game restored. Compressed copy retained for inspection.";rec["error"]="";save();
   }
+  void removeGame(json& rec,const std::function<void()>& save) {
+    const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
+    if(rec.value("status","")!="ready"||!rec.value("verified",false)||!std::regex_match(id,std::regex("[a-f0-9]{32}"))||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("No verified compressed game available for deletion");
+    const fs::path image=rec.at("output").get<std::string>(),original=paths_.root/"compressor/originals"/id;
+    if(image!=paths_.root/"compressor/output"/(title+".ffpfsc")||!fs::is_regular_file(containedExisting(image.parent_path(),image)))throw std::runtime_error("Invalid compressed image path");
+    const auto hashes=fs::path(image.string()+".vhash");
+    if(fs::exists(fs::symlink_status(hashes))&&!fs::is_regular_file(containedExisting(image.parent_path(),hashes)))throw std::runtime_error("Invalid compressed verification file");
+    const fs::path source=rec.at("source").get<std::string>();
+    if(source.parent_path()!=paths_.library||fs::exists(fs::symlink_status(source)))throw std::runtime_error("Unexpected Library source; deletion refused");
+    const bool kept=rec.value("originalKept",false);
+    if(kept){
+      if(rec.value("originalPath","")!=original.string())throw std::runtime_error("Invalid original backup path");
+      containedExisting(original.parent_path(),original);compressionFiles(original);
+      if(json::parse(readText(original/"sce_sys/param.json",65536)).value("titleId","")!=title)throw std::runtime_error("Original title mismatch");
+    }else if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Unexpected original copy; inspect before deleting");
+    const auto info=api("games/info",{{"title_id",title}});
+    if(info.value("path","")!=image.string()||!info.value("image_backed",false))throw std::runtime_error("Compressed source changed; deletion refused");
+    const auto app=apps_/title;
+    if(fs::exists(fs::symlink_status(app)))containedExisting(apps_,app);
+    for(const auto& name:{"mount.lnk","mount_img.lnk"})if(fs::exists(fs::symlink_status(app/name)))containedExisting(app,app/name);
+    if(fs::exists(app/"mount_img.lnk")){std::istringstream input(readText(app/"mount_img.lnk",8192));std::string first;std::getline(input,first);if(first!=image.string())throw std::runtime_error("Image mount link changed; deletion refused");}
+    api("games/unmount",{{"title_id",title}}); // Recheck immediately before any mutation.
+    rec["status"]="deleting-game";rec["gameDeletionStarted"]=true;rec["phase"]="Deleting compressed game files; saves and archives are kept.";save();
+    api("manual/remove",{{"path",image.string()}});
+    if(kept){deleteGameDirectory(original.parent_path(),original.filename());if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");}
+    downloadedFiles(image.parent_path(),{image.filename()},true);if(fs::exists(fs::symlink_status(image)))throw std::runtime_error("Compressed image deletion incomplete");
+    downloadedFiles(image.parent_path(),{hashes.filename()},true);if(fs::exists(fs::symlink_status(hashes)))throw std::runtime_error("Verification file deletion incomplete");
+    if(fs::exists(app))downloadedFiles(app,{"mount.lnk","mount_img.lnk"},true);
+    api("scan",{{"reset_attempts",false}});
+    rec["status"]="deleted";rec["verified"]=false;rec["originalKept"]=false;rec["phase"]="Game deleted. Saves, torrents and archives kept.";rec["error"]="";save();
+  }
   void removeOriginal(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
     if(rec.value("status","")!="ready"||!rec.value("verified",false)||!rec.value("originalKept",false))throw std::runtime_error("No verified original copy available for deletion");
@@ -110,7 +141,7 @@ public:
     compareCompression(original,runtime_/title,progress); // Never trust an old validation after disk changes.
     api("games/unmount",{{"title_id",title}});
     rec["status"]="deleting-original";rec["originalDeletionStarted"]=true;rec["originalKept"]=false;save();
-    compressionFiles(original);fs::remove_all(original);
+    compressionFiles(original);deleteGameDirectory(original.parent_path(),original.filename());if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");
     rec["status"]="ready";rec["originalKept"]=false;rec["phase"]="Compressed game ready. Original copy deleted; archives kept.";save();
   }
 };

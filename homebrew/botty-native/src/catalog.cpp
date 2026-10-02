@@ -66,7 +66,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     {
     const auto compression=field(body,"compression");
-    out.compressionSupported=field(compression,"supported")=="true";out.compressionBusy=field(compression,"busy")=="true";
+    out.compressedDeletionSupported=field(compression,"deletionSupported")=="true";out.compressionSupported=field(compression,"supported")=="true";out.compressionBusy=field(compression,"busy")=="true";
     decode(field(compression,"jobId"),out.compressionJob);decode(field(compression,"status"),out.compressionStatus);
     decode(field(compression,"phase"),out.compressionPhase);decode(field(compression,"error"),out.compressionError);
     out.compressionBytes=number(field(compression,"bytes"));out.compressionTotal=number(field(compression,"total"));
