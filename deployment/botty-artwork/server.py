@@ -97,9 +97,19 @@ def playstation_candidates(title):
             yield {'provider': 'PlayStation', 'title': product['name'], 'id': product.get('sku'), 'article': url, 'image': product['image']}
 
 
+def usable_rgb(data):
+    if len(data) != 115200: return False
+    # Some CDNs return a successful JPEG response containing only a grey tile.
+    # Allow compression noise, but require actual contrast in at least one channel.
+    return any(max(data[channel::3]) - min(data[channel::3]) > 8 for channel in range(3))
+
 def raster(candidate):
-    image = Image.open(io.BytesIO(fetch(candidate['image'], 2097152)))
-    return ImageOps.pad(image.convert('RGB'), (160, 240), color=(18, 25, 35), method=Image.Resampling.LANCZOS).tobytes()
+    image = Image.open(io.BytesIO(fetch(candidate['image'], 2097152))).convert('RGB')
+    if not any(high - low > 8 for low, high in image.getextrema()):
+        raise ValueError('Blank artwork placeholder')
+    data = ImageOps.pad(image, (160, 240), color=(18, 25, 35), method=Image.Resampling.LANCZOS).tobytes()
+    if not usable_rgb(data): raise ValueError('Blank artwork placeholder')
+    return data
 
 def save_json(path, data):
     temp = path.with_suffix('.tmp-json'); temp.write_text(json.dumps(data)); temp.replace(path)
@@ -117,7 +127,7 @@ def cover(title):
         age = time.time() - path.stat().st_mtime if path.exists() else float('inf')
         if path.exists() and (path.stat().st_size or previous.get('resolver') == 6) and age < (2592000 if path.stat().st_size else 3600):
             data = path.read_bytes()
-            if len(data) in (0, 115200): return data
+            if not data or usable_rgb(data): return data
         try: previous = json.loads(metadata.read_text())
         except (OSError, ValueError): previous = {}
         errors = []; deferred = []

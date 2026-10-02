@@ -7,7 +7,7 @@ class Covers(unittest.TestCase):
   spec=importlib.util.spec_from_file_location('artwork',pathlib.Path(__file__).with_name('server.py'));self.module=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.module)
  def tearDown(self):self.temp.cleanup()
  def test_exact_cover_and_cache(self):
-  image=io.BytesIO();Image.new('RGB',(20,30),(20,60,80)).save(image,format='PNG');calls=[]
+  image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG');calls=[]
   def fetch(url,limit):
    calls.append(url)
    return json.dumps({'query':{'pages':[{'title':"Marvel's Demo",'thumbnail':{'source':'https://upload.wikimedia.org/test.png'}}]}}).encode() if 'api.php' in url else image.getvalue()
@@ -25,7 +25,7 @@ class Covers(unittest.TestCase):
   self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
   self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
  def test_steam_and_fallback(self):
-  image=io.BytesIO();Image.new('RGB',(20,30),(20,60,80)).save(image,format='PNG')
+  image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG')
   def fetch(url,limit):
    if 'storesearch' in url:return json.dumps({'items':[{'id':1,'name':'Demo II'},{'id':2,'name':'Demo III'}]}).encode()
    if '/apps/2/' in url:return image.getvalue()
@@ -55,4 +55,29 @@ class Covers(unittest.TestCase):
   self.assertEqual(list(self.module.playstation_candidates('NHL 27')),[])
  def test_origin_confinement(self):
   with self.assertRaises(ValueError):self.module.fetch('http://localhost/private',100)
+ def test_blank_provider_image_falls_back(self):
+  blank=io.BytesIO();Image.new('RGB',(20,30),(75,75,75)).save(blank,format='JPEG')
+  picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));real=io.BytesIO();picture.save(real,format='PNG')
+  self.module.playstation_candidates=lambda _:iter([])
+  self.module.steam_candidates=lambda _:iter([{'provider':'Steam','image':'blank'}])
+  self.module.wikipedia_candidates=lambda _:iter([{'provider':'Wikipedia','image':'real'}])
+  self.module.fetch=lambda url,_:blank.getvalue() if url=='blank' else real.getvalue()
+  data=self.module.cover('Battlefield 6');self.assertTrue(self.module.usable_rgb(data))
+  metadata=list(pathlib.Path(self.temp.name).glob('*.json'))
+  self.assertEqual(json.loads(metadata[0].read_text())['match']['provider'],'Wikipedia')
+ def test_cached_grey_tile_is_replaced(self):
+  import hashlib
+  root=pathlib.Path(self.temp.name);ident=hashlib.sha256(b'v4:battlefield6').hexdigest()
+  # Includes the small JPEG variation observed in the real stale cache.
+  grey=bytes(73+i%9 for i in range(115200));(root/(ident+'.rgb')).write_bytes(grey)
+  (root/(ident+'.json')).write_text(json.dumps({'resolver':6}))
+  self.module.playstation_candidates=lambda _:iter([{'provider':'PlayStation','image':'real'}])
+  expected=bytes([20,40,60,200,180,160])*19200
+  self.module.raster=lambda _:expected
+  self.assertEqual(self.module.cover('Battlefield 6'),expected)
+  self.assertEqual(self.module.cover('Battlefield 6'),expected)
+ def test_placeholder_with_isolated_noise_is_rejected_after_resize(self):
+  picture=Image.new('RGB',(600,900),(75,75,75));picture.putpixel((300,450),(120,120,120))
+  data=io.BytesIO();picture.save(data,format='PNG');self.module.fetch=lambda *_:data.getvalue()
+  with self.assertRaisesRegex(ValueError,'Blank artwork'):self.module.raster({'image':'fixture'})
 if __name__=='__main__':unittest.main()

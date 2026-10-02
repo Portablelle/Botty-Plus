@@ -13,6 +13,10 @@ Positive results last thirty days. Confirmed misses last one hour; network/provi
 errors are not negative-cached. Different titles can resolve concurrently; duplicate
 lookups coalesce and network concurrency is bounded to four.
 
+Near-uniform provider images are rejected, including grey CDN placeholders returned
+with HTTP 200. Existing cached placeholders are re-resolved rather than retained for
+thirty days. Battlefield 6 has a verified PlayStation product mapping in the seed file.
+
 For regional names or verified exceptions, `/opt/botty-artwork/aliases.json` can map
 a normalized title to a canonical game name. It is read on each request and survives
 updates. Example: `{"regionalname":"Canonical Game"}`. No arbitrary image URL is
