@@ -29,3 +29,9 @@ own terms; review the relevant upstream records before publishing a new bundle.
 Game cover images are fetched at runtime by the optional resolver and are not
 bundled as a game catalog. The PS5 wordmark belongs to Sony Interactive
 Entertainment; this project is not affiliated with or endorsed by Sony.
+
+## Library compressor
+
+Botty+ 1.2 includes PS5-Game-Compressor by gcoding97 and upstream contributors.
+See [permission and dependency notices](homebrew/game-compressor/NOTICE.md) and
+the supplied corresponding-source archive.

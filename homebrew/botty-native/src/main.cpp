@@ -199,6 +199,17 @@ void drawCatalog(Canvas& c) noexcept {
             std::snprintf(text,sizeof(text),"Extracted %s of %s",downloaded,size);wrapped(c,text,line,model.detailPage,ink);
             if(entry->active){botty::formatETA(*entry,eta,sizeof(eta));std::snprintf(text,sizeof(text),"Extraction: %s/s  /  %s",rate,eta);wrapped(c,text,line,model.detailPage,ink);}
         }
+        if(model.tab==2&&entry->compressed)wrapped(c,std::string_view(entry->compressionState.data())!="ready"?"Compression pending - check details":entry->originalKept?"Compressed copy - original retained":"Compressed copy - original deleted",line,model.detailPage,accent);
+        if(model.tab==2&&std::string_view(catalog.compressionJob.data())==entry->id.data()) {
+            wrapped(c,"Library compression",line,model.detailPage,accent);
+            wrapped(c,catalog.compressionPhase.data(),line,model.detailPage,ink);
+            wrapped(c,catalog.compressionError.data(),line,model.detailPage,warning);
+            if(catalog.compressionBusy&&catalog.compressionTotal>0){
+                botty::formatBytes(catalog.compressionBytes,downloaded,sizeof(downloaded));botty::formatBytes(catalog.compressionTotal,size,sizeof(size));
+                std::snprintf(text,sizeof(text),"Compression: %s / %s",downloaded,size);wrapped(c,text,line,model.detailPage,ink);
+            }
+            if(catalog.compressedSize>0){botty::formatBytes(catalog.compressedSize,size,sizeof(size));std::snprintf(text,sizeof(text),"Compressed copy: %s",size);wrapped(c,text,line,model.detailPage,ink);}
+        }
         wrapped(c,entry->phase.data(),line,model.detailPage,muted);
         if(entry->kind[0])wrapped(c,entry->kind.data(),line,model.detailPage,accent);
         if(entry->destination[0]){wrapped(c,"Destination",line,model.detailPage,muted);wrapped(c,entry->destination.data(),line,model.detailPage,ink);}
@@ -315,6 +326,10 @@ void drawWorkflow(Canvas& c) noexcept {
         shortLabel(c,140,392,workflow.command.operation==Op::add?workflow.command.text.data():workflow.targetName.data(),28,1640,ink);
         const char* explanation="This request will be sent to rTorrent.";
         if(workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation="Download, extract and prepare in Library automatically. Original torrents are kept for seeding.";
+        if(workflow.command.operation==Op::compress)explanation="Create a compressed copy and keep the original. Close Botty+ when prompted to finish mounting and verification. APR games require an existing index.";
+        if(workflow.command.operation==Op::restoreOriginal)explanation="Restore the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
+        if(workflow.command.operation==Op::removeOriginal)explanation="Confirm you have tested the compressed game. Delete only its uncompressed backup after another full verification. The compressed game, saves and archives are kept. Close Botty+ to finish.";
+        if(workflow.command.operation==Op::cancelCompression)explanation="Request cancellation and keep the original game. Wait until the compression worker stops.";
         if(workflow.command.operation==Op::removeLibrary)explanation="Permanently delete the installed game files. Torrent and archives are kept. Close the game and remove it from the home screen first.";
         if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
         if(workflow.command.operation==Op::verify)explanation="rTorrent will recheck downloaded pieces. Extraction waits until verification finishes.";
@@ -441,7 +456,7 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
     c.backdrop(model.tab!=5);
     c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
-    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,56,28,8,border);c.label(356,80,"PS5",20,ink);
+    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,56,28,8,border);c.label(356,80,"1.2",20,ink);
     c.rounded(1488,69,336,48,24,card);
     statusDot(c,1510,87,online?success:warning);c.label(1536,77,state,24,online?success:warning);
     const char* tabs[]={"Downloads","Extracted","Library","Connections","Search","Explore"};
@@ -524,7 +539,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.000.006",20,muted);
+    c.label(1620,1004,"01.002.000",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(deletion!=botty::Network::Deletion::idle){
@@ -567,7 +582,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.000.006 - main entered");
+    botty::platform::log("Botty+ 01.002.000 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

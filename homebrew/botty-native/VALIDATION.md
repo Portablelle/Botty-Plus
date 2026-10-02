@@ -172,3 +172,15 @@ These observations do not complete clean-install migration, long-duration load,
 all native actions or additional firmware acceptance. Package-wide hardware
 validation flags remain unchanged. The older mock-Transmission service integration
 suite does not establish rTorrent backend coverage.
+
+## Botty+ 1.2 — 2026-10-02
+
+The user confirmed Library display and LEGO launch after compression, mounted
+verification and deletion of the tracked uncompressed copy. See the detailed
+[compression acceptance record](../game-compressor/VALIDATION.md). The final
+release header/footer label update is cosmetic and was checked in the host renderer.
+
+The service HTTP and search integration suites and native action client now use
+a rTorrent SCGI fixture and pass. This supersedes the old mock-Transmission
+coverage limitation above; it remains host validation rather than daemon/console
+acceptance for every action.

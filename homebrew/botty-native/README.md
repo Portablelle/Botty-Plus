@@ -1,4 +1,4 @@
-# Botty+ native application — 01.000.002
+# Botty+ native application — 01.002.000
 
 Botty+ is a C++20 native PS5 title with a 1920×1080 software renderer, bundled
 Manrope font and DualSense navigation. Its title ID is `PPSA99071`. It connects to
@@ -132,3 +132,13 @@ loop. It is stereo ATRAC9 at 48 kHz / 192 kbit/s. The installer preserves its
 metadata backup indices and appends the sound to registered metadata updates.
 This asset-only update keeps the native executable version unchanged. The
 console Home Screen Music option must be enabled for playback.
+
+## Library compression (1.2)
+
+Library → Options → **Compress game** creates a separate compressed PS5 folder
+game. Close Botty+ when prompted so ShadowMount can mount and verify every file.
+Test the game before selecting **Delete uncompressed copy**. That action verifies
+the image again and retains saves, compressed content and download archives.
+**Restore uncompressed game** can return to a retained original. Existing images
+and APR games without an existing index are not supported by this workflow. See the game-compressor component
+for build instructions, dependency notices and validation limits.

@@ -65,6 +65,12 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     {
+    const auto compression=field(body,"compression");
+    out.compressionSupported=field(compression,"supported")=="true";out.compressionBusy=field(compression,"busy")=="true";
+    decode(field(compression,"jobId"),out.compressionJob);decode(field(compression,"status"),out.compressionStatus);
+    decode(field(compression,"phase"),out.compressionPhase);decode(field(compression,"error"),out.compressionError);
+    out.compressionBytes=number(field(compression,"bytes"));out.compressionTotal=number(field(compression,"total"));
+    out.compressedSize=number(field(field(compression,"worker"),"compressedSize"));
     out.libraryDeletionSupported=field(body,"libraryDeletionSupported")=="true";
     out.torrentRemovalSupported=field(body,"torrentRemovalSupported")=="true";
     out.catalogArtworkSupported=field(body,"catalogArtworkSupported")=="true";
@@ -87,8 +93,8 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
             auto id=field(obj,"id");if(id.empty()||field(obj,"name").empty())return false;
             if(type)decode(id,e.id);else std::snprintf(e.id.data(),e.id.size(),"%.0f",number(id));
             decode(field(obj,"name"),e.name);
-            if(type){e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"error"),e.error);
-                auto content=field(obj,"content");decode(field(content,"kind"),e.kind);if(!e.error[0])decode(field(content,"reason"),e.error);
+            if(type){const auto compressed=field(obj,"compression");decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"error"),e.error);
+                auto content=field(obj,"content");decode(field(content,"kind"),e.kind);decode(field(content,"titleId"),e.titleId);if(!e.error[0])decode(field(content,"reason"),e.error);
                 decode(field(obj,"destination"),e.destination);if(!e.destination[0])decode(field(content,"destination"),e.destination);
                 e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";

@@ -3,7 +3,7 @@
 #include "catalog.hpp"
 namespace botty {
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary };
+enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal };
 struct Command {
     Operation operation=Operation::none;
     bool refresh=false;

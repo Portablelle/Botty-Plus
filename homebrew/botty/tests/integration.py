@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Exercise the real native HTTP service + UnRAR with a local Transmission RPC fixture."""
-import base64,json,pathlib,shutil,socket,subprocess,tempfile,threading,time,urllib.request,urllib.error
-from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+"""Exercise the real native HTTP service + UnRAR with a local rTorrent SCGI fixture."""
+import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error
+from rtorrent_fixture import RtorrentFixture
 from make_fixtures import build, single
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PASS='B7mQ2x'
@@ -12,10 +12,9 @@ def free_port():
 with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
     root=pathlib.Path(directory);fixtures=build(root/'fixtures')
     complete=root/'downloads/complete';complete.mkdir(parents=True)
-    incomplete=root/'downloads/incomplete';incomplete.mkdir()
     shutil.copy(fixtures/'app.rar',complete/'app.rar');shutil.copy(fixtures/'bad-crc.rar',complete/'bad.rar')
     single(complete/'cancel.rar',[('large.bin',b'cancel test data '*4194304)])
-    config=root/'transmission/state';config.mkdir(parents=True)
+    config=root/'rtorrent/state';config.mkdir(parents=True)
     (config/'botty-credentials.json').write_text(json.dumps(dict(username='botty',password=PASS)))
     entries=[]
     for i,name in enumerate(['app.rar','bad.rar','cancel.rar'],1):
@@ -23,41 +22,21 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         entries.append(dict(id=i,hashString=str(i)*40,name=name,status=6,percentDone=1,leftUntilDone=0,totalSize=size,downloadDir=str(complete),rateDownload=0,rateUpload=0,error=0,errorString='',files=[dict(name=name,length=size,bytesCompleted=size)]))
     entries[0].update(peersConnected=12,peersSendingToUs=7,peersGettingFromUs=3)
     entries[1].update(peersConnected=0,peersSendingToUs=0,peersGettingFromUs=0)
-    entries[0]['eta']=120
-    entries[0]['sizeWhenDone']=entries[0]['totalSize']
     refuse_stop=False
     sabotage_stop=False
-    class RPC(BaseHTTPRequestHandler):
-        def log_message(self,*args):pass
-        def do_POST(self):
-            body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))))
-            if self.headers.get('Authorization')!='Basic '+base64.b64encode(('botty:'+PASS).encode()).decode():self.send_response(401);self.end_headers();return
-            if self.headers.get('X-Transmission-Session-Id')!='test123':self.send_response(409);self.send_header('X-Transmission-Session-Id','test123');self.send_header('Content-Length','0');self.end_headers();return
-            if body['method']=='torrent-get':
-                assert {'eta','sizeWhenDone','peersConnected','peersSendingToUs','peersGettingFromUs'} <= set(body['arguments']['fields'])
-            if body['method']=='torrent-remove':
-                assert body['arguments']['delete-local-data'] is False
-                removed=[t for t in entries if t['hashString'] in body['arguments']['ids']]
-                assert len(removed)==1
-                for t in removed:
-                    # RPC acknowledges removal but does no filesystem work.
-                    # Botty must have removed both completed and partial files.
-                    assert t['status']==0
-                    for file in t['files']:
-                        for directory in [complete,incomplete]:
-                            for suffix in ['', '.part']:assert not (directory/(file['name']+suffix)).exists()
-                    entries.remove(t)
-            if body['method']=='torrent-stop':
-                for t in entries:
-                    if t['id'] in body['arguments']['ids'] or t['hashString'] in body['arguments']['ids']:
-                        if not refuse_stop:t['status']=0
-                        if sabotage_stop:(incomplete/(t['files'][0]['name']+'.part')).mkdir()
-            arguments={}
-            if body['method']=='torrent-get':arguments=dict(torrents=entries)
-            if body['method']=='session-get':arguments={'incomplete-dir-enabled':True,'incomplete-dir':str(incomplete)}
-            output=json.dumps(dict(result='success',arguments=arguments)).encode()
-            self.send_response(200);self.send_header('Content-Length',str(len(output)));self.end_headers();self.wfile.write(output)
-    rpc=ThreadingHTTPServer(('127.0.0.1',0),RPC);threading.Thread(target=rpc.serve_forever,daemon=True).start()
+    def rpc_hook(method, params):
+        if method in ('d.stop', 'd.erase'):
+            t=next(t for t in entries if t['hashString']==params[0])
+            if method=='d.stop':
+                if not refuse_stop:t['status']=0
+                if sabotage_stop:(complete/(t['files'][0]['name']+'.part')).mkdir()
+                return 0
+            # The engine only erases its record; Botty must delete exact files first.
+            assert t['status']==0
+            for file in t['files']:
+                for suffix in ['', '.part']:assert not (complete/(file['name']+suffix)).exists()
+        return NotImplemented
+    rpc=RtorrentFixture(entries,rpc_hook)
     port=free_port();origin=f'http://127.0.0.1:{port}';process=None;token=''
     def request(path,body=None,headers=None,expected=200,auth=True):
         h={'Content-Type':'application/json'}
@@ -109,10 +88,14 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         request('/api/state',headers={'Host':'untrusted.example'},expected=403)
         request('/fs/etc/passwd',expected=404)
         state=request('/api/state');assert len(state['torrents'])==3 and state['transmissionReady']
+        assert state['torrentEngine']=='rtorrent'
         assert state['torrents'][0]['peersConnected']==12
         assert state['torrents'][0]['peersSendingToUs']==7 and state['torrents'][0]['peersGettingFromUs']==3
         assert state['torrents'][1]['peersConnected']==0
-        assert state['torrents'][0]['eta']==120
+        assert state['torrents'][0]['eta']==-1
+        entries[0].update(leftUntilDone=1200,rateDownload=10,status=4)
+        assert request('/api/state')['torrents'][0]['eta']==120
+        entries[0].update(leftUntilDone=0,rateDownload=0,status=6)
         request('/api/torrent',{'action':'remove','id':1},expected=400)
         request('/api/torrent',{'action':'add','magnet':'http://unexpected.example'},expected=400)
         request('/api/torrent',{'action':'pause','id':1})
@@ -187,22 +170,27 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
         (complete/'linked').unlink();entries[0]['files'][0]['name']=original_name
         other_name=entries[1]['files'][0]['name'];entries[1]['files'][0]['name']=original_name
+        alias=root/'download-alias';alias.symlink_to(complete,target_is_directory=True)
+        other_directory=entries[1]['downloadDir'];entries[1]['downloadDir']=str(alias)
+        snapshot=request('/api/state')['torrents']
+        assert snapshot[0]['files'][0]['name']==snapshot[1]['files'][0]['name'],snapshot
         request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
         assert (complete/'app.rar').exists()
         entries[1]['files'][0]['name']=other_name
+        entries[1]['downloadDir']=other_directory;alias.unlink()
         refuse_stop=True;entries[0]['status']=6
         request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
         assert (complete/'app.rar').exists() and any(t['id']==1 for t in entries)
         refuse_stop=False;sabotage_stop=True
         request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True},expected=400)
         assert (complete/'app.rar').exists() and any(t['id']==1 and t['status']==0 for t in entries)
-        sabotage_stop=False;(incomplete/'app.rar.part').rmdir()
-        (incomplete/'app.rar.part').write_bytes(b'partial download')
-        (incomplete/'unrelated.txt').write_text('keep')
+        sabotage_stop=False;(complete/'app.rar.part').rmdir()
+        (complete/'app.rar.part').write_bytes(b'partial download')
+        (complete/'unrelated.txt').write_text('keep')
         task=root/'automatic'/('1'*40+'.json');task.write_text(json.dumps({'hash':'1'*40,'status':'tracked'}))
         request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True})
         assert not (complete/'app.rar').exists() and (complete/'bad.rar').exists()
-        assert not (incomplete/'app.rar.part').exists() and (incomplete/'unrelated.txt').read_text()=='keep'
+        assert not (complete/'app.rar.part').exists() and (complete/'unrelated.txt').read_text()=='keep'
         assert (root/'test-library/PPSA12345-app/eboot.bin').read_bytes()==b'original test bytes'*400
         assert json.loads(task.read_text())['status']=='deletion-requested'
         assert all(t['id']!=1 for t in request('/api/state')['torrents'])
@@ -215,7 +203,8 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert not (root/'test-library/PPSA12345-app').exists()
         assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
         assert not any(j['id']==job['id'] for j in request('/api/state')['jobs'])
-        print('HTTP integration passed: local access controls, real RPC handshake, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
+        rpc.assert_clean()
+        print('HTTP integration passed: local access controls, rTorrent SCGI framing and RPC, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
     finally:
         if process and process.poll() is None:stop()
         rpc.shutdown();rpc.server_close()

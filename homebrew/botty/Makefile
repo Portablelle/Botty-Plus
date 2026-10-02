@@ -16,13 +16,25 @@ build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp
+build/botty-native: src/server.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp
+build/botty-manager.elf: src/server.cpp src/core.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp
 	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
-build/core-test: tests/core-test.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp
+build/core-test: tests/core-test.cpp src/core.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/progress.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
 test: build/core-test build/botty-native
 	./build/core-test
 	python3 tests/integration.py
 	python3 tests/search_integration.py
+
+build/compressor-test: tests/compressor-test.cpp src/core.cpp src/compressor.hpp src/compression-library.hpp
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@ -lcurl
+.PHONY: test-compressor
+test-compressor: build/compressor-test
+	./build/compressor-test
+
+build/compression-library-test: tests/compression-library-test.cpp src/core.cpp src/compression-library.hpp
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
+.PHONY: test-compression-library
+test-compression-library: build/compression-library-test
+	./build/compression-library-test

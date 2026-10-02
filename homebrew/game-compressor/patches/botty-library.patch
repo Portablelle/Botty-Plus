@@ -1,0 +1,119 @@
+--- a/src/gc_api.c
++++ b/src/gc_api.c
+@@ -7072,7 +7072,8 @@
+   pfs_app_info_t info = {0};
+   pfs_compress_plan_t *plan = NULL;
+   char err[256] = {0};
+-  const char *out = "/data/botty/compressor/output/PPSA23732.ffpfsc";
++  char out[256];
++  snprintf(out, sizeof(out), "/data/botty/compressor/output/%s.ffpfsc", op->title_id);
+   struct stat st;
+   char running[64] = {0};
+   int running_state = get_running_big_app(running, sizeof(running), NULL);
+@@ -7080,9 +7081,10 @@
+     snprintf(op->error, sizeof(op->error), "Close the running game before compression");
+     return -1;
+   }
+-  if(strcmp(op->source_path, "/data/homebrew/PPSA23732-app") ||
++  if(!valid_title_id(op->title_id) || !strncmp(op->title_id,"CUSA",4) || !strcmp(op->title_id,"PPSA99071") ||
++     strncmp(op->source_path,"/data/homebrew/",15) || strchr(op->source_path+15,'/') || strstr(op->source_path,"..") ||
+      lstat(op->source_path, &st) || !S_ISDIR(st.st_mode)) {
+-    snprintf(op->error, sizeof(op->error), "Original LEGO folder is unavailable");
++    snprintf(op->error, sizeof(op->error), "Original Library folder is unavailable");
+     return -1;
+   }
+   if(mkdirs("/data/botty/compressor/output") != 0) {
+@@ -7092,7 +7094,7 @@
+   snprintf(op->delete_policy, sizeof(op->delete_policy), "keep");
+   snprintf(op->format, sizeof(op->format), "exfat");
+   snprintf(op->output_path, sizeof(op->output_path), "%s", out);
+-  job_set_phase("scanning", 0, 0, "Measuring LEGO; original is kept");
++  job_set_phase("scanning", 0, 0, "Measuring game; original is kept");
+   int rc = pfs_compress_prepare_source_to_ffpfsc_opts_output_ex(
+       op->source_path, 0, PFS_COMPRESS_FORMAT_EXFAT, PFS_DELETE_KEEP, 0,
+       out, NULL, &plan, &info, err, sizeof(err));
+@@ -10190,9 +10192,9 @@
+                                                source_path_arg,
+                                                sizeof(source_path_arg));
+   if(arg_err) return serve_error(req, 400, arg_err);
+-  if(action != GC_ACTION_COMPRESS || strcmp(title_id, "PPSA23732") ||
+-     strcmp(source_path_arg, "/data/homebrew/PPSA23732-app"))
+-    return serve_error(req, 403, "This beta only accepts the original LEGO folder");
++  if(action != GC_ACTION_COMPRESS || !valid_title_id(title_id) || strncmp(title_id,"PPSA",4) || !strcmp(title_id,"PPSA99071") ||
++     strncmp(source_path_arg,"/data/homebrew/",15) || !source_path_arg[15] || strchr(source_path_arg+15,'/') || strstr(source_path_arg,".."))
++    return serve_error(req, 403, "Only direct PS5 Library folders can be compressed");
+ 
+   memset(&game, 0, sizeof(game));
+   snprintf(game.title_id, sizeof(game.title_id), "%s", title_id);
+--- a/src/gc_main.c
++++ b/src/gc_main.c
+@@ -45,38 +45,10 @@
+ } handoff_result_t;
+ 
+ static void
+-detect_lan_ip(char *out, size_t out_size) {
+-  struct ifaddrs *ifaddr = NULL;
+-
+-  snprintf(out, out_size, "<PS5_IP>");
+-  if(getifaddrs(&ifaddr) != 0) return;
+-
+-  for(struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+-    if(!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+-    if(ifa->ifa_flags & IFF_LOOPBACK) continue;
+-
+-    struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+-    const char *ip = inet_ntop(AF_INET, &sa->sin_addr, out, out_size);
+-    if(ip && strncmp(out, "169.254.", 8) != 0) {
+-      freeifaddrs(ifaddr);
+-      return;
+-    }
+-  }
+-
+-  freeifaddrs(ifaddr);
+-}
+-
+-static void
+ on_ready(unsigned short port, void *arg) {
+   (void)arg;
+-  char ip[64];
+-  char detail[128];
+-  detect_lan_ip(ip, sizeof(ip));
+-  snprintf(detail, sizeof(detail), "%s:%u", ip, (unsigned)port);
+-  gc_checkpoint("web server ready");
+-  gc_log("web ui ready http://%s:%u/", ip, (unsigned)port);
+-  gc_notify_message("Open", detail);
+-  /* Botty beta has its own native UI; do not register a launcher. */
++  gc_checkpoint("Botty Library compression worker ready");
++  gc_log("Loopback compression worker ready on port %u", (unsigned)port);
+ }
+ 
+ static int
+@@ -346,7 +318,7 @@
+ 
+ static handoff_result_t
+ handoff_existing_instance(unsigned short port) {
+-  if(local_port_open(port)) return HANDOFF_EXIT;
++  return local_port_open(port) ? HANDOFF_EXIT : HANDOFF_CONTINUE; /* Never take over or kill another worker. */
+   char body[4096];
+   char action[64] = {0};
+   char phase[64] = {0};
+--- a/src/gc_websrv.c
++++ b/src/gc_websrv.c
+@@ -171,7 +171,7 @@
+   int srvfd = g_websrv_srvfd;
+   g_websrv_srvfd = -1;
+   pthread_mutex_unlock(&g_websrv_lock);
+-  if(srvfd >= 0) close(srvfd);
++  if(srvfd >= 0) { shutdown(srvfd, SHUT_RDWR); close(srvfd); }
+ }
+ 
+ static int
+@@ -271,7 +271,7 @@
+   int reading = !strcmp(req->method, "GET");
+   int writing = !strcmp(req->method, "POST");
+   if(reading && !strcmp(req->path, "/api/status")) {
+-    const char *body = "{\"ok\":true,\"bottyWorker\":\"copy-only-beta1\"}";
++    const char *body = "{\"ok\":true,\"bottyWorker\":\"library-1.2\"}";
+     return websrv_send(req->fd, 200, "application/json", body, strlen(body));
+   }
+   if(!((reading && (!strcmp(req->path, "/api/gc/job") || !strcmp(req->path, "/api/gc/history"))) ||

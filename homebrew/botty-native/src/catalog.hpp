@@ -6,9 +6,11 @@ namespace botty {
 struct Entry {
     std::array<char,96> id{};
     std::array<char,512> name{}, error{}, destination{}, phase{};
-    std::array<char,32> status{}, kind{};
+    std::array<char,32> status{}, kind{}, titleId{};
     std::array<char,2048> files{};
     unsigned fileCount=0,archiveStart=0,archiveCount=0;
+    bool compressed=false,originalKept=false,compressionVerified=false;
+    std::array<char,32> compressionState{};
     bool dismissed=false,extractable=false,archivesOmitted=false;
     double bytes=0,total=0,download=0,upload=0,progress=0;
     double eta=-1;
@@ -32,6 +34,11 @@ struct Catalog {
     unsigned torrentCount=0,jobCount=0,revision=0,archiveCount=0;
     bool extracting=false,extractionControls=false,torrentRemovalSupported=false,libraryDeletionSupported=false;
     bool valid=false,stale=false,transmissionStale=false,transmissionReady=false,truncated=false,catalogArtworkSupported=false;
+    bool compressionSupported=false,compressionBusy=false;
+    std::array<char,96> compressionJob{};
+    std::array<char,32> compressionStatus{};
+    std::array<char,512> compressionPhase{},compressionError{};
+    double compressionBytes=0,compressionTotal=0,compressedSize=0;
     double freeBytes=0;
     std::array<char,512> library{},error{};
 };

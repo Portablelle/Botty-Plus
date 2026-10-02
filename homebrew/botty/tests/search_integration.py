@@ -1,6 +1,7 @@
-"""HTTPS Prowlarr fixture -> Botty -> Transmission -> verified RAR -> Library."""
-import base64, importlib.util, json, pathlib, socket, ssl, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+"""HTTPS Prowlarr fixture -> Botty -> rTorrent -> verified RAR -> Library."""
+import hashlib, importlib.util, json, pathlib, socket, ssl, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from rtorrent_fixture import RtorrentFixture
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('fixtures', HERE/'make_fixtures.py')
 fixtures = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixtures)
@@ -9,22 +10,19 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  complete=root/'downloads/complete'; complete.mkdir(parents=True)
  (complete/'sample.rar').write_bytes((root/'fixtures/app.rar').read_bytes())
  size=(complete/'sample.rar').stat().st_size
- torrent=dict(id=1,hashString='a'*40,name='Original homebrew fixture',status=4,error=0,leftUntilDone=size,totalSize=size,downloadDir=str(complete),files=[dict(name='sample.rar',length=size,bytesCompleted=0)])
+ torrent=dict(id=1,hashString=hashlib.sha1(b'd4:name7:fixturee').hexdigest(),name='Original homebrew fixture',status=4,error=0,leftUntilDone=size,totalSize=size,downloadDir=str(complete),files=[dict(name='sample.rar',length=size,bytesCompleted=0)])
  calls=[]; queries=[]; cover_calls=[]
- class RPC(BaseHTTPRequestHandler):
+ def rpc_hook(method, params):
+  if method=='load.start':
+   assert pathlib.Path(params[1]).read_bytes()==b'd4:infod4:name7:fixtureee'
+   entries.append(torrent)
+   return 0
+  return NotImplemented
+ entries=[dict(torrent,hashString='a'*40)]
+ class Indexer(BaseHTTPRequestHandler):
   def log_message(self,*args): pass
-  def do_POST(self):
-   request=json.loads(self.rfile.read(int(self.headers['Content-Length']))); calls.append(request)
-   method=request['method']; args={}
-   if method=='torrent-get': args={'torrents':[torrent]}
-   if method=='torrent-add':
-    assert base64.b64decode(request['arguments']['metainfo'])==b'd4:infod4:name7:fixtureee'
-    assert request['arguments']['download-dir']==str(complete)
-    args={'torrent-added':{'id':1,'hashString':'a'*40}}
-   self.reply({'result':'success','arguments':args})
   def reply(self,obj):
    data=json.dumps(obj).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
- class Indexer(RPC):
   def do_GET(self):
    assert self.headers.get('X-Api-Key')=='b'*32
    url=urllib.parse.urlsplit(self.path)
@@ -41,13 +39,13 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    else:
     assert url.path in ['/1/download','/2/download','/3/download'] and 'apikey' not in urllib.parse.parse_qs(url.query)
     data=b'd4:infod4:name7:fixtureee';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
- rpc=ThreadingHTTPServer(('127.0.0.1',0),RPC);indexer=ThreadingHTTPServer(('127.0.0.1',0),Indexer)
+ rpc=RtorrentFixture(entries,rpc_hook);calls=rpc.calls;indexer=ThreadingHTTPServer(('127.0.0.1',0),Indexer)
  cert=root/'cert.pem';key=root/'key.pem'
  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.load_cert_chain(cert,key);indexer.socket=ctx.wrap_socket(indexer.socket,server_side=True)
- for server in [rpc,indexer]:threading.Thread(target=server.serve_forever,daemon=True).start()
+ for server in [indexer]:threading.Thread(target=server.serve_forever,daemon=True).start()
  (root/'prowlarr.json').write_text(json.dumps(dict(url=f'https://localhost:{indexer.server_port}',apiKey='b'*32,caFile=str(cert),exploreIndexers={'seeders':2,'completed':3,'newest':1})))
- credentials=root/'transmission/state';credentials.mkdir(parents=True);(credentials/'botty-credentials.json').write_text(json.dumps(dict(username='botty',password='TESTpw')))
+ credentials=root/'rtorrent/state';credentials.mkdir(parents=True);(credentials/'botty-credentials.json').write_text(json.dumps(dict(username='botty',password='TESTpw')))
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
  command=[str(HERE.parent/'build/botty-native'),'--root',str(root),'--port',str(port),'--rpc-port',str(rpc.server_port),'--ui',str(HERE.parent/'ui')]
  proc=subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);token=''
@@ -110,7 +108,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   until(lambda:not request('/api/state')['explore']['adding'])
   assert selected not in [r['id'] for r in request('/api/state')['explore']['results']]
   request('/api/explore/add',{'id':selected})
-  assert sum(c['method']=='torrent-add' for c in calls)==1
+  assert sum(c['method']=='load.start' for c in calls)==1
   assert not request('/api/state')['jobs']
   # Queue survives a service restart while the download is incomplete.
   proc.terminate();proc.wait(timeout=5);proc=subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -145,6 +143,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   (root/'automatic'/('d'*40+'.json')).write_text(json.dumps({'hash':'d'*40,'status':'waiting'}))
   def failed():return next((j for j in request('/api/state')['jobs'] if j.get('hash')=='d'*40 and j['status']=='failed'),None)
   until(failed);assert (complete/'broken.rar').is_file()
+  rpc.assert_clean()
   print('Search pipeline passed: HTTPS, fixed category/indexer, opaque IDs, duplicate prevention, durable queue, automatic extraction/publication and archive preservation.')
  finally:
   proc.terminate();proc.wait(timeout=5);rpc.shutdown();indexer.shutdown()

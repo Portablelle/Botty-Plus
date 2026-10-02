@@ -14,7 +14,7 @@ PAYLOAD_NOTICES = ('shadowmountplus-source.tar.gz', 'shadowmountplus-LICENSE.txt
                    'shadowmountplus-NOTICE.md')
 PACKAGE_NOTICES = {
     'rtorrent': ('README.md', 'LICENSE', 'rtorrent-source.tar.gz'),
-    'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz'),
+    'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz', 'game-compressor-source.tar.gz', 'game-compressor-NOTICE.md'),
     'botty-native': ('NOTICE.md', 'LICENSE', 'botty-native-source.tar.gz'),
     'transmission': ('NOTICE.txt', 'GPL-2.0.txt', 'GPL-3.0.txt',
                      'TRANSMISSION-COPYING.txt', 'WEBSRV-LICENSE.txt',

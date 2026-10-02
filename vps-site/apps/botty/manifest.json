@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "id": "1.1.0",
+  "id": "1.2.0",
   "files": [
     {
       "path": "botty-manager.elf",
-      "size": 10949064,
-      "sha256": "b628c9cca185d5c0a926e4085852daa778fb48cc039f8ae95403cede1ccc9bd9"
+      "size": 11311832,
+      "sha256": "059975dd781a2c27130e12ba814942ed2a10c9b76e175ecba244ebe61ae72f93"
     },
     {
       "path": "icon0.png",
@@ -31,6 +31,11 @@
       "path": "cacert.pem",
       "size": 182140,
       "sha256": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b"
+    },
+    {
+      "path": "game-compressor.elf",
+      "size": 1207760,
+      "sha256": "c3d998c22f686a718cecaff72a579a18f21a4c35734723582c396b45b02a1a2c"
     }
   ]
 }

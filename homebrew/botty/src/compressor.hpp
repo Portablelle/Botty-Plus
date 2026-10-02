@@ -1,0 +1,179 @@
+#pragma once
+#include "core.hpp"
+#include "compression-library.hpp"
+#include <curl/curl.h>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <regex>
+#include <sys/stat.h>
+
+namespace botty {
+// Worker copies only; this service journals activation and verifies mounted bytes.
+// Interrupted source mutations remain locked for explicit recovery.
+class Compressor {
+  Paths paths_;
+  int port_=5910;
+  bool enabled_=false;
+  json records_=json::object();
+  mutable std::mutex mutex_;
+  json state_={{"status","idle"}};
+  fs::path record() const {return paths_.root/"compressor/state.json";}
+  static bool pending(const json& s) {
+    const auto status=s.value("status","");
+    return status=="starting"||status=="running"||status=="uncertain"||status=="waiting-close"||status=="activating"||status=="verifying"||status=="deleting-original";
+  }
+  static long long now() {return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());}
+  void save() {
+    writeJson(record(),state_);
+    if(state_.contains("jobId")){records_[state_.at("jobId").get<std::string>()]=state_;writeJson(paths_.root/"compressor/games.json",records_);}
+  }
+  json request(const std::string& path,bool post=false) const {
+    auto key=readText(paths_.root/"compressor/token",128);
+    while(!key.empty()&&(key.back()=='\n'||key.back()=='\r'))key.pop_back();
+    if(!std::regex_match(key,std::regex("[a-f0-9]{64}")))throw std::runtime_error("Invalid compressor credentials");
+    const auto url="http://127.0.0.1:"+std::to_string(port_)+path+(path.find('?')==std::string::npos?"?":"&")+"token="+key;
+    CURL* raw=curl_easy_init();if(!raw)throw std::runtime_error("Cannot initialize compressor connection");
+    std::unique_ptr<CURL,decltype(&curl_easy_cleanup)> client(raw,curl_easy_cleanup);
+    std::string body;
+    curl_easy_setopt(raw,CURLOPT_URL,url.c_str());curl_easy_setopt(raw,CURLOPT_PROXY,"");
+    curl_easy_setopt(raw,CURLOPT_NOSIGNAL,1L);curl_easy_setopt(raw,CURLOPT_CONNECTTIMEOUT_MS,500L);curl_easy_setopt(raw,CURLOPT_TIMEOUT_MS,1500L);
+    curl_easy_setopt(raw,CURLOPT_POST,post?1L:0L);
+    if(post)curl_easy_setopt(raw,CURLOPT_POSTFIELDS,"");
+    curl_easy_setopt(raw,CURLOPT_WRITEDATA,&body);
+    curl_easy_setopt(raw,CURLOPT_WRITEFUNCTION,+[](char* p,size_t n,size_t m,void* opaque)->size_t {
+      auto& b=*static_cast<std::string*>(opaque);if(n&&m>SIZE_MAX/n)return 0;const auto bytes=n*m;
+      if(bytes>2*1024*1024-b.size())return 0;b.append(p,bytes);return bytes;
+    });
+    if(curl_easy_perform(raw)!=CURLE_OK)throw std::runtime_error("Compression worker unavailable; do not repeat an uncertain request");
+    long status=0;curl_easy_getinfo(raw,CURLINFO_RESPONSE_CODE,&status);
+    auto data=json::parse(body);
+    if(status!=200||!data.value("ok",false))throw std::runtime_error(data.value("error","Compression worker rejected the request"));
+    return data;
+  }
+  static std::string encode(const std::string& s) {
+    const char* h="0123456789ABCDEF";std::string out;
+    for(unsigned char c:s)if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_'||c=='.')out+=c;else {out+='%';out+=h[c>>4];out+=h[c&15];}
+    return out;
+  }
+public:
+  void init(const Paths& paths,int port=5910) {
+    paths_=paths;port_=port;
+    if(!fs::exists(paths.root/"compressor/enabled.json"))return;
+    const auto config=json::parse(readText(paths.root/"compressor/enabled.json",4096));
+    enabled_=config.value("mode","")=="library-1.2";
+    if(enabled_&&fs::exists(record()))state_=json::parse(readText(record(),65536));
+    if(enabled_&&fs::exists(paths_.root/"compressor/games.json"))records_=json::parse(readText(paths_.root/"compressor/games.json",4*1024*1024));
+    if(enabled_&&(state_.value("status","")=="activating"||state_.value("status","")=="verifying"||state_.value("status","")=="deleting-original")){state_["status"]="uncertain";state_["error"]="Interrupted Library operation. Original backup and compressed image require recovery.";save();}
+  }
+  bool enabled() const {return enabled_;}
+  bool busy() const {std::lock_guard<std::mutex> g(mutex_);return enabled_&&pending(state_);}
+  void requireIdle() const {if(busy())throw std::runtime_error("Compression is active or uncertain; wait before changing files");}
+  json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;out["supported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
+  json game(const std::string& id) const {std::lock_guard<std::mutex> g(mutex_);return records_.value(id,json::object());}
+  bool protects(const std::string& id) const {const auto s=game(id).value("status","");return !s.empty()&&s!="restored"&&s!="failed"&&s!="cancelled";}
+  json requestOriginalDeletion(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(pending(state_))throw std::runtime_error("Wait for the current file operation");
+    auto rec=records_.value(id,json::object());
+    if(rec.value("status","")!="ready"||!rec.value("verified",false)||!rec.value("originalKept",false))throw std::runtime_error("No verified original copy available");
+    state_=rec;state_["deleteRequested"]=true;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to verify the compressed copy and delete the original.";save();return state_;
+  }
+  json requestRestore(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(pending(state_)&&state_.value("status","")!="uncertain")throw std::runtime_error("Wait for the current file operation");
+    auto rec=records_.value(id,json::object());
+    if(rec.value("originalDeletionStarted",false)||!rec.value("originalKept",false)||!rec.contains("originalPath"))throw std::runtime_error("No original backup is available");
+    state_=rec;state_["restoreRequested"]=true;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to restore the original source.";save();return state_;
+  }
+  json start(const json& job) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(!enabled_)throw std::runtime_error("Compression worker is not installed");
+    if(pending(state_))throw std::runtime_error("Compression is already active or needs review");
+    const auto content=job.at("content");const auto title=content.value("titleId","");const auto id=job.at("id").get<std::string>();
+    if(job.value("status","")!="moved"||content.value("kind","")!="folder"||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||!std::regex_match(id,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Only tracked PS5 game folders in Library can be compressed");
+    if(records_.contains(id)&&records_[id].value("status","")!="failed"&&records_[id].value("status","")!="cancelled"&&records_[id].value("status","")!="restored")throw std::runtime_error("This game already has a compression record");
+    const auto name=safeRelative(content.at("destination").get<std::string>());if(name.has_parent_path())throw std::runtime_error("Invalid Library folder");
+    const auto source=paths_.library/name;
+    if(job.value("destination","")!=source.string()||!fs::is_directory(containedExisting(paths_.library,source)))throw std::runtime_error("Library source does not match the tracked folder");
+    const auto output=paths_.root/"compressor/output"/(title+".ffpfsc");
+    if(records_.contains(id)&&records_[id].value("status","")=="restored") {
+      state_=records_[id];state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to verify and select the retained compressed copy.";save();return state_;
+    }
+    if(fs::exists(fs::symlink_status(output))||fs::exists(fs::symlink_status(output.string()+".vhash")))throw std::runtime_error("Compressed output already exists; nothing was overwritten");
+    // APR images need a separate indexing workflow; fail closed for now.
+    for(const auto& e:fs::recursive_directory_iterator(source))if((e.path().filename()=="libSceAmpr.sprx"||e.path().filename()=="libSceAmpr.prx")&&(!fs::is_regular_file(source/"ampr_emu.index")||fs::file_size(source/"ampr_emu.index")==0))throw std::runtime_error("This APR game needs a valid ampr_emu.index before compression");
+    // Reject links/special files, including nested modules, before invoking the worker.
+    uint64_t size=0;size_t count=0;
+    for(const auto& entry:fs::recursive_directory_iterator(source)) {
+      if(++count>200000)throw std::runtime_error("Too many source files");
+      const auto s=entry.symlink_status();
+      if(fs::is_symlink(s)||(!fs::is_directory(s)&&!fs::is_regular_file(s)))throw std::runtime_error("Unsupported source entry");
+      if(fs::is_regular_file(s)){const auto bytes=entry.file_size();if(bytes>UINT64_MAX-size)throw std::runtime_error("Source too large");size+=bytes;}
+    }
+    const auto param=json::parse(readText(containedExisting(source,source/"sce_sys/param.json"),65536));
+    if(param.value("titleId","")!=title)throw std::runtime_error("Source title identity mismatch");
+    if(size>UINT64_MAX-1073741824ULL||freeBytes(paths_.root)<size+1073741824ULL)throw std::runtime_error("Not enough space to keep original and compressed copy");
+    if(request("/api/status").value("bottyWorker","")!="library-1.2")throw std::runtime_error("Unexpected compression worker version");
+    if(request("/api/gc/job").value("busy",true))throw std::runtime_error("Compression worker is busy");
+    state_={{"status","starting"},{"jobId",job.at("id")},{"source",source.string()},{"titleId",title},{"startedAt",now()},{"phase","Starting compressed copy"},{"originalKept",true},{"bytes",0},{"total",size}};
+    save(); // Persist intent BEFORE sending a request that may outlive its response.
+    try {
+      const auto reply=request("/api/gc/compress?titleId="+title+"&sourcePath="+encode(source.string())+"&format=exfat&deletePolicy=keep",true);
+      const auto id=reply.at("id").get<std::string>();
+      if(!std::regex_match(id,std::regex("op-[0-9]+")))throw std::runtime_error("Unexpected worker operation identity");
+      state_["operationId"]=id;state_["status"]="running";save();
+    }catch(...) {state_["status"]="uncertain";state_["error"]="Request outcome unknown. Original is kept; do not retry until inspected.";save();throw;}
+    return state_;
+  }
+  void poll() {
+    std::unique_lock<std::mutex> g(mutex_);
+    if(!enabled_)return;
+    if(state_.value("status","")=="waiting-close") {
+      const auto title=state_.at("titleId").get<std::string>();auto work=state_;g.unlock();
+      CompressionLibrary library(paths_);if(!library.idle(title))return;
+      auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;save();};
+      auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["phase"]="Verifying every file through the mounted compressed image";};
+      try {if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress);}else library.activate(work,checkpoint,progress);}
+      catch(const std::exception& e){work["status"]="uncertain";work["error"]=e.what();work["phase"]="Compression needs recovery before other file operations. Retained files were not automatically removed.";checkpoint();}
+      return;
+    }
+    if(state_.value("status","")=="uncertain"||!pending(state_)||!state_.contains("operationId"))return;
+    try {
+      const auto history=request("/api/gc/history").at("history");
+      for(const auto& op:history) {
+        if(op.value("id","")!=state_.at("operationId")||op.value("sourcePath","")!=state_.at("source")||op.value("createdAt",0LL)<state_.value("startedAt",0LL)-2)continue;
+        const auto status=op.value("status","");
+        state_["worker"]=op;
+        if(status=="success"&&op.value("result","")=="copy-created-unverified") {
+          state_["status"]="waiting-close";state_["phase"]="Copy created. Close Botty+ and games to mount and verify the compressed game.";state_["output"]=op.value("outputPath","");state_["error"]="";
+        }else if(status=="failed"||status=="cancelled") {
+          state_["status"]=status;state_["phase"]="Compression stopped; original is kept";state_["error"]=op.value("error","");
+        }else if(status=="success") {
+          state_["status"]="uncertain";state_["error"]="Unexpected worker result; inspect before continuing";
+        }else {
+          const auto live=request("/api/gc/job");
+          if(live.value("activeId","")==state_.at("operationId")) {
+            state_["phase"]=live.value("phase","Working");state_["bytes"]=live.value("copiedBytes",0LL);state_["total"]=live.value("totalBytes",0LL);
+          }
+          state_["error"]="";
+        }
+        save();return;
+      }
+      state_["error"]="Worker operation missing; original is kept. Do not retry.";
+    }catch(...) {state_["error"]="Waiting for compression worker. Original is kept.";}
+  }
+  void stopWorker() {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(pending(state_))throw std::runtime_error("Compression is active or uncertain");
+    if(enabled_)request("/api/control/shutdown",true);
+  }
+  json cancel(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(!pending(state_)||state_.value("jobId","")!=id||!state_.contains("operationId"))throw std::runtime_error("No identified active compression for this game");
+    const auto live=request("/api/gc/job");
+    if(live.value("activeId","")!=state_.at("operationId"))throw std::runtime_error("Worker operation changed; refresh before cancelling");
+    request("/api/gc/job/cancel",true);return {{"ok",true}};
+  }
+};
+}

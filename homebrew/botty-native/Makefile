@@ -18,3 +18,9 @@ preview:
 integration:
 	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/action_client.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/action-client
 	python3 tests/actions_integration.py
+
+.PHONY: compression-integration
+compression-integration:
+	$(MAKE) -C ../botty native
+	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/action_client.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/action-client
+	python3 ../botty/tests/compressor_integration.py

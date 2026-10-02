@@ -2,7 +2,7 @@
   <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
 </p>
 
-<h1 align="center">Botty+ 1.01</h1>
+<h1 align="center">Botty+ 1.2</h1>
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
@@ -18,11 +18,17 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Version 1.1:** service **1.1.0**, native title **01.000.006** (`PPSA99071`),
-rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. This release
-fixes missing launch hooks, the native Offline state after the rTorrent migration,
-and blank artwork placeholders. Launch, torrent/library display and the Battlefield 6
-cover were confirmed on PS5 firmware **13.00**.
+**Version 1.2:** service **1.2.0**, native title **01.002.000** (`PPSA99071`),
+rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. Library can
+create a compressed PS5 folder-game image, verify all files through the PS5 mount,
+retain or restore the original, and delete the uncompressed backup after an
+explicit confirmation and a second verification. LEGO Voyagers launched from its
+compressed copy on firmware **13.00**. Other titles and firmware combinations
+require their own runtime acceptance. APR games require an existing index.
+
+Close Botty+ when prompted to finish mounting, verification or original deletion.
+The background service continues the operation. Saves and download archives are
+preserved. See [Library compression](homebrew/game-compressor/README.md).
 
 Existing Transmission downloads require a one-time migration with both engines
 stopped and a full piece rehash; the portal refuses to start rTorrent over an
@@ -30,6 +36,13 @@ active or unmigrated Transmission installation. See [migration notes](homebrew/r
 The Relapse browser chain includes firmware offsets from **7.00 to 13.60**;
 this is not a compatibility guarantee for the complete stack. See the
 [validation record](homebrew/botty-native/VALIDATION.md) for remaining limits.
+
+## Library compression
+
+The new actions retain the original until deletion is explicitly confirmed.
+This image is a host rendering of the actual native UI with a representative fixture.
+
+![Library compression actions](docs/screenshots/library-compression-1.2.png)
 
 ## Screenshots
 

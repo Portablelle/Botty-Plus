@@ -19,7 +19,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     if not args.source_only:
         files = []
-        for name in ['botty-manager.elf', 'icon0.png', 'ui/index.html', 'ui/app.js', 'ui/style.css', 'cacert.pem']:
+        for name in ['botty-manager.elf', 'icon0.png', 'ui/index.html', 'ui/app.js', 'ui/style.css', 'cacert.pem', 'game-compressor.elf']:
             original = source / ('build/' + name if name.endswith('.elf') else name)
             target = out / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +41,9 @@ def main():
                     'README.md', 'LICENSE', 'cacert.pem', 'icon0.png'])
     shutil.copyfile(source / 'README.md', out / 'NOTICE.md')
     shutil.copyfile(source / 'LICENSE', out / 'LICENSE')
+    worker=project/'homebrew/game-compressor'
+    source_archive(worker,out/'game-compressor-source.tar.gz',['prepare.py','provenance.json','patches','vendor','tools','tests','README.md','NOTICE.md'])
+    shutil.copyfile(worker/'NOTICE.md',out/'game-compressor-NOTICE.md')
     print('Botty source and notices refreshed')
 
 

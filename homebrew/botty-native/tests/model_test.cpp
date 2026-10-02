@@ -342,4 +342,30 @@ int main() {
         lib.libraryDeletionSupported=false;assert(*unavailable(Operation::removeLibrary,&lib.jobs[0],lib));
     }
 
+    {
+        Catalog beta;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false,"status":"idle"},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"LEGO","status":"moved","content":{"kind":"folder","titleId":"PPSA23732"}}]})",beta));
+        Workflow menu;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::compress);
+        assert(!*unavailable(Operation::compress,&beta.jobs[0],beta));
+        assert(!menu.press(Buttons::cross,beta,false));assert(!menu.confirm);
+        menu.press(Buttons::right,beta,false);assert(menu.press(Buttons::cross,beta,false));
+        char body[256];std::size_t length=0;assert(encodeCommand(menu.command,body,sizeof(body),length));
+        assert(std::string_view(body)==R"({"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","confirmed":true})");
+        assert(std::string_view(actionPath(menu.command.operation))=="/api/compress-game");
+        beta.compressionBusy=true;assert(*unavailable(Operation::compress,&beta.jobs[0],beta));
+        assert(*unavailable(Operation::removeLibrary,&beta.jobs[0],beta));
+        beta.compressionJob=beta.jobs[0].id;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::cancelCompression);
+        beta.compressionBusy=false;std::snprintf(beta.jobs[0].titleId.data(),beta.jobs[0].titleId.size(),"PPSA31246");
+        assert(!*unavailable(Operation::compress,&beta.jobs[0],beta));
+    }
+
+    {
+        Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true}}]})",release));
+        auto& e=release.jobs[0];assert(e.compressed&&e.originalKept&&e.compressionVerified);
+        Workflow w;w.open(&e,2,release);assert(w.options[0]==Operation::removeOriginal&&w.options[1]==Operation::restoreOriginal);
+        assert(!*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::compress,&e,release));
+        Command cmd;cmd.operation=Operation::removeOriginal;cmd.id=e.id;char body[512];size_t n=0;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
+        assert(std::string_view(actionPath(cmd.operation))=="/api/delete-uncompressed");
+        e.originalKept=false;assert(*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::restoreOriginal,&e,release));
+    }
+
 }

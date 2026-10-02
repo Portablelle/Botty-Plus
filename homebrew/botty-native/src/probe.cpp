@@ -185,6 +185,10 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::verify:message("Verification requested. Extraction waits until verification finishes.");break;
     case Operation::add:message("Torrent added or already present.");break;
     case Operation::extract:message("Extraction started. Open Extracted to follow its progress.");break;
+    case Operation::compress:message("Creating a separate compressed copy. Original game is kept.");break;
+    case Operation::removeOriginal:message("Deletion queued. Close Botty+ and games to verify the compressed copy and remove the original.");break;
+    case Operation::restoreOriginal:message("Restore queued. Close Botty+ and games to switch back to the original.");break;
+    case Operation::cancelCompression:message("Compression cancellation requested. Wait for the worker to finish.");break;
     case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
     case Operation::dismiss:message("Removed from Extracted. Partial files from unsuccessful jobs were deleted.");break;
