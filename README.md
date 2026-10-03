@@ -6,6 +6,8 @@
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
+<p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Bundled Relapse jailbreak range. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
+
 <p align="center">
   <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.3.2</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
