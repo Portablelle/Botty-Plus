@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
+  <img src="output/imagegen/botty-plus-github-og.jpg" alt="Botty+ banner" width="1280">
 </p>
 
 <h1 align="center">Botty+</h1>
