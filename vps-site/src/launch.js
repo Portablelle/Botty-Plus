@@ -1,3 +1,4 @@
+import { normalizeLaunchServices } from './launch-options.js';
 import { CheatRunnerIO, installAndStartCheatRunner, cheatRunnerStatus } from './cheatrunner.js';
 import { PS5IO, sleep } from './ps5-io.js';
 import { NativeIO, installNative } from './botty-native.js';
@@ -7,6 +8,7 @@ import { installAndStart } from './rtorrent.js';
 import { installAndStartManager } from './botty-manager.js';
 
 export async function launchSession(options) {
+  const services = normalizeLaunchServices(options.services);
   const report = options.report || (() => {});
   const send = options.send || sendPayload;
   const wait = options.wait || sleep;
@@ -16,23 +18,27 @@ export async function launchSession(options) {
   // Publish the complete title before ShadowMountPlus scans the homebrew directory.
   const native = await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report, reuseNewer: true });
   await loadRequiredPayloads(runtime, { send, wait, report, markSent() {} });
-  report('Starting FTP…');
-  if (!await io.listening(2121)) {
-    await send(runtime, 'ftpsrv-ps5.elf');
-    let ready = false;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      if (await io.listening(2121)) { ready = true; break; }
-      await wait(250);
+  if (services.ftp) {
+    report('Starting FTP…');
+    if (!await io.listening(2121)) {
+      await send(runtime, 'ftpsrv-ps5.elf');
+      let ready = false;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (await io.listening(2121)) { ready = true; break; }
+        await wait(250);
+      }
+      if (!ready) throw Error('FTP did not start on port 2121.');
     }
-    if (!ready) throw Error('FTP did not start on port 2121.');
-  }
-  report('Preparing rTorrent…');
-  await (options.rtorrent || installAndStart)(io, { report });
+  } else report('FTP startup skipped by launch options.');
+  if (services.rtorrent) {
+    report('Preparing rTorrent…');
+    await (options.rtorrent || installAndStart)(io, { report });
+  } else report('rTorrent startup skipped by launch options.');
   report('Preparing Botty…');
   const manager = await (options.manager || installAndStartManager)(io, { report });
   report(manager?.updatePending ? 'Services ready. Service update applies next console session; active work is preserved.' : 'Services ready. Waiting for home screen discovery.');
-  let cheatrunner;
-  try {
+  let cheatrunner = { ready: false, skipped: true, reason: 'CheatRunner startup skipped by launch options.' };
+  if (services.cheatrunner) try {
     cheatrunner = await (options.cheatrunner || installAndStartCheatRunner)(options.cheatRunnerIO || new CheatRunnerIO(runtime), { report, wait });
   } catch (error) {
     cheatrunner = { ready: false, reason: 'CheatRunner setup: ' + (error.message || String(error)) };

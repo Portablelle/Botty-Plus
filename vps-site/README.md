@@ -1,12 +1,16 @@
-# Botty+ 1.4.0 launch portal
+# Botty+ 1.4.1 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
-Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
-rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
+Botty+, loads Kstuff and ShadowMountPlus and prepares the Botty service.
+**Launch options** controls startup of FTP (2121), rTorrent and CheatRunner.
+All three default to enabled; choices are saved in this browser. LAUNCH starts
+the selected services in the same sequence. Unchecking a service skips its
+startup without stopping an existing instance. Without rTorrent running, torrent
+downloads are unavailable. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Release 1.4.0 bundles native 01.004.000, service 1.4.0, rTorrent 0.16.24-botty3
+Portal release 1.4.1 retains the 1.4.0 binaries: native 01.004.000, service 1.4.0, rTorrent 0.16.24-botty3
 and ShadowMountPlus 1.7beta4-botty.2. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.
@@ -23,7 +27,7 @@ The full repository includes `README.md`, `deployment/README.md` and
 This is the current launch portal shown on a supported PS5 browser. Select
 **LAUNCH** to start the setup sequence.
 
-![Botty+ PS5 launch portal](../docs/screenshots/portal-launch.png)
+![Botty+ PS5 launch options](../docs/screenshots/portal-launch-options.png)
 
 Host the complete verified export at the root of a trusted HTTPS origin. Package
 verification requires Web Crypto. The browser fetches payloads and applications

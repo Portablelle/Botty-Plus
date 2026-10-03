@@ -303,3 +303,20 @@ test('native update handles an old executable larger than the new package and 16
   assert.deepEqual(f.files.get(journal.backup + '/eboot.bin'), old);
   assert.equal(f.files.get(NATIVE_ROOT + '/eboot.bin').length, next.size);
 });
+
+for (let mask = 0; mask < 8; mask++) test('launch honors optional service combination ' + mask, async () => {
+  const services = { ftp: Boolean(mask & 1), rtorrent: Boolean(mask & 2), cheatrunner: Boolean(mask & 4) };
+  const events = [];
+  let ftp = false;
+  const result = await launchSession({ services, jailbreak: async () => { events.push('jailbreak'); return {}; },
+    io: { listening: async port => { assert.equal(port, 2121); assert.ok(services.ftp); return ftp; } },
+    nativeIO: {}, cheatRunnerIO: {}, native: async () => events.push('native'),
+    rtorrent: async () => events.push('rtorrent'), manager: async () => events.push('manager'),
+    cheatrunner: async () => { events.push('cheatrunner'); return { ready: true }; },
+    send: async (_, name) => { events.push(name); if (name === 'ftpsrv-ps5.elf') ftp = true; }, wait: async () => {} });
+  assert.deepEqual(events, ['jailbreak', 'native', 'kstuff.elf', 'shadowmountplus.elf',
+    ...(services.ftp ? ['ftpsrv-ps5.elf'] : []), ...(services.rtorrent ? ['rtorrent'] : []), 'manager',
+    ...(services.cheatrunner ? ['cheatrunner'] : [])]);
+  assert.equal(result.cheatrunner.ready, services.cheatrunner);
+  if (!services.cheatrunner) assert.equal(result.cheatrunner.skipped, true);
+});

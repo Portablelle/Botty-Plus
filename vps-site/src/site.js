@@ -4,6 +4,7 @@ import { installWindowP } from "./utils/mem.js";
 
 
 import { cheatRunnerStatus } from './cheatrunner.js';
+import { bindLaunchOptions } from './launch-options.js';
 import { launchSession } from "./launch.js";
 
 
@@ -74,12 +75,14 @@ const button = document.getElementById("launch");
 const status = document.getElementById("status");
 const rejection = window.firmware.rejection();
 let started = false;
+const launchOptions = bindLaunchOptions(document, window);
 document.getElementById("firmware").textContent = rejection ? "PS5 browser required" : "PS5 / " + window.fw_str;
 button.disabled = Boolean(rejection);
 if (rejection) status.textContent = "Open this page on your PS5 to launch.";
 else button.focus();
 button.addEventListener("click", async () => {
   if (started || rejection) return;
+  const services = launchOptions.lock();
   started = true;
   launchStartedAt = performance.now();
   document.body.dataset.state = "launching";
@@ -94,6 +97,7 @@ button.addEventListener("click", async () => {
     const result = await launchSession({
       jailbreak: async () => { await window.offsetsReady; return await run(); },
       report,
+      services,
     });
     button.textContent = "READY";
     status.textContent = result.manager?.updatePending

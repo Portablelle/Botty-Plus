@@ -81,3 +81,22 @@ body[data-state="launching"]::after { animation: none !important; transition: no
 
 #cheatrunner { position: relative; color: #a8f3e2; padding: 10px 18px; margin: 0 0 12px; border: 1px solid #477f83; border-radius: 8px; text-decoration: none; font-size: 14px; }
 #cheatrunner:focus { outline: 2px solid #a8f3e2; outline-offset: 4px; }
+
+#launch-options { position: relative; margin: 0 0 24px; border: 1px solid #243654; border-radius: 8px; background: #0a1222; }
+#launch-options summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; cursor: pointer; color: #d4e4fc; font-size: 16px; }
+#launch-options summary::before { content: '+'; color: #8fb4ec; }
+#launch-options[open] summary::before { content: '−'; }
+#launch-options-summary { margin-left: auto; color: #9badcc; font-size: 12px; }
+#launch-options summary:focus, .service-options input:focus { outline: 2px solid #d4eeff; outline-offset: 4px; }
+#launch-services { border: 0; border-top: 1px solid #243654; margin: 0; padding: 16px 20px; min-width: 0; }
+#launch-services legend { padding: 0 8px; color: #9badcc; font-size: 12px; }
+.service-options { display: flex; gap: 12px; }
+.service-options label { display: flex; align-items: center; gap: 14px; flex: 1; padding: 16px; border: 1px solid #304568; border-radius: 6px; cursor: pointer; background: #111e34; }
+.service-options label:focus-within { border-color: #a3cdff; }
+.service-options input { width: 22px; height: 22px; flex-shrink: 0; accent-color: #5297ff; }
+.service-options strong, .service-options small { display: block; }
+.service-options strong { font-size: 16px; }
+.service-options small, #launch-services p { color: #9badcc; font-size: 12px; }
+#launch-services p { margin: 12px 0 0; }
+#launch-services:disabled { opacity: .65; }
+@media (max-width: 650px) { .service-options { flex-direction: column; } #launch-options summary { padding: 14px; } #launch-options-summary { font-size: 11px; } }
