@@ -23,7 +23,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.3.5/ui"
+#define BOTTY_UI "/data/botty/manager/1.3.6/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -248,14 +248,14 @@ json startTransfer(const json& body) {
   }else{
     job=findJob(body.at("id").get<std::string>());sourceId=job.value("storage","internal");
     const auto compressed=compressor.game(job.at("id").get<std::string>());
-    if(compressed.value("verified",false))sourceId=compressed.value("storage","internal");
+    if(compressed.value("status","")=="ready")sourceId=compressed.value("storage","internal");
     else if(compressor.protects(job.at("id").get<std::string>()))throw std::runtime_error("Resolve compression before transferring");
     if(job.value("status","")!="ready"&&job.value("status","")!="moved")throw std::runtime_error("Only completed content can be transferred");
     if(kind=="publish"&&job.value("status","")!="ready")throw std::runtime_error("Extraction is not ready");
   }
   const auto source=storage.get(sourceId);
   if(kind!="publish"&&selected==sourceId)throw std::runtime_error("Choose a different disk");
-  transferState={{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying and verifying; source kept until completion"}};
+  transferState={{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying; source kept until completion"}};
   writeJson(paths.root/"transfer.json",transferState);transferring=true;
   std::thread([kind,selected,sourceId,source,destination,job,torrent]()mutable{
     bool changed=false;
@@ -285,7 +285,7 @@ json startTransfer(const json& body) {
         // Refuse shared members before moving anything.
         for(const auto& other:torrents())if(other.at("hashString")!=hash&&other.at("downloadDir")==torrent.at("downloadDir"))
           for(const auto& f:other.at("files"))for(const auto& name:members)if(f.at("name")==name.string())throw std::runtime_error("Torrent files are shared with another torrent");
-        for(const auto& name:members){check();auto parent=destination.complete;for(const auto& part:name.parent_path()){parent/=part;if(fs::is_symlink(fs::symlink_status(parent)))throw std::runtime_error("Unsafe transfer destination");fs::create_directories(parent);}copyVerified(source.complete/name,destination.complete/name,check);changed=true;}
+        for(const auto& name:members){check();auto parent=destination.complete;for(const auto& part:name.parent_path()){parent/=part;if(fs::is_symlink(fs::symlink_status(parent)))throw std::runtime_error("Unsafe transfer destination");fs::create_directories(parent);}copyChecked(source.complete/name,destination.complete/name,check);changed=true;}
         check();rpc("torrent-set-location",{{"ids",{hash}},{"location",destination.complete.string()}});
         if(getTorrent(torrent.at("id")).at("downloadDir")!=destination.complete.string())throw std::runtime_error("Torrent location was not confirmed; both copies kept");
         const auto queue=paths.root/"automatic"/(hash+".json");
@@ -294,7 +294,7 @@ json startTransfer(const json& body) {
         // Remain paused: verification/resume is explicit and never races cleanup.
       }else if(kind=="publish"){
         changed=true;job["storage"]=selected;job=movePrepared(source,job,&destination,check);publishJob(job);
-      }else if(compressor.game(job.at("id").get<std::string>()).value("verified",false)){
+      }else if(compressor.game(job.at("id").get<std::string>()).value("status","")=="ready"){
         waitForGame(job.at("content").value("titleId",""));changed=true;compressor.relocate(job.at("id").get<std::string>(),selected,check);
       }else{
         const auto id=job.at("id").get<std::string>();const bool moved=job.value("status","")=="moved";
@@ -316,7 +316,7 @@ json startTransfer(const json& body) {
           if(!std::regex_match(title,std::regex("(PPSA|CUSA)[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("ShadowMount must identify this game before transfer");
           job["content"]["titleId"]=title;waitForGame(title);
         }
-        copyVerified(from,to,check);changed=true;
+        copyChecked(from,to,check);changed=true;
         auto cleanup=from;
         if(moved){
           prepareLibraryPermissions(to);
@@ -326,11 +326,11 @@ json startTransfer(const json& body) {
           check();fs::rename(from,backup);cleanup=backup;
           CompressionLibrary library(source,shadowPort);library.api("manual/remove",{{"path",from.string()}});library.api("manual/add",{{"path",to.string()}});library.api("scan",{{"reset_attempts",false}});
           bool found=false;for(int n=0;n<60;++n){check();try{if(library.api("games/info",{{"title_id",job.at("content").value("titleId","")}}).value("path","")==to.string()){found=true;break;}}catch(...){}std::this_thread::sleep_for(std::chrono::seconds(1));}
-          if(!found)throw std::runtime_error("New Library source not confirmed; verified copy and backup kept");
+          if(!found)throw std::runtime_error("New Library source not confirmed; copy and backup kept");
         }
         check();job["storage"]=selected;if(moved)job["destination"]=to.string();publishJob(job);removeTransferred(cleanup);
       }
-      std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Transfer complete; files verified";writeJson(paths.root/"transfer.json",transferState);transferring=false;
+      std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Transfer complete; sizes checked";writeJson(paths.root/"transfer.json",transferState);transferring=false;
     }catch(const std::exception& e){std::lock_guard<std::mutex> g(lock);transferState["status"]=changed?"uncertain":"failed";if(!changed)transferring=false;transferState["error"]=e.what();transferState["phase"]="Transfer stopped; retained copies need inspection";try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}/* Do not replay an ambiguous move. */}
   }).detach();return transferState;
 }
@@ -365,7 +365,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted transfer. Copies and metadata need inspection before further file operations.";transferring=true;}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.3.5"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.3.6"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -391,7 +391,7 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.3.5"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.3.6"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -419,7 +419,7 @@ int main(int argc,char** argv) {
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["compression"]=compressor.state();
-      for(auto& job:result["jobs"]){const auto c=compressor.game(job.value("id",""));job["compression"]=c;if(c.value("verified",false)){job["destination"]=c.at("output");job["storage"]=c.value("storage","internal");job["content"]["kind"]="compressed";}}
+      for(auto& job:result["jobs"]){const auto c=compressor.game(job.value("id",""));job["compression"]=c;if(c.value("status","")=="ready"){job["destination"]=c.at("output");job["storage"]=c.value("storage","internal");job["content"]["kind"]="compressed";}}
       result["catalogArtworkSupported"]=true;
       std::set<std::string> owned;
       for(const auto& item:result["torrents"])owned.insert(Search::gameKey(item.value("name","")));
@@ -560,6 +560,12 @@ int main(int argc,char** argv) {
       std::lock_guard<std::mutex> guard(lock);if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestOriginalDeletion(id),202);
     });
+    server.Post("/api/verify-compressed",[](const auto& req,auto& res){
+      const auto body=json::parse(req.body);std::lock_guard<std::mutex> guard(lock);
+      if(extracting||transferring)throw std::runtime_error("Wait for the current file operation");
+      const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestVerification(id),202);
+    });
+    server.Post("/api/skip-verification",[](const auto& req,auto& res){reply(res,compressor.skipVerification(json::parse(req.body).at("id").template get<std::string>()),202);});
     server.Post("/api/cancel-compression",[](const auto& req,auto& res){reply(res,compressor.cancel(json::parse(req.body).at("id").template get<std::string>()),202);});
     server.Post("/api/delete-library-game",[](const auto& req,auto& res){
       const auto request=json::parse(req.body);

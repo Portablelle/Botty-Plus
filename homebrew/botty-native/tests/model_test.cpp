@@ -399,8 +399,8 @@ int main() {
     }
 
     {
-        static Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true,"sourceStorage":"internal","storage":"external-test"}}]})",release));
-        auto& e=release.jobs[0];assert(e.compressed&&e.originalKept&&e.compressionVerified);
+        static Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":false,"originalKept":true,"sourceStorage":"internal","storage":"external-test"}}]})",release));
+        auto& e=release.jobs[0];assert(e.compressed&&e.originalKept&&!e.compressionVerified);
         std::array<LibraryCopy,2> copies{};
         assert(libraryCopies(e,copies)==2);
         assert(std::string_view(copies[0].format)=="Compressed"&&std::string_view(copies[0].storage)=="external-test");

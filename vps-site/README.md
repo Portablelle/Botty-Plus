@@ -1,4 +1,4 @@
-# Botty+ 1.3.7 launch portal
+# Botty+ 1.3.8 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -6,7 +6,7 @@ Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
 rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Release 1.3.7 bundles native 01.003.006, service 1.3.5, rTorrent 0.16.24-botty2
+Release 1.3.8 bundles native 01.003.007, service 1.3.6, rTorrent 0.16.24-botty3
 and ShadowMountPlus 1.7beta4-botty.1. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.
@@ -70,3 +70,29 @@ failed or cancelled compression through **Compress game** removes only the
 tracked unfinished image and hash sidecar before checking free space and
 restarting from zero. The original is kept. Completed images and uncertain
 activation/deletion operations remain protected; checkpoint resume is unsupported.
+
+## CheatRunner
+
+LAUNCH also prepares the pinned CheatRunner 0.17.2-botty.1 service on port 9999, with its
+original home-screen tile under **Media / Media Players** (CHTR09999). After a
+reboot, run LAUNCH before opening the tile. The Portal also exposes **Open
+CheatRunner** when the HTTP service is ready. No page is added to Botty+.
+
+Existing running instances and all cheat/patch/profile files are preserved. The
+ShellUI hotkey is disabled before a fresh payload start. Startup is deferred while
+Botty is extracting, transferring or compressing; a CheatRunner error leaves the
+Botty session usable and is displayed in the session log. Tile registration and
+HTTP health do not certify launch or cheat compatibility on 13.00/Relapse.
+
+[Upstream provenance and integration notes](apps/cheatrunner/NOTICE.md),
+[GPL-3.0 license](apps/cheatrunner/LICENSE),
+[published upstream source snapshot](apps/cheatrunner/cheatrunner-source.tar.gz).
+The snapshot does not include the upstream embedded tile's missing build recipe.
+
+## Content verification policy
+
+Extra completion rehash, cross-disk full comparison and automatic post-compression
+comparison are disabled. Piece validation, RAR CRC, completed writes/fsync, file
+sizes and mount checks remain. Compressed copies are ready but **Not verified**;
+the original is retained. The service web UI offers an explicit full comparison
+and a cooperative skip. A copied compressed image loses any prior verified flag.

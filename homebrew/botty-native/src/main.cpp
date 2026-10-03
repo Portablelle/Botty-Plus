@@ -213,7 +213,7 @@ void drawCatalog(Canvas& c) noexcept {
             std::snprintf(text,sizeof(text),"Elapsed: %.0f s  /  %s (current phase)",entry->elapsed,eta);wrapped(c,text,line,model.detailPage,ink);
             wrapped(c,entry->currentFile.data(),line,model.detailPage,muted);
         }
-        if(model.tab==2&&entry->compressed)wrapped(c,std::string_view(entry->compressionState.data())!="ready"?"Compression pending - check details":entry->originalKept?"Compressed copy - original retained":"Compressed copy - original deleted",line,model.detailPage,accent);
+        if(model.tab==2&&entry->compressed)wrapped(c,std::string_view(entry->compressionState.data())!="ready"?"Compression pending - check details":entry->originalKept?entry->compressionVerified?"Verified - original retained":"Not verified - original retained":entry->compressionVerified?"Verified - original deleted":"Not verified - original deleted",line,model.detailPage,accent);
         if(model.tab==2&&std::string_view(catalog.compressionJob.data())==entry->id.data()) {
             wrapped(c,"Library compression",line,model.detailPage,accent);
             wrapped(c,catalog.compressionPhase.data(),line,model.detailPage,ink);
@@ -378,7 +378,7 @@ void drawWorkflow(Canvas& c) noexcept {
         const char* explanation="This request will be sent to rTorrent.";
         if(workflow.command.operation==Op::add||workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation=workflow.command.automatic?"Download, extract and prepare in Library automatically on the selected disk. Original torrents are kept.":"Download only on the selected disk. Extract and move later when you choose.";
         if(workflow.command.operation==Op::transfer)explanation="Copy to the selected disk and verify every byte before removing the source. Close running games. Torrents remain paused after transfer.";
-        if(workflow.command.operation==Op::compress)explanation="Create a compressed copy and keep the original. Close Botty+ when prompted to finish mounting and verification. APR games require an existing index.";
+        if(workflow.command.operation==Op::compress)explanation="Create a compressed copy and keep the original. Close Botty+ when prompted to finish mounting. Full verification is optional. APR games require an existing index.";
         if(workflow.command.operation==Op::restoreOriginal)explanation="Restore the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
         if(workflow.command.operation==Op::removeOriginal)explanation="Delete the original without verification. Compressed copy, saves and archives are kept. Close Botty+ to finish.";
         if(workflow.command.operation==Op::cancelCompression)explanation="Request cancellation and keep the original game. Wait until the compression worker stops.";
@@ -596,7 +596,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.003.006",20,muted);
+    c.label(1620,1004,"01.003.007",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(showResult){
@@ -628,7 +628,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.003.006 - main entered");
+    botty::platform::log("Botty+ 01.003.007 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

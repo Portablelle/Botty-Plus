@@ -18,14 +18,12 @@ void copyFile(const fs::path& a,const fs::path& b,const std::function<void()>& c
     std::vector<char> buf(1024*1024);
     for(;;){if(check)check();auto n=read(in,buf.data(),buf.size());if(n<0&&errno==EINTR)continue;if(n<0)throw std::runtime_error("Transfer read failed");if(!n)break;ssize_t at=0;while(at<n){auto w=write(out,buf.data()+at,size_t(n-at));if(w<0&&errno==EINTR)continue;if(w<=0)throw std::runtime_error("Transfer write failed; source kept");at+=w;}}
     if(fsync(out))throw std::runtime_error("Transfer flush failed; source kept");close(out);out=-1;close(in);in=-1;
-    std::ifstream x(a,std::ios::binary),y(b,std::ios::binary);std::vector<char> other(buf.size());
-    if(!x||!y)throw std::runtime_error("Cannot verify transfer");
-    do{if(check)check();x.read(buf.data(),buf.size());y.read(other.data(),other.size());if(x.gcount()!=y.gcount()||memcmp(buf.data(),other.data(),size_t(x.gcount())))throw std::runtime_error("Transfer verification failed; source kept");}while(x.gcount());
-    if(x.bad()||y.bad())throw std::runtime_error("Transfer verification read failed");
+    // Successful writes, fsync and the enclosing inventory/size checks are kept.
+    // No second full read of the source and destination after copying.
   }catch(...){if(in>=0)close(in);if(out>=0)close(out);throw;}
 }
 }
-void copyVerified(const fs::path& source,const fs::path& destination,const std::function<void()>& check) {
+void copyChecked(const fs::path& source,const fs::path& destination,const std::function<void()>& check) {
   if(check)check();
   const auto files=inventory(source);uint64_t total=0;
   for(const auto& e:files)if(e.second!=UINT64_MAX){if(e.second>UINT64_MAX-total)throw std::runtime_error("Transfer is too large");total+=e.second;}

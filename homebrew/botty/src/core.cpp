@@ -233,7 +233,7 @@ json movePrepared(const Paths& paths, json job, const Paths* destination, const 
   try {
     struct stat src{},dst{};
     if(stat(source.c_str(),&src)||stat(target.parent_path().c_str(),&dst))throw std::runtime_error("Cannot inspect publication disks");
-    if(src.st_dev!=dst.st_dev){copyVerified(source,target,check);prepareLibraryPermissions(target);}
+    if(src.st_dev!=dst.st_dev){copyChecked(source,target,check);prepareLibraryPermissions(target);}
     else {if(check)check();publishExclusive(source,target);}
   } catch (const std::exception& error) {
     job["status"]="move-error"; job["error"]=error.what(); writeJson(paths.jobs/(id+".json"),job); throw;

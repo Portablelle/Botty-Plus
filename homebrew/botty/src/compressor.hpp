@@ -1,5 +1,6 @@
 #pragma once
 #include "core.hpp"
+#include <atomic>
 #include "progress.hpp"
 #include "storage.hpp"
 #include "compression-library.hpp"
@@ -19,6 +20,7 @@ class Compressor {
   Paths disk(const std::string& id) const {if(storage_)return storage_->get(id);if(id!="internal")throw std::runtime_error("External storage unavailable");return paths_;}
   int port_=5910,shadowPort_=10101;
   bool enabled_=false;
+  std::atomic<bool> skipVerification_{false};
   json records_=json::object();
   mutable std::mutex mutex_;
   json state_={{"status","idle"}};
@@ -119,7 +121,7 @@ public:
     std::lock_guard<std::mutex> g(mutex_);
     if(!enabled_||pending(state_))throw std::runtime_error("Wait for the current file operation");
     auto rec=records_.value(id,json::object());
-    if(rec.value("status","")!="ready"||!rec.value("verified",false))throw std::runtime_error("No verified compressed game available");
+    if(rec.value("status","")!="ready")throw std::runtime_error("No ready compressed game available");
     state_=rec;state_["deleteGameRequested"]=true;state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to delete the compressed game. Saves and archives are kept.";save();return state_;
   }
   json requestOriginalDeletion(const std::string& id) {
@@ -152,7 +154,7 @@ public:
     fs::create_directories(output.parent_path());
     if(records_.contains(id)&&records_[id].value("status","")=="restored") {
       if(records_[id].value("storage","internal")!=targetId||records_[id].value("source","")!=source.string())throw std::runtime_error("Retained compressed copy uses another location. Reactivate it there before transferring it.");
-      state_=records_[id];state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to verify and select the retained compressed copy.";save();return state_;
+      state_=records_[id];state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to select the retained compressed copy.";save();return state_;
     }
     if(fs::exists(fs::symlink_status(output))||fs::exists(fs::symlink_status(output.string()+".vhash")))throw std::runtime_error("Compressed output already exists; nothing was overwritten");
     // APR images need a separate indexing workflow; fail closed for now.
@@ -192,7 +194,7 @@ public:
       auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;state_["bytes"]=0;state_["total"]=0;state_["unit"]="bytes";save();};
       auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["status"]="verifying";state_["unit"]="bytes";state_["phase"]="Verifying every file through the mounted compressed image";measure();};
       auto deletionProgress=[&](uint64_t done,uint64_t total,const std::string& file){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=done;state_["total"]=total;state_["unit"]="items";state_["file"]=file;state_["phase"]="Deleting files and folders";measure();};
-      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,deletionProgress);}else library.activate(work,checkpoint,progress);}
+      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,deletionProgress);}else if(work.value("verifyRequested",false))library.verifyRetained(work,checkpoint,progress,[&]{return skipVerification_.load();});else library.activate(work,checkpoint,progress);}
       catch(const std::exception& e){work["status"]="uncertain";work["error"]=e.what();work["phase"]="Compression needs recovery before other file operations. Retained files were not automatically removed.";checkpoint();}
       return;
     }
@@ -204,7 +206,7 @@ public:
         const auto status=op.value("status","");
         state_["worker"]=op;
         if(status=="success"&&op.value("result","")=="copy-created-unverified") {
-          state_["status"]="waiting-close";state_["phase"]="Copy created. Close Botty+ and games to mount and verify the compressed game.";state_["output"]=op.value("outputPath","");state_["error"]="";
+          state_["status"]="waiting-close";state_["phase"]="Copy created. Close Botty+ and games to mount the compressed game.";state_["output"]=op.value("outputPath","");state_["error"]="";
         }else if(status=="failed"||status=="cancelled") {
           state_["status"]=status;state_["phase"]="Compression stopped; original is kept";state_["error"]=op.value("error","");
         }else if(status=="success") {
@@ -226,7 +228,7 @@ public:
     std::unique_lock<std::mutex> g(mutex_);
     if(pending(state_))throw std::runtime_error("Wait for compression to finish");
     auto rec=records_.value(id,json::object());
-    if(rec.value("status","")!="ready"||!rec.value("verified",false))throw std::runtime_error("Only verified compressed games can be transferred");
+    if(rec.value("status","")!="ready")throw std::runtime_error("Only ready compressed games can be transferred");
     const auto oldPaths=disk(rec.value("storage","internal")),newPaths=disk(selected);
     const auto title=rec.at("titleId").get<std::string>();
     const fs::path image=rec.at("output").get<std::string>();
@@ -236,14 +238,29 @@ public:
     g.unlock();CompressionLibrary library(oldPaths,shadowPort_);
     if(!library.idle(title))throw std::runtime_error("Close Botty+ and games before transferring this game");
     rec["status"]="uncertain";rec["phase"]="Transferring compressed game";g.lock();state_=rec;save();g.unlock();
-    copyVerified(image,dest,check);copyVerified(image.string()+".vhash",dest.string()+".vhash",check);
+    copyChecked(image,dest,check);copyChecked(image.string()+".vhash",dest.string()+".vhash",check);
     library.api("manual/remove",{{"path",image.string()}});
     library.api("manual/add",{{"path",dest.string()}});
     library.api("scan",{{"reset_attempts",false}});
     bool found=false;for(int n=0;n<60;++n){check();try{if(library.api("games/info",{{"title_id",title}}).value("path","")==dest.string()){found=true;break;}}catch(...){}std::this_thread::sleep_for(std::chrono::seconds(1));}
     if(!found)throw std::runtime_error("New compressed source not confirmed; both copies kept");
-    check();rec["storage"]=selected;rec["output"]=dest.string();rec["status"]="ready";rec["phase"]="Compressed game transferred and verified";g.lock();state_=rec;save();g.unlock();
+    check();rec["storage"]=selected;rec["output"]=dest.string();rec["verified"]=false;rec["verificationSkipped"]=true;rec["status"]="ready";rec["phase"]="Compressed game transferred - Not verified";g.lock();state_=rec;save();g.unlock();
     removeTransferred(image);removeTransferred(image.string()+".vhash");return rec;
+  }
+  json requestVerification(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(pending(state_))throw std::runtime_error("Wait for the current file operation");
+    const auto rec=records_.value(id,json::object());
+    if(rec.value("status","")!="ready"||!rec.value("originalKept",false)||!rec.contains("originalPath"))throw std::runtime_error("Verification needs the retained original");
+    state_=rec;state_["verifyRequested"]=true;state_["deleteRequested"]=false;state_["deleteGameRequested"]=false;state_["restoreRequested"]=false;
+    skipVerification_=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games for optional verification";save();return state_;
+  }
+  json skipVerification(const std::string& id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    if(state_.value("jobId","")!=id||!state_.value("verifyRequested",false)||
+       (state_.value("status","")!="verifying"&&state_.value("status","")!="waiting-close"))throw std::runtime_error("No optional verification is active for this game");
+    skipVerification_=true;
+    return {{"ok",true},{"skipRequested",true}};
   }
   void stopWorker() {
     std::lock_guard<std::mutex> g(mutex_);

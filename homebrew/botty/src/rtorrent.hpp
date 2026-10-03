@@ -20,6 +20,7 @@ class Rtorrent {
   std::mutex mutex_;
   Paths paths_;
   int port_;
+  bool policyApplied_=false;
   struct Socket { int fd; ~Socket(){if(fd>=0)::close(fd);} };
   json call(const std::string& method,const json& params=json::array({""})) {
     Socket socket{::socket(AF_INET,SOCK_STREAM,0)};
@@ -101,6 +102,7 @@ public:
   Rtorrent(const Paths& paths,int port):paths_(paths),port_(port) {fs::create_directories(paths_.root/"rtorrent/state/incoming");}
   json request(const std::string& method,const json& args) {
     std::lock_guard<std::mutex> guard(mutex_);
+    if(!policyApplied_){call("pieces.hash.on_completion.set",{"",0});policyApplied_=true;}
     if(method=="session-get"){auto version=call("system.client_version");return {{"version",version},{"incomplete-dir-enabled",false},{"download-dir",paths_.complete.string()}};}
     if(method=="torrent-get")return {{"torrents",list()}};
     if(method=="torrent-add") {

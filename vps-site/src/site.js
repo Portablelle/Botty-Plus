@@ -3,6 +3,7 @@ import { installWindowP } from "./utils/mem.js";
 
 
 
+import { cheatRunnerStatus } from './cheatrunner.js';
 import { launchSession } from "./launch.js";
 
 
@@ -98,6 +99,8 @@ button.addEventListener("click", async () => {
     status.textContent = result.manager?.updatePending
       ? "Press PS and open Botty+. Service update applies next console session; current work continues."
       : "Press PS and open Botty+. Allow time for the home screen to refresh.";
+    status.textContent += ' ' + cheatRunnerStatus(result.cheatrunner);
+    document.getElementById('cheatrunner').hidden = !result.cheatrunner?.ready;
     document.body.dataset.state = "ready";
   } catch (error) {
     button.textContent = "STOPPED";

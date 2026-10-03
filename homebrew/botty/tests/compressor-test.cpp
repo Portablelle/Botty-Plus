@@ -100,5 +100,12 @@ int main() {
     assert(request["phase"].get<std::string>().find("verify")==std::string::npos);
     rejects([&]{remove.requestOriginalDeletion(id);});
   }
+  // A ready unverified copy stays usable and offers explicit verification/skip.
+  auto unverified=ready;unverified["verified"]=false;unverified["originalKept"]=true;unverified["originalPath"]=(root/"compressor/originals"/id).string();seed(unverified);
+  Compressor optional;optional.init(paths,port);assert(optional.requestVerification(id)["verifyRequested"]==true);
+  rejects([&]{optional.skipVerification(std::string(32,'b'));});
+  assert(optional.skipVerification(id)["skipRequested"]==true);
+  seed(unverified);Compressor unverifiedDeletion;unverifiedDeletion.init(paths,port);
+  assert(unverifiedDeletion.requestGameDeletion(id)["deleteGameRequested"]==true);
   server.stop();thread.join();fs::remove_all(root);curl_global_cleanup();
 }

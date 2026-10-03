@@ -25,6 +25,9 @@ class RtorrentFixture(socketserver.ThreadingTCPServer):
             result = self.hook(method, params)
             if result is not NotImplemented:
                 return result
+        if method == 'pieces.hash.on_completion.set':
+            assert params == ['', 0]
+            return 0
         if method == 'system.client_version':
             return '0.16.24'
         if method == 'session.save':

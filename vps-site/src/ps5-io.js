@@ -130,7 +130,7 @@ export class PS5IO {
     throw Error('Temporary websrv has not stopped. Restart the PS5.');
   }
   async connect(port) {
-    if (![2121, 8080, 8088, 9091, 9021, 5001, 5910].includes(port)) throw Error('Unsupported local port.');
+    if (![2121, 8080, 8088, 9091, 9021, 5001, 5910, 9999].includes(port)) throw Error('Unsupported local port.');
     const fd = await this.call('socket', 2, 1, 0);
     if (fd < 0) throw Error('Cannot create local socket.');
     try {

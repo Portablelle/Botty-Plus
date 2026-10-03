@@ -12,16 +12,15 @@ Botty creates exFAT-in-FFPFSC without deleting the original. Downloads remain
 available; extraction and conflicting file operations wait for compression.
 Space for both copies plus a 1 GiB reserve is required.
 
-When prompted, close Botty+ and any game. The service continues running and asks
-ShadowMount to select the compressed image. It reads every mounted file and
-compares its exact name, length and bytes with the original. Library reports
-ready only after that verification succeeds. Open Botty+ again to check progress.
+When prompted, close Botty+ and any game. The service selects and mounts the
+compressed image, checks file names/sizes, then makes it ready with **Not verified**.
+It does not automatically read all decompressed bytes. The original is retained.
 
-Test the compressed game. **Delete uncompressed copy** is a separate confirmed
-action: close Botty+ again, then Botty revalidates every mounted file before
-removing only its tracked original backup. Compressed content, saves and download
-archives remain intact. **Restore uncompressed game** selects a retained original
-again and keeps the compressed image for inspection.
+The service web UI offers **Verify compressed copy** to compare every byte later,
+and **Skip verification** to stop at a read boundary and keep **Not verified**.
+The original must still exist. An explicit **Delete uncompressed copy** action
+removes the backup without a new full comparison; test the game first. Restore
+selects the original again and keeps the compressed image.
 
 Only tracked PS5 folders are supported. Existing images, Botty's own title,
 links/special files and APR games without an existing nonempty `ampr_emu.index` are refused. Existing indexes are preserved and verified with the game files. LEGO

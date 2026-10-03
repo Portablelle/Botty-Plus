@@ -24,17 +24,18 @@ inline std::map<std::string,uint64_t> compressionFiles(const fs::path& root) {
   if(out.empty())throw std::runtime_error("Empty game folder");
   return out;
 }
-inline void compareCompression(const fs::path& original,const fs::path& mounted,const std::function<void(uint64_t,uint64_t)>& progress={}) {
+inline bool compareCompression(const fs::path& original,const fs::path& mounted,const std::function<void(uint64_t,uint64_t)>& progress={},const std::function<bool()>& skip={}) {
   const auto files=compressionFiles(original);if(files!=compressionFiles(mounted))throw std::runtime_error("Compressed file names or sizes differ from original");
   uint64_t total=0,done=0;for(const auto& e:files){if(e.second>UINT64_MAX-total)throw std::runtime_error("Source too large");total+=e.second;}
   for(const auto& e:files){
     std::ifstream a(containedExisting(original,original/e.first),std::ios::binary),b(containedExisting(mounted,mounted/e.first),std::ios::binary);
     if(!a||!b)throw std::runtime_error("Cannot read game for verification");
     std::vector<char> x(65536),y(65536);uint64_t bytes=0;
-    do {a.read(x.data(),x.size());b.read(y.data(),y.size());auto n=a.gcount();if(n!=b.gcount()||memcmp(x.data(),y.data(),size_t(n)))throw std::runtime_error("Compressed content differs from original");bytes+=uint64_t(n);done+=uint64_t(n);if(progress)progress(done,total);}while(a.gcount());
+    do {if(skip&&skip())return false;a.read(x.data(),x.size());b.read(y.data(),y.size());auto n=a.gcount();if(n!=b.gcount()||memcmp(x.data(),y.data(),size_t(n)))throw std::runtime_error("Compressed content differs from original");bytes+=uint64_t(n);done+=uint64_t(n);if(progress)progress(done,total);}while(a.gcount());
     if(a.bad()||b.bad()||bytes!=e.second)throw std::runtime_error("Game changed or could not be read during verification");
   }
   if(files!=compressionFiles(original)||files!=compressionFiles(mounted))throw std::runtime_error("Game changed during verification");
+  return true;
 }
 class CompressionLibrary {
   Paths paths_,source_;fs::path shadow_,apps_,runtime_;int port_;
@@ -79,14 +80,32 @@ public:
     }
     if(!found)throw std::runtime_error("Compressed source scan not confirmed; original backup is kept");
     api("games/mount",{{"title_id",title},{"mode","ro"}});
-    rec["status"]="verifying";save();
-    compareCompression(original,runtime_/title,progress);
-    api("games/unmount",{{"title_id",title}});
-    rec["status"]="ready";rec["phase"]="Compressed game ready. Test the game before deleting the original.";rec["originalKept"]=true;rec["verified"]=true;rec["error"]="";save();
-    // Notify only after verification, runtime release and the durable ready checkpoint.
-    // A failed notification must not turn a successfully verified copy into recovery.
-    try {notify("Botty+: Verification complete ("+title+"). You can reopen Botty+. Original kept.");}catch(...) {}
+    finishMounted(rec,save,progress,false,{},notify);
   }
+  void finishMounted(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress,bool verify,const std::function<bool()>& skip={},const std::function<void(const std::string&)>& notify=notifySystem) {
+    const auto title=rec.at("titleId").get<std::string>();
+    const fs::path original=rec.at("originalPath").get<std::string>();
+    // Keep the inexpensive mounted-file inventory check even when byte comparison is skipped.
+    if(compressionFiles(original)!=compressionFiles(runtime_/title))throw std::runtime_error("Compressed file names or sizes differ from original");
+    bool verified=false;
+    if(verify){rec["status"]="verifying";rec["phase"]="Verifying compressed game";save();verified=compareCompression(original,runtime_/title,progress,skip);}
+    api("games/unmount",{{"title_id",title}});
+    rec["status"]="ready";rec["phase"]=verified?"Compressed game verified. Original kept.":"Compressed game ready - Not verified. Original kept.";
+    rec["originalKept"]=true;rec["verified"]=verified;rec["verificationSkipped"]=!verified;rec["verifyRequested"]=false;rec["error"]="";save();
+    try {notify(std::string(verified?"Botty+: Verification complete (":"Botty+: Compressed game ready - Not verified (")+title+"). You can reopen Botty+. Original kept.");}catch(...) {}
+  }
+  void verifyRetained(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress,const std::function<bool()>& skip) {
+    const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
+    const fs::path original=rec.at("originalPath").get<std::string>(),image=rec.at("output").get<std::string>();
+    if(!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||!std::regex_match(id,std::regex("[a-f0-9]{32}"))||
+       original!=source_.root/"compressor/originals"/id||image!=paths_.root/"compressor/output"/(title+".ffpfsc"))throw std::runtime_error("Invalid verification paths");
+    containedExisting(source_.root,original);containedExisting(paths_.root,image);
+    const auto info=api("games/info",{{"title_id",title}});
+    if(info.value("path","")!=image.string()||!info.value("image_backed",false))throw std::runtime_error("Compressed source changed");
+    api("games/mount",{{"title_id",title},{"mode","ro"}});
+    finishMounted(rec,save,progress,true,skip);
+  }
+
   void restore(json& rec,const std::function<void()>& save) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
     const fs::path original=rec.at("originalPath").get<std::string>(),source=rec.at("source").get<std::string>();
@@ -105,7 +124,7 @@ public:
   }
   void removeGame(json& rec,const std::function<void()>& save,const DeleteProgress& deletionProgress={}) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
-    if(rec.value("status","")!="ready"||!rec.value("verified",false)||!std::regex_match(id,std::regex("[a-f0-9]{32}"))||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("No verified compressed game available for deletion");
+    if(rec.value("status","")!="ready"||!std::regex_match(id,std::regex("[a-f0-9]{32}"))||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("No ready compressed game available for deletion");
     const fs::path image=rec.at("output").get<std::string>(),original=source_.root/"compressor/originals"/id;
     if(image!=paths_.root/"compressor/output"/(title+".ffpfsc")||!fs::is_regular_file(containedExisting(image.parent_path(),image)))throw std::runtime_error("Invalid compressed image path");
     const auto hashes=fs::path(image.string()+".vhash");

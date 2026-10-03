@@ -57,3 +57,7 @@ both pinned upstream archives plus the port/build sources. Upstream license
 notices are preserved in those archives. rTorrent is GPL-2.0-or-later; this port's
 integration sources are distributed under the same terms. SDK and dependency
 sources and versions are pinned in the Dockerfile; their own licenses apply.
+
+The botty3 config disables the extra full rehash on download completion. Normal
+piece checks and explicit manual verification remain enabled. Botty service 1.3.6
+also applies this setting to an already-running daemon via local RPC.

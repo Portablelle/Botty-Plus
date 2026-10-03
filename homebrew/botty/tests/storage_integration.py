@@ -8,7 +8,7 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
  base=pathlib.Path(tmp);root=base/'internal';usb=base/'usb';usb.mkdir();complete=root/'downloads/complete';complete.mkdir(parents=True)
  (root/'jobs').mkdir();(root/'compressor/output').mkdir(parents=True)
  compressed_id='c'*32;image=root/'compressor/output/PPSA12347.ffpfsc';image.write_bytes(b'compressed fixture');pathlib.Path(str(image)+'.vhash').write_bytes(b'hash fixture')
- rec=dict(jobId=compressed_id,status='ready',verified=True,originalKept=False,titleId='PPSA12347',output=str(image),source=str(root/'test-library/PPSA12347-app'))
+ rec=dict(jobId=compressed_id,status='ready',verified=False,originalKept=False,titleId='PPSA12347',output=str(image),source=str(root/'test-library/PPSA12347-app'))
  (root/'compressor/state.json').write_text(json.dumps(rec));(root/'compressor/games.json').write_text(json.dumps({compressed_id:rec}));(root/'compressor/enabled.json').write_text('{"mode":"library-1.2"}')
  (root/'jobs'/ (compressed_id+'.json')).write_text(json.dumps(dict(id=compressed_id,name='Compressed fixture',status='moved',destination=rec['source'],content=dict(kind='folder',titleId='PPSA12347',destination='PPSA12347-app'))))
  image_id='d'*32;published=root/'test-library/demo.exfat';published.parent.mkdir();published.write_bytes(b'image fixture')

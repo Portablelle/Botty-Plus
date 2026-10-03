@@ -34,6 +34,7 @@ class ReleaseTests(unittest.TestCase):
             self.write('payloads/' + name)
         self.write('offsets/13.00.js')
         for package, installer, constant in (
+            ('cheatrunner', 'cheatrunner.js', 'HASH'),
             ('botty', 'botty-manager.js', 'HASH'),
             ('rtorrent', 'rtorrent.js', 'HASH'),
             ('botty-native', 'botty-native.js', 'HASH'),
@@ -88,6 +89,12 @@ class ReleaseTests(unittest.TestCase):
         self.write('apps/botty/runtime.bin', b'corrupt')
         self.refresh()
         with self.assertRaisesRegex(ValueError, 'content mismatch'):
+            portal.verify(self.root)
+
+    def test_corrupt_cheatrunner_rejected_even_with_refreshed_portal_hash(self):
+        self.write('apps/cheatrunner/runtime.bin', b'corrupt')
+        self.refresh()
+        with self.assertRaisesRegex(ValueError, 'content mismatch: cheatrunner'):
             portal.verify(self.root)
 
     def test_changed_manifest_pin_rejected(self):

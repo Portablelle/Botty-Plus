@@ -1,3 +1,4 @@
+import { CheatRunnerIO, installAndStartCheatRunner, cheatRunnerStatus } from './cheatrunner.js';
 import { PS5IO, sleep } from './ps5-io.js';
 import { NativeIO, installNative } from './botty-native.js';
 import { sendPayload } from './payload-sender.js';
@@ -30,5 +31,12 @@ export async function launchSession(options) {
   report('Preparing Botty…');
   const manager = await (options.manager || installAndStartManager)(io, { report });
   report(manager?.updatePending ? 'Services ready. Service update applies next console session; active work is preserved.' : 'Services ready. Waiting for home screen discovery.');
-  return {native, manager};
+  let cheatrunner;
+  try {
+    cheatrunner = await (options.cheatrunner || installAndStartCheatRunner)(options.cheatRunnerIO || new CheatRunnerIO(runtime), { report, wait });
+  } catch (error) {
+    cheatrunner = { ready: false, reason: 'CheatRunner setup: ' + (error.message || String(error)) };
+  }
+  report(cheatRunnerStatus(cheatrunner));
+  return {native, manager, cheatrunner};
 }

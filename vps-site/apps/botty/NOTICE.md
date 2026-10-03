@@ -152,12 +152,12 @@ To resume an interrupted extraction, select the same torrent and first RAR volum
 
 ### Delete a Library game
 
-The authenticated `POST /api/delete-library-game` endpoint requires a tracked job ID and `confirmed: true`. It removes only a previously moved PPSA game folder inside the configured Library and then removes its job record. Torrent data and original archives are preserved. Missing or partially deleted game folders can be retried. Links, special files, mounted game paths, inconsistent destinations, and Botty's own title are refused. Close and unmount the game and remove its home-screen entry before deletion. Other image-based games still require manual unmounting and removal; verified images created by Botty compression use the queued deletion workflow below.
+The authenticated `POST /api/delete-library-game` endpoint requires a tracked job ID and `confirmed: true`. It removes only a previously moved PPSA game folder inside the configured Library and then removes its job record. Torrent data and original archives are preserved. Missing or partially deleted game folders can be retried. Links, special files, mounted game paths, inconsistent destinations, and Botty's own title are refused. Close and unmount the game and remove its home-screen entry before deletion. Other image-based games still require manual unmounting and removal; ready images created by Botty compression use the queued deletion workflow below.
 
 ## Library compression (1.2)
 
 Library → Options → **Compress game** creates a separate compressed PS5 folder
-game. Close Botty+ when prompted so ShadowMount can mount and verify every file.
+game. Close Botty+ when prompted so ShadowMount can mount and check file names and sizes. Full content comparison is optional.
 Test the game before selecting **Delete uncompressed copy**. That action deletes the original without another file comparison, regardless of
 the compression verification flag. It retains saves, compressed content and
 download archives. A retained backup, the selected compressed image and a closed
@@ -198,10 +198,10 @@ no absent mount directory is created as a fallback. Reconnect the original disk
 at the same USB mount path for existing rTorrent/ShadowMount registrations.
 
 **Transfer to another disk** supports torrent data (including partial downloads),
-ready extractions, published folders/images and verified compressed images with
+ready extractions, published folders/images and ready compressed images with
 their verification sidecars. Copying is asynchronous, refuses existing targets,
-reserves 512 MiB, flushes output and compares every byte. Source cleanup follows
-verified publication and metadata updates. Transferred torrents remain paused;
+reserves 512 MiB, flushes output and checks the file inventory and sizes without rereading content. Source cleanup follows
+successful publication and metadata updates. Transferred torrents remain paused;
 use Verify/Resume explicitly. A compressed game's retained original backup stays
 on its original disk and remains available through the existing restore/delete
 workflow. Compression requires the `library-1.3` worker for external paths and
@@ -241,3 +241,19 @@ a delivery failure does not invalidate a verified copy.
 ## Provider-neutral search (1.3.5)
 
 Search and Explore use all enabled Prowlarr torrent indexers in the Console category tree. Botty merges duplicate releases and sorts the returned subset locally by seeders, grabs or date. Missing grabs count as zero. No tracker-specific indexer IDs or ranking profiles are required. See `deployment/README.md` for proxy setup and cache behavior.
+
+## Optional content checks (service 1.3.6)
+
+Automatic rTorrent completion rehash is disabled in config and applied over local
+RPC to a running daemon when this service first uses it. Normal piece validation
+and manual Verify remain. Cross-disk copying keeps bounded paths, complete
+writes, fsync and inventory/size checks, but omits the second full content read.
+Compression activation checks the mounted inventory and marks the copy ready
+with `verified: false` and `verificationSkipped: true`; original files remain.
+
+POST `/api/verify-compressed` with a tracked `id` requests optional full comparison
+using the retained original. POST `/api/skip-verification` with that same `id`
+requests a cooperative stop at the next read boundary. Both use the normal API
+authentication. A skip never sets `verified: true`. Old running service versions
+cannot acquire this stop mechanism without an update; do not kill an old active
+verification or edit its JSON to simulate completion.

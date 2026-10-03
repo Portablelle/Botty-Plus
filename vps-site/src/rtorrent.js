@@ -2,9 +2,9 @@ import { sha256, shortPassword } from './transmission.js';
 import { sleep, MAX_ELF_BYTES } from './ps5-io.js';
 export const ROOT='/data/botty/rtorrent';
 export const STATE=ROOT+'/state';
-const VERSION='0.16.24-botty2';
+const VERSION='0.16.24-botty3';
 const BASE='./apps/rtorrent/';
-const HASH='bb17571ab1eb1b48a55e0a1eece03b918100f0dc4d4627a0958b7015c0d7db5e';
+const HASH='c1aec1e97443217e8a104c201078d37e7371a97e9848d49c99b559a7d83ab3f4';
 const enc=new TextEncoder(),dec=new TextDecoder();
 export async function installAndStart(io,options={}) {
   const report=options.report||(()=>{}),wait=options.wait||sleep,fetchFile=options.fetchFile||fetch,digest=options.digest||sha256;

@@ -50,9 +50,9 @@ void runTests(bool external){
  auto save=[&]{phases.push_back(rec.at("status"));writeJson(root/"journal.json",rec);};
  unsigned notifications=0;
  auto notify=[&](const std::string& message){
-  ++notifications;assert(!mount);assert(rec["status"]=="ready"&&rec["verified"]==true);
+  ++notifications;assert(!mount);assert(rec["status"]=="ready"&&rec["verified"]==false);
   assert(json::parse(readText(root/"journal.json"))["status"]=="ready");
-  assert(message.find("Verification complete (PPSA12345)")!=std::string::npos);
+  assert(message.find("Compressed game ready - Not verified (PPSA12345)")!=std::string::npos);
   assert(message.find("You can reopen Botty+")!=std::string::npos);
  };
  // A mismatch must never announce success; recover the preserved original for retry.
@@ -60,7 +60,16 @@ void runTests(bool external){
  rejects([&]{library.activate(rec,save,{},notify);});assert(notifications==0);
  library.restore(rec,save);
  fs::copy_file(source/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
- library.activate(rec,save,{},notify);assert(notifications==1);assert(rec["status"]=="ready"&&rec["verified"]==true&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
+ library.activate(rec,save,{},notify);assert(notifications==1);assert(rec["status"]=="ready"&&rec["verified"]==false&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
+ // Optional verification can be skipped at a chunk boundary, without a false verified flag.
+ library.verifyRetained(rec,save,{},[]{return true;});assert(!rec["verified"].get<bool>()&&!mount&&fs::exists(original));
+ library.verifyRetained(rec,save,{},[]{return false;});assert(rec["verified"].get<bool>()&&!mount&&fs::exists(original));
+ // Same-size corruption is accepted by the default structural-only activation,
+ // but remains detectable by an explicit full comparison.
+ library.restore(rec,save);std::ofstream(mounted/"eboot.bin")<<"EXACT original contents";
+ library.activate(rec,save,{});assert(!rec["verified"].get<bool>());
+ rejects([&]{library.verifyRetained(rec,save,{},[]{return false;});});
+ library.api("games/unmount",{{"title_id","PPSA12345"}});
  busy=true;rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));busy=false;
  fs::copy_file(original/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
  library.restore(rec,save);assert(fs::exists(source)&&!fs::exists(original)&&fs::exists(image));assert(rec["status"]=="restored");
