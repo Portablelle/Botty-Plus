@@ -257,3 +257,29 @@ requests a cooperative stop at the next read boundary. Both use the normal API
 authentication. A skip never sets `verified: true`. Old running service versions
 cannot acquire this stop mechanism without an update; do not kill an old active
 verification or edit its JSON to simulate completion.
+
+## Background Library operations (1.4.0)
+
+Moves and deletions now expose live tasks through `/api/processing`. Folder
+Library deletion returns HTTP 202 immediately and releases the catalog lock
+while its worker runs. Completed, failed and interrupted operations remain
+visible; a lost response never causes an automatic destructive retry.
+
+With ShadowMount `botty_background_storage_v1`, tracked folder/image moves and
+compressed-image deletions use its guarded worker while Botty+ remains open.
+The service checks returned job identity, expected source, destination and final
+file presence before publishing completion. Deleting a retained original checks
+that the compressed source is selected and that the original folder is unmounted;
+it does not require unmounting the distinct compressed image.
+
+Older ShadowMount builds keep the legacy workflow; transfer waits are bounded
+and completion notifications indicate when to reopen Botty. Compression
+activation/restoration/verification and new-title registration still use the
+existing scanner/mount restrictions. This change does not claim those can run
+inside Botty. UI progress distinguishes bytes from item counts and hides speed
+estimates during preparation/finalization. Transfer integrity remains structural,
+not a full content hash verification.
+
+Host tests cover responsiveness during deletion, source preservation, remote
+rejection/failure, lost status, and no replay across service restart. Console
+acceptance of these changes remains pending for release 1.4.0.

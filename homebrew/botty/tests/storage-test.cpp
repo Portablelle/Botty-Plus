@@ -8,8 +8,10 @@ int main(){
  auto root=fs::temp_directory_path()/("botty-storage-"+randomId());fs::create_directories(root/"internal");fs::create_directories(root/"usb");
  Paths paths(root/"internal",root/"internal/library");Storage storage;storage.init(paths,{root/"usb"});auto list=storage.list();assert(list.size()==2);auto id=list[1].at("id").get<std::string>();const auto external=storage.get(id);assert(external.jobs==paths.jobs&&external.library==root/"usb/homebrew");
  fs::create_directories(root/"source/nested");std::ofstream(root/"source/nested/data")<<"verified data";fs::create_directory(root/"target");
- copyChecked(root/"source",root/"target/copy");assert(readText(root/"target/copy/nested/data")=="verified data");assert(fs::exists(root/"source/nested/data"));
- rejects([&]{copyChecked(root/"source",root/"target/copy");});
+ uint64_t last=0,total=0;unsigned reports=0;
+ copyChecked(root/"source",root/"target/copy",{},[&](uint64_t done,uint64_t size,const std::string&){assert(done>=last&&done<=size);last=done;total=size;++reports;});assert(reports>=2&&last==total&&total==13);assert(readText(root/"target/copy/nested/data")=="verified data");assert(fs::exists(root/"source/nested/data"));
+ rejects([&]{uint64_t last=0,total=0;unsigned reports=0;
+ copyChecked(root/"source",root/"target/copy",{},[&](uint64_t done,uint64_t size,const std::string&){assert(done>=last&&done<=size);last=done;total=size;++reports;});assert(reports>=2&&last==total&&total==13);});
  std::ofstream(root/"too-large")<<"";fs::resize_file(root/"too-large",freeBytes(root)+1073741824ULL);rejects([&]{copyChecked(root/"too-large",root/"target/too-large");});assert(!fs::exists(root/"target/too-large"));fs::remove(root/"too-large");
  fs::create_symlink(root/"source/nested/data",root/"source/link");rejects([&]{copyChecked(root/"source",root/"target/unsafe");});fs::remove(root/"source/link");
  int checks=0;rejects([&]{copyChecked(root/"source",root/"target/interrupted",[&]{if(++checks==3)throw std::runtime_error("Disconnected");});});assert(fs::exists(root/"source/nested/data")&&!fs::exists(root/"target/interrupted"));

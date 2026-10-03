@@ -10,8 +10,8 @@
     },
     {
       "file": "shadowmountplus.elf",
-      "version": "1.7beta4-botty.1",
-      "digest": "sha256:cc4d1c4efb3d2124cfbea2ab8a270a081effd0698bb3cdd3fc1a3e4cd8b59f86",
+      "version": "1.7beta4-botty.2",
+      "digest": "sha256:41d0b1526065edec53f9f6f25f53c76d9a38990bfc21ff3a92f8511a550bd9f2",
       "upstream_version": "1.7beta4",
       "upstream_digest": "sha256:fc4e5f715e76660ce34bde2adb10eaf1d069cb2cdf06f7a380896dfb62bd0c4a",
       "upstream_url": "https://github.com/drakmor/ShadowMountPlus/releases/download/1.7beta4/shadowmountplus.elf",

@@ -313,3 +313,16 @@ service search returned 97 games and 129 sources from IPTorrents configurations
 and TorrentLeech; 28 games offered multiple sources, and grabs order was checked.
 No real download was added as part of this live acceptance check; selected-source
 download and extraction were validated with isolated homebrew fixtures.
+
+## Background move/delete UX (release 1.4.0)
+
+Move and Library-delete requests lead to Processing, with asynchronous acceptance
+messages instead of claiming completion. The controller remains available after
+acceptance; tasks show progress and retain failures. Confirmation text wraps to
+two lines and no longer promises a full byte comparison or an unconditional
+Botty restart. Task details do not label transfer/deletion bytes as extracted.
+
+Host model, renderer preview and real-service action integration checks cover
+these changes. The ShadowMount background capability must be deployed separately;
+compression activation/restoration and new-title registration still have their
+existing session requirements. No console acceptance is claimed here.

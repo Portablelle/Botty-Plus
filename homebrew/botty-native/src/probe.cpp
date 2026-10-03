@@ -187,14 +187,15 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::verify:message("Verification requested. Extraction waits until verification finishes.");break;
     case Operation::add:message("Torrent added or already present.");break;
     case Operation::extract:message("Extraction started. Open Processing to follow its progress.");break;
+    case Operation::transfer:message("Move requested. Follow progress in Processing.");break;
     case Operation::compress:message("Creating a separate compressed copy. Original game is kept.");break;
-    case Operation::removeOriginal:message("Deletion queued. Close Botty+ and games to remove the original.");break;
+    case Operation::removeOriginal:message("Deletion requested. Follow progress in Processing.");break;
     case Operation::restoreOriginal:message("Restore queued. Close Botty+ and games to switch back to the original.");break;
     case Operation::cancelCompression:message("Compression cancellation requested. Wait for the worker to finish.");break;
-    case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
+    case Operation::move:message("Library preparation requested. Follow progress in Processing.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
     case Operation::dismiss:message("Removed from Processing. Partial files from unsuccessful jobs were deleted.");break;
-    case Operation::removeLibrary:message(response.status==202?"Deletion queued. Close Botty+ and games to delete the compressed game. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
+    case Operation::removeLibrary:message(response.status==202?"Deletion requested. Follow progress in Processing. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
     case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
     default:break;

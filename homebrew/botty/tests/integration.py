@@ -2,6 +2,7 @@
 """Exercise the real native HTTP service + UnRAR with a local rTorrent SCGI fixture."""
 import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error,threading,concurrent.futures
 from rtorrent_fixture import RtorrentFixture
+from shadow_fixture import ShadowFixture
 from make_fixtures import build, single
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PASS='B7mQ2x'
@@ -37,6 +38,7 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
                 for suffix in ['', '.part']:assert not (complete/(file['name']+suffix)).exists()
         return NotImplemented
     rpc=RtorrentFixture(entries,rpc_hook)
+    shadow=ShadowFixture(online=False)
     port=free_port();origin=f'http://127.0.0.1:{port}';process=None;token=''
     def request(path,body=None,headers=None,expected=200,auth=True):
         h={'Content-Type':'application/json'}
@@ -49,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         return json.loads(data) if 'application/json' in r.headers.get('Content-Type','') else data.decode()
     def start():
         global process,token
-        process=subprocess.Popen([str(ROOT/'build/botty-native'),'--root',str(root),'--ui',str(ROOT/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        process=subprocess.Popen([str(ROOT/'build/botty-native'),'--root',str(root),'--ui',str(ROOT/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port),'--shadow-port',str(shadow.port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         for _ in range(100):
             if process.poll() is not None:raise RuntimeError(process.stderr.read().decode())
             try:
@@ -215,7 +217,10 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         request('/api/delete-library-game',{'id':job['id'],'confirmed':True},auth=False,expected=403)
         request('/api/delete-library-game',{'id':job['id']},expected=400)
         assert (root/'test-library/PPSA12345-app/eboot.bin').exists()
-        request('/api/delete-library-game',{'id':job['id'],'confirmed':True})
+        request('/api/delete-library-game',{'id':job['id'],'confirmed':True},expected=202)
+        for _ in range(100):
+            if request('/api/processing')['tasks'][0]['status']=='completed':break
+            time.sleep(.05)
         task_state=request('/api/processing')['tasks'][0]
         assert task_state['status']=='completed' and task_state['bytes']==task_state['total'] and task_state['total']>0
         request('/api/processing',auth=False,expected=403)
@@ -226,4 +231,4 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         print('HTTP integration passed: local access controls, rTorrent SCGI framing and RPC, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
     finally:
         if process and process.poll() is None:stop()
-        rpc.shutdown();rpc.server_close()
+        rpc.shutdown();rpc.server_close();shadow.close()

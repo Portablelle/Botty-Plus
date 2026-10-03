@@ -1,0 +1,453 @@
+--- a/src/sm_shellcore_service.c
++++ b/src/sm_shellcore_service.c
+@@ -8,6 +8,7 @@
+ #include "sm_filesystem.h"
+ #include "sm_fakelib.h"
+ #include "sm_game_lifecycle.h"
++#include "sm_botty_storage_policy.h"
+ #include "sm_gameinfo.h"
+ #include "sm_image.h"
+ #include "sm_limits.h"
+@@ -483,6 +484,11 @@
+ 
+ static int handle_launch_request(const char *title_id) {
+   pthread_mutex_lock(&g_service.mutex);
++  // Also block unmanaged launches while the storage worker owns the gate.
++  if (g_service.external_mutation_in_progress) {
++    pthread_mutex_unlock(&g_service.mutex);
++    return EBUSY;
++  }
+   g_service.pending_launch_title_id[0] = '\0';
+   g_service.pending_sandbox_ready_handled = false;
+   if (is_supported_game_title_id(title_id)) {
+@@ -778,6 +784,36 @@
+                   g_service.outgoing.title_id[0] != '\0';
+   pthread_mutex_unlock(&g_service.mutex);
+   return prepared;
++}
++
++static bool storage_title_allowed_locked(const char *title_id) {
++  return !runtime_sleep_mode_active() && !g_service.stop_requested &&
++    sm_botty_storage_allowed(title_id, g_service.prepared.title_id,
++      sm_game_lifecycle_storage_pid(), g_service.prepared.pid,
++      g_service.prepared.app_id != 0 && g_service.prepared.sandbox_ready_handled &&
++        !g_service.prepared.game_exited,
++      g_service.prepare_in_progress || g_service.launch_pending ||
++        (g_service.pending_launch_title_id[0] != '\0' && !g_service.pending_sandbox_ready_handled) ||
++        g_service.releasing_title_id[0] != '\0',
++      g_service.outgoing.title_id[0] != '\0',
++      find_mount_owner_locked(title_id) != NULL);
++}
++
++bool sm_shellcore_storage_title_allowed(const char *title_id) {
++  pthread_mutex_lock(&g_service.mutex);
++  bool allowed = g_service.external_mutation_in_progress &&
++                 storage_title_allowed_locked(title_id);
++  pthread_mutex_unlock(&g_service.mutex);
++  return allowed;
++}
++
++bool sm_shellcore_try_begin_storage_mutation(const char *title_id) {
++  pthread_mutex_lock(&g_service.mutex);
++  bool allowed = !g_service.external_mutation_in_progress &&
++                 storage_title_allowed_locked(title_id);
++  if (allowed) g_service.external_mutation_in_progress = true;
++  pthread_mutex_unlock(&g_service.mutex);
++  return allowed;
+ }
+ 
+ bool sm_shellcore_try_begin_external_mutation(void) {
+--- a/src/sm_api_service.c
++++ b/src/sm_api_service.c
+@@ -1,3 +1,4 @@
++#include "sm_botty_rebase.h"
+ #include "sm_platform.h"
+ 
+ #include <arpa/inet.h>
+@@ -621,6 +622,7 @@
+       !append_json_string(capabilities, "delete_game_source") ||
+       !append_json_string(capabilities, "unpack_game_image") ||
+       !append_json_string(capabilities, "storage_job_status") ||
++      !append_json_string(capabilities, "botty_background_storage_v1") ||
+       !append_json_string(capabilities, "storage_job_cancel") ||
+       !append_json_string(capabilities, "list_manual_sources") ||
+       !append_json_string(capabilities, "add_manual_source") ||
+@@ -2265,6 +2267,16 @@
+       !usb_storage_root_mounted(destination)) {
+     return false;
+   }
++  // Botty's compressed outputs are explicit manual sources, not scan roots.
++  if (strcmp(destination, "/data/botty/compressor/output") == 0) return true;
++  for (int slot = 0; slot < 10; ++slot) {
++    char root[32], output[MAX_PATH];
++    snprintf(root, sizeof(root), slot < 8 ? "/mnt/usb%d" : "/mnt/ext%d", slot < 8 ? slot : slot - 8);
++    snprintf(output, sizeof(output), "%s/botty/compressor/output", root);
++    struct statfs volume;
++    if (strcmp(destination, output) == 0 && statfs(root, &volume) == 0 &&
++        strcmp(volume.f_mntonname, root) == 0 && !(volume.f_flags & MNT_RDONLY)) return true;
++  }
+   for (int i = 0; i < get_scan_path_count(); ++i) {
+     char scan_path[MAX_PATH];
+     if (!get_scan_path(i, scan_path))
+@@ -2349,9 +2361,8 @@
+                                           const char *title_id,
+                                           size_t *affected_out) {
+   *affected_out = 0;
+-  if (runtime_sleep_mode_active() || sm_game_lifecycle_has_active_game() ||
+-      sm_install_has_pending_work() ||
+-      sm_shellcore_service_has_prepared_mount()) {
++  if (runtime_sleep_mode_active() || sm_install_has_pending_work() ||
++      !sm_shellcore_storage_title_allowed(title_id)) {
+     return EBUSY;
+   }
+ 
+@@ -2361,6 +2372,36 @@
+     return ENOMEM;
+ 
+   int status = 0;
++  if (sm_game_lifecycle_storage_pid() > 0) {
++    char manager[MAX_PATH];
++    if (!read_mount_link("PPSA99071", manager, sizeof(manager)) ||
++        path_matches_root_or_child(manager, physical_path) ||
++        path_matches_root_or_child(physical_path, manager)) { free(snapshot); return EBUSY; }
++    char manager_chain[MAX_IMAGE_CHAIN_DEPTH][MAX_PATH];size_t manager_count = 0;
++    // Botty must be a plain folder; image-backed manager sessions stay blocked.
++    if (read_mount_image_chain("PPSA99071", manager_chain, &manager_count)) { free(snapshot); return EBUSY; }
++  }
++  char target_chain[MAX_IMAGE_CHAIN_DEPTH][MAX_PATH];
++  size_t target_count = 0;
++  (void)read_mount_image_chain(title_id, target_chain, &target_count);
++  for (size_t i = 0; i < count; ++i) {
++    game_source_info_t info;
++    if (!resolve_game_source(&snapshot[i], &info)) { free(snapshot); return EIO; }
++    if (strcmp(snapshot[i].title_id, title_id) == 0) {
++      if (strcmp(info.physical_path, physical_path) != 0) { free(snapshot); return EBUSY; }
++      continue;
++    }
++    // Reject shared sources, nested folders, and shared backing image layers.
++    if (path_matches_root_or_child(info.physical_path, physical_path) ||
++        path_matches_root_or_child(physical_path, info.physical_path)) {
++      free(snapshot); return EBUSY;
++    }
++    char chain[MAX_IMAGE_CHAIN_DEPTH][MAX_PATH]; size_t layers = 0;
++    if (read_mount_image_chain(snapshot[i].title_id, chain, &layers))
++      for (size_t a = 0; a < layers; ++a)
++        for (size_t b = 0; b < target_count; ++b)
++          if (strcmp(chain[a], target_chain[b]) == 0) { free(snapshot); return EBUSY; }
++  }
+   runtime_mount_state_lock();
+   for (size_t i = 0; i < count; ++i) {
+     game_source_info_t info;
+@@ -2395,34 +2436,51 @@
+       }
+     }
+   }
++  struct statfs *mounts = NULL;
++  int mount_count = getmntinfo(&mounts, MNT_NOWAIT);
++  if (mount_count <= 0) status = EIO;
++  for (int i = 0; i < mount_count; ++i)
++    if (path_matches_root_or_child(mounts[i].f_mntonname, physical_path) ||
++        path_matches_root_or_child(mounts[i].f_mntfromname, physical_path)) status = EBUSY;
+   runtime_mount_state_unlock();
+-  return 0;
+-}
+-
+-static void update_moved_source_links(const char *source,
++  return status;
++}
++
++static bool update_moved_source_links(const char *source,
+                                       const char *destination) {
+   sm_game_cache_snapshot_entry_t *snapshot = NULL;
+   size_t count = 0;
+   if (!sm_game_cache_snapshot(&snapshot, &count))
+-    return;
+-
++    return false;
++
++  bool ok = true;
+   for (size_t i = 0; i < count; ++i) {
+     char image_chain[MAX_IMAGE_CHAIN_DEPTH][MAX_PATH];
+     size_t image_count = 0;
+     if (read_mount_image_chain(snapshot[i].title_id, image_chain,
+                                &image_count)) {
+       bool changed = false;
++      char original_chain[MAX_IMAGE_CHAIN_DEPTH][MAX_PATH];
++      memcpy(original_chain, image_chain, sizeof(original_chain));
++      char runtime[MAX_PATH];
++      if (!read_mount_link(snapshot[i].title_id, runtime, sizeof(runtime))) { ok = false; continue; }
+       for (size_t layer = 0; layer < image_count; ++layer) {
+-        if (strcmp(image_chain[layer], source) == 0) {
+-          (void)strlcpy(image_chain[layer], destination,
+-                        sizeof(image_chain[layer]));
++        if (strcmp(image_chain[layer], source) == 0)
++          (void)strlcpy(image_chain[layer], destination, sizeof(image_chain[layer]));
++        if (strcmp(original_chain[layer], image_chain[layer]) != 0) {
++          char old_mount[MAX_PATH], new_mount[MAX_PATH];
++          get_image_mount_point_for_source(original_chain[layer], old_mount);
++          get_image_mount_point_for_source(image_chain[layer], new_mount);
++          if (!sm_botty_rebase(runtime, old_mount, new_mount)) ok = false;
++          for (size_t child = layer + 1; child < image_count; ++child)
++            if (!sm_botty_rebase(image_chain[child], old_mount, new_mount)) ok = false;
+           changed = true;
+         }
+       }
+-      if (changed && !write_mount_image_chain(snapshot[i].title_id,
+-                                               image_chain, image_count)) {
+-        log_debug("  [API] failed to update moved image link: title=%s",
+-                  snapshot[i].title_id);
++      if (changed) {
++        if (!ok || !write_mount_image_chain(snapshot[i].title_id, image_chain, image_count) ||
++            !write_mount_link(snapshot[i].title_id, runtime)) ok = false;
++        else cache_game_entry(runtime, snapshot[i].title_id, snapshot[i].title_name);
+       }
+       continue;
+     }
+@@ -2432,11 +2490,19 @@
+                         sizeof(tracked_path)) &&
+         strcmp(tracked_path, source) == 0 &&
+         !write_mount_link(snapshot[i].title_id, destination)) {
++      ok = false;
+       log_debug("  [API] failed to update moved source link: title=%s",
+                 snapshot[i].title_id);
+     }
+   }
++  for (size_t i = 0; i < count; ++i) {
++    if (strcmp(snapshot[i].path, source) == 0) {
++      clear_cached_game(source);
++      cache_game_entry(destination, snapshot[i].title_id, snapshot[i].title_name);
++    }
++  }
+   free(snapshot);
++  return ok;
+ }
+ 
+ static const char *storage_job_state_name(storage_job_state_t state) {
+@@ -2722,6 +2788,7 @@
+   } else {
+     scanner_mutation = true;
+   }
++  if (status == 0 && operation == GAME_STORAGE_COPY && sm_game_lifecycle_has_active_game()) status = EBUSY;
+   if (status == 0 && operation == GAME_STORAGE_UNPACK) {
+     const bool read_only = true;
+     status = sm_shellcore_mount_title_runtime(title_id, &read_only);
+@@ -2731,7 +2798,9 @@
+     }
+   }
+   if (status == 0) {
+-    if (!sm_shellcore_try_begin_external_mutation())
++    if (!(operation == GAME_STORAGE_UNPACK
++            ? sm_shellcore_try_begin_external_mutation()
++            : sm_shellcore_try_begin_storage_mutation(title_id)))
+       status = EBUSY;
+     else
+       shellcore_mutation = true;
+@@ -2804,6 +2873,18 @@
+     pthread_mutex_unlock(&g_storage_job.mutex);
+   }
+ 
++  if (status == 0 && operation != GAME_STORAGE_DELETE) {
++    char parent[MAX_PATH]; strlcpy(parent, destination, sizeof(parent));
++    char *slash = strrchr(parent, '/');
++    if (!slash) status = EINVAL;
++    else {
++      *slash = '\0';struct statfs volume;
++      if (statfs(parent, &volume) != 0) status = EIO;
++      else if (volume.f_bsize <= 0 || volume.f_bavail < 0 ||
++               total_bytes > UINT64_MAX - 536870912ULL ||
++               (uint64_t)volume.f_bavail * (uint64_t)volume.f_bsize < total_bytes + 536870912ULL) status = ENOSPC;
++    }
++  }
+   if (status == 0) {
+     bool renamed = false;
+     const char *copy_source = operation == GAME_STORAGE_UNPACK
+@@ -2834,8 +2915,18 @@
+         g_storage_job.processed_files = total_files;
+         pthread_mutex_unlock(&g_storage_job.mutex);
+       }
+-      if (operation == GAME_STORAGE_MOVE)
+-        update_moved_source_links(source, destination);
++      if (operation == GAME_STORAGE_MOVE) {
++        bool changed = false;
++        if (!update_moved_source_links(source, destination) ||
++            !sm_manual_add_path(destination, &changed) ||
++            !sm_manual_remove_path(source, &changed)) status = EIO;
++      }
++      if (operation == GAME_STORAGE_DELETE) {
++        bool changed = false;
++        if (!sm_manual_remove_path(source, &changed)) status = EIO;
++        // Keep the missing cache entry so the normal scanner can retire the
++        // home-screen registration later; never uninstall another app here.
++      }
+     }
+   }
+ 
+@@ -2884,7 +2975,7 @@
+ static int start_storage_job(const char *title_id,
+                              const char *destination_dir,
+                              game_storage_operation_t operation,
+-                             bool delete_source,
++                             bool delete_source, const char *expected_source,
+                              storage_job_snapshot_t *accepted_out) {
+   sm_game_cache_snapshot_entry_t game_entry;
+   if (!find_game_snapshot_by_title(title_id, &game_entry))
+@@ -2895,6 +2986,9 @@
+       !path_exists(source_info.physical_path)) {
+     return ENOENT;
+   }
++  if (expected_source && strcmp(expected_source, source_info.physical_path) != 0)
++    return ESTALE;
++  if (strcmp(title_id, "PPSA99071") == 0) return EPERM;
+   if (operation == GAME_STORAGE_UNPACK &&
+       (!source_info.image_backed || is_data_mounted(title_id) ||
+        sm_shellcore_service_title_is_prepared(title_id))) {
+@@ -3103,8 +3197,18 @@
+ 
+   storage_job_snapshot_t accepted;
+   memset(&accepted, 0, sizeof(accepted));
++  struct json_object *expected_value = NULL;
++  const char *expected_source = NULL;
++  if (json_object_object_get_ex(request, "expected_source", &expected_value)) {
++    if (!json_object_is_type(expected_value, json_type_string) ||
++        !(expected_source = json_object_get_string(expected_value)) ||
++        expected_source[0] != '/') {
++      send_error_response(connection, 400, EINVAL, "Invalid expected source");
++      return;
++    }
++  }
+   int status = start_storage_job(title_id, destination_dir, operation,
+-                                 delete_source, &accepted);
++                                 delete_source, expected_source, &accepted);
+   if (status != 0) {
+     log_debug("  [API] async game source %s start failed: title=%s "
+               "status=%d",
+--- a/src/sm_game_lifecycle.c
++++ b/src/sm_game_lifecycle.c
+@@ -1253,6 +1253,11 @@
+   close_game_lifecycle_wake_pipe();
+ }
+ 
++pid_t sm_game_lifecycle_storage_pid(void) {
++  if (atomic_load(&g_game_exit_handoff_pending)) return -1;
++  return atomic_load(&g_active_game_pid);
++}
++
+ bool sm_game_lifecycle_has_active_game(void) {
+   return atomic_load(&g_active_game_pid) > 0 ||
+          atomic_load(&g_game_exit_handoff_pending);
+--- a/src/sm_storage.c
++++ b/src/sm_storage.c
+@@ -176,12 +176,12 @@
+                              mode_t mode, void *buffer,
+                              sm_storage_progress_fn progress,
+                              sm_storage_cancel_fn cancel, void *ctx) {
+-  int source_fd = open(source, O_RDONLY);
++  int source_fd = open(source, O_RDONLY | O_NOFOLLOW);
+   if (source_fd < 0)
+     return -1;
+   (void)posix_fadvise(source_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+   int destination_fd =
+-      open(destination, O_WRONLY | O_CREAT | O_EXCL, mode & 0777);
++      open(destination, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode & 0777);
+   if (destination_fd < 0) {
+     int saved_errno = errno;
+     (void)close(source_fd);
+@@ -189,7 +189,9 @@
+     return -1;
+   }
+ 
+-  int result = 0;
++  struct stat before, after, copied;
++  int result = fstat(source_fd, &before);
++  if (result == 0 && !S_ISREG(before.st_mode)) { errno = EINVAL; result = -1; }
+   while (result == 0) {
+     if (storage_operation_cancelled(cancel, ctx)) {
+       errno = ECANCELED;
+@@ -226,6 +228,11 @@
+         progress((uint64_t)write_size, 0, ctx);
+     }
+   }
++  if (result == 0 && (fstat(source_fd, &after) != 0 ||
++      fstat(destination_fd, &copied) != 0 || before.st_size != after.st_size ||
++      before.st_mtime != after.st_mtime || copied.st_size != before.st_size)) {
++    errno = EIO; result = -1;
++  }
+   int saved_errno = result != 0 ? errno : 0;
+   if (result == 0 && fdatasync(destination_fd) != 0) {
+     result = -1;
+@@ -462,6 +469,11 @@
+   if (sm_storage_copy_path_progress(source, destination, progress, cancel,
+                                     ctx) != 0)
+     return -1;
++  uint64_t source_bytes = 0, source_files = 0, copied_bytes = 0, copied_files = 0;
++  if (sm_storage_measure_path_progress(source, &source_bytes, &source_files, cancel, ctx) != 0 ||
++      sm_storage_measure_path_progress(destination, &copied_bytes, &copied_files, cancel, ctx) != 0)
++    return -1;
++  if (source_bytes != copied_bytes || source_files != copied_files) { errno = EIO; return -1; }
+   if (storage_operation_cancelled(cancel, ctx) ||
+       (begin_finalize && !begin_finalize(ctx)) ||
+       storage_operation_cancelled(NULL, NULL)) {
+--- a/include/sm_shellcore_service.h
++++ b/include/sm_shellcore_service.h
+@@ -6,6 +6,9 @@
+ #include <sys/types.h>
+ 
+ #include "sm_limits.h"
++
++bool sm_shellcore_try_begin_storage_mutation(const char *title_id);
++bool sm_shellcore_storage_title_allowed(const char *title_id);
+ 
+ // Start/stop the local Unix-socket owner used by the SceShellCore bridge.
+ bool sm_shellcore_service_start(void);
+--- a/include/sm_game_lifecycle.h
++++ b/include/sm_game_lifecycle.h
+@@ -3,6 +3,8 @@
+ 
+ #include <stdbool.h>
+ #include <stdint.h>
++#include <sys/types.h>
++pid_t sm_game_lifecycle_storage_pid(void);
+ 
+ // Start the shared game lifecycle watcher used by runtime game features.
+ bool start_game_lifecycle_watcher(void);
+--- a/include/sm_botty_storage_policy.h
++++ b/include/sm_botty_storage_policy.h
+@@ -0,0 +1,17 @@
++#ifndef SM_BOTTY_STORAGE_POLICY_H
++#define SM_BOTTY_STORAGE_POLICY_H
++#include <stdbool.h>
++#include <string.h>
++// Deliberately restricted to the known manager, never any arbitrary other app.
++static inline bool sm_botty_storage_allowed(const char *target, const char *owner,
++    int active_pid, int owner_pid, bool owner_ready, bool transitioning,
++    bool has_outgoing, bool owns_target) {
++  if (!target || !target[0] || strcmp(target, "PPSA99071") == 0 ||
++      transitioning || has_outgoing || owns_target || active_pid < 0)
++    return false;
++  if (active_pid == 0)
++    return !owner[0];
++  return strcmp(owner, "PPSA99071") == 0 && owner_ready &&
++         owner_pid > 0 && owner_pid == active_pid;
++}
++#endif
+--- a/include/sm_botty_rebase.h
++++ b/include/sm_botty_rebase.h
+@@ -0,0 +1,18 @@
++#ifndef SM_BOTTY_REBASE_H
++#define SM_BOTTY_REBASE_H
++#include <stdbool.h>
++#include <stdio.h>
++#include <string.h>
++#include "sm_limits.h"
++// Component-boundary replacement, also used for nested PFSC image paths.
++static inline bool sm_botty_rebase(char value[MAX_PATH], const char *old_root,
++                                   const char *new_root) {
++  size_t n = strlen(old_root);
++  if (strncmp(value, old_root, n) != 0 || (value[n] && value[n] != '/')) return true;
++  char result[MAX_PATH];
++  int length = snprintf(result, sizeof(result), "%s%s", new_root, value + n);
++  if (length < 0 || (size_t)length >= sizeof(result)) return false;
++  memcpy(value, result, (size_t)length + 1);
++  return true;
++}
++#endif

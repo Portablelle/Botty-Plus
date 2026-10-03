@@ -4,6 +4,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 SERVICE=ROOT.parent/'botty'
 sys.path.insert(0,str(SERVICE/'tests'))
 from rtorrent_fixture import RtorrentFixture
+from shadow_fixture import ShadowFixture
 spec=importlib.util.spec_from_file_location('fixtures',SERVICE/'tests/make_fixtures.py')
 fixtures=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixtures)
 with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
@@ -17,8 +18,9 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   size=(complete/name).stat().st_size
   entries.append(dict(id=i,name=name,hashString=str(i)*40,status=0,error=0,percentDone=1,leftUntilDone=0,totalSize=size,downloadDir=str(complete),files=[dict(name=name,length=size,bytesCompleted=size)]))
  rpc=RtorrentFixture(entries);calls=rpc.calls
+ shadow=ShadowFixture({"PPSA12345":str(root/"test-library/PPSA12345-app")})
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
- process=subprocess.Popen([str(SERVICE/'build/botty-native'),'--root',str(root),'--ui',str(SERVICE/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ process=subprocess.Popen([str(SERVICE/'build/botty-native'),'--root',str(root),'--ui',str(SERVICE/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port),'--shadow-port',str(shadow.port)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  def get(path):
   req=urllib.request.Request(f'http://127.0.0.1:{port}'+path,headers={'X-Botty-Token':token})
   return json.load(urllib.request.urlopen(req,timeout=5))
@@ -53,6 +55,10 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   action(7,failed['id']);assert all(j['id']!=failed['id'] for j in get('/api/state')['jobs'])
   assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
   action(15,ready['id'])
+  assert get('/api/processing')['tasks'][0]['status']=='running'
+  for _ in range(100):
+   if get('/api/processing')['tasks'][0]['status']=='completed':break
+   time.sleep(.05)
   assert not (root/'test-library/PPSA12345-app').exists()
   assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
   assert not any(j['id']==ready['id'] for j in get('/api/state')['jobs'])
@@ -60,4 +66,4 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   rpc.assert_clean()
   print('Native actions passed: pause/resume/verify/add, extraction, library move, protected deletion, failed-output deletion and source preservation.')
  finally:
-  process.terminate();process.wait(timeout=5);rpc.shutdown()
+  process.terminate();process.wait(timeout=5);rpc.shutdown();shadow.close()

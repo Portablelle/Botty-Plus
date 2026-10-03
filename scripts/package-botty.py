@@ -34,6 +34,9 @@ def main():
         text, count = re.subn(r"const HASH='[a-f0-9]{64}';", "const HASH='" + digest + "';", installer.read_text())
         if count != 1:
             raise ValueError('Missing service installer hash')
+        text, count = re.subn(r"const VERSION='[0-9.]+';", "const VERSION='" + version + "';", text)
+        if count != 1:
+            raise ValueError('Missing service installer version')
         installer.write_text(text)
         print('Botty manifest:', digest)
     source_archive(source, out / 'botty-source.tar.gz',

@@ -1,4 +1,4 @@
-# Botty+ 1.3.8 launch portal
+# Botty+ 1.4.0 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -6,8 +6,8 @@ Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
 rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Release 1.3.8 bundles native 01.003.007, service 1.3.6, rTorrent 0.16.24-botty3
-and ShadowMountPlus 1.7beta4-botty.1. Existing Transmission installations need an
+Release 1.4.0 bundles native 01.004.000, service 1.4.0, rTorrent 0.16.24-botty3
+and ShadowMountPlus 1.7beta4-botty.2. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.
 
@@ -54,15 +54,15 @@ object pool mismatch. The kernel stage combines an address leak with an
 Upstream revision is recorded in `manifest.json` and in the repository's
 `Relapse-Exploit` submodule. Preserve the upstream `LICENSE` and attribution.
 
-The bundled ShadowMountPlus `1.7beta4-botty.1` includes Botty's guarded TitleDir
-recovery and pinned ShellCore hooks. Its [notice](payloads/shadowmountplus-NOTICE.md),
+The bundled ShadowMountPlus `1.7beta4-botty.2` includes Botty's guarded TitleDir
+recovery, pinned ShellCore hooks and guarded background storage operations while Botty+ is active. Its [notice](payloads/shadowmountplus-NOTICE.md),
 [GPL license](payloads/shadowmountplus-LICENSE.txt) and
 [complete corresponding source](payloads/shadowmountplus-source.tar.gz)
 are included in this portal.
 
-Library compression creates a verified copy and retains the original until the
-user explicitly requests its deletion. Close Botty+ when prompted to complete
-mount verification. The portal also installs and starts the loopback compression
+Library compression retains the original until the user explicitly requests its
+deletion. Full content verification is optional; skipped checks remain marked
+Not verified. Close Botty+ when prompted to complete compressed-copy activation. The portal also installs and starts the loopback compression
 worker. Existing running services are left alone; staged updates start next session.
 
 Release 1.2.2 authorizes the worker's loopback port 5910 during launch. Retrying
@@ -96,3 +96,13 @@ comparison are disabled. Piece validation, RAR CRC, completed writes/fsync, file
 sizes and mount checks remain. Compressed copies are ready but **Not verified**;
 the original is retained. The service web UI offers an explicit full comparison
 and a cooperative skip. A copied compressed image loses any prior verified flag.
+
+## Background storage in 1.4.0
+
+Supported Library moves and deletions continue while Botty+ stays open, with
+live progress and retained failure details in Processing and the web interface.
+The bundled ShadowMount checks the active title and mounts before allowing
+these operations. New-title registration, compressed-copy activation/restoration
+and unsupported operations still retain their session requirements. Host
+regressions and PS5 cross-builds passed; console acceptance of these new
+background operations remains pending.

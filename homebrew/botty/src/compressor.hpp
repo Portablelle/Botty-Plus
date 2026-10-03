@@ -122,14 +122,14 @@ public:
     if(!enabled_||pending(state_))throw std::runtime_error("Wait for the current file operation");
     auto rec=records_.value(id,json::object());
     if(rec.value("status","")!="ready")throw std::runtime_error("No ready compressed game available");
-    state_=rec;state_["deleteGameRequested"]=true;state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to delete the compressed game. Saves and archives are kept.";save();return state_;
+    state_=rec;state_["deleteGameRequested"]=true;state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Preparing deletion. Follow progress here; saves and archives are kept.";save();return state_;
   }
   json requestOriginalDeletion(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
     if(pending(state_)&&!(state_.value("status","")=="uncertain"&&state_.value("jobId","")==id))throw std::runtime_error("Wait for the current file operation");
     auto rec=records_.value(id,json::object());
     if((rec.value("status","")!="ready"&&rec.value("status","")!="uncertain")||!rec.value("originalKept",false)||!rec.contains("originalPath")||rec.value("originalDeletionStarted",false)||rec.value("gameDeletionStarted",false))throw std::runtime_error("No original backup available for deletion");
-    state_=rec;state_["deleteRequested"]=true;state_["deleteGameRequested"]=false;state_["restoreRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to delete the original. Compressed copy and archives are kept.";save();return state_;
+    state_=rec;state_["deleteRequested"]=true;state_["deleteGameRequested"]=false;state_["restoreRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Preparing original-copy deletion. Compressed copy and archives are kept.";save();return state_;
   }
   json requestRestore(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
@@ -190,8 +190,13 @@ public:
     if(state_.value("status","")=="waiting-close") {
       const auto title=state_.at("titleId").get<std::string>();auto work=state_;g.unlock();
       Paths targetPaths=paths_,sourcePaths=paths_;try{targetPaths=disk(work.value("storage","internal"));sourcePaths=disk(work.value("sourceStorage","internal"));}catch(...){return;}
-      CompressionLibrary library(targetPaths,shadowPort_,"/data/shadowmount","/user/app","/system_ex/app",&sourcePaths);if(!library.idle(title))return;
-      auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;state_["bytes"]=0;state_["total"]=0;state_["unit"]="bytes";save();};
+      CompressionLibrary library(targetPaths,shadowPort_,"/data/shadowmount","/user/app","/system_ex/app",&sourcePaths);
+      bool onlineDelete=false;
+      if(work.value("deleteGameRequested",false))try{onlineDelete=BackgroundStorage(shadowPort_).supported();}catch(const std::exception& e){g.lock();state_["error"]=e.what();save();return;}
+      if(!work.value("deleteRequested",false)&&!onlineDelete&&!library.idle(title)){
+        g.lock();state_["phase"]="Waiting for ShadowMount. Close Botty+ only if your installed ShadowMount requires it.";save();return;
+      }
+      auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;if(!work.contains("remoteJobId")){state_["bytes"]=0;state_["total"]=0;state_["unit"]="bytes";}save();};
       auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["status"]="verifying";state_["unit"]="bytes";state_["phase"]="Verifying every file through the mounted compressed image";measure();};
       auto deletionProgress=[&](uint64_t done,uint64_t total,const std::string& file){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=done;state_["total"]=total;state_["unit"]="items";state_["file"]=file;state_["phase"]="Deleting files and folders";measure();};
       try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,deletionProgress);}else if(work.value("verifyRequested",false))library.verifyRetained(work,checkpoint,progress,[&]{return skipVerification_.load();});else library.activate(work,checkpoint,progress);}
@@ -224,7 +229,7 @@ public:
     }catch(...) {state_["error"]="Waiting for compression worker. Original is kept.";}
     state_["rate"]=0;state_["eta"]=-1;
   }
-  json relocate(const std::string& id,const std::string& selected,const std::function<void()>& check) {
+  json relocate(const std::string& id,const std::string& selected,const std::function<void()>& check,const BackgroundStorage::Report& report={}) {
     std::unique_lock<std::mutex> g(mutex_);
     if(pending(state_))throw std::runtime_error("Wait for compression to finish");
     auto rec=records_.value(id,json::object());
@@ -236,6 +241,16 @@ public:
     containedExisting(oldPaths.root,image);
     const auto dest=newPaths.root/"compressor/output"/image.filename();fs::create_directories(dest.parent_path());
     g.unlock();CompressionLibrary library(oldPaths,shadowPort_);
+    BackgroundStorage background(shadowPort_);
+    if(background.supported()) {
+      rec["status"]="uncertain";rec["phase"]="Moving compressed game";g.lock();state_=rec;save();g.unlock();
+      const fs::path hashes=image.string()+".vhash",newHashes=dest.string()+".vhash";
+      if(fs::exists(hashes))copyChecked(hashes,newHashes,check);
+      background.run("move",title,image,dest,report,check);
+      check();rec["storage"]=selected;rec["output"]=dest.string();rec["verified"]=false;rec["verificationSkipped"]=true;rec["status"]="ready";rec["phase"]="Compressed game moved - Not verified";g.lock();state_=rec;save();g.unlock();
+      if(fs::exists(hashes))removeTransferred(hashes);
+      return rec;
+    }
     if(!library.idle(title))throw std::runtime_error("Close Botty+ and games before transferring this game");
     rec["status"]="uncertain";rec["phase"]="Transferring compressed game";g.lock();state_=rec;save();g.unlock();
     copyChecked(image,dest,check);copyChecked(image.string()+".vhash",dest.string()+".vhash",check);

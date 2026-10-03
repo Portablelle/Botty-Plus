@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { installAndStartManager, managerInstalled, MANAGER_ROOT } from '../vps-site/src/botty-manager.js';
-function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='1.3.6'}={}) {
+function fixture({corrupt, occupied=false, noStartup=false, existingBotty=false, version='1.4.0'}={}) {
  const files=new Map(),writes=[],events=[];let running=occupied||existingBotty,worker=existingBotty;
  if(existingBotty)files.set('/data/botty/compressor/token',new TextEncoder().encode('a'.repeat(64)));
  const io={readFile:async path=>files.get(path)||null,mkdirs:async()=>{},writeFile:async(path,data)=>{files.set(path,data);writes.push(path);},listening:async port=>port===5910?worker:running,
@@ -77,27 +77,27 @@ test('active 0.1.4 service is preserved during parallel extraction upgrade',asyn
 
 test('current running service is reused without writes',async()=>{
  const f=fixture({existingBotty:true});const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'1.3.6');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
+ assert.equal(result.version,'1.4.0');assert.equal(f.writes.length,0);assert.deepEqual(f.events,[]);
 });
 test('running 0.3.3 stages current service without stopping extraction or touching credentials',async()=>{
  const f=fixture({existingBotty:true,version:'0.3.3'});
  f.files.set('/data/botty/transmission/state/botty-credentials.json',new Uint8Array([9]));
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.updatePending,true);assert.equal(result.availableVersion,'1.3.6');assert.deepEqual(f.events,[]);
+ assert.equal(result.updatePending,true);assert.equal(result.availableVersion,'1.4.0');assert.deepEqual(f.events,[]);
  assert.deepEqual(f.files.get('/data/botty/transmission/state/botty-credentials.json'),new Uint8Array([9]));
 });
 
 test('1.0 service stages deletion and resume update without interrupting its work',async()=>{
  const f=fixture({existingBotty:true,version:'1.0.0'});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,'1.0.0');assert.equal(result.availableVersion,'1.3.6');
+ assert.equal(result.version,'1.0.0');assert.equal(result.availableVersion,'1.4.0');
  assert.equal(result.updatePending,true);assert.deepEqual(f.events,[]);
 });
 
-for(const version of ['1.0.1','1.0.2','1.0.3','1.0.4','1.3.0','1.3.1','1.3.2','1.3.3','1.3.4'])test(`previous ${version} service is recognized and updated without stopping its work`, async () => {
+for(const version of ['1.0.1','1.0.2','1.0.3','1.0.4','1.3.0','1.3.1','1.3.2','1.3.3','1.3.4','1.3.5','1.3.6','1.3.7'])test(`previous ${version} service is recognized and updated without stopping its work`, async () => {
  const f=fixture({existingBotty:true,version});
  const result=await installAndStartManager(f.io,f.options);
- assert.equal(result.version,version);assert.equal(result.availableVersion,'1.3.6');assert.equal(result.updatePending,true);
+ assert.equal(result.version,version);assert.equal(result.availableVersion,'1.4.0');assert.equal(result.updatePending,true);
 });
 
 test('a listening incompatible worker is rejected without replacing active processes',async()=>{

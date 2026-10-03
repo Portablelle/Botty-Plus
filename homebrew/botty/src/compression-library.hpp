@@ -1,4 +1,5 @@
 #pragma once
+#include "background-storage.hpp"
 #include "core.hpp"
 #include "httplib.h"
 #include "notification.hpp"
@@ -143,11 +144,14 @@ public:
     if(fs::exists(fs::symlink_status(app)))containedExisting(apps_,app);
     for(const auto& name:{"mount.lnk","mount_img.lnk"})if(fs::exists(fs::symlink_status(app/name)))containedExisting(app,app/name);
     if(fs::exists(app/"mount_img.lnk")){std::istringstream input(readText(app/"mount_img.lnk",8192));std::string first;std::getline(input,first);if(first!=image.string())throw std::runtime_error("Image mount link changed; deletion refused");}
-    api("games/unmount",{{"title_id",title}}); // Recheck immediately before any mutation.
+    BackgroundStorage background(port_);const bool online=background.supported();
+    if(!online)api("games/unmount",{{"title_id",title}}); // Legacy fallback only.
     rec["status"]="deleting-game";rec["gameDeletionStarted"]=true;rec["phase"]="Deleting compressed game files; saves and archives are kept.";save();
-    api("manual/remove",{{"path",image.string()}});
-    if(kept){deleteGameDirectory(original.parent_path(),original.filename(),deletionProgress);if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");}
-    downloadedFiles(image.parent_path(),{image.filename()},true,deletionProgress);if(fs::exists(fs::symlink_status(image)))throw std::runtime_error("Compressed image deletion incomplete");
+    if(!online)api("manual/remove",{{"path",image.string()}});
+    if(kept){deleteGameDirectory(original.parent_path(),original.filename(),deletionProgress);if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");rec["originalKept"]=false;save();}
+    if(online)background.run("delete",title,image,{},[&](const json& task){rec.update(backgroundProgress(task));save();});
+    else downloadedFiles(image.parent_path(),{image.filename()},true,deletionProgress);
+    if(fs::exists(fs::symlink_status(image)))throw std::runtime_error("Compressed image deletion incomplete");
     downloadedFiles(image.parent_path(),{hashes.filename()},true,deletionProgress);if(fs::exists(fs::symlink_status(hashes)))throw std::runtime_error("Verification file deletion incomplete");
     if(fs::exists(app))downloadedFiles(app,{"mount.lnk","mount_img.lnk"},true);
     api("scan",{{"reset_attempts",false}});
@@ -162,7 +166,8 @@ public:
     const fs::path image=rec.at("output").get<std::string>();
     if(image!=paths_.root/"compressor/output"/(title+".ffpfsc")||!fs::is_regular_file(containedExisting(image.parent_path(),image)))throw std::runtime_error("Compressed copy is missing or its path changed");
     const auto info=api("games/info",{{"title_id",title}});if(info.value("path","")!=rec.at("output").get<std::string>()||!info.value("image_backed",false))throw std::runtime_error("Compressed source is not selected");
-    api("games/unmount",{{"title_id",title}});
+    // The selected compressed image is distinct from this retained folder.
+    // deleteGameDirectory checks the actual mount table before deleting it.
     rec["status"]="deleting-original";rec["originalDeletionStarted"]=true;rec["originalKept"]=false;save();
     compressionFiles(original);deleteGameDirectory(original.parent_path(),original.filename(),deletionProgress);if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");
     rec["status"]="ready";rec["originalKept"]=false;rec["phase"]="Original copy deleted. Compressed copy and archives kept.";save();

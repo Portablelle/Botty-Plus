@@ -9,7 +9,7 @@
 <p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Bundled Relapse jailbreak range. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.3.8</a> ·
+  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.4.0</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
@@ -21,7 +21,7 @@ in the background when you close the app.
 ## What you can do
 
 - **Browse and download:** find content through Search and Explore, or add a magnet link. Pause, resume and check your downloads.
-- **Follow every task:** Processing brings extraction, compression and deletion together, with progress and estimated time remaining.
+- **Follow every task:** Processing brings extraction, compression, moves and deletion together, with progress and estimated time remaining.
 - **Manage your Library:** view covers, compress supported games and see where each copy is stored. When both formats exist, their locations appear separately.
 - **Use external storage:** choose the PS5 SSD or an external exFAT disk, check free space and transfer content between them.
 - **Connect from another device:** open Connections to find the web address and login details for your phone or computer.
@@ -40,7 +40,7 @@ for downloads and extracted files, and a Botty+ portal hosted over trusted HTTPS
 ### 1. Get access to a portal
 
 If someone already hosts Botty+ for you, ask them for the portal URL and skip to
-step 2. To host it yourself, download **botty-portal-1.3.7.tar.gz** from the
+step 2. To host it yourself, download **botty-portal-1.4.0.tar.gz** from the
 [latest release](https://github.com/Portablelle/botty-ps5/releases/latest) and
 follow the [hosting guide](deployment/README.md#host-the-portal). It covers
 uploading the complete site, configuring HTTPS and checking the installation.
@@ -101,11 +101,15 @@ Choose **Full auto** to download, extract and add content to your Library, or
 | Square | Search, add a magnet or another screen-specific action |
 | Triangle | Refresh or change the Explore ranking |
 
-Compression keeps the original until you explicitly delete it. After you close
-Botty+, the service verifies the compressed copy and sends a PS5 notification
-when verification is complete and you can reopen the app. If compression
-is interrupted, retrying on the same disk cleans its tracked temporary files and
-starts from zero. Interrupted RAR extraction can reuse and verify partial output
+With the bundled ShadowMount, supported Library moves and deletions can run
+while Botty+ stays open. Follow their progress in **Processing**; failures remain
+visible. Compression activation/restoration and registration of new titles can
+still require closing Botty+.
+
+Compression keeps the original until you explicitly delete it. Full content
+verification is optional; a skipped check is shown as **Not verified**. If
+compression is interrupted, retrying on the same disk cleans its tracked
+temporary files and starts from zero. Interrupted RAR extraction can reuse and verify partial output
 on the same disk. Keep the console awake while tasks are running.
 
 ## Preview
@@ -120,6 +124,10 @@ location of each copy. Missing disks are marked **Offline**.
 ![Explore tracker chooser](docs/screenshots/explore-trackers-1.3.6.png)
 
 *Tracker chooser rendered by the native UI with sample data.*
+
+![Background file operations](docs/screenshots/background-processing-1.4.0.png)
+
+*Processing rendered by the native UI with sample data.*
 
 ## Guides
 

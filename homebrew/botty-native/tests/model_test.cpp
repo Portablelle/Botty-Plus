@@ -67,6 +67,11 @@ void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(h
 int main() {
     using namespace botty;
     Processing processing;
+    assert(parseProcessing(R"({"tasks":[{"id":"move-a","kind":"transfer","status":"running","bytes":25,"total":100,"rate":5,"eta":15,"phase":"Moving game to selected disk"}]})",processing));
+    assert(processing.tasks[0].active&&processing.tasks[0].progress==.25&&processing.tasks[0].eta==15);
+    assert(parseProcessing(R"({"tasks":[{"id":"move-a","kind":"transfer","status":"completed","bytes":100,"total":100}]})",processing));
+    assert(processing.tasks[0].complete&&!processing.tasks[0].active);
+
     assert(parseProcessing(R"({"tasks":[{"id":"task-a","kind":"compression","status":"waiting-close","bytes":100,"total":100,"eta":0}]})",processing));
     assert(processing.tasks[0].active&&processing.tasks[0].total==0&&processing.tasks[0].eta==-1);
     assert(!parseProcessing(R"({"tasks":[{"name":"missing ID"}]})",processing));

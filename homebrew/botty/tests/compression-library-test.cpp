@@ -73,7 +73,7 @@ void runTests(bool external){
  busy=true;rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));busy=false;
  fs::copy_file(original/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
  library.restore(rec,save);assert(fs::exists(source)&&!fs::exists(original)&&fs::exists(image));assert(rec["status"]=="restored");
- library.activate(rec,save,{});library.removeOriginal(rec,save,{});assert(!fs::exists(original)&&fs::exists(image)&&rec["originalKept"]==false);rejects([&]{library.removeOriginal(rec,save,{});});
+ library.activate(rec,save,{});busy=true;library.removeOriginal(rec,save,{});busy=false;assert(!fs::exists(original)&&fs::exists(image)&&rec["originalKept"]==false);rejects([&]{library.removeOriginal(rec,save,{});});
  // Compressed-only deletion never needs the original or a torrent archive.
  const auto outside=root/"saves/keep.dat";fs::create_directories(outside.parent_path());std::ofstream(outside)<<"save data";
  std::ofstream(image.string()+".vhash")<<"hash fixture";

@@ -10,16 +10,18 @@ class Operations {
   ExtractionEstimate estimate_;
   std::chrono::steady_clock::time_point started_{},updated_{};
 public:
-  void start(const std::string& id,const std::string& name) {
+  void start(const std::string& id,const std::string& name,const std::string& kind="deletion") {
     std::lock_guard<std::mutex> g(mutex_);started_=std::chrono::steady_clock::now();estimate_=ExtractionEstimate{};updated_=started_;
-    task_={{"id",id},{"name",name},{"kind","deletion"},{"status","running"},{"phase","Checking files before deletion"},{"unit","items"},{"bytes",0},{"total",0},{"rate",0},{"eta",-1}};
+    task_={{"id",id},{"name",name},{"kind",kind},{"status","running"},{"phase",kind=="transfer"?"Preparing move":"Checking files before deletion"},{"unit","items"},{"bytes",0},{"total",0},{"rate",0},{"eta",-1}};
   }
+  void phase(const std::string& text) {std::lock_guard<std::mutex> g(mutex_);task_["phase"]=text;task_["rate"]=0;task_["eta"]=-1;}
+  void progress(const json& values) {std::lock_guard<std::mutex> g(mutex_);task_.update(values);updated_=std::chrono::steady_clock::now();}
   void update(uint64_t done,uint64_t total,const std::string& file) {
     std::lock_guard<std::mutex> g(mutex_);const auto now=std::chrono::steady_clock::now();
     if(task_.value("total",uint64_t(0))!=total)estimate_=ExtractionEstimate{};
     updated_=now;estimate_.update(now,done,total);task_["bytes"]=done;task_["total"]=total;task_["file"]=file;task_["phase"]="Deleting files and folders";task_["rate"]=estimate_.rate;task_["eta"]=estimate_.eta;
   }
-  void finish(bool success) {std::lock_guard<std::mutex> g(mutex_);task_["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-started_).count();task_["status"]=success?"completed":"failed";task_["phase"]=success?"Deletion completed":"Deletion failed; check the request result before retrying";task_["eta"]=-1;task_["rate"]=0;}
+  void finish(bool success,const std::string& error="") {std::lock_guard<std::mutex> g(mutex_);task_["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-started_).count();task_["error"]=error;task_["status"]=success?"completed":"failed";task_["phase"]=success?(task_.value("kind","")=="transfer"?"Move completed":"Deletion completed"):"Operation stopped; check the error before retrying";task_["eta"]=-1;task_["rate"]=0;}
   json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=task_;if(out.value("status","")=="running")out["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-started_).count();if(std::chrono::steady_clock::now()-updated_>std::chrono::seconds(5)){out["rate"]=0;out["eta"]=-1;}return out;}
 };
 class DeletionScope {

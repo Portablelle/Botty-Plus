@@ -1,4 +1,4 @@
-# ShadowMountPlus 1.7beta4-botty.1
+# ShadowMountPlus 1.7beta4-botty.2 (development)
 
 Botty's narrow patch to ShadowMountPlus fixes a TitleDir bridge that remained
 unusable for the entire session after one failed hook check. This is a modified
@@ -144,3 +144,32 @@ the project console (firmware 13.00). Direct sandbox file access, long-running
 hook residency and compressed-game transitions were not independently retested
 for beta4. Retain the previous payload and use a fresh, idle console session for
 activation. Do not restart a busy console to activate it.
+
+## Botty background storage (1.7beta4-botty.2, console acceptance pending)
+
+The `botty_background_storage_v1` capability enables the existing asynchronous
+move/delete worker while the tracked, sandbox-ready application is exactly
+Botty+ (`PPSA99071`). It does not relax mount, installation, scanner, compression
+activation or verification APIs. Idle sessions remain supported.
+
+The worker acquires the scanner and ShellCore mutation gates for the entire
+operation. PID/owner disagreement, app startup/exit, outgoing sessions, an
+image-backed manager, Botty itself, overlapping sources, shared image chains,
+and remaining source mounts are refused. Concurrent launches are blocked while
+the worker holds the gate. The client supplies an expected source path, follows
+the returned job ID and never retries a destructive POST after losing its result.
+Moved links (including nested PFSC mount paths), manual paths and cache entries update synchronously; Botty
+need not close to trigger the general scanner. Compressed output destinations
+are restricted to Botty's exact internal/external output directories.
+
+Cross-volume copies flush files, check file sizes and tree totals before source
+removal, and reserve 512 MiB of free space. This is not a full content hash check.
+Failures after acceptance can leave partial destinations or metadata requiring
+inspection; Botty preserves an uncertain journal instead of replaying a move.
+
+Validation: production policy and existing TitleDir host regressions, PS5 SDK
+cross-build, and Botty service/native integration tests with an isolated worker
+double. These checks do not establish firmware acceptance. Before release, test
+folder and compressed moves/deletions with Botty open on disposable console
+fixtures, including launching another app, unplugging storage, and reconnecting.
+Do not restart a busy console or replace its running ShadowMount to activate it.

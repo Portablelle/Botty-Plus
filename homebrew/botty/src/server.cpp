@@ -23,7 +23,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.3.6/ui"
+#define BOTTY_UI "/data/botty/manager/1.4.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -39,6 +39,7 @@ namespace {
 Search search,explore;
 Compressor compressor;
 Operations operations;
+Operations transfers;
 std::mutex lock;
 json jobs=json::array(); bool extracting=false;
 std::atomic<bool> retiring{false};
@@ -255,15 +256,22 @@ json startTransfer(const json& body) {
   }
   const auto source=storage.get(sourceId);
   if(kind!="publish"&&selected==sourceId)throw std::runtime_error("Choose a different disk");
+  transfers.start(body.at("id").is_string()?body.at("id").get<std::string>():std::to_string(body.at("id").get<int>()),kind=="torrent"?torrent.value("name","Torrent"):job.value("name","Game"),"transfer");
   transferState={{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying; source kept until completion"}};
   writeJson(paths.root/"transfer.json",transferState);transferring=true;
   std::thread([kind,selected,sourceId,source,destination,job,torrent]()mutable{
     bool changed=false;
     try {
       const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");};
+      ExtractionEstimate estimate;uint64_t previousTotal=0;
+      const auto copyProgress=[&](uint64_t bytes,uint64_t total,const std::string& file){if(total!=previousTotal){estimate=ExtractionEstimate{};previousTotal=total;}estimate.update(std::chrono::steady_clock::now(),bytes,total);transfers.progress({{"bytes",bytes},{"total",total},{"file",file},{"unit","bytes"},{"rate",estimate.rate},{"eta",estimate.eta},{"phase","Copying files; source kept until completion"}});};
+      const auto remoteReport=[&](const json& task){auto progress=backgroundProgress(task);transfers.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);};
       const auto waitForGame=[&](const std::string& title){
         CompressionLibrary library(source,shadowPort);
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::minutes(5);
         while(!library.idle(title)){
+          transfers.phase("Waiting for ShadowMount. This version may require closing Botty+.");
+          if(std::chrono::steady_clock::now()>deadline)throw std::runtime_error("ShadowMount stayed busy or unavailable. Source kept; update ShadowMount to move games inside Botty+.");
           check();{std::lock_guard<std::mutex> g(lock);transferState["phase"]="Close Botty+ and games to transfer Library content";}
           std::this_thread::sleep_for(std::chrono::seconds(1));
         }
@@ -285,7 +293,7 @@ json startTransfer(const json& body) {
         // Refuse shared members before moving anything.
         for(const auto& other:torrents())if(other.at("hashString")!=hash&&other.at("downloadDir")==torrent.at("downloadDir"))
           for(const auto& f:other.at("files"))for(const auto& name:members)if(f.at("name")==name.string())throw std::runtime_error("Torrent files are shared with another torrent");
-        for(const auto& name:members){check();auto parent=destination.complete;for(const auto& part:name.parent_path()){parent/=part;if(fs::is_symlink(fs::symlink_status(parent)))throw std::runtime_error("Unsafe transfer destination");fs::create_directories(parent);}copyChecked(source.complete/name,destination.complete/name,check);changed=true;}
+        for(const auto& name:members){check();auto parent=destination.complete;for(const auto& part:name.parent_path()){parent/=part;if(fs::is_symlink(fs::symlink_status(parent)))throw std::runtime_error("Unsafe transfer destination");fs::create_directories(parent);}copyChecked(source.complete/name,destination.complete/name,check,copyProgress);changed=true;}
         check();rpc("torrent-set-location",{{"ids",{hash}},{"location",destination.complete.string()}});
         if(getTorrent(torrent.at("id")).at("downloadDir")!=destination.complete.string())throw std::runtime_error("Torrent location was not confirmed; both copies kept");
         const auto queue=paths.root/"automatic"/(hash+".json");
@@ -295,7 +303,8 @@ json startTransfer(const json& body) {
       }else if(kind=="publish"){
         changed=true;job["storage"]=selected;job=movePrepared(source,job,&destination,check);publishJob(job);
       }else if(compressor.game(job.at("id").get<std::string>()).value("status","")=="ready"){
-        waitForGame(job.at("content").value("titleId",""));changed=true;compressor.relocate(job.at("id").get<std::string>(),selected,check);
+        if(!BackgroundStorage(shadowPort).supported())waitForGame(job.at("content").value("titleId",""));
+        changed=true;compressor.relocate(job.at("id").get<std::string>(),selected,check,remoteReport);
       }else{
         const auto id=job.at("id").get<std::string>();const bool moved=job.value("status","")=="moved";
         const auto name=moved?safeRelative(job.at("content").at("destination").get<std::string>()):fs::path(id);
@@ -314,9 +323,17 @@ json startTransfer(const json& body) {
             }
           }
           if(!std::regex_match(title,std::regex("(PPSA|CUSA)[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("ShadowMount must identify this game before transfer");
-          job["content"]["titleId"]=title;waitForGame(title);
+          job["content"]["titleId"]=title;
+          BackgroundStorage background(shadowPort);
+          if(background.supported()) {
+            changed=true;
+            try{background.run("move",title,from,to,remoteReport,check);}catch(const BackgroundRejected&){changed=false;throw;}
+            check();job["storage"]=selected;job["destination"]=to.string();publishJob(job);
+            std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Move completed. Ready in Library.";writeJson(paths.root/"transfer.json",transferState);transferring=false;transfers.finish(true);try{notifySystem("Botty+: Move completed. You can open Botty+.");}catch(...){}return;
+          }
+          waitForGame(title);
         }
-        copyChecked(from,to,check);changed=true;
+        copyChecked(from,to,check,copyProgress);changed=true;
         auto cleanup=from;
         if(moved){
           prepareLibraryPermissions(to);
@@ -330,8 +347,8 @@ json startTransfer(const json& body) {
         }
         check();job["storage"]=selected;if(moved)job["destination"]=to.string();publishJob(job);removeTransferred(cleanup);
       }
-      std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Transfer complete; sizes checked";writeJson(paths.root/"transfer.json",transferState);transferring=false;
-    }catch(const std::exception& e){std::lock_guard<std::mutex> g(lock);transferState["status"]=changed?"uncertain":"failed";if(!changed)transferring=false;transferState["error"]=e.what();transferState["phase"]="Transfer stopped; retained copies need inspection";try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}/* Do not replay an ambiguous move. */}
+      std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Transfer complete; sizes checked";writeJson(paths.root/"transfer.json",transferState);transferring=false;transfers.finish(true);try{notifySystem("Botty+: Move completed. You can open Botty+.");}catch(...){}
+    }catch(const std::exception& e){transfers.finish(false,e.what());std::lock_guard<std::mutex> g(lock);transferState["status"]=changed?"uncertain":"failed";if(!changed)transferring=false;transferState["error"]=e.what();transferState["phase"]="Transfer stopped; retained copies need inspection";try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}/* Do not replay an ambiguous move. */}
   }).detach();return transferState;
 }
 
@@ -364,8 +381,8 @@ int main(int argc,char** argv) {
     stage="loading saved jobs";
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
-    if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted transfer. Copies and metadata need inspection before further file operations.";transferring=true;}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.3.6"}});
+    if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.4.0"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -391,7 +408,7 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.3.6"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.4.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -404,11 +421,13 @@ int main(int argc,char** argv) {
     server.Get("/api/processing",[](const auto&,auto& res){
       auto tasks=json::array();const auto deletion=operations.state();
       if(deletion.value("status","")!="idle")tasks.push_back(deletion);
+      const auto transfer=transfers.state();if(transfer.value("status","")!="idle")tasks.push_back(transfer);
       auto compression=compressor.state();
       if(compression.contains("jobId")){
         compression["id"]=compression.at("jobId");compression["name"]=compression.value("name",compression.value("titleId","Game"));
         compression["kind"]=(compression.value("deleteRequested",false)||compression.value("deleteGameRequested",false))?"deletion":"compression";
-        tasks.push_back(compression);
+        bool duplicate=false;for(const auto& task:tasks)if(task.value("id","")==compression.value("id",""))duplicate=true;
+        if(!duplicate)tasks.push_back(compression);
       }
       reply(res,{{"tasks",tasks}});
     });
@@ -576,12 +595,23 @@ int main(int argc,char** argv) {
       for(const auto& other:jobs)if(other.at("id")!=id&&other.value("destination","")==job.value("destination","")&&other.value("status","")=="moved")
         throw std::runtime_error("Another job uses this library destination; manual review required");
       if(compressor.protects(id)){reply(res,compressor.requestGameDeletion(id),202);return;}
-      DeletionScope operation(operations,id,job.value("name","Game"));
-      deleteLibraryGame(storage.get(job.value("storage","internal")),job,operation.reporter());
-      // Keep the record until deletion completes; failed or interrupted requests can be retried.
-      downloadedFiles(paths.jobs,{id+".json"},true);
-      for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}
-      operation.complete();reply(res,{{"ok",true},{"archivesKept",true}});
+      const auto selected=storage.get(job.value("storage","internal"));
+      // Validate the recorded identity before dispatch; the worker rechecks source selection.
+      const auto title=job.at("content").value("titleId","");
+      if(job.value("status","")!="moved"||job.at("content").value("kind","")!="folder"||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||job.value("destination","")!=(selected.library/(title+"-app")).string())throw std::runtime_error("Invalid tracked Library game");
+      operations.start(id,job.value("name","Game"));transferState={{"status","running"},{"kind","deletion"},{"id",id},{"phase","Preparing deletion"}};writeJson(paths.root/"transfer.json",transferState);transferring=true;
+      try {std::thread([job,id,title,selected]{
+        bool dispatched=false;
+        try {
+          BackgroundStorage background(shadowPort);
+          if(background.supported()){dispatched=true;background.run("delete",title,job.at("destination").template get<std::string>(),{},[](const json& task){const auto progress=backgroundProgress(task);operations.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);});}
+          else {dispatched=true;deleteLibraryGame(selected,job,[](uint64_t done,uint64_t total,const std::string& file){operations.update(done,total,file);});}
+          std::lock_guard<std::mutex> g(lock);
+          fs::remove(paths.jobs/(id+".json"));for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}
+          transferState["status"]="complete";transferState["phase"]="Deletion completed";writeJson(paths.root/"transfer.json",transferState);operations.finish(true);transferring=false;try{notifySystem("Botty+: Game deletion completed. Saves and archives kept.");}catch(...){}
+        }catch(const std::exception& e){operations.finish(false,e.what());std::lock_guard<std::mutex> g(lock);const bool uncertain=dispatched&&dynamic_cast<const BackgroundRejected*>(&e)==nullptr;transferring=uncertain;transferState={{"status",uncertain?"uncertain":"failed"},{"error",e.what()},{"phase","Deletion stopped. Check Processing before retrying."}};try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}/* A remote worker may still be active. Keep file operations blocked. */}
+      }).detach();}catch(...){transferring=false;operations.finish(false);throw;}
+      reply(res,{{"accepted",true},{"id",id},{"archivesKept",true}},202);
     });
     server.Post("/api/delete-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();

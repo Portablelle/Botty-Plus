@@ -2,6 +2,7 @@
 import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error,threading
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from rtorrent_fixture import RtorrentFixture
+from shadow_fixture import ShadowFixture
 from make_fixtures import build, single
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
@@ -14,16 +15,7 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
  image_id='d'*32;published=root/'test-library/demo.exfat';published.parent.mkdir();published.write_bytes(b'image fixture')
  (root/'jobs'/(image_id+'.json')).write_text(json.dumps(dict(id=image_id,name='Published image',status='moved',destination=str(published),content=dict(kind='exfat',destination='demo.exfat'))))
  selected={'PPSA12347':str(image),'PPSA12348':str(published)}
- class Shadow(BaseHTTPRequestHandler):
-  def log_message(self,*args):pass
-  def do_POST(self):
-   data=json.loads(self.rfile.read(int(self.headers['Content-Length'])));out={'status':0}
-   if self.path.endswith('/games'):out['games']=[dict(title_id=k,path=v) for k,v in selected.items()]
-   if self.path.endswith('/games/info'):out.update(path=selected.get(data['title_id'],''),image_backed=True)
-   if self.path.endswith('/manual/add'):
-    name=pathlib.Path(data['path']).name;selected['PPSA12348' if name=='demo.exfat' else name[:9]]=data['path']
-   self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(json.dumps(out).encode())
- shadow=ThreadingHTTPServer(('127.0.0.1',0),Shadow);threading.Thread(target=shadow.serve_forever,daemon=True).start()
+ shadow=ShadowFixture(selected)
  fixtures=build(base/'fixtures');shutil.copy(fixtures/'app.rar',complete/'app.rar');size=(complete/'app.rar').stat().st_size
  entries=[dict(id=1,hashString='1'*40,name='app.rar',status=6,leftUntilDone=0,totalSize=size,downloadDir=str(complete),files=[dict(name='app.rar',length=size,bytesCompleted=size)])]
  def hook(method,params):
@@ -48,8 +40,8 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
    time.sleep(.05)
   raise AssertionError(state)
  def transfer(body):
-  request('/api/transfer',body,202);state=until(lambda s:s['transfer']['status']!='running');assert state['transfer']['status']=='complete',state['transfer'];return state
- proc=subprocess.Popen([str(ROOT/'build/botty-native'),'--root',str(root),'--external',str(usb),'--ui',str(ROOT/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port),'--shadow-port',str(shadow.server_port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  request('/api/transfer',body,202);state=until(lambda s:s['transfer']['status']!='running');assert state['transfer']['status']=='complete',state['transfer'];tasks=request('/api/processing')['tasks'];assert any(t['kind']=='transfer' and t['status']=='completed' for t in tasks);return state
+ proc=subprocess.Popen([str(ROOT/'build/botty-native'),'--root',str(root),'--external',str(usb),'--ui',str(ROOT/'ui'),'--port',str(port),'--rpc-port',str(rpc.server_port),'--shadow-port',str(shadow.port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  try:
   for _ in range(100):
    try:token=request('/api/bootstrap')['token'];break
@@ -81,10 +73,29 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
   transfer(dict(kind='job',id=compressed_id,storage='internal'));assert image.read_bytes()==b'compressed fixture' and pathlib.Path(str(image)+'.vhash').read_bytes()==b'hash fixture' and not external_image.exists()
   transfer(dict(kind='job',id=image_id,storage=external));assert (usb/'homebrew/demo.exfat').read_bytes()==b'image fixture' and not published.exists()
   transfer(dict(kind='job',id=image_id,storage='internal'));assert published.read_bytes()==b'image fixture'
+  # Compressed deletion uses the same worker and exposes live progress.
+  shadow.delay=1
+  req_body=dict(id=compressed_id,confirmed=True)
+  request('/api/delete-library-game',req_body,202)
+  measured=False
+  for _ in range(150):
+   tasks=request('/api/processing')['tasks']
+   measured=measured or any(t.get('remoteJobId') and t.get('total',0)>0 and t['status']=='deleting-game' for t in tasks)
+   state=request('/api/state')
+   if not any(j['id']==compressed_id for j in state['jobs']):break
+   time.sleep(.05)
+  assert measured and not image.exists() and not pathlib.Path(str(image)+'.vhash').exists()
+  # The native UI can stay connected throughout remote deletion.
+  shadow.delay=.8
+  request('/api/delete-library-game',dict(id=job['id'],confirmed=True),202)
+  live=request('/api/processing')['tasks'];assert any(t['kind']=='deletion' and t['status']=='running' for t in live)
+  until(lambda s:not any(j['id']==job['id'] for j in s['jobs']))
+  assert (usb/'botty/downloads/complete/app.rar').exists()
+  assert sum(route.endswith('/games/delete') for route,_ in shadow.calls)==2
   # No missing-disk fallback, even if its old mount directory is replaced.
   usb.rename(base/'removed');request('/api/torrent',dict(action='add',magnet='magnet:?xt=urn:btih:'+'5'*40,storage=external),400);assert not usb.exists()
   usb.mkdir();request('/api/extract',dict(id=1,archive='app.rar',storage=external),400);assert not (usb/'botty').exists()
   rpc.assert_clean()
   print('External HTTP pipeline passed: selection, modes, verified archive/extraction transfers, publication and disk loss')
  finally:
-  proc.terminate();proc.wait(timeout=5);rpc.shutdown();shadow.shutdown()
+  proc.terminate();proc.wait(timeout=5);rpc.shutdown();shadow.close()

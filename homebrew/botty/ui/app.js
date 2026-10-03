@@ -19,7 +19,7 @@ function chooseStorage(current,adding,next,transfer=false){
  $('confirm').disabled=!Array.from(select.options).some(o=>!o.disabled);select.focus();
 }
 function storageLabel(id){return (state.storage||[]).find(d=>d.id===id)?.label||(id&&id!=='internal'?'External disk unavailable':'Internal SSD');}
-function transferItem(kind,item){chooseStorage(item.storage||'internal',false,choice=>modal('Transfer to another disk?','Files are copied, flushed and size-checked before their source is removed. No full content recheck. Close games first. Torrents remain paused after transfer.','Transfer',()=>action('/api/transfer',{kind,id:item.id,...choice},'Transfer started. Keep both disks connected.')),true);}
+function transferItem(kind,item){chooseStorage(item.storage||'internal',false,choice=>modal('Transfer to another disk?','Move to the selected disk and follow progress here. Keep both disks connected. Torrents remain paused after transfer.','Transfer',()=>action('/api/transfer',{kind,id:item.id,...choice},'Transfer started. Keep both disks connected.')),true);}
 function archives(torrent){return (torrent.files||[]).filter(file=>{if(!file.name.endsWith('.rar'))return false;const part=/\.part(\d+)\.rar$/i.exec(file.name);return !part||Number(part[1])===1;});}
 function torrentCard(torrent){
  const card=node('article',undefined,'card'),completed=torrent.leftUntilDone===0,paused=torrent.status===0;
@@ -62,6 +62,22 @@ function render(){if(!state)return;const focused=document.activeElement&&documen
  for(const key of ['all','complete','jobs'])$('tab-'+key).setAttribute('aria-pressed',String(tab===key));
  if(focused&&$(focused)&&!$(focused).disabled)$(focused).focus({preventScroll:true});
 }
+async function refreshProcessing(){
+ if(!token)return;
+ try{
+  const result=await api('/api/processing'),section=$('processing');
+  section.replaceChildren();section.hidden=!result.tasks?.length;
+  for(const task of result.tasks||[]){
+   const card=node('article',undefined,'card');card.appendChild(node('h2',task.name||'File operation'));
+   card.appendChild(node('p',task.phase||task.status));
+   if(task.total>0){const bar=node('progress');bar.max=task.total;bar.value=Math.min(task.bytes||0,task.total);bar.setAttribute('aria-label',task.phase||'Progress');card.appendChild(bar);
+    card.appendChild(node('p',task.unit==='items'?`${task.bytes||0} / ${task.total} items`:`${size(task.bytes||0)} / ${size(task.total)}`));}
+   if(task.rate>0&&task.unit!=='items')card.appendChild(node('p',`${size(task.rate)}/s · ${extractionETA(task.eta)}`));
+   if(task.error)card.appendChild(node('p',task.error,'error'));
+   section.appendChild(card);
+  }
+ }catch(error){const section=$('processing');section.hidden=false;section.replaceChildren(node('p','Live task status unavailable. Reconnecting…','notice'));}
+}
 async function refresh(){try{if(!token)token=(await api('/api/bootstrap')).token;state=await api('/api/state');if($('modal').hidden)render();}catch(error){$('connection').hidden=false;$('connection').textContent=error.message+' If the PS5 was restarted, start a session from the Botty portal.';}}
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>{tab=element.dataset.tab;render();};
 $('refresh').onclick=refresh;$('add').onclick=()=>modal('Add a download','Paste a magnet link. Files will download directly onto this PS5.','Add magnet',magnet=>chooseStorage('internal',true,choice=>action('/api/torrent',{action:'add',magnet:magnet.trim(),...choice},'Torrent added.')),{name:'Magnet link'});
@@ -70,3 +86,4 @@ function navigate(direction){const choices=focusables(),current=document.activeE
 window.addEventListener('keydown',event=>{if(event.key==='Escape'||event.key==='Backspace'&&document.activeElement.tagName!=='INPUT'){if(!$('modal').hidden){event.preventDefault();closeModal();}return;}if(event.key==='Tab'&&!$('modal').hidden){event.preventDefault();const list=focusables(),index=list.indexOf(document.activeElement);list[(index+(event.shiftKey?-1:1)+list.length)%list.length].focus();return;}if(document.activeElement.tagName==='SELECT')return;if(document.activeElement.tagName==='INPUT'&&!['ArrowUp','ArrowDown'].includes(event.key))return;const directions={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'};if(directions[event.key]){event.preventDefault();navigate(directions[event.key]);}});
 let lastPad=0,previous=[];function gamepad(now){const pads=navigator.getGamepads?navigator.getGamepads():[];const pad=Array.from(pads).find(Boolean);if(pad){const pressed=pad.buttons.map(b=>b.pressed);if(pressed[0]&&!previous[0]&&document.activeElement)document.activeElement.click();if(pressed[1]&&!previous[1]&&!$('modal').hidden)closeModal();if(now-lastPad>180){const direction=pressed[12]||pad.axes[1]<-.6?'up':pressed[13]||pad.axes[1]>.6?'down':pressed[14]||pad.axes[0]<-.6?'left':pressed[15]||pad.axes[0]>.6?'right':null;if(direction&&(document.activeElement.tagName!=='INPUT'||direction==='up'||direction==='down')){navigate(direction);lastPad=now;}}previous=pressed;}requestAnimationFrame(gamepad);}
 $('tab-all').focus();refresh();setInterval(()=>{if(!busy&&$('modal').hidden)refresh();},3000);requestAnimationFrame(gamepad);
+setInterval(refreshProcessing,1000);
