@@ -22,9 +22,9 @@ bool is(const char* text){return mode && (std::strcmp(mode,text)==0 || (std::str
 const auto mainThread=std::this_thread::get_id();
 std::uint64_t artificialRenderTime=0;
 bool keyboardSeen=false,resumeSeen=false;
-std::size_t offset=0;
+thread_local std::size_t offset=0;
 bool videoClosed=false,padClosed=false,workerJoined=false;
-std::string socketRequest,socketResponse;
+thread_local std::string socketRequest,socketResponse;
 bool deletionSent=false;
 void snapshot() {
     FILE* f=std::fopen("build/preview.ppm","wb");
@@ -61,6 +61,10 @@ int sceNetRecv(int,void* b,std::size_t n,int){
     if((is("checking-deletion")||is("checking-game-deletion"))&&deletionSent)return -1;
     if(socketResponse.empty()) {
         std::string body=R"({"app":"Botty","version":"0.1.1","titleId":"BTTY00001","apiVersion":1})";
+        if(socketRequest.find("GET /api/processing ")==0){
+            body=R"({"tasks":[]})";
+            if(const char* path=std::getenv("BOTTY_PREVIEW_PROCESSING_FILE")){std::ifstream input(path);body.assign(std::istreambuf_iterator<char>(input),{});}
+        }
         if(socketRequest.find("GET /api/bootstrap ")==0)body=R"({"apiVersion":1,"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";
         if(socketRequest.find("GET /api/connections ")==0) {
             assert(socketRequest.find("X-Botty-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")!=std::string::npos);
@@ -121,6 +125,8 @@ int scePadRead(int,PS5_PadData* p,int){
     if(reads==13&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_RIGHT;
     if(reads==15&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
+    if((is("storage")||is("download-mode"))&&reads==3)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(is("download-mode")&&reads==5)p->buttons=PS5_PAD_BUTTON_CROSS;
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}
     if(is("buffered-password")&&p->buttons){p[1]=p[0];p[1].buttons=0;++p[1].timestamp;return 2;}
     return 1;

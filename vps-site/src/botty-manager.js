@@ -1,22 +1,22 @@
 import { sha256 } from './transmission.js';
 import { sleep } from './ps5-io.js';
 export const MANAGER_ROOT='/data/botty/manager';
-const VERSION='1.2.2';
+const VERSION='1.3.1';
 const APP=MANAGER_ROOT+'/'+VERSION;
 const BASE='./apps/botty/';
-const HASH='bb37eeee2b4b21eaa83a2180438152657c87de5ef2b07b3280e84f5943033e01';
+const HASH='23d55d06a4dc00fb1dcc6856e35f5e2ebe2377331a82e85facba2f5e1c85ead8';
 const encoder=new TextEncoder();
 export async function managerInstalled(io) {
   const bytes=await io.readFile(MANAGER_ROOT+'/installed.json',4096);
   if(!bytes)return false;
-  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','1.0.0','1.0.1','1.0.2','1.0.3','1.0.4','1.1.0','1.2.0','1.2.1',VERSION].includes(data.version);}
+  try {const data=JSON.parse(new TextDecoder().decode(bytes));return data.app==='Botty'&&['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','1.0.0','1.0.1','1.0.2','1.0.3','1.0.4','1.1.0','1.2.0','1.2.1','1.2.2','1.3.0',VERSION].includes(data.version);}
   catch(_){throw Error('Botty installation record is damaged. Reinstall Botty from its button.');}
 }
 async function health(io) {
   const response=await io.http(8088,'/health');
   if(response.status!==200)throw Error('Botty is not responding.');
   const data=JSON.parse(response.body);
-  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','1.0.0','1.0.1','1.0.2','1.0.3','1.0.4','1.1.0','1.2.0','1.2.1',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
+  if(data.app!=='Botty'||!['0.1.0','0.1.1','0.1.2','0.1.3','0.1.4','0.1.5','0.2.0','0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','1.0.0','1.0.1','1.0.2','1.0.3','1.0.4','1.1.0','1.2.0','1.2.1','1.2.2','1.3.0',VERSION].includes(data.version)||data.titleId!=='BTTY00001')throw Error('Port 8088 is used by an unexpected service.');
   return data;
 }
 async function verifyWorker(io) {
@@ -25,7 +25,7 @@ async function verifyWorker(io) {
   if(!/^[a-f0-9]{64}$/.test(key))throw Error('Compression worker credentials are unavailable.');
   const response=await io.http(5910,'/api/status?token='+key);
   const data=JSON.parse(response.body);
-  if(response.status!==200||data.ok!==true||data.bottyWorker!=='library-1.2')throw Error('An incompatible compression worker is running. Keep current work intact and start a new console session.');
+  if(response.status!==200||data.ok!==true||!['library-1.2','library-1.3'].includes(data.bottyWorker))throw Error('An incompatible compression worker is running. Keep current work intact and start a new console session.');
 }
 export async function installAndStartManager(io,options={}) {
   const fetchFile=options.fetchFile||fetch,digest=options.digest||sha256,wait=options.wait||sleep,report=options.report||(()=>{});

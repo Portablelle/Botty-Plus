@@ -3,10 +3,11 @@
 #include "catalog.hpp"
 namespace botty {
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal };
+enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer };
 struct Command {
     Operation operation=Operation::none;
-    bool refresh=false;
+    bool refresh=false,automatic=true,torrent=false;
+    std::array<char,64> storage{};
     std::array<char,96> id{};
     std::array<char,4096> archive{};
     std::array<char,16385> text{}; // magnet or archive password; never logged
@@ -22,7 +23,7 @@ bool encodeCommand(const Command&,char*,std::size_t,std::size_t&) noexcept;
 ActionResult performCommand(const Command&) noexcept;
 const char* unavailable(Operation,const Entry*,const Catalog&) noexcept;
 struct Workflow {
-    enum class Panel { closed, menu, archives, keyboard, confirm } panel=Panel::closed;
+    enum class Panel { closed, menu, archives, keyboard, storage, mode, confirm } panel=Panel::closed;
     unsigned selected=0,keyPage=0,revision=0,archiveIndex=0;
     bool confirm=false,passwordVisible=false,unicodeInput=false;
     std::array<char,7> codepoint{};
@@ -30,12 +31,12 @@ struct Workflow {
     std::array<char,96> targetId{};
     unsigned targetTab=0;
     Command command{};
-    std::array<Operation,6> options{};
+    std::array<Operation,7> options{};
     unsigned optionCount=0;
     void open(const Entry*,unsigned,const Catalog&) noexcept;
     void add() noexcept;
     void search() noexcept;
-    void grab(const Entry&,bool exploration=false) noexcept;
+    void grab(const Entry&,bool exploration=false,bool storageSupported=false) noexcept;
     void close() noexcept;
     const Entry* target(const Catalog&) const noexcept;
     // True emits one confirmed command. Caller queues it, then clears input.

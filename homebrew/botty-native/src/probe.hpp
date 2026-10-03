@@ -29,6 +29,9 @@ private:
     ActionResult result_{};
     std::atomic<bool> busy_{false},queued_{false};
     std::atomic<Deletion> deletion_{Deletion::idle};
+    Processing processing_{};
+    void* progressThread_=nullptr;
+    static void* progressWorker(void*) noexcept;
     void* thread_=nullptr;
     static void* worker(void*) noexcept;
     void publish(Connection,const Catalog* catalog=nullptr) noexcept;
@@ -36,6 +39,10 @@ public:
     bool start() noexcept;
     void stop() noexcept;
     bool submit(const Command&) noexcept;
+    bool readProcessing(Processing& out) noexcept {
+        if(gate_.test_and_set(std::memory_order_acquire))return false;
+        const bool changed=out.revision!=processing_.revision;out=processing_;gate_.clear(std::memory_order_release);return changed;
+    }
     bool busy() const noexcept {return busy_.load();}
     Deletion deletion() const noexcept {return deletion_.load();}
     void retry() noexcept { retry_.store(true); }

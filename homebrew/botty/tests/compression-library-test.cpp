@@ -7,13 +7,14 @@ using namespace botty;
 #undef assert
 #define assert(condition) do { if(!(condition))throw std::runtime_error("Assertion failed: " #condition); } while(false)
 #endif
-void runTests(){
+void runTests(bool external){
 #ifdef __PS5__
  const fs::path base="/data/botty/compressor/selftests";
 #else
  const auto base=fs::temp_directory_path();
 #endif
  const auto root=base/("botty-library-compression-"+randomId());Paths paths(root/"data",root/"library");
+ const Paths outputPaths=external?Paths(root/"external/botty",root/"external/homebrew"):paths;
  const auto source=paths.library/"Example Game",mounted=root/"runtime/PPSA12345",shadow=root/"shadow",apps=root/"apps",original=paths.root/"compressor/originals"/std::string(32,'a');
  unsigned rejectionCase=0;auto rejects=[&](auto fn){++rejectionCase;bool rejected=false;try{fn();}catch(...){rejected=true;}if(!rejected)throw std::runtime_error("Expected rejection at case "+std::to_string(rejectionCase));};
  fs::create_directories(source/"sce_sys");fs::create_directories(mounted);writeJson(source/"sce_sys/param.json",{{"titleId","PPSA12345"}});std::ofstream(source/"eboot.bin")<<"exact original contents";
@@ -27,7 +28,7 @@ void runTests(){
 #ifndef __PS5__
  fs::create_symlink(source,mounted/"link");rejects([&]{compareCompression(source,mounted);});fs::remove(mounted/"link");
 #endif
- fs::create_directories(paths.root/"compressor/output");const auto image=paths.root/"compressor/output/PPSA12345.ffpfsc";std::ofstream(image)<<"isolated mock image";
+ fs::create_directories(outputPaths.root/"compressor/output");const auto image=outputPaths.root/"compressor/output/PPSA12345.ffpfsc";std::ofstream(image)<<"isolated mock image";
  fs::create_directories(apps/"PPSA12345");std::ofstream(apps/"PPSA12345/mount.lnk")<<source.string();
  httplib::Server server;std::atomic<bool> selected{false},mount{false},busy{true};
  server.Post(R"(/api/v1/(.*))",[&](const auto& req,auto& res){auto input=json::parse(req.body);json answer={{"status",0}};
@@ -44,7 +45,7 @@ void runTests(){
 #endif
  std::thread thread([&]{server.listen_after_bind();});
  struct StopServer {httplib::Server& server;std::thread& thread;~StopServer(){server.stop();if(thread.joinable())thread.join();}} stopServer{server,thread};
- CompressionLibrary library(paths,port,shadow,apps,root/"runtime");assert(!library.idle("PPSA12345"));busy=false;library.api("games/unmount",{{"title_id","PPSA12345"}});assert(library.idle("PPSA12345"));
+ CompressionLibrary library(outputPaths,port,shadow,apps,root/"runtime",&paths);assert(!library.idle("PPSA12345"));busy=false;library.api("games/unmount",{{"title_id","PPSA12345"}});assert(library.idle("PPSA12345"));
  json rec={{"titleId","PPSA12345"},{"jobId",std::string(32,'a')},{"source",source.string()},{"output",image.string()}};std::vector<std::string> phases;
  auto save=[&]{phases.push_back(rec.at("status"));writeJson(root/"journal.json",rec);};
  library.activate(rec,save,{});assert(rec["status"]=="ready"&&rec["verified"]==true&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
@@ -76,7 +77,7 @@ void runTests(){
 }
 
 int main(){
- try {runTests();
+ try {runTests(false);runTests(true);
 #ifdef __PS5__
   writeJson("/data/botty/compressor/selftest-121-result.json",{{"passed",true},{"test","isolated production compression-library operations"}});
 #endif

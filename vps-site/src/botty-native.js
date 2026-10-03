@@ -4,7 +4,9 @@ import { sha256 } from './transmission.js';
 export const NATIVE_ROOT = '/data/homebrew/PPSA99071';
 const JOURNAL = '/data/botty/native/update.json';
 const BACKUPS = '/data/botty/native/backups';
-const HASH='6307da38c0d4c73a75d7cc7fea2e519c6548363523b4210343c1a8562b8985e9';
+// Native executables exceed 16 MiB; keep a bounded allowance for older copies too.
+const MAX_NATIVE_FILE_BYTES = 32 * 1024 * 1024;
+const HASH = 'd94cd90315977e1802c30db573307892ac72bd5fb39a75f61e702ffe01b2d929';
 const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json', 'sce_sys/snd0.at9'];
 
 const STAGE = '/data/botty/native/' + HASH + '/PPSA99071';
@@ -93,14 +95,14 @@ export class NativeIO extends PS5IO {
       const file = manifest.files.find(f => f.path === 'sce_sys/' + name);
       const data = await this.readFile(NATIVE_ROOT + '/' + file.path, file.size);
       if (!data || await digest(data) !== file.sha256) throw Error('Native metadata source verification failed.');
-      const previous = await this.readFile(path, 16 * 1024 * 1024);
+      const previous = await this.readFile(path, MAX_NATIVE_FILE_BYTES);
       if (previous && await digest(previous) === file.sha256) continue;
       const metadataBackup = backup.slice(0, backup.lastIndexOf('/')) + '/metadata';
       const saved = metadataBackup + '/' + index + '.bin';
-      if (previous && !await this.readFile(saved, 16 * 1024 * 1024)) {
+      if (previous && !await this.readFile(saved, MAX_NATIVE_FILE_BYTES)) {
         await this.mkdirs(metadataBackup);
         await this.writeFile(saved, previous, true);
-        const disk = await this.readFile(saved, 16 * 1024 * 1024);
+        const disk = await this.readFile(saved, MAX_NATIVE_FILE_BYTES);
         if (!disk || await digest(disk) !== await digest(previous)) throw Error('Metadata backup verification failed.');
       }
       await this.writeFile(path, data);
@@ -152,7 +154,7 @@ function identity(bytes, targetVersion, reuseNewer = false) {
 
 async function matches(io, root, manifest, digest) {
   for (const file of manifest.files) {
-    const bytes = await io.readFile(root + '/' + file.path, 16 * 1024 * 1024);
+    const bytes = await io.readFile(root + '/' + file.path, MAX_NATIVE_FILE_BYTES);
     if (!bytes || bytes.length !== file.size || await digest(bytes) !== file.sha256) return false;
   }
   return true;
@@ -194,15 +196,21 @@ export async function installNative(io, options = {}) {
   if (manifest.schema !== 1 || manifest.titleId !== 'PPSA99071' ||
       !/^\d{2}\.\d{3}\.\d{3}$/.test(manifest.version) ||
       manifest.files.length !== FILES.length || new Set(manifest.files.map(f => f.path)).size !== FILES.length ||
-      manifest.files.some(f => !FILES.includes(f.path))) throw Error('Unexpected native package.');
+      manifest.files.some(f => !FILES.includes(f.path) || !Number.isSafeInteger(f.size) || f.size < 1 || f.size > MAX_NATIVE_FILE_BYTES)) throw Error('Unexpected native package.');
 
   const record = await io.readFile(JOURNAL, 8192);
   let journal;
   if (record) {
     try { journal = JSON.parse(decoder.decode(record)); } catch (_) {}
+    // Completed journals from the two manual 1.3.1 repairs used named backups.
+    // Accept only those exact historical paths; pending recovery stays strict.
+    const legacyComplete = journal?.status === 'complete' && [
+      '/data/botty/native/backups/botty-131-20261003/PPSA99071',
+      '/data/botty/native/backups/botty-131-stackfix-20261003/PPSA99071',
+    ].includes(journal.backup);
     if (!journal || journal.schema !== 1 || !['pending', 'complete', 'rolled-back'].includes(journal.status) ||
         !/^[a-f0-9]{64}$/.test(journal.target) || !/^[a-f0-9]{64}$/.test(journal.previous) ||
-        !/^\/data\/botty\/native\/backups\/[a-f0-9]{32}\/PPSA99071$/.test(journal.backup))
+        (!legacyComplete && !/^\/data\/botty\/native\/backups\/[a-f0-9]{32}\/PPSA99071$/.test(journal.backup)))
       throw Error('Native update journal is damaged. Existing files were preserved.');
     await recover(io, journal, manifest, digest, report);
   }
@@ -235,7 +243,7 @@ export async function installNative(io, options = {}) {
 
   for (const file of manifest.files) {
     const path = STAGE + '/' + file.path;
-    let data = await io.readFile(path, 16 * 1024 * 1024);
+    let data = await io.readFile(path, MAX_NATIVE_FILE_BYTES);
     if (data && data.length === file.size && await digest(data) === file.sha256) continue;
     const result = await fetchFile('./apps/botty-native/' + file.path, { cache: 'no-store' });
     if (!result.ok) throw Error('Native file download failed: ' + file.path);

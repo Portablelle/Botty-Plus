@@ -14,7 +14,7 @@ guide for recovery and manual rollback.
 
 ## Screens and controls
 
-L1/R1 switches **Explore → Search → Downloads → Extracted → Library → Connections**.
+L1/R1 switches **Explore → Search → Downloads → Processing → Library → Connections**.
 D-pad/stick moves selection; Cross opens details and Circle goes back. Options
 opens actions for the selected item. Each destructive action uses a separate
 confirmation with Cancel selected initially.
@@ -28,7 +28,7 @@ confirmation with Cancel selected initially.
 - **Downloads:** progress, ETA, speeds, peers and file details; pause, resume,
   verify, extract and confirmed removal of original download files. Square adds
   a magnet. Left/right changes filters.
-- **Extracted:** job status, errors, throughput and ETA; cancellation, cleanup
+- **Processing:** job status, errors, throughput and ETA; cancellation, cleanup
   and moving recognized content to the library. Moved jobs appear in Library.
 - **Library:** three-column grid, left/right moves one card, up/down one row,
   Cross opens details. This screen does not automatically launch games.
@@ -122,7 +122,7 @@ During a slow local refresh, the app keeps its last catalog with a Reconnecting 
 
 ### Library deletion
 
-For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Extracted** only hides an extraction row and is no longer offered in Library.
+For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Processing** only hides an extraction row and is no longer offered in Library.
 
 ## Home-screen music
 
@@ -150,3 +150,53 @@ original. Saves and downloaded archives are preserved. Already-compressed games
 do not offer **Compress game**. A service capability flag prevents newer clients
 from offering deletion against an older service. Interrupted deletion stays locked
 for inspection rather than repeating automatically.
+
+
+## Storage selection (1.3)
+
+Native 01.003.002 reads the service's storage catalog and free capacity. Adding
+a game opens storage selection, Full auto / Download only, then confirmation.
+Extraction, publication and compression default to the current disk and let the
+user choose another one. Options exposes Transfer to another disk for torrent
+data, ready extractions and Library content. Transfer progress and recovery
+errors remain visible; closing the app leaves the background operation running.
+These features require service 1.3.0 and its library-1.3 compression worker for
+external compression. Host previews are not PS5 acceptance.
+
+## Processing (01.003.002 / service 1.3.1)
+
+Processing replaces Extracted and combines active extractions, compression and
+deletion with extraction results. Active tasks come first. A separate authenticated
+`/api/processing` connection polls every second while long deletion requests run.
+The current phase, counters, rate, elapsed time and phase ETA are shown. Deletion
+counts checked file/directory removals; compression and verification count bytes.
+ETA resets between phases and is unavailable while waiting, reconnecting or before
+a useful rate sample. Original archives and saves keep their existing protections.
+The panel retains the latest deletion/compression result in this service session;
+it is not a durable history of every past operation.
+
+Validated with host tests and the native renderer preview. After the 01.003.001
+stack overflow was corrected in 01.003.002, the user confirmed that Botty+ opens
+and Processing works on PS5.
+
+When external storage is connected, its name and free space appear below the
+PS5 free-space card in Downloads and Processing. Disconnected disks are hidden.
+
+## Library copy labels (1.3.2 / native 01.003.003)
+
+Library covers show Compressed, Uncompressed or Both formats. Each copy has its
+own storage label: PS5 SSD, named external SSD, or Offline. Verified compressed
+copies and retained originals use their separate target/source storage IDs.
+Restored originals retain a second compressed-copy label; pending
+compression does not claim a completed compressed copy. Service remains 1.3.1.
+
+Host model/parser regressions cover split storage, removed originals, pending
+compression, restoration and missing disks. The actual renderer preview covers
+six representative cards; native integration and package checks pass. On firmware
+13.00 the user reported successful LAUNCH, and console reads confirmed native
+01.003.003 with service 1.3.1 active. Visual acceptance of all copy/storage
+combinations on console remains separate from the host previews.
+
+The portal accepts the two historical completed manual-update journals and
+bounds native file reads at 32 MiB, allowing the current executable above 16 MiB.
+Installer tests enforce actual read limits and cover larger previous executables.

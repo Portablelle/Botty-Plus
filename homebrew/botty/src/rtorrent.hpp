@@ -113,7 +113,12 @@ public:
         if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");hash=lower(match[1]);
       }
       bool duplicate=false;for(const auto& item:list())if(item.at("hashString")==hash)duplicate=true;
-      if(!duplicate){call(args.value("paused",false)?"load.normal":"load.start",{"",source});call("session.save");}
+      if(!duplicate){
+        const auto directory=args.value("download-dir",paths_.complete.string());
+        // An RPC command string is parsed by rTorrent: accept only managed paths.
+        if(directory.find_first_of("\"\\\n\r;,$")!=std::string::npos||!fs::is_directory(directory))throw std::runtime_error("Invalid download directory");
+        call(args.value("paused",false)?"load.normal":"load.start",{"",source,"d.directory.set=\""+directory+"\""});call("session.save");
+      }
       return {{duplicate?"torrent-duplicate":"torrent-added",{{"id",identity(hash)},{"hashString",hash}}}};
     }
     const auto items=list();
@@ -124,6 +129,12 @@ public:
       if(method=="torrent-stop")call("d.stop",{hash});
       else if(method=="torrent-start"||method=="torrent-start-now")call("d.start",{hash});
       else if(method=="torrent-verify"){call("d.stop",{hash});call("d.check_hash",{hash});}
+      else if(method=="torrent-close"){call("d.stop",{hash});call("d.close",{hash});}
+      else if(method=="torrent-set-location"){
+        const auto directory=args.at("location").get<std::string>();
+        if(!fs::is_directory(directory))throw std::runtime_error("Destination is unavailable");
+        call("d.stop",{hash});call("d.close",{hash});call("d.directory.set",{hash,directory});
+      }
       else if(method=="torrent-remove"){if(args.value("delete-local-data",false))throw std::runtime_error("Delete exact files through Botty first");call("d.erase",{hash});}
       else throw std::runtime_error("Unsupported torrent operation");
     }

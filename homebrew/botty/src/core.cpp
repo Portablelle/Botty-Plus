@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "storage.hpp"
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -95,7 +96,7 @@ int statFileAt(int fd,const char* name,struct stat* info){return fstatat(fd,name
 int unlinkFileAt(int fd,const char* name){return unlinkat(fd,name,0);}
 int unlinkDirectoryAt(int fd,const char* name){return unlinkat(fd,name,AT_REMOVEDIR);}
 #endif
-void removeDirectoryAt(int parent,const char* name,dev_t device) {
+void removeDirectoryAt(int parent,const char* name,dev_t device,uint64_t& done,uint64_t total,const DeleteProgress& progress) {
   const int fd=openDirectoryAt(parent,name);
   if(fd<0){if(errno==ENOENT)return;throw std::runtime_error("Cannot open game folder for deletion");}
   struct stat opened{};
@@ -108,20 +109,24 @@ void removeDirectoryAt(int parent,const char* name,dev_t device) {
       if(!strcmp(entry->d_name,".")||!strcmp(entry->d_name,".."))continue;
       struct stat info{};if(statFileAt(fd,entry->d_name,&info))throw std::runtime_error("Cannot inspect game file");
       if(info.st_dev!=device)throw std::runtime_error("Mounted game files cannot be removed");
-      if(S_ISDIR(info.st_mode))removeDirectoryAt(fd,entry->d_name,device);
+      if(S_ISDIR(info.st_mode))removeDirectoryAt(fd,entry->d_name,device,done,total,progress);
       else if(!S_ISREG(info.st_mode))throw std::runtime_error("Game links and special files cannot be removed");
-      else if(unlinkFileAt(fd,entry->d_name))throw std::runtime_error("Cannot remove game file: "+std::string(strerror(errno)));
+      else {if(unlinkFileAt(fd,entry->d_name))throw std::runtime_error("Cannot remove game file: "+std::string(strerror(errno)));
+        ++done;if(progress)progress(done,total,entry->d_name);
+      }
     }
     struct stat current{};
     if(statFileAt(parent,name,&current)||current.st_dev!=opened.st_dev||current.st_ino!=opened.st_ino)
       throw std::runtime_error("Game folder changed during deletion");
     if(unlinkDirectoryAt(parent,name))throw std::runtime_error("Cannot remove game folder: "+std::string(strerror(errno)));
+    ++done;if(progress)progress(done,total,name);
     closedir(dir);
   }catch(...){closedir(dir);throw;}
 }
 
 }
-void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove) {
+void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove,const DeleteProgress& progress) {
+  uint64_t done=0;if(remove&&progress)progress(0,files.size(),"");
   for(const auto& file:files) {
     const auto relative=safeRelative(file.string());
     int fd=open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
@@ -151,6 +156,7 @@ void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, b
       }
       close(fd);
     } catch(...) {close(fd);throw;}
+    ++done;if(remove&&progress)progress(done,files.size(),relative.string());
   }
 }
 std::string randomId() {
@@ -185,7 +191,7 @@ json classify(const fs::path& root) {
 }
 // Extraction stays private; only verified content being published becomes readable
 // by the game sandbox. Refuse links and special files, and never follow a leaf link.
-static void prepareLibraryPermissions(const fs::path& source) {
+void prepareLibraryPermissions(const fs::path& source) {
   const auto prepare=[](const fs::path& path) {
     int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK);
     if(fd<0)throw std::runtime_error("Cannot open library content for permission preparation");
@@ -195,7 +201,7 @@ static void prepareLibraryPermissions(const fs::path& source) {
     const bool executable=path.filename()=="eboot.bin"||ext==".elf"||ext==".self"||ext==".prx"||ext==".sprx";
     const mode_t mode=S_ISDIR(info.st_mode)||executable?0755:0644;
     const int result=fchmod(fd,mode);close(fd);
-    if(result)throw std::runtime_error("Cannot prepare library permissions; content was not moved");
+    if(result && errno!=ENOTSUP && errno!=EOPNOTSUPP)throw std::runtime_error("Cannot prepare library permissions; content was not moved");
   };
   if(fs::is_symlink(fs::symlink_status(source)))throw std::runtime_error("Extracted links are not allowed");
   prepare(source);
@@ -204,7 +210,9 @@ static void prepareLibraryPermissions(const fs::path& source) {
     prepare(entry.path());
   }
 }
-json movePrepared(const Paths& paths, json job) {
+json movePrepared(const Paths& paths, json job, const Paths* destination, const std::function<void()>& check) {
+  const auto& targetPaths=destination?*destination:paths;
+  if(check)check();
   if (job.value("status", "") != "ready") throw std::runtime_error("Extraction is not ready to move");
   const std::string id = job.at("id");
   if (!std::regex_match(id,std::regex("[a-f0-9]{32}"))) throw std::runtime_error("Invalid job ID");
@@ -215,26 +223,26 @@ json movePrepared(const Paths& paths, json job) {
   const auto source = relative.empty() || relative == "." ? root : containedExisting(root, root/safeRelative(relative));
   const auto name = safeRelative(content.at("destination").get<std::string>());
   if (name.has_parent_path()) throw std::runtime_error("Invalid library filename");
-  fs::create_directories(paths.library);
-  if (fs::is_symlink(fs::symlink_status(paths.library))) throw std::runtime_error("Library directory is a symbolic link");
-  const auto target = paths.library/name;
+  fs::create_directories(targetPaths.library);
+  if (fs::is_symlink(fs::symlink_status(targetPaths.library))) throw std::runtime_error("Library directory is a symbolic link");
+  const auto target = targetPaths.library/name;
   if (fs::exists(fs::symlink_status(target))) throw std::runtime_error("Destination already exists; nothing was replaced");
   prepareLibraryPermissions(source);
   // Journal the move before it starts, so a crash is reported as uncertain on restart.
   job["status"]="moving"; job["destination"]=target.string(); writeJson(paths.jobs/(id+".json"),job);
   try {
-    if (fs::is_regular_file(source)) {
-      // Atomic no-overwrite publication on the same filesystem.
-      if (link(source.c_str(), target.c_str())) throw std::runtime_error("Cannot publish image without overwriting: "+std::string(strerror(errno)));
-      if (unlink(source.c_str())) throw std::runtime_error("Image published, but source cleanup failed; inspect both paths");
-    } else fs::rename(source,target); // Existing nonempty directories cannot be replaced.
+    struct stat src{},dst{};
+    if(stat(source.c_str(),&src)||stat(target.parent_path().c_str(),&dst))throw std::runtime_error("Cannot inspect publication disks");
+    if(src.st_dev!=dst.st_dev){copyVerified(source,target,check);prepareLibraryPermissions(target);}
+    else {if(check)check();publishExclusive(source,target);}
   } catch (const std::exception& error) {
     job["status"]="move-error"; job["error"]=error.what(); writeJson(paths.jobs/(id+".json"),job); throw;
   }
   job["status"]="moved"; job["content"]=content; writeJson(paths.jobs/(id+".json"),job);
+  if(fs::exists(source)){if(check)check();removeTransferred(source);}
   return job;
 }
-void deleteGameDirectory(const fs::path& root,const fs::path& name) {
+void deleteGameDirectory(const fs::path& root,const fs::path& name,const DeleteProgress& progress) {
   if(safeRelative(name.string()).has_parent_path())throw std::runtime_error("Expected one game directory");
   if(fs::is_symlink(fs::symlink_status(root)))throw std::runtime_error("Library links cannot be deleted");
   const auto target=root/name;
@@ -260,14 +268,16 @@ void deleteGameDirectory(const fs::path& root,const fs::path& name) {
   };
   check(full);if(!fs::is_directory(full))throw std::runtime_error("Recorded game folder is not a directory");
   // Validate the complete tree before deleting anything, then use checked descriptor-relative syscalls.
-  for(const auto& entry:fs::recursive_directory_iterator(full))check(entry.path());
+  uint64_t total=1,done=0;
+  for(const auto& entry:fs::recursive_directory_iterator(full)){check(entry.path());++total;}
+  if(progress)progress(0,total,"");
   const int parent=open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
   if(parent<0)throw std::runtime_error("Cannot open library for deletion");
-  try{removeDirectoryAt(parent,name.c_str(),base.st_dev);close(parent);}catch(...){close(parent);throw;}
+  try{removeDirectoryAt(parent,name.c_str(),base.st_dev,done,total,progress);close(parent);}catch(...){close(parent);throw;}
   if(fs::exists(fs::symlink_status(target)))throw std::runtime_error("Game files remain; retry deletion");
 }
 
-void deleteLibraryGame(const Paths& paths, const json& job) {
+void deleteLibraryGame(const Paths& paths, const json& job,const DeleteProgress& progress) {
   const std::string id=job.at("id"),status=job.value("status","");
   if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || (status!="moved"&&status!="library-delete-error"))
     throw std::runtime_error("Only a game moved to Library can be deleted");
@@ -278,7 +288,7 @@ void deleteLibraryGame(const Paths& paths, const json& job) {
   const std::string name=title+"-app";
   if(content.value("destination","")!=name || job.value("destination","")!=(paths.library/name).string())
     throw std::runtime_error("Library destination does not match the recorded game");
-  deleteGameDirectory(paths.library,name);
+  deleteGameDirectory(paths.library,name,progress);
 }
 
 }

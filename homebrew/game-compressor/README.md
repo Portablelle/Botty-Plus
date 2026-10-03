@@ -42,11 +42,11 @@ Per-game records and operation phases persist under `/data/botty/compressor`.
 The native app can close while the service continues the operation.
 
 Run `python3 prepare.py` in a clean component directory to verify and unpack the
-pinned archive and apply both patches. Build `build/` with SDK v0.43:
+pinned archive and apply the copy-only, Library and storage patches. Build `build/` with SDK v0.43:
 
 ```sh
 docker run --rm -v "$PWD/build:/work" -w /work botty-ps5-build:0.43 \
-  make -j2 BUILD_VERSION=botty-library-1.2
+  make -j2 BUILD_VERSION=botty-library-1.3
 ```
 
 Host checks:
@@ -71,3 +71,12 @@ does not resume those files. With Botty service 1.2.2, select **Compress game**
 again after a failed/cancelled attempt: its tracked temporary pair is removed
 before the free-space check, then compression restarts from zero. The original
 and other games are preserved; completed images still require inspection.
+
+
+### 1.3 destinations
+
+The `library-1.3` worker accepts a Botty-selected internal or mounted exFAT USB
+output root. It writes the image and sidecar directly there, while the original
+folder stays on its source disk. Botty owns disk selection, durable identities,
+source retention and ShadowMount activation; the worker retains its copy-only
+contract. External hardware acceptance remains pending.

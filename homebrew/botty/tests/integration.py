@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the real native HTTP service + UnRAR with a local rTorrent SCGI fixture."""
-import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error
+import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error,threading,concurrent.futures
 from rtorrent_fixture import RtorrentFixture
 from make_fixtures import build, single
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -188,7 +188,23 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         (complete/'app.rar.part').write_bytes(b'partial download')
         (complete/'unrelated.txt').write_text('keep')
         task=root/'automatic'/('1'*40+'.json');task.write_text(json.dumps({'hash':'1'*40,'status':'tracked'}))
-        request('/api/torrent',{'action':'remove-data','id':1,'confirmed':True})
+        entered,release=threading.Event(),threading.Event()
+        def block_stop(method,params):
+            if method=='d.stop':
+                entered.set()
+                assert release.wait(4), 'Progress endpoint was blocked by deletion'
+            return NotImplemented
+        rpc.hook=block_stop
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            pending=executor.submit(request,'/api/torrent',{'action':'remove-data','id':1,'confirmed':True})
+            try:
+                assert entered.wait(3)
+                live=request('/api/processing')['tasks'][0]
+                assert live['status']=='running' and live['id']=='1' and live['eta']==-1
+            finally:
+                release.set()
+            pending.result(timeout=5)
+        rpc.hook=None
         assert not (complete/'app.rar').exists() and (complete/'bad.rar').exists()
         assert not (complete/'app.rar.part').exists() and (complete/'unrelated.txt').read_text()=='keep'
         assert (root/'test-library/PPSA12345-app/eboot.bin').read_bytes()==b'original test bytes'*400
@@ -200,6 +216,9 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         request('/api/delete-library-game',{'id':job['id']},expected=400)
         assert (root/'test-library/PPSA12345-app/eboot.bin').exists()
         request('/api/delete-library-game',{'id':job['id'],'confirmed':True})
+        task_state=request('/api/processing')['tasks'][0]
+        assert task_state['status']=='completed' and task_state['bytes']==task_state['total'] and task_state['total']>0
+        request('/api/processing',auth=False,expected=403)
         assert not (root/'test-library/PPSA12345-app').exists()
         assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
         assert not any(j['id']==job['id'] for j in request('/api/state')['jobs'])

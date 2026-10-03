@@ -85,6 +85,10 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     decode(field(search,"sort"),out.exploreSort);decode(field(search,"error"),out.exploreError);decode(field(search,"notice"),out.exploreNotice);
     auto results=field(search,"results");if(!results.empty()) {JSON items{results};if(!items.take('['))return false;if(!items.take(']')){do{items.ws();auto start=items.p;if(!items.value())return false;auto row=slice(results,start,items.p-start);if(out.exploreCount==out.exploreResults.size())continue;auto& e=out.exploreResults[out.exploreCount++];e=Entry{};if(!decode(field(row,"id"),e.id,true))return false;decode(field(row,"name"),e.name);e.total=number(field(row,"size"));e.peers=static_cast<int>(number(field(row,"seeders")));e.downloadingPeers=static_cast<int>(number(field(row,"leechers")));e.completedCount=static_cast<int>(number(field(row,"completed")));decode(field(row,"published"),e.published);e.complete=field(row,"added")=="true";}while(items.take(','));if(!items.take(']'))return false;}}
     }
+    const auto transfer=field(body,"transfer");decode(field(transfer,"phase"),out.transferPhase);decode(field(transfer,"error"),out.transferError);out.transferring=field(transfer,"status")=="\"running\""||field(transfer,"status")=="\"uncertain\"";
+    out.storageSupported=field(body,"storageSupported")=="true";out.storageCount=0;
+    const auto devices=field(body,"storage");
+    if(!devices.empty()){JSON items{devices};if(!items.take('['))return false;if(!items.take(']')){do{items.ws();auto start=items.p;if(!items.value())return false;auto row=slice(devices,start,items.p-start);if(out.storageCount>=out.storage.size())continue;auto& d=out.storage[out.storageCount++];d=StorageDevice{};if(!decode(field(row,"id"),d.id,true))return false;decode(field(row,"label"),d.label);d.freeBytes=number(field(row,"freeBytes"));d.available=field(row,"available")=="true";}while(items.take(','));if(!items.take(']'))return false;}}
     out.freeBytes=number(field(body,"freeBytes"));decode(field(body,"library"),out.library);decode(field(body,"error"),out.error);
     for(unsigned type=0;type<2;++type){auto array=type?jobs:torrents;JSON j{array};j.take('[');if(j.take(']'))continue;
         do{j.ws();auto start=j.p;if(!j.value())return false;auto obj=slice(array,start,j.p-start);if(obj.empty()||obj.front()!='{')return false;
@@ -92,11 +96,11 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
             if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};
             auto id=field(obj,"id");if(id.empty()||field(obj,"name").empty())return false;
             if(type)decode(id,e.id);else std::snprintf(e.id.data(),e.id.size(),"%.0f",number(id));
-            decode(field(obj,"name"),e.name);
-            if(type){const auto compressed=field(obj,"compression");decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"error"),e.error);
+            decode(field(obj,"name"),e.name);if(!decode(field(obj,"storage"),e.storage)||!e.storage[0])std::snprintf(e.storage.data(),e.storage.size(),"internal");
+            if(type){const auto compressed=field(obj,"compression");decode(field(compressed,"sourceStorage"),e.sourceStorage);decode(field(compressed,"storage"),e.compressedStorage);decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);
                 auto content=field(obj,"content");decode(field(content,"kind"),e.kind);decode(field(content,"titleId"),e.titleId);if(!e.error[0])decode(field(content,"reason"),e.error);
                 decode(field(obj,"destination"),e.destination);if(!e.destination[0])decode(field(content,"destination"),e.destination);
-                e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
+                e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
             }else{const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;
@@ -131,9 +135,67 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     }
     out.valid=true;return true;
 }
-unsigned entryCount(const Catalog& s,unsigned tab,unsigned filter) noexcept {unsigned n=0;const auto count=tab?s.jobCount:s.torrentCount;const auto& entries=tab?s.jobs:s.torrents;for(unsigned i=0;i<count;++i)if(visible(entries[i],tab,filter))++n;return n;}
-const Entry* entryAt(const Catalog& s,unsigned tab,unsigned filter,unsigned index) noexcept {const auto count=tab?s.jobCount:s.torrentCount;const auto& entries=tab?s.jobs:s.torrents;for(unsigned i=0;i<count;++i)if(visible(entries[i],tab,filter)){if(index--==0)return &entries[i];}return nullptr;}
+bool parseProcessing(std::string_view body,Processing& out) noexcept {
+    JSON root{body};if(!root.value())return false;root.ws();if(root.p!=body.size())return false;
+    const auto tasks=field(body,"tasks");JSON j{tasks};if(!j.take('['))return false;
+    Processing next;
+    if(!j.take(']'))do {
+        j.ws();const auto begin=j.p;if(!j.value())return false;
+        const auto obj=slice(tasks,begin,j.p-begin);if(obj.empty()||obj.front()!='{')return false;
+        if(next.count==next.tasks.size())return false;
+        auto& e=next.tasks[next.count++];e.task=true;
+        if(!decode(field(obj,"id"),e.id,true)||!e.id[0])return false;
+        decode(field(obj,"name"),e.name);decode(field(obj,"kind"),e.kind);
+        decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);decode(field(obj,"file"),e.currentFile);
+        e.items=field(obj,"unit")=="\"items\"";e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));
+        e.download=number(field(obj,"rate"));e.elapsed=number(field(obj,"elapsed"));
+        const auto status=std::string_view(e.status.data());e.complete=status=="completed"||status=="ready"||status=="restored"||status=="deleted";
+        e.active=!e.complete&&status!="failed"&&status!="cancelled"&&status!="uncertain";
+        const auto eta=field(obj,"eta");e.eta=eta.empty()?-1:number(eta);e.etaEstimated=true;
+        const bool measured=status=="running"||status=="verifying"||status=="deleting-original"||status=="deleting-game";
+        if(!measured&&!e.complete){e.total=0;e.bytes=0;e.download=0;e.eta=-1;}
+        e.progress=e.total>0?e.bytes/e.total:0;if(e.progress<0)e.progress=0;if(e.progress>1)e.progress=1;
+    }while(j.take(','));
+    out=next;return true;
+}
+const Entry* entryAt(const Catalog& s,unsigned tab,unsigned filter,unsigned index) noexcept {
+    // Active work is always above completed extraction history in Processing.
+    if(tab==1)for(bool active:{true,false}){
+        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(e.active==active&&index--==0)return &e;}
+        for(unsigned i=0;i<s.jobCount;++i){const auto& e=s.jobs[i];bool replaced=false;
+            for(unsigned t=0;t<s.processing.count;++t)if(s.processing.tasks[t].id==e.id)replaced=true;
+            if(!replaced&&visible(e,tab,filter)&&e.active==active&&index--==0)return &e;
+        }
+    }else {const auto count=tab?s.jobCount:s.torrentCount;const auto& entries=tab?s.jobs:s.torrents;for(unsigned i=0;i<count;++i)if(visible(entries[i],tab,filter)&&index--==0)return &entries[i];}
+    return nullptr;
+}
+unsigned entryCount(const Catalog& s,unsigned tab,unsigned filter) noexcept {unsigned n=0;while(entryAt(s,tab,filter,n))++n;return n;}
 void formatBytes(double n,char* out,unsigned length) noexcept {const char* units[]={"B","KiB","MiB","GiB","TiB"};unsigned u=0;while(n>=1024&&u<4){n/=1024;++u;}std::snprintf(out,length,u?"%.1f %s":"%.0f %s",n,units[u]);}
+unsigned libraryCopies(const Entry& e,std::array<LibraryCopy,2>& copies) noexcept {
+    const auto kind=std::string_view(e.kind.data());
+    const bool restored=std::string_view(e.compressionState.data())=="restored";
+    const bool compressed=kind=="compressed"||e.compressionVerified;
+    const char* target=e.compressedStorage[0]?e.compressedStorage.data():e.storage.data();
+    // Legacy records predate external storage and kept their originals internally.
+    const char* source=e.sourceStorage[0]?e.sourceStorage.data():"internal";
+    if(compressed){
+        copies[0]={"Compressed",target};
+        if(e.originalKept){copies[1]={"Uncompressed",source};return 2;}
+    }else{
+        copies[0]={kind=="folder"||kind=="exfat"?"Uncompressed":"Format unknown",e.storage.data()};
+        if(restored){copies[1]={"Compressed",target,true};return 2;}
+    }
+    return 1;
+}
+void storageLabel(const Catalog& c,std::string_view id,char* out,unsigned length) noexcept {
+    if(id=="internal"){std::snprintf(out,length,"PS5 SSD");return;}
+    for(unsigned i=0;i<c.storageCount;++i)if(id==c.storage[i].id.data()){
+        const auto& d=c.storage[i];
+        if(std::string_view(d.label.data()).starts_with("External SSD ("))std::snprintf(out,length,"%sExternal %s",d.available?"":"Offline: ",d.label.data()+13);
+        else std::snprintf(out,length,"%s%s",d.available?"":"Offline: ",d.label[0]?d.label.data():"External SSD");return;
+    }
+    std::snprintf(out,length,"Offline: external SSD");
+}
 void formatETA(const Entry& e,char* out,unsigned length) noexcept {
     if(e.complete){std::snprintf(out,length,"Completed");return;}
     if(e.eta<0||e.eta>315360000){std::snprintf(out,length,"ETA unavailable");return;}

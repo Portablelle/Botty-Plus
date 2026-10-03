@@ -17,3 +17,5 @@ with tarfile.open(a) as t:
 subprocess.run(['patch','-p1','-i',str(root/'patches/botty-copy-only.patch')],cwd=out,check=True)
 
 subprocess.run(["patch","-p1","-i",str(root/"patches/botty-library.patch")],cwd=out,check=True)
+
+subprocess.run(["patch","-p1","-i",str(root/"patches/botty-storage.patch")],cwd=out,check=True)

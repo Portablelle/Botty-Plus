@@ -1,5 +1,7 @@
 #pragma once
 #include "core.hpp"
+#include "progress.hpp"
+#include "storage.hpp"
 #include "compression-library.hpp"
 #include <curl/curl.h>
 #include <chrono>
@@ -13,11 +15,26 @@ namespace botty {
 // Interrupted source mutations remain locked for explicit recovery.
 class Compressor {
   Paths paths_;
-  int port_=5910;
+  Storage* storage_=nullptr;
+  Paths disk(const std::string& id) const {if(storage_)return storage_->get(id);if(id!="internal")throw std::runtime_error("External storage unavailable");return paths_;}
+  int port_=5910,shadowPort_=10101;
   bool enabled_=false;
   json records_=json::object();
   mutable std::mutex mutex_;
   json state_={{"status","idle"}};
+  ExtractionEstimate estimate_;
+  std::string estimateKey_;
+  std::chrono::steady_clock::time_point phaseStarted_{},measuredAt_{};
+  void measure() {
+    const auto key=state_.value("jobId","")+state_.value("status","")+state_.value("phase","")+state_.value("unit","bytes");
+    const auto now=std::chrono::steady_clock::now();measuredAt_=now;
+    if(key!=estimateKey_){estimateKey_=key;estimate_=ExtractionEstimate{};phaseStarted_=now;}
+    const auto status=state_.value("status","");
+    const bool measurable=status=="running"||status=="verifying"||status=="deleting-original"||status=="deleting-game";
+    if(measurable)estimate_.update(now,state_.value("bytes",uint64_t(0)),state_.value("total",uint64_t(0)));
+    state_["rate"]=measurable?estimate_.rate:0;state_["eta"]=measurable?estimate_.eta:-1;
+    state_["elapsed"]=std::chrono::duration<double>(now-phaseStarted_).count();
+  }
   fs::path record() const {return paths_.root/"compressor/state.json";}
   static bool pending(const json& s) {
     const auto status=s.value("status","");
@@ -25,6 +42,7 @@ class Compressor {
   }
   static long long now() {return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());}
   void save() {
+    measure();
     writeJson(record(),state_);
     if(state_.contains("jobId")){records_[state_.at("jobId").get<std::string>()]=state_;writeJson(paths_.root/"compressor/games.json",records_);}
   }
@@ -56,10 +74,10 @@ class Compressor {
     for(unsigned char c:s)if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_'||c=='.')out+=c;else {out+='%';out+=h[c>>4];out+=h[c&15];}
     return out;
   }
-  void cleanFailedCopy(const std::string& id,const std::string& title,const fs::path& source,const fs::path& output) {
+  void cleanFailedCopy(const std::string& id,const std::string& title,const fs::path& source,const fs::path& output,const Paths& sourcePaths,const std::string& selected) {
     const auto directory=output.parent_path();
     if(!fs::exists(fs::symlink_status(directory)))return;
-    containedExisting(paths_.root,directory);
+    containedExisting(output.parent_path().parent_path().parent_path(),directory);
     const fs::path temporary="."+output.filename().string()+".gc-compress.tmp";
     const std::vector<fs::path> files={temporary,temporary.string()+".vhash"};
     bool found=false;
@@ -68,11 +86,11 @@ class Compressor {
     const auto previous=records_.value(id,json::object());
     const auto status=previous.value("status","");
     if((status!="failed"&&status!="cancelled")||previous.value("jobId","")!=id||
-       previous.value("titleId","")!=title||previous.value("source","")!=source.string()||
+       previous.value("titleId","")!=title||previous.value("source","")!=source.string()||previous.value("storage","internal")!=selected||
        !previous.value("originalKept",false)||previous.value("verified",false)||
        previous.contains("originalPath")||previous.value("originalDeletionStarted",false)||previous.value("gameDeletionStarted",false))
       throw std::runtime_error("Untracked compression files require inspection before retrying");
-    if(fs::exists(fs::symlink_status(paths_.root/"compressor/originals"/id)))
+    if(fs::exists(fs::symlink_status(sourcePaths.root/"compressor/originals"/id)))
       throw std::runtime_error("An original backup exists; recover the Library operation before retrying");
     // Validate both names before removing either; descriptor-relative deletion
     // rejects symlinks and special files and never follows a replaced path.
@@ -82,8 +100,8 @@ class Compressor {
       throw std::runtime_error("Could not remove unfinished compression files");
   }
 public:
-  void init(const Paths& paths,int port=5910) {
-    paths_=paths;port_=port;
+  void init(const Paths& paths,int port=5910,Storage* storage=nullptr,int shadowPort=10101) {
+    shadowPort_=shadowPort;storage_=storage;paths_=paths;port_=port;
     if(!fs::exists(paths.root/"compressor/enabled.json"))return;
     const auto config=json::parse(readText(paths.root/"compressor/enabled.json",4096));
     enabled_=config.value("mode","")=="library-1.2";
@@ -94,8 +112,8 @@ public:
   bool enabled() const {return enabled_;}
   bool busy() const {std::lock_guard<std::mutex> g(mutex_);return enabled_&&pending(state_);}
   void requireIdle() const {if(busy())throw std::runtime_error("Compression is active or uncertain; wait before changing files");}
-  json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;out["supported"]=enabled_;out["deletionSupported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
-  json game(const std::string& id) const {std::lock_guard<std::mutex> g(mutex_);return records_.value(id,json::object());}
+  json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;if(pending(state_)&&phaseStarted_.time_since_epoch().count())out["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-phaseStarted_).count();if(std::chrono::steady_clock::now()-measuredAt_>std::chrono::seconds(5)){out["rate"]=0;out["eta"]=-1;}out["supported"]=enabled_;out["deletionSupported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
+  json game(const std::string& id) const {std::lock_guard<std::mutex> g(mutex_);return state_.value("jobId","")==id?state_:records_.value(id,json::object());}
   bool protects(const std::string& id) const {const auto s=game(id).value("status","");return !s.empty()&&s!="restored"&&s!="failed"&&s!="cancelled";}
   json requestGameDeletion(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
@@ -118,7 +136,7 @@ public:
     if(rec.value("gameDeletionStarted",false)||rec.value("originalDeletionStarted",false)||!rec.value("originalKept",false)||!rec.contains("originalPath"))throw std::runtime_error("No original backup is available");
     state_=rec;state_["restoreRequested"]=true;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to restore the original source.";save();return state_;
   }
-  json start(const json& job) {
+  json start(const json& job,const std::string& selected="") {
     std::lock_guard<std::mutex> g(mutex_);
     if(!enabled_)throw std::runtime_error("Compression worker is not installed");
     if(pending(state_))throw std::runtime_error("Compression is already active or needs review");
@@ -126,10 +144,14 @@ public:
     if(job.value("status","")!="moved"||content.value("kind","")!="folder"||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||!std::regex_match(id,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Only tracked PS5 game folders in Library can be compressed");
     if(records_.contains(id)&&records_[id].value("status","")!="failed"&&records_[id].value("status","")!="cancelled"&&records_[id].value("status","")!="restored")throw std::runtime_error("This game already has a compression record");
     const auto name=safeRelative(content.at("destination").get<std::string>());if(name.has_parent_path())throw std::runtime_error("Invalid Library folder");
-    const auto source=paths_.library/name;
-    if(job.value("destination","")!=source.string()||!fs::is_directory(containedExisting(paths_.library,source)))throw std::runtime_error("Library source does not match the tracked folder");
-    const auto output=paths_.root/"compressor/output"/(title+".ffpfsc");
+    const auto sourceId=job.value("storage","internal"),targetId=selected.empty()?sourceId:selected;
+    const auto sourcePaths=disk(sourceId),targetPaths=disk(targetId);
+    const auto source=sourcePaths.library/name;
+    if(job.value("destination","")!=source.string()||!fs::is_directory(containedExisting(sourcePaths.library,source)))throw std::runtime_error("Library source does not match the tracked folder");
+    const auto output=targetPaths.root/"compressor/output"/(title+".ffpfsc");
+    fs::create_directories(output.parent_path());
     if(records_.contains(id)&&records_[id].value("status","")=="restored") {
+      if(records_[id].value("storage","internal")!=targetId||records_[id].value("source","")!=source.string())throw std::runtime_error("Retained compressed copy uses another location. Reactivate it there before transferring it.");
       state_=records_[id];state_["restoreRequested"]=false;state_["deleteRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to verify and select the retained compressed copy.";save();return state_;
     }
     if(fs::exists(fs::symlink_status(output))||fs::exists(fs::symlink_status(output.string()+".vhash")))throw std::runtime_error("Compressed output already exists; nothing was overwritten");
@@ -145,14 +167,15 @@ public:
     }
     const auto param=json::parse(readText(containedExisting(source,source/"sce_sys/param.json"),65536));
     if(param.value("titleId","")!=title)throw std::runtime_error("Source title identity mismatch");
-    if(request("/api/status").value("bottyWorker","")!="library-1.2")throw std::runtime_error("Unexpected compression worker version");
+    const auto workerVersion=request("/api/status").value("bottyWorker","");
+    if(workerVersion!="library-1.3"&&(workerVersion!="library-1.2"||sourceId!="internal"||targetId!="internal"))throw std::runtime_error("Unexpected compression worker version");
     if(request("/api/gc/job").value("busy",true))throw std::runtime_error("Compression worker is busy");
-    cleanFailedCopy(id,title,source,output);
-    if(size>UINT64_MAX-1073741824ULL||freeBytes(paths_.root)<size+1073741824ULL)throw std::runtime_error("Not enough space to keep original and compressed copy");
-    state_={{"status","starting"},{"jobId",job.at("id")},{"source",source.string()},{"titleId",title},{"startedAt",now()},{"phase","Starting compressed copy"},{"originalKept",true},{"bytes",0},{"total",size}};
+    cleanFailedCopy(id,title,source,output,sourcePaths,targetId);
+    if(size>UINT64_MAX-1073741824ULL||freeBytes(targetPaths.root)<size+1073741824ULL)throw std::runtime_error("Not enough space to keep original and compressed copy");
+    state_={{"storage",targetId},{"sourceStorage",sourceId},{"status","starting"},{"jobId",job.at("id")},{"source",source.string()},{"titleId",title},{"startedAt",now()},{"name",job.value("name",title)},{"phase","Starting compressed copy"},{"originalKept",true},{"bytes",0},{"total",size}};
     save(); // Persist intent BEFORE sending a request that may outlive its response.
     try {
-      const auto reply=request("/api/gc/compress?titleId="+title+"&sourcePath="+encode(source.string())+"&format=exfat&deletePolicy=keep",true);
+      const auto reply=request("/api/gc/compress?titleId="+title+"&sourcePath="+encode(source.string())+"&bottyOutputRoot="+encode(targetPaths.root.string())+"&format=exfat&deletePolicy=keep",true);
       const auto id=reply.at("id").get<std::string>();
       if(!std::regex_match(id,std::regex("op-[0-9]+")))throw std::runtime_error("Unexpected worker operation identity");
       state_["operationId"]=id;state_["status"]="running";save();
@@ -164,10 +187,12 @@ public:
     if(!enabled_)return;
     if(state_.value("status","")=="waiting-close") {
       const auto title=state_.at("titleId").get<std::string>();auto work=state_;g.unlock();
-      CompressionLibrary library(paths_);if(!library.idle(title))return;
-      auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;save();};
-      auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["phase"]="Verifying every file through the mounted compressed image";};
-      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress);}else library.activate(work,checkpoint,progress);}
+      Paths targetPaths=paths_,sourcePaths=paths_;try{targetPaths=disk(work.value("storage","internal"));sourcePaths=disk(work.value("sourceStorage","internal"));}catch(...){return;}
+      CompressionLibrary library(targetPaths,shadowPort_,"/data/shadowmount","/user/app","/system_ex/app",&sourcePaths);if(!library.idle(title))return;
+      auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;state_["bytes"]=0;state_["total"]=0;state_["unit"]="bytes";save();};
+      auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["status"]="verifying";state_["unit"]="bytes";state_["phase"]="Verifying every file through the mounted compressed image";measure();};
+      auto deletionProgress=[&](uint64_t done,uint64_t total,const std::string& file){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=done;state_["total"]=total;state_["unit"]="items";state_["file"]=file;state_["phase"]="Deleting files and folders";measure();};
+      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress,deletionProgress);}else library.activate(work,checkpoint,progress);}
       catch(const std::exception& e){work["status"]="uncertain";work["error"]=e.what();work["phase"]="Compression needs recovery before other file operations. Retained files were not automatically removed.";checkpoint();}
       return;
     }
@@ -187,7 +212,7 @@ public:
         }else {
           const auto live=request("/api/gc/job");
           if(live.value("activeId","")==state_.at("operationId")) {
-            state_["phase"]=live.value("phase","Working");state_["bytes"]=live.value("copiedBytes",0LL);state_["total"]=live.value("totalBytes",0LL);
+            state_["unit"]="bytes";state_["phase"]=live.value("phase","Working");state_["bytes"]=live.value("copiedBytes",0LL);state_["total"]=live.value("totalBytes",0LL);
           }
           state_["error"]="";
         }
@@ -195,6 +220,30 @@ public:
       }
       state_["error"]="Worker operation missing; original is kept. Do not retry.";
     }catch(...) {state_["error"]="Waiting for compression worker. Original is kept.";}
+    state_["rate"]=0;state_["eta"]=-1;
+  }
+  json relocate(const std::string& id,const std::string& selected,const std::function<void()>& check) {
+    std::unique_lock<std::mutex> g(mutex_);
+    if(pending(state_))throw std::runtime_error("Wait for compression to finish");
+    auto rec=records_.value(id,json::object());
+    if(rec.value("status","")!="ready"||!rec.value("verified",false))throw std::runtime_error("Only verified compressed games can be transferred");
+    const auto oldPaths=disk(rec.value("storage","internal")),newPaths=disk(selected);
+    const auto title=rec.at("titleId").get<std::string>();
+    const fs::path image=rec.at("output").get<std::string>();
+    if(image!=oldPaths.root/"compressor/output"/(title+".ffpfsc"))throw std::runtime_error("Unexpected compressed path");
+    containedExisting(oldPaths.root,image);
+    const auto dest=newPaths.root/"compressor/output"/image.filename();fs::create_directories(dest.parent_path());
+    g.unlock();CompressionLibrary library(oldPaths,shadowPort_);
+    if(!library.idle(title))throw std::runtime_error("Close Botty+ and games before transferring this game");
+    rec["status"]="uncertain";rec["phase"]="Transferring compressed game";g.lock();state_=rec;save();g.unlock();
+    copyVerified(image,dest,check);copyVerified(image.string()+".vhash",dest.string()+".vhash",check);
+    library.api("manual/remove",{{"path",image.string()}});
+    library.api("manual/add",{{"path",dest.string()}});
+    library.api("scan",{{"reset_attempts",false}});
+    bool found=false;for(int n=0;n<60;++n){check();try{if(library.api("games/info",{{"title_id",title}}).value("path","")==dest.string()){found=true;break;}}catch(...){}std::this_thread::sleep_for(std::chrono::seconds(1));}
+    if(!found)throw std::runtime_error("New compressed source not confirmed; both copies kept");
+    check();rec["storage"]=selected;rec["output"]=dest.string();rec["status"]="ready";rec["phase"]="Compressed game transferred and verified";g.lock();state_=rec;save();g.unlock();
+    removeTransferred(image);removeTransferred(image.string()+".vhash");return rec;
   }
   void stopWorker() {
     std::lock_guard<std::mutex> g(mutex_);

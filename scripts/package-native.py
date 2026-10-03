@@ -32,7 +32,7 @@ def main():
         shutil.copyfile(manifest, out / 'manifest.json')
         digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
         installer = project / 'vps-site/src/botty-native.js'
-        text, count = re.subn(r"const HASH = '[a-f0-9]{64}';", "const HASH = '" + digest + "';", installer.read_text())
+        text, count = re.subn(r"const HASH\s*=\s*'[a-f0-9]{64}';", "const HASH = '" + digest + "';", installer.read_text())
         if count != 1:
             raise ValueError('Missing native installer hash')
         installer.write_text(text)

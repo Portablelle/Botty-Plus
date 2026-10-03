@@ -2,7 +2,7 @@
   <img src="homebrew/botty-native/artwork/botty-plus-icon.png" alt="Botty+ logo" width="120">
 </p>
 
-<h1 align="center">Botty+ 1.2.2</h1>
+<h1 align="center">Botty+ 1.3</h1>
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
@@ -18,7 +18,7 @@ Botty+ is a native, controller-driven download and library manager for PS5 homeb
 
 Open your hosted portal on the PS5, select **LAUNCH**, then open **Botty+** from the home screen when setup completes. Downloads and extraction run in background services; the native app is their interface.
 
-**Native app 1.2.1:** service **1.2.2**, native title **01.002.001** (`PPSA99071`),
+**Version 1.3.2:** service **1.3.1**, native title **01.003.003** (`PPSA99071`),
 rTorrent **0.16.24-botty2** and ShadowMountPlus **1.7beta3-botty.3**. Library can
 create a compressed PS5 folder-game image, verify all files through the PS5 mount,
 retain or restore the original, and delete the uncompressed backup after an
@@ -26,7 +26,11 @@ explicit confirmation and a second verification. LEGO Voyagers launched from its
 compressed copy on firmware **13.00**. Other titles and firmware combinations
 require their own runtime acceptance. APR games require an existing index.
 
-Service 1.2.2 cleans a tracked failed compression's temporary image and hash file
+Library covers show **Compressed**, **Uncompressed** or **Both formats**, with
+a separate storage location for each copy and an Offline indicator for missing
+disks. [View the Library preview](docs/screenshots/library-copies-1.3.2.png).
+
+Since service 1.2.2, Botty cleans a tracked failed compression's temporary image and hash file
 when **Compress game** is selected again. It checks that the worker is idle and
 the original folder still matches, frees the temporary space, then starts from
 zero. Interrupted compression cannot resume; completed images and recovery
@@ -42,6 +46,23 @@ active or unmigrated Transmission installation. See [migration notes](homebrew/r
 The Relapse browser chain includes firmware offsets from **7.00 to 13.60**;
 this is not a compatibility guarantee for the complete stack. See the
 [validation record](homebrew/botty-native/VALIDATION.md) for remaining limits.
+
+## External storage
+
+Choose Internal SSD or a mounted exFAT external disk when adding a game, with
+available space shown for each. Select Full auto (download, extract and move on
+that disk) or Download only. Extraction, Library publication and compression
+also let you choose a destination. Transfer archives, extracted games, published
+games and verified compressed images between disks with verification before
+source cleanup. Retained compression backups stay on their original disk.
+
+These are host previews of the real native UI with synthetic data. The 1.3 USB
+workflow still requires PS5 hardware acceptance.
+
+![Storage selection](docs/screenshots/storage-choice-1.3.png)
+![Download mode](docs/screenshots/download-mode-1.3.png)
+
+See [storage behavior and recovery](homebrew/botty/README.md#external-storage-13).
 
 ## Library compression
 
@@ -85,7 +106,7 @@ The launch portal shown before opening Botty+:
 
 - **Explore and Search:** optional Prowlarr integration, cover artwork and a persistent download → extract → library workflow.
 - **Downloads:** progress, speeds, ETA, peer counts, magnet input, pause, resume and verification.
-- **Extracted:** multivolume RAR extraction, CRC checks, optional passwords, progress, cancellation and cleanup.
+- **Processing:** live extraction, compression and deletion tasks, phase progress, rate, ETA and cleanup.
 - **Library:** publish recognized PS5 app folders or exFAT images into `/data/homebrew`, with permissions prepared for the native sandbox.
 - **Connections:** display the console's Botty web URL and credentials for another device on the same LAN.
 
@@ -232,7 +253,7 @@ The Botty web interface permits localhost and authenticated `192.168.*.*` client
 
 | Control | Action |
 | --- | --- |
-| L1 / R1 | Switch Explore, Search, Downloads, Extracted, Library, Connections |
+| L1 / R1 | Switch Explore, Search, Downloads, Processing, Library, Connections |
 | D-pad / stick | Navigate items, pages and the Library grid |
 | Cross / Circle | Open or confirm / go back |
 | Options | Actions for the selected item |

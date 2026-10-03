@@ -1,0 +1,98 @@
+--- a/src/gc_api.c
++++ b/src/gc_api.c
+@@ -7067,13 +7067,39 @@
+ }
+ 
+ 
++// Botty accepts only managed payload roots on genuinely mounted exFAT media.
++static int botty_root(const char *path) {
++  if(!strcmp(path,"/data/botty")) return 1;
++  if(strlen(path)!=15 || strncmp(path,"/mnt/usb",8) || path[8]<'0' || path[8]>'7' || strcmp(path+9,"/botty")) return 0;
++  char mount[16];snprintf(mount,sizeof(mount),"/mnt/usb%c",path[8]);
++  struct statfs fs;
++  if(statfs(mount,&fs) || strcmp(fs.f_mntonname,mount) || (fs.f_flags&MNT_RDONLY)) return 0;
++  if(strcmp(fs.f_fstypename,"exfatfs") && strcmp(fs.f_fstypename,"exfat")) return 0;
++  struct stat st;
++  return !lstat(path,&st) && S_ISDIR(st.st_mode);
++}
++static int botty_source(const char *path) {
++  const char *leaf=NULL;
++  if(!strncmp(path,"/data/homebrew/",15)) leaf=path+15;
++  else if(!strncmp(path,"/mnt/usb",8) && path[8]>='0' && path[8]<='7' && !strncmp(path+9,"/homebrew/",10)) {
++    char root[32];snprintf(root,sizeof(root),"/mnt/usb%c/botty",path[8]);
++    if(!botty_root(root)) return 0;
++    char parent[32];snprintf(parent,sizeof(parent),"/mnt/usb%c/homebrew",path[8]);
++    struct stat st;if(lstat(parent,&st)||!S_ISDIR(st.st_mode)) return 0;
++    leaf=path+19;
++  }
++  return leaf && *leaf && !strchr(leaf,'/') && !strstr(leaf,"..") && !strchr(leaf,'\\');
++}
++
+ static int
+ botty_compress_copy(gc_operation_t *op) {
+   pfs_app_info_t info = {0};
+   pfs_compress_plan_t *plan = NULL;
+   char err[256] = {0};
+-  char out[256];
+-  snprintf(out, sizeof(out), "/data/botty/compressor/output/%s.ffpfsc", op->title_id);
++  char out[1200],directory[1100];
++  if(!botty_root(op->target_root)) {snprintf(op->error,sizeof(op->error),"Selected disk is not mounted");return -1;}
++  snprintf(directory,sizeof(directory),"%s/compressor/output",op->target_root);
++  snprintf(out,sizeof(out),"%s/%s.ffpfsc",directory,op->title_id);
+   struct stat st;
+   char running[64] = {0};
+   int running_state = get_running_big_app(running, sizeof(running), NULL);
+@@ -7082,12 +7108,12 @@
+     return -1;
+   }
+   if(!valid_title_id(op->title_id) || !strncmp(op->title_id,"CUSA",4) || !strcmp(op->title_id,"PPSA99071") ||
+-     strncmp(op->source_path,"/data/homebrew/",15) || strchr(op->source_path+15,'/') || strstr(op->source_path,"..") ||
++     !botty_source(op->source_path) ||
+      lstat(op->source_path, &st) || !S_ISDIR(st.st_mode)) {
+     snprintf(op->error, sizeof(op->error), "Original Library folder is unavailable");
+     return -1;
+   }
+-  if(mkdirs("/data/botty/compressor/output") != 0) {
++  if(mkdirs(directory) != 0) {
+     snprintf(op->error, sizeof(op->error), "Cannot create private output directory");
+     return -1;
+   }
+@@ -7099,7 +7125,7 @@
+       op->source_path, 0, PFS_COMPRESS_FORMAT_EXFAT, PFS_DELETE_KEEP, 0,
+       out, NULL, &plan, &info, err, sizeof(err));
+   uint64_t available = 0;
+-  if(rc == 0 && (space_for_path("/data/botty/compressor/output", &available, NULL) ||
++  if(rc == 0 && (space_for_path(directory, &available, NULL) ||
+       info.scan_bytes > UINT64_MAX - 1073741824ULL ||
+       available < info.scan_bytes + 1073741824ULL)) {
+     snprintf(err, sizeof(err), "Not enough space to keep the original plus a 1 GiB reserve");
+@@ -10193,7 +10219,7 @@
+                                                sizeof(source_path_arg));
+   if(arg_err) return serve_error(req, 400, arg_err);
+   if(action != GC_ACTION_COMPRESS || !valid_title_id(title_id) || strncmp(title_id,"PPSA",4) || !strcmp(title_id,"PPSA99071") ||
+-     strncmp(source_path_arg,"/data/homebrew/",15) || !source_path_arg[15] || strchr(source_path_arg+15,'/') || strstr(source_path_arg,".."))
++     !botty_source(source_path_arg))
+     return serve_error(req, 403, "Only direct PS5 Library folders can be compressed");
+ 
+   memset(&game, 0, sizeof(game));
+@@ -10430,6 +10456,9 @@
+       snprintf(delete_policy, sizeof(delete_policy), "%s", "after");
+     }
+   }
++  if(!websrv_get_query_arg(req,"bottyOutputRoot",target_root,sizeof(target_root)))
++    snprintf(target_root,sizeof(target_root),"/data/botty");
++  if(!botty_root(target_root)) return serve_error(req,400,"Selected output disk is unavailable");
+   pthread_mutex_lock(&g_gc_lock);
+   int response = 0;
+   gc_operation_t *op = alloc_queued_operation_locked(req, title_id, action,
+--- a/src/gc_websrv.c
++++ b/src/gc_websrv.c
+@@ -271,7 +271,7 @@
+   int reading = !strcmp(req->method, "GET");
+   int writing = !strcmp(req->method, "POST");
+   if(reading && !strcmp(req->path, "/api/status")) {
+-    const char *body = "{\"ok\":true,\"bottyWorker\":\"library-1.2\"}";
++    const char *body = "{\"ok\":true,\"bottyWorker\":\"library-1.3\"}";
+     return websrv_send(req->fd, 200, "application/json", body, strlen(body));
+   }
+   if(!((reading && (!strcmp(req->path, "/api/gc/job") || !strcmp(req->path, "/api/gc/history"))) ||

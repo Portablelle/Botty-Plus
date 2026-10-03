@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdio>
 #include <string_view>
+#include <memory>
+#include <new>
 namespace botty {
 namespace {
 struct Socket { int fd; ~Socket(){if(fd>=0)platform::closeSocket(fd);} };
@@ -184,14 +186,14 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::resume:message("Torrent resumed.");break;
     case Operation::verify:message("Verification requested. Extraction waits until verification finishes.");break;
     case Operation::add:message("Torrent added or already present.");break;
-    case Operation::extract:message("Extraction started. Open Extracted to follow its progress.");break;
+    case Operation::extract:message("Extraction started. Open Processing to follow its progress.");break;
     case Operation::compress:message("Creating a separate compressed copy. Original game is kept.");break;
     case Operation::removeOriginal:message("Deletion queued. Close Botty+ and games to verify the compressed copy and remove the original.");break;
     case Operation::restoreOriginal:message("Restore queued. Close Botty+ and games to switch back to the original.");break;
     case Operation::cancelCompression:message("Compression cancellation requested. Wait for the worker to finish.");break;
     case Operation::move:message("Moved to the library. ShadowMount may need a scan on the next session.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
-    case Operation::dismiss:message("Removed from Extracted. Partial files from unsuccessful jobs were deleted.");break;
+    case Operation::dismiss:message("Removed from Processing. Partial files from unsuccessful jobs were deleted.");break;
     case Operation::removeLibrary:message(response.status==202?"Deletion queued. Close Botty+ and games to delete the compressed game. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
     case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
@@ -223,11 +225,39 @@ void Network::publish(Connection next,const Catalog* catalog) noexcept {
 bool Network::start() noexcept {
     stop_.store(false);
     if(!platform::startWorker(worker,this,&thread_)) {Connection failed;failed.status=Probe::workerError;publish(failed);return false;}
+    if(!platform::startWorker(progressWorker,this,&progressThread_)){processing_.stale=true;processing_.revision=1;}
     return true;
 }
 void Network::stop() noexcept {
     stop_.store(true);
     if(thread_) { platform::joinWorker(thread_); thread_=nullptr; }
+    if(progressThread_){platform::joinWorker(progressThread_);progressThread_=nullptr;}
+}
+void* Network::progressWorker(void* context) noexcept {
+    auto& self=*static_cast<Network*>(context);
+    // PS5 worker stacks are small. Keep the response and candidate snapshot off
+    // the stack, including while the JSON parser creates its bounded snapshot.
+    struct Workspace {Processing next;Response<32769> response;};
+    std::unique_ptr<Workspace> workspace{new (std::nothrow_t{}) Workspace};
+    if(!workspace){
+        while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+        self.processing_.stale=true;++self.processing_.revision;self.gate_.clear(std::memory_order_release);
+        platform::log("Task monitoring memory allocation failed");return nullptr;
+    }
+    auto& next=workspace->next;auto& response=workspace->response;
+    while(!self.stop_.load()) {
+        Response bootstrap;FlatJSON json;response.status=0;response.length=0;
+        bool valid=false;
+        if(get("/api/bootstrap",{},bootstrap,platform::now()+2000000)==Probe::ready&&json.parse(bootstrap.view())){
+            const auto token=json.string("token");
+            if(token.size()==32&&get("/api/processing",token,response,platform::now()+2000000)==Probe::ready)valid=parseProcessing(response.view(),next);
+        }
+        while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+        if(!valid){next=self.processing_;next.stale=true;for(auto& e:next.tasks){e.eta=-1;e.download=0;}}
+        next.revision=self.processing_.revision+1;self.processing_=next;self.gate_.clear(std::memory_order_release);
+        for(unsigned i=0;i<10&&!self.stop_.load();++i)platform::sleep(100000);
+    }
+    return nullptr;
 }
 void* Network::worker(void* context) noexcept {
     auto& self=*static_cast<Network*>(context);

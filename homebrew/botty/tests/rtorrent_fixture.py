@@ -50,6 +50,11 @@ class RtorrentFixture(socketserver.ThreadingTCPServer):
         if method in ('d.stop', 'd.start', 'd.check_hash'):
             t['status'] = {'d.stop': 0, 'd.start': 6 if not t.get('leftUntilDone', 0) else 4, 'd.check_hash': 2}[method]
             return 0
+        if method == 'd.close':
+            return 0
+        if method == 'd.directory.set':
+            t['downloadDir'] = params[1]
+            return 0
         if method == 'd.erase':
             self.entries.remove(t)
             return 0

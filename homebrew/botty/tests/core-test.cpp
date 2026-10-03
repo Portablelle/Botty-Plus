@@ -1,6 +1,7 @@
 #include "core.hpp"
 #include "unicode.hpp"
 #include "progress.hpp"
+#include "operations.hpp"
 #include <cassert>
 #include <fstream>
 #include <iostream>
@@ -49,7 +50,16 @@ int main(){
   fs::create_directories(root/"delete/sub");
   {std::ofstream file(root/"delete/sub/member.part");file<<"download";}
   downloadedFiles(root/"delete",{"sub/member.part","missing/member"},false);
-  downloadedFiles(root/"delete",{"sub/member.part","missing/member"},true);
+  Operations operations;uint64_t completed=0;
+  {DeletionScope task(operations,"fixture","Fixture deletion");
+   const auto report=task.reporter();
+   downloadedFiles(root/"delete",{"sub/member.part","missing/member"},true,[&](uint64_t done,uint64_t total,const std::string& file){assert(total==2&&done>=completed);completed=done;report(done,total,file);assert(operations.state().at("bytes")==done);});task.complete();}
+  assert(completed==2&&operations.state().at("status")=="completed");
+  {DeletionScope failed(operations,"fixture","Failed deletion");}
+  assert(operations.state().at("status")=="failed");
+  fs::create_directories(root/"progress-tree/sub");{std::ofstream f(root/"progress-tree/sub/a");f<<"keep count";}
+  completed=0;deleteGameDirectory(root,"progress-tree",[&](uint64_t done,uint64_t total,const std::string&){assert(total==3&&done>=completed);completed=done;});
+  assert(completed==3&&!fs::exists(root/"progress-tree"));
   assert(!fs::exists(root/"delete/sub/member.part"));
   fs::create_directory_symlink(root/"app",root/"delete/link");
   fails([&]{downloadedFiles(root/"delete",{"link/eboot.bin"},true);});

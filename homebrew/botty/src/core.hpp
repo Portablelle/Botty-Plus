@@ -17,13 +17,15 @@ void writeJson(const fs::path&, const json&);
 fs::path safeRelative(const std::string&);
 fs::path containedExisting(const fs::path& root, const fs::path& path);
 uint64_t freeBytes(const fs::path&);
+using DeleteProgress = std::function<void(uint64_t,uint64_t,const std::string&)>;
 // Exact torrent members only; never recurse into a download or library folder.
-void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove);
+void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, bool remove, const DeleteProgress& progress = {});
 std::string randomId();
 json classify(const fs::path& extracted);
-json movePrepared(const Paths&, json job);
-void deleteGameDirectory(const fs::path& root,const fs::path& name);
-void deleteLibraryGame(const Paths&, const json& job);
+json movePrepared(const Paths&, json job, const Paths* destination = nullptr, const std::function<void()>& check = {});
+void prepareLibraryPermissions(const fs::path&);
+void deleteGameDirectory(const fs::path& root,const fs::path& name, const DeleteProgress& progress = {});
+void deleteLibraryGame(const Paths&, const json& job, const DeleteProgress& progress = {});
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };
 using Reporter = std::function<void(const Progress&)>;
 // Progress callbacks are serialized; cancellation may be queried concurrently.

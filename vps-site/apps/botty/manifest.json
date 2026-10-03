@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "id": "1.2.2",
+  "id": "1.3.1",
   "files": [
     {
       "path": "botty-manager.elf",
-      "size": 11347072,
-      "sha256": "5c79c546a0bb35ba8f52763434c29e1f58bdffaf370f950039c246b46fe651af"
+      "size": 11597520,
+      "sha256": "32725802080b228975f8e0f4880732a1fc7927597e5d00af6b327c4d6e641dce"
     },
     {
       "path": "icon0.png",
@@ -14,18 +14,18 @@
     },
     {
       "path": "ui/index.html",
-      "size": 1718,
-      "sha256": "f40f3b85063b850350b4b7dbe4d18e77b747113799544b5c79f67c1facdc4448"
+      "size": 1750,
+      "sha256": "cf40539437bb7ea41a68d90803c107391b4eaa433c783aecc0ddfd50bea37589"
     },
     {
       "path": "ui/app.js",
-      "size": 11670,
-      "sha256": "55ccfe774ee68e91e54b5ff17d73e57eca96e07d9056c54894b231b7e3b06968"
+      "size": 15001,
+      "sha256": "c0780d979048a5c5cb9267ea1850fd0ac4798703d5f3a3a527a805695fe027f4"
     },
     {
       "path": "ui/style.css",
-      "size": 3109,
-      "sha256": "0000cb696920f5c249e9ca3f776b5b8032f644795df02a3808e6d2d9df262e8c"
+      "size": 3347,
+      "sha256": "9ecb5da30d595865d1cc28d8192616b48b3ac1aee80c3bc952276c8141f7e8b5"
     },
     {
       "path": "cacert.pem",
@@ -35,7 +35,7 @@
     {
       "path": "game-compressor.elf",
       "size": 1207760,
-      "sha256": "c3d998c22f686a718cecaff72a579a18f21a4c35734723582c396b45b02a1a2c"
+      "sha256": "c0a1b4a3903d060298dca889667b04a3266acbdbcc3bab913922b51c0baaf810"
     }
   ]
 }

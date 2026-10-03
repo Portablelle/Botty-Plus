@@ -1,4 +1,4 @@
-# Botty service 1.2.2
+# Botty service 1.3.1
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.2.2`; its installed marker is in the parent directory.
+`/data/botty/manager/1.3.1`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -30,8 +30,8 @@ versioned directory and reports it as pending until the next console restart.
   remains until the job is removed through the UI. Interrupted jobs are recorded
   after restart and are not silently replayed.
 - Publication of one recognized PS5 app directory with a `PPSA` title ID, or one
-  exFAT image. Existing destinations are refused. Same-filesystem rename/link
-  avoids a second full copy; there is no cross-filesystem fallback.
+  exFAT image. Existing destinations are refused. Same-filesystem publication avoids a second full copy. Cross-disk publication
+  copies, flushes and verifies content before source cleanup.
 
 Original torrent archives remain intact during extraction and publication.
 **Remove torrent and files** is a separate, confirmed action confined to Botty's
@@ -177,3 +177,53 @@ tracked title's unfinished temporary image and hash sidecar before checking free
 space and restarting from zero. The worker must be idle and the original source
 must still match. Completed images, untracked files and interrupted activation
 or deletion remain protected. Compression has no checkpoint resume.
+
+## External storage (1.3)
+
+Botty+ 01.003.000 and the web interface ask for **Internal SSD** or an available
+**External SSD**, showing free bytes, then **Full auto** or **Download only**
+when adding a game. Full auto downloads, extracts and publishes on the selected
+disk. Manual extraction, Library publication and compression ask for their own
+destination, defaulting to the source disk.
+
+The PS5 service discovers writable, mounted exFAT volumes at `/mnt/usb0` through
+`/mnt/usb7`. Use ordinary exFAT media, not console-encrypted extended storage.
+Botty writes `.botty-volume.json` at the disk root to recognize the same disk.
+External downloads/extractions/compressed copies live under `botty/`; published
+folders and extracted images live in `homebrew/`. Durable job records, torrent
+metadata and credentials remain internal. Missing/replaced volumes are rejected;
+no absent mount directory is created as a fallback. Reconnect the original disk
+at the same USB mount path for existing rTorrent/ShadowMount registrations.
+
+**Transfer to another disk** supports torrent data (including partial downloads),
+ready extractions, published folders/images and verified compressed images with
+their verification sidecars. Copying is asynchronous, refuses existing targets,
+reserves 512 MiB, flushes output and compares every byte. Source cleanup follows
+verified publication and metadata updates. Transferred torrents remain paused;
+use Verify/Resume explicitly. A compressed game's retained original backup stays
+on its original disk and remains available through the existing restore/delete
+workflow. Compression requires the `library-1.3` worker for external paths and
+reserves its worst-case output plus 1 GiB on the selected disk.
+
+Library transfers wait for games/Botty+ to close when ShadowMount refuses an
+unmount. Mount registration is confirmed before deleting a relocated Library
+source. Interrupted/ambiguous transfers retain copies and lock new file operations
+for inspection; they are never automatically replayed. Their journal is
+`/data/botty/transfer.json`; a Library source backup is under
+`<source botty root>/transfers/<job id>`. Do not manually clear this journal until
+source, destination and rTorrent/ShadowMount selection have been reconciled.
+
+Host regression commands: `make test test-storage test-compressor
+ test-compression-library` and the native component's `make test preview
+ integration compression-integration`. These use temporary fixtures and mock
+SCGI/ShadowMount/compression APIs. The external USB workflow has not yet received
+PS5 hardware acceptance; prior compression acceptance does not validate 1.3.
+
+## Live Processing status (1.3.1)
+
+Authenticated `GET /api/processing` exposes deletion and compression tasks without
+waiting for the catalog mutex held by synchronous deletions. File deletion
+callbacks retain descriptor-relative path checks. Counters measure items removed
+or checked absent; ETA is phase-local and omitted until enough rate samples exist.
+Compression verification publishes live counters independently of durable records.
+Botty+ 01.003.001 combines these snapshots with extraction jobs in Processing.

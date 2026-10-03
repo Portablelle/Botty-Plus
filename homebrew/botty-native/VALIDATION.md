@@ -206,3 +206,83 @@ existing PS5 game-folder deletion code, with post-deletion absence checks.
 The user's only compressed LEGO copy was explicitly excluded from destructive
 tests and retained in production. No claim of deleting a real compressed game
 on this console is made. The menu screenshot is from the actual host renderer.
+
+
+### 1.3 external storage — host validation, PS5 acceptance pending
+
+Service 1.3.0 / native 01.003.000 add storage and process selection at game
+addition, destination selection for extraction/publication/compression, and
+transfers of torrent data, ready output, published folders and compressed images.
+Host tests use synthetic archives and isolated temporary directories; mock
+ShadowMount exercises registration handoff, not actual console mounting.
+
+Storage tests cover persistent identity, disk removal/replacement, symlinks,
+existing targets, space preflight, byte comparison, interrupted-copy preservation,
+full-auto external publication, bidirectional transfers and compression output on
+a disk different from its source. Native tests cover storage/mode navigation,
+command encoding, and disconnection between choice and confirmation.
+Screenshots `storage-choice-1.3.png` and `download-mode-1.3.png` render the actual
+native UI with synthetic data.
+
+The attached Mac Crucial X9 was inspected read-only: GUID partition map, exFAT,
+1,000,187,363,328-byte partition, 1,000,143,323,136 available bytes at inspection.
+No formatting or test writes were made to it. This does not establish PS5 USB
+performance, hot-unplug behavior, executable permissions or title launch support.
+Before deployment, preserve rollback packages, inspect active work and keep a
+running service untouched. Console acceptance should use a small owned fixture
+on the external disk, exercise the selected paths and verify Library launch.
+
+Validation completed locally: native model/packaging tests, actual renderer
+previews, native-to-service action/compression integration, service core/HTTP/
+search/storage/compressor/Library tests, 105 portal Node tests and 8 release
+Python tests. PS5 service, native title and library-1.3 worker cross-builds
+succeeded. Applying all three worker patches to the pinned clean archive
+reproduced the compiled worker sources exactly. No console was modified.
+
+## Processing 01.003.001
+
+Replaces Extracted with a combined Processing view. Host model tests cover task
+parsing, active-first ordering, waiting phases without false ETA, read-only task
+rows, and independent progress reads while the command worker operates.
+Service fixture tests verify authenticated progress reads while a deletion holds
+the catalog lock, terminal deletion counters, and source preservation. The native
+renderer screenshot `docs/screenshots/processing-1.3.1.png` uses synthetic data.
+This is host validation; PS5 runtime acceptance is pending.
+
+## Processing stack correction (01.003.002)
+
+The first 01.003.001 console launch failed with SIGSEGV in the Processing monitor.
+The captured exception wrote the return address below RSP after the parser frame
+was entered. The monitor reserved about 59 KiB and its parser another 20 KiB.
+The monitor now owns its response and candidate snapshot on the heap and handles
+allocation failure without dereferencing a null pointer.
+A regression runs the monitor on a 64 KiB pthread stack: the previous source
+segfaults and the corrected source passes. Model, package, preview and native
+action integration tests pass. Console launch acceptance is recorded separately.
+Private kernel/core artifacts and the original executable are retained in ignored
+backups; no game files or torrent processes were changed for this diagnosis.
+
+Console acceptance for 01.003.002: the user confirmed that Botty+ opens and
+Processing works. ShadowMount recorded the corrected title process starting
+without the previous immediate exit. All 13 installed native files and their
+rollback copies were hash-verified in confirmed raw SELF mode. Service 1.3.1
+and the active torrent were preserved without restarting either process.
+
+## Library copy labels (1.3.2 / native 01.003.003)
+
+Library covers show Compressed, Uncompressed or Both formats. Each copy has its
+own storage label: PS5 SSD, named external SSD, or Offline. Verified compressed
+copies and retained originals use their separate target/source storage IDs.
+Restored originals retain a second compressed-copy label; pending
+compression does not claim a completed compressed copy. Service remains 1.3.1.
+
+Host model/parser regressions cover split storage, removed originals, pending
+compression, restoration and missing disks. The actual renderer preview covers
+six representative cards; native integration and package checks pass. On firmware
+13.00 the user reported successful LAUNCH, and console reads confirmed native
+01.003.003 with service 1.3.1 active. Visual acceptance of all copy/storage
+combinations on console remains separate from the host previews.
+
+The portal accepts the two historical completed manual-update journals and
+bounds native file reads at 32 MiB, allowing the current executable above 16 MiB.
+Installer tests enforce actual read limits and cover larger previous executables.

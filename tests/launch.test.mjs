@@ -36,7 +36,11 @@ function nativeFixture() {
   };
   const io = {
     nativeExists: async () => [...files.keys()].some(p => p.startsWith(NATIVE_ROOT + '/')),
-    readFile: async p => files.get(p), mkdirs: async () => {},
+    readFile: async (p, limit = 2 * 1024 * 1024) => {
+      const bytes = files.get(p);
+      if (bytes && bytes.length > limit) throw Error('File exceeds expected size: ' + p);
+      return bytes;
+    }, mkdirs: async () => {},
     writeFile: async (p, b) => { writes.push(p); files.set(p, b); },
     assertNativeStopped: async () => events.push('check-stopped'),
     writeJournal: async (value, exclusive) => {
@@ -127,11 +131,11 @@ test('older native title updates only after staging, retains exact previous tree
   const journal = decode(f.files.get(journalPath)); assert.equal(journal.status, 'complete');
   for (const [p, data] of old) assert.deepEqual(f.files.get(journal.backup + p.slice(NATIVE_ROOT.length)), data);
   assert.equal(decode(f.files.get('/data/botty/jobs/example.json')).state, 'extracting');
-  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '01.002.001');
+  assert.equal(decode(f.files.get(NATIVE_ROOT + '/sce_sys/param.json')).contentVersion, '01.003.003');
   assert.deepEqual(f.events, ['check-stopped', 'check-stopped', 'backup', 'publish']);
 });
 test('recognized current title with damaged executable is backed up and repaired', async () => {
-  const f = nativeFixture(); await f.previous('01.002.001');
+  const f = nativeFixture(); await f.previous('01.003.003');
   await installNative(f.io, f.options);
   assert.ok(f.files.get(NATIVE_ROOT + '/eboot.bin').length > 3);
   assert.deepEqual(f.files.get(decode(f.files.get(journalPath)).backup + '/eboot.bin'), new Uint8Array([1,2,3]));
@@ -159,7 +163,7 @@ test('launch keeps a recognized newer title untouched and starts every service',
   assert.ok(reports.some(message => /Keeping installed Botty\+ 99\.000\.000/.test(message)));
 });
 for (const kind of ['foreign', 'missing-metadata', 'invalid-version']) test('launch reuse still rejects invalid title: ' + kind, async () => {
-  const f = nativeFixture(); await f.previous('01.002.001');
+  const f = nativeFixture(); await f.previous('01.003.003');
   const path = NATIVE_ROOT + '/sce_sys/param.json', param = decode(f.files.get(path));
   if (kind === 'foreign') param.contentId = 'OTHER';
   if (kind === 'invalid-version') param.contentVersion = '1.0.3';
@@ -239,7 +243,7 @@ test('registered metadata is backed up, updated, readable and confined to Botty+
   const backup='/data/botty/native/backups/'+'a'.repeat(32)+'/PPSA99071';
   await NativeIO.prototype.syncRegisteredMetadata.call(f.io,manifest,backup,sha256);
   assert.deepEqual(f.files.get(backup.replace('/PPSA99071','')+'/metadata/0.bin'),oldBytes);
-  assert.equal(decode(f.files.get(path)).contentVersion,'01.002.001');
+  assert.equal(decode(f.files.get(path)).contentVersion,'01.003.003');
   assert.deepEqual(f.files.get('/user/app/PPSA99071/sce_sys/snd0.at9'), f.files.get(NATIVE_ROOT+'/sce_sys/snd0.at9'));
   assert.deepEqual(f.files.get('/user/app/OTHER/sce_sys/param.json'),new Uint8Array([8]));
   assert.ok(calls.every(([nr,p,mode])=>nr===15&&p.startsWith('/user/app/PPSA99071/')&&mode===0o644));
@@ -259,7 +263,7 @@ test('empty first-install reservation can recover from intact verified staging',
  await assert.rejects(installNative(f.io,f.options),/power loss/);
  f.io.nativeExists=async()=>true;f.io.removeEmptyNative=async()=>true;f.io.publishNative=publish;
  await installNative(f.io,f.options);
- assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'01.002.001');
+ assert.equal(decode(f.files.get(NATIVE_ROOT+'/sce_sys/param.json')).contentVersion,'01.003.003');
 });
 test('native rename failure removes only its empty reservation and never deletes source',async()=>{
  const events=[];const io={checkedPath:()=>{},string:p=>p,
@@ -268,4 +272,34 @@ test('native rename failure removes only its empty reservation and never deletes
  await assert.rejects(NativeIO.prototype.moveDirectory.call(io,'/data/botty/native/staged','/data/homebrew/PPSA99071'),/Could not move/);
  assert.deepEqual(events.map(e=>e[0]),['mkdir','rename',137]);
  assert.equal(events[2][1],NATIVE_ROOT);
+});
+
+for (const name of ['botty-131-20261003', 'botty-131-stackfix-20261003']) {
+  test('completed manual repair journal permits launch without modifying newer title: ' + name, async () => {
+    const f = nativeFixture(); await f.previous('99.000.000');
+    f.files.set(journalPath, encode({schema:1,status:'complete',target:nativeHash,previous:nativeHash,backup:'/data/botty/native/backups/'+name+'/PPSA99071'}));
+    const before = new Map(f.files);
+    const result = await installNative(f.io, {...f.options,reuseNewer:true});
+    assert.equal(result.updated,false); assert.deepEqual(f.files,before);
+    assert.deepEqual(f.events,[]); assert.deepEqual(f.writes,[]);
+  });
+}
+for (const [status,name] of [['pending','botty-131-stackfix-20261003'],['complete','unknown'],['complete','botty-131-stackfix-20261003/..']]) {
+  test('legacy journal exception rejects unsupported recovery path: ' + status + '/' + name, async () => {
+    const f=nativeFixture(); await f.previous();
+    f.files.set(journalPath,encode({schema:1,status,target:nativeHash,previous:nativeHash,backup:'/data/botty/native/backups/'+name+'/PPSA99071'}));
+    await assert.rejects(installNative(f.io,f.options),/journal is damaged/);
+    assert.deepEqual(f.events,[]);assert.deepEqual(f.writes,[]);
+  });
+}
+
+test('native update handles an old executable larger than the new package and 16 MiB', async () => {
+  const f = nativeFixture(); await f.previous('01.003.002');
+  const next = decode(manifestBytes).files.find(file => file.path === 'eboot.bin');
+  const old = new Uint8Array(Math.max(17 * 1024 * 1024, next.size + 4096));
+  old[0] = 79; f.files.set(NATIVE_ROOT + '/eboot.bin', old);
+  await installNative(f.io, f.options);
+  const journal = decode(f.files.get(journalPath));
+  assert.deepEqual(f.files.get(journal.backup + '/eboot.bin'), old);
+  assert.equal(f.files.get(NATIVE_ROOT + '/eboot.bin').length, next.size);
 });

@@ -37,10 +37,6 @@ botty::Workflow workflow;
 botty::ActionResult actionResult;
 bool showResult=false;
 botty::Network::Deletion deletion=botty::Network::Deletion::idle;
-std::array<char,512> deletionName{};
-std::uint64_t deletionStarted=0;
-double deletionBytes=0;
-bool deletingLibrary=false;
 std::uint64_t displayRevision=0;
 int pad=-1;
 bool connected=false;
@@ -159,18 +155,26 @@ bool hasCover(const botty::Entry& entry,unsigned tab,unsigned slot) noexcept {
 }
 void drawCatalog(Canvas& c) noexcept {
     char text[256],size[48],rate[48],upload[48],downloaded[48],eta[64];
-    const char* titles[]={"Your downloads.","The preparation room.","Your collection."};
-    const char* subtitles[]={"Track every download. Keep your next adventure moving.","Unpacking, verifying and preparing your games.","Your prepared games, together in one place."};
+    const char* titles[]={"Your downloads.","Processing.","Your collection."};
+    const char* subtitles[]={"Track every download. Keep your next adventure moving.","Follow extractions, compressions and deletions in real time.","Your prepared games, together in one place."};
     c.label(96,238,titles[model.tab],60,ink);c.label(98,316,subtitles[model.tab],24,muted);
     botty::formatBytes(catalog.freeBytes,size,sizeof(size));
     if(catalog.valid&&model.tab!=2){c.rounded(1470,246,354,98,18,card);c.label(1500,258,size,32,sectionColor());c.label(1500,302,"FREE ON YOUR PS5",20,muted);}
+    if(catalog.valid&&model.tab!=2){
+        for(unsigned i=0;i<catalog.storageCount;++i){const auto& disk=catalog.storage[i];
+            if(!disk.available||std::string_view(disk.id.data())=="internal")continue;
+            surface(c,1470,350,354,60);botty::formatBytes(disk.freeBytes,size,sizeof(size));
+            std::snprintf(text,sizeof(text),"%s free",size);c.label(1500,350,text,26,sectionColor());
+            shortLabel(c,1500,382,disk.label[0]?disk.label.data():"External storage",18,294,muted);break;
+        }
+    }
     if(model.tab==2)(void)c.illustration(2,1520,220,208,208);
     if(model.tab==0) {
         const char* filters[]={"All","Active","Completed"};
         for(unsigned i=0;i<3;++i){c.rounded(96+i*184,356,168,40,12,model.filter==i?coral:card);c.label(116+i*184,361,filters[i],24,model.filter==i?background:muted);}
         c.label(674,365,"Left / right to filter",20,muted);
-    }else c.label(98,361,model.tab==1?"EXTRACTION QUEUE":"YOUR COLLECTION",20,violet);
-    if(!catalog.valid){
+    }else c.label(98,361,model.tab==1?"PROCESSING CONTROL":"YOUR COLLECTION",20,violet);
+    if(!catalog.valid&&!(model.tab==1&&catalog.processing.count)){
         surface(c,96,436,1728,340);c.label(140,485,connection.status==botty::Probe::checking?"Syncing your downloads":"Your session is offline",44,ink);
         c.label(140,565,connection.status==botty::Probe::checking?"Connecting to Botty on your PS5...":"Open the Botty portal and select Start session.",28,muted);
         c.label(140,667,"Triangle  /  Retry connection",24,accent);return;
@@ -179,6 +183,7 @@ void drawCatalog(Canvas& c) noexcept {
     else if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
     else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"rTorrent not responding. Retrying...",22,warning);
     const auto* entry=botty::entryAt(catalog,model.tab,model.filter,model.selected);
+    if(model.tab==1&&catalog.processing.stale)c.label(98,392,"Live task status unavailable - reconnecting...",20,warning);
     if(model.details&&entry) {
         surface(c,96,408,1728,506);unsigned line=0;
         wrapped(c,entry->name.data(),line,model.detailPage,ink);
@@ -198,6 +203,15 @@ void drawCatalog(Canvas& c) noexcept {
             botty::formatBytes(entry->bytes,downloaded,sizeof(downloaded));
             std::snprintf(text,sizeof(text),"Extracted %s of %s",downloaded,size);wrapped(c,text,line,model.detailPage,ink);
             if(entry->active){botty::formatETA(*entry,eta,sizeof(eta));std::snprintf(text,sizeof(text),"Extraction: %s/s  /  %s",rate,eta);wrapped(c,text,line,model.detailPage,ink);}
+        }
+        if(entry->task){
+            wrapped(c,entry->kind.data(),line,model.detailPage,accent);
+            botty::formatETA(*entry,eta,sizeof(eta));
+            if(entry->items)std::snprintf(text,sizeof(text),"%.0f / %.0f items  /  %.1f items/s",entry->bytes,entry->total,entry->download);
+            else {botty::formatBytes(entry->bytes,downloaded,sizeof(downloaded));botty::formatBytes(entry->total,size,sizeof(size));std::snprintf(text,sizeof(text),"%s / %s",downloaded,size);}
+            if(entry->total>0)wrapped(c,text,line,model.detailPage,ink);
+            std::snprintf(text,sizeof(text),"Elapsed: %.0f s  /  %s (current phase)",entry->elapsed,eta);wrapped(c,text,line,model.detailPage,ink);
+            wrapped(c,entry->currentFile.data(),line,model.detailPage,muted);
         }
         if(model.tab==2&&entry->compressed)wrapped(c,std::string_view(entry->compressionState.data())!="ready"?"Compression pending - check details":entry->originalKept?"Compressed copy - original retained":"Compressed copy - original deleted",line,model.detailPage,accent);
         if(model.tab==2&&std::string_view(catalog.compressionJob.data())==entry->id.data()) {
@@ -221,8 +235,8 @@ void drawCatalog(Canvas& c) noexcept {
         std::snprintf(text,sizeof(text),"Page %u / %u  -  Up / down to scroll",model.detailPage+1,pages);c.label(96,932,text,22,muted);
     }else if(!model.count) {
         surface(c,96,430,1728,400);downloadIcon(c,144,486,accent);
-        c.label(228,476,model.tab==0?"A fresh start.":model.tab==1?"Nothing to unpack yet.":"Your next game belongs here.",44,ink);
-        c.label(228,550,model.tab==0?"Add a magnet with Square, or browse Search and Explore.":"Completed extraction results will appear here.",28,muted);
+        c.label(228,476,model.tab==0?"A fresh start.":model.tab==1?"No tasks to follow.":"Your next game belongs here.",44,ink);
+        c.label(228,550,model.tab==0?"Add a magnet with Square, or browse Search and Explore.":"Extractions, compressions and deletions appear here.",28,muted);
         c.label(228,674,"L1 / R1  /  Browse tabs",24,accent);
     }else if(model.tab==2){
         const unsigned first=(model.selected/6)*6;
@@ -230,13 +244,21 @@ void drawCatalog(Canvas& c) noexcept {
             const auto* e=botty::entryAt(catalog,2,0,i);const unsigned slot=i-first;
             const unsigned x=96+(slot%3)*584,y=444+(slot/3)*250;const bool focus=i==model.selected;
             surface(c,x,y,560,232,focus);
-            if(hasCover(*e,2,slot))c.gameCase(x+12,y+10,140,210,covers.pixels[slot]);
-            else {gamePattern(c,x+12,y+10,140,210,i);c.label(x+32,y+24,"PS5",28,ink);c.rectangle(x+12,y+156,140,64,background);c.label(x+22,y+173,"No artwork",20,muted);}
+            if(hasCover(*e,2,slot))c.gameCase(x+12,y+10,156,210,covers.pixels[slot]);
+            else {gamePattern(c,x+12,y+10,156,210,i);c.label(x+32,y+24,"PS5",28,ink);c.rectangle(x+12,y+156,156,64,background);c.label(x+22,y+155,"No artwork",20,muted);}
             const auto status=std::string_view(e->status.data());
             c.rounded(x+176,y+18,174,32,9,focus?success:background);
             c.label(x+190,y+23,status=="moved"?"IN LIBRARY":status=="ready"?"PREPARED":"PREPARING",20,focus?background:success);
-            titleLines(c,x+176,y+68,e->name.data(),28,360,3,ink);
-            c.label(x+176,y+196,focus?"Cross: Details":"Verified content",20,focus?accent:muted);
+            std::array<botty::LibraryCopy,2> copies{};
+            const unsigned copyCount=botty::libraryCopies(*e,copies);
+            c.rectangle(x+12,y+190,156,30,background);
+            shortLabel(c,x+15,y+195,copyCount==2?"Both formats":copies[0].format,20,150,accent);
+            titleLines(c,x+176,y+68,e->name.data(),28,360,2,ink);
+            for(unsigned n=0;n<copyCount;++n){
+                char location[100];botty::storageLabel(catalog,copies[n].storage,location,sizeof(location));
+                shortLabel(c,x+176,y+160+n*28,copies[n].format,20,162,n?muted:accent);
+                shortLabel(c,x+342,y+160+n*28,location,16,206,n?muted:accent);
+            }
         }
         std::snprintf(text,sizeof(text),"%u games  /  Page %u  /  Arrows to browse",model.count,first/6+1);c.label(96,946,text,20,muted);
     }else {
@@ -247,15 +269,17 @@ void drawCatalog(Canvas& c) noexcept {
             const Color tone=e->error[0]?warning:done?success:sectionColor();
             botty::formatBytes(e->total,size,sizeof(size));botty::formatBytes(e->download,rate,sizeof(rate));
             botty::formatBytes(e->bytes,downloaded,sizeof(downloaded));botty::formatETA(*e,eta,sizeof(eta));
+            if(e->items){std::snprintf(downloaded,sizeof(downloaded),"%.0f",e->bytes);std::snprintf(size,sizeof(size),"%.0f items",e->total);std::snprintf(rate,sizeof(rate),"%.1f items",e->download);}
             if(focus){
                 c.rounded(92,y-4,1144,184,24,ink);c.rounded(96,y,1136,176,20,tone);
                 const unsigned textX=hasCover(*e,model.tab,row)?244:126;
                 if(hasCover(*e,model.tab,row))c.gameCase(112,y+12,108,152,covers.pixels[row]);
-                c.label(textX,y+16,e->error[0]?"NEEDS ATTENTION":e->status.data(),20,background);
+                shortLabel(c,textX,y+16,e->error[0]?"NEEDS ATTENTION":e->task?e->phase.data():e->status.data(),20,850,background);
                 shortLabel(c,textX,y+47,e->name.data(),32,1036-textX,background);
-                std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1060,y+26,text,44,background);
-                std::snprintf(text,sizeof(text),"%s of %s",downloaded,size);c.label(textX,y+104,text,24,background);
+                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"--");else std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1060,y+26,text,44,background);
+                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"Elapsed: %.0f s",e->elapsed);else std::snprintf(text,sizeof(text),"%s of %s",downloaded,size);c.label(textX,y+104,text,24,background);
                 if(e->active&&!done)std::snprintf(text,sizeof(text),"%s/s  /  %s",rate,eta);
+                else if(e->task)std::snprintf(text,sizeof(text),"%s",e->complete?"Completed":"Needs attention");
                 else if(model.tab==0)peers(*e,text,sizeof(text));else std::snprintf(text,sizeof(text),"%s",done?"Verified and ready":"Options for actions");
                 shortLabel(c,618,y+104,text,24,578,background);
                 const unsigned barWidth=1198-textX;
@@ -266,22 +290,29 @@ void drawCatalog(Canvas& c) noexcept {
             }else {
                 c.rounded(96,y,1136,72,14,card);c.rounded(116,y+20,6,30,3,tone);
                 shortLabel(c,146,y+5,e->name.data(),28,880,ink);
-                std::snprintf(text,sizeof(text),"%s  /  %s of %s",e->error[0]?"Needs attention":e->status.data(),downloaded,size);shortLabel(c,146,y+40,text,20,860,muted);
-                std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1100,y+10,text,28,tone);
+                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"%s",e->phase.data());else std::snprintf(text,sizeof(text),"%s  /  %s of %s",e->error[0]?"Needs attention":e->status.data(),downloaded,size);shortLabel(c,146,y+40,text,20,860,muted);
+                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"--");else std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1100,y+10,text,28,tone);
                 progressBar(c,1040,y+52,160,e->progress,tone);y+=84;
             }
         }
-        (void)c.illustration(model.tab,1290,350,520,520);
-        c.label(1300,841,model.tab==0?"Keep the queue moving.":"From archive to adventure.",28,sectionColor());
+        if(model.tab==1&&entry){
+            surface(c,1280,418,544,386);c.label(1308,444,"CURRENT TASK",20,accent);
+            titleLines(c,1308,490,entry->phase[0]?entry->phase.data():entry->status.data(),28,480,3,ink);
+            std::snprintf(text,sizeof(text),"Elapsed: %.0f s",entry->elapsed);c.label(1308,616,text,24,muted);
+            botty::formatETA(*entry,eta,sizeof(eta));c.label(1308,662,eta,28,accent);
+            if(entry->currentFile[0])shortLabel(c,1308,732,entry->currentFile.data(),20,480,muted);
+        }else (void)c.illustration(model.tab,1290,350,520,520);
+        c.label(1300,841,model.tab==0?"Keep the queue moving.":"Your work, in one place.",28,sectionColor());
         unsigned active=0;double throughput=0;
-        for(unsigned i=0;i<botty::entryCount(catalog,model.tab,0);++i){const auto* e=botty::entryAt(catalog,model.tab,0,i);if(e->active&&!e->complete){++active;throughput+=e->download;}}
+        for(unsigned i=0;i<botty::entryCount(catalog,model.tab,0);++i){const auto* e=botty::entryAt(catalog,model.tab,0,i);if(e->active&&!e->complete){++active;if(!e->items)throughput+=e->download;}}
         botty::formatBytes(throughput,rate,sizeof(rate));std::snprintf(text,sizeof(text),"%u active  /  %s/s",active,rate);c.label(1300,886,text,24,ink);
-        c.label(1300,930,model.tab==0?"Continues when you close Botty+.":"Original archives are preserved.",20,muted);
+        c.label(1300,930,model.tab==0?"Continues when you close Botty+.":"ETA estimates the current phase.",20,muted);
         std::snprintf(text,sizeof(text),"%u of %u  /  Up / down to browse",model.selected+1,model.count);c.label(96,950,text,20,muted);
     }
     if(catalog.truncated)c.label(500,932,"Showing the first 256 torrents and extraction jobs.",22,accent);
 }
 void shortLabel(Canvas& c,unsigned x,unsigned y,std::string_view text,unsigned size,unsigned width,Color color) noexcept {
+    if(c.text_width(text,size)<=width){c.label(x,y,text,size,color);return;}
     auto n=text.size();while(n&&c.text_width(botty::slice(text,0,n),size)>width-30)--n;
     c.label(x,y,botty::slice(text,0,n),size,color);if(n<text.size())c.label(x+width-28,y,"...",size,color);
 }
@@ -292,8 +323,8 @@ void drawWorkflow(Canvas& c) noexcept {
     if(workflow.panel==Panel::menu){
         c.label(140,322,"Actions",40,ink);shortLabel(c,140,378,workflow.targetName.data(),26,1620,muted);
         for(unsigned i=0;i<workflow.optionCount;++i){auto op=workflow.options[i];const bool enabled=!*botty::unavailable(op,target,catalog);const bool focus=workflow.selected==i;
-            surface(c,140,430+i*72,1640,60,focus);c.label(166,442+i*72,botty::operationLabel(op),28,enabled?(focus?accent:ink):muted);
-            if(!enabled)c.label(1450,447+i*72,"Unavailable",22,muted);
+            surface(c,140,408+i*60,1640,52,focus);c.label(166,420+i*60,botty::operationLabel(op),28,enabled?(focus?accent:ink):muted);
+            if(!enabled)c.label(1450,422+i*60,"Unavailable",22,muted);
         }
         const char* reason=workflow.notice[0]?workflow.notice.data():botty::unavailable(workflow.options[workflow.selected],target,catalog);
         shortLabel(c,140,838,reason,24,1640,accent);
@@ -321,11 +352,24 @@ void drawWorkflow(Canvas& c) noexcept {
             c.rounded(x,758,314,60,12,focus?accent:background);c.label(x+24,776,controls[i],24,focus?background:ink);}
         shortLabel(c,140,836,workflow.notice[0]?workflow.notice.data():password&&!workflow.command.text[0]?"No password? Select Done to continue.":"",24,1640,accent);
         c.label(140,895,password?"L1/R1: Keys   Square: Backspace   Triangle: Show/hide   Options: Unicode   Circle: Cancel":"L1/R1: Keys   Square: Backspace   Options: Unicode   Circle: Cancel",22,muted);
+    }else if(workflow.panel==Panel::storage){
+        c.label(140,322,"Choose storage",40,ink);
+        c.label(140,380,"Keep this operation on the same disk, or choose another disk.",26,muted);
+        const unsigned first=(workflow.selected/5)*5;
+        for(unsigned i=first;i<catalog.storageCount&&i<first+5;++i){const auto& d=catalog.storage[i];const unsigned y=438+(i-first)*72;surface(c,140,y,1640,62,i==workflow.selected);char bytes[64],line[256];botty::formatBytes(d.freeBytes,bytes,sizeof(bytes));std::snprintf(line,sizeof(line),"%s   |   %s %s%s",d.label.data(),d.available?bytes:"Disconnected",d.available?"free":"",target&&d.id==target->storage?"   |   Current disk":"");shortLabel(c,164,y+14,line,26,1570,d.available?ink:muted);}
+        shortLabel(c,140,836,workflow.notice.data(),24,1640,accent);c.label(140,901,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
+    }else if(workflow.panel==Panel::mode){
+        c.label(140,322,"Choose download mode",40,ink);
+        surface(c,140,430,1640,100,workflow.command.automatic);c.label(168,449,"Full auto: Download + extract + move to Library",30,ink);
+        c.label(168,491,"Every step stays on your selected disk. Archives are kept.",24,muted);
+        surface(c,140,570,1640,100,!workflow.command.automatic);c.label(168,590,"Download only",30,ink);c.label(168,632,"Prepare the game later from Torrents.",24,muted);
+        c.label(140,901,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
     }else if(workflow.panel==Panel::confirm){
         char title[128];std::snprintf(title,sizeof(title),"%s?",botty::operationLabel(workflow.command.operation));c.label(140,322,title,40,ink);
         shortLabel(c,140,392,workflow.command.operation==Op::add?workflow.command.text.data():workflow.targetName.data(),28,1640,ink);
         const char* explanation="This request will be sent to rTorrent.";
-        if(workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation="Download, extract and prepare in Library automatically. Original torrents are kept for seeding.";
+        if(workflow.command.operation==Op::add||workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation=workflow.command.automatic?"Download, extract and prepare in Library automatically on the selected disk. Original torrents are kept.":"Download only on the selected disk. Extract and move later when you choose.";
+        if(workflow.command.operation==Op::transfer)explanation="Copy to the selected disk and verify every byte before removing the source. Close running games. Torrents remain paused after transfer.";
         if(workflow.command.operation==Op::compress)explanation="Create a compressed copy and keep the original. Close Botty+ when prompted to finish mounting and verification. APR games require an existing index.";
         if(workflow.command.operation==Op::restoreOriginal)explanation="Restore the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
         if(workflow.command.operation==Op::removeOriginal)explanation="Confirm you have tested the compressed game. Delete only its uncompressed backup after another full verification. The compressed game, saves and archives are kept. Close Botty+ to finish.";
@@ -334,9 +378,9 @@ void drawWorkflow(Canvas& c) noexcept {
         if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
         if(workflow.command.operation==Op::verify)explanation="rTorrent will recheck downloaded pieces. Extraction waits until verification finishes.";
         if(workflow.command.operation==Op::extract){explanation="Extract on this PS5. Original archive volumes are kept for seeding.";shortLabel(c,140,448,workflow.command.archive.data(),24,1640,accent);}
-        if(workflow.command.operation==Op::move){explanation="Move verified content. Existing files will not be replaced. ShadowMount may need a scan.";char destination[1100];std::snprintf(destination,sizeof(destination),"%s/%s",catalog.library.data(),target?target->destination.data():"");shortLabel(c,140,448,destination,24,1640,accent);}
+        if(workflow.command.operation==Op::move){explanation="Move verified content. Existing files will not be replaced. ShadowMount may need a scan.";}
         if(workflow.command.operation==Op::cancel)explanation="Stop extraction at the next safe point. Partial files and original archives are kept.";
-        if(workflow.command.operation==Op::dismiss){const auto status=target?std::string_view(target->status.data()):std::string_view{};explanation=status=="failed"||status=="cancelled"||status=="interrupted"?"Remove this row and delete its partial files. Original downloads and archives are kept.":"Hide this row from Extracted. Files are kept; ready and moved content stays in Library.";}
+        if(workflow.command.operation==Op::dismiss){const auto status=target?std::string_view(target->status.data()):std::string_view{};explanation=status=="failed"||status=="cancelled"||status=="interrupted"?"Remove this row and delete its partial files. Original downloads and archives are kept.":"Hide this row from Processing. Files are kept; ready and moved content stays in Library.";}
         if(workflow.command.operation==Op::remove)explanation="Delete this extraction and any partial output. Original downloads and archives are kept.";
         shortLabel(c,140,532,explanation,24,1640,muted);
         if(workflow.command.operation==Op::removeLibrary||workflow.command.operation==Op::removeTorrent){
@@ -345,6 +389,7 @@ void drawWorkflow(Canvas& c) noexcept {
             c.label(140,645,"Large games take time to remove. Please wait for confirmation.",24,muted);
             shortLabel(c,140,690,workflow.notice.data(),22,1640,accent);
         }else shortLabel(c,140,618,workflow.notice.data(),24,1640,accent);
+        if(workflow.command.storage[0])for(unsigned i=0;i<catalog.storageCount;++i)if(catalog.storage[i].id==workflow.command.storage){char line[160];std::snprintf(line,sizeof(line),"Destination: %s",catalog.storage[i].label.data());shortLabel(c,140,682,line,24,1640,accent);}
         for(unsigned i=0;i<2;++i){const bool chosen=workflow.confirm==(i==1);c.rounded(140+i*840,742,800,80,16,chosen?accent:background);c.label(180+i*840,766,i==0?"Cancel":botty::operationLabel(workflow.command.operation),28,chosen?background:ink);}
         c.label(140,892,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
     }
@@ -359,12 +404,14 @@ bool draw(Canvas& c) noexcept {
     static const char* exploreSorts[]={"seeders","completed","newest"};
     const unsigned oldTab=model.tab;
     const unsigned edge=pollPad(now);if(edge)++displayRevision;
-    if(deletion!=botty::Network::Deletion::idle){/* Keep duplicate actions out while deleting. */}
-    else if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
+    if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
     else if(workflow.panel!=botty::Workflow::Panel::closed){
         if(workflow.press(edge,catalog,network.busy())){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
-            else if(workflow.command.operation==botty::Operation::removeTorrent||workflow.command.operation==botty::Operation::removeLibrary){deletingLibrary=workflow.command.operation==botty::Operation::removeLibrary;deletionName=workflow.targetName;deletionStarted=now;const auto* target=workflow.target(catalog);deletionBytes=target?(deletingLibrary?target->total:target->bytes):0;}
+            if(network.busy()){
+                using Op=botty::Operation;const auto op=workflow.command.operation;
+                if(op==Op::extract||op==Op::compress||op==Op::remove||op==Op::removeLibrary||op==Op::removeTorrent||op==Op::removeOriginal||op==Op::dismiss){model.tab=1;model.selected=0;model.details=false;}
+            }
             workflow.command.text.fill(0);
         }
     }else {
@@ -373,11 +420,11 @@ bool draw(Canvas& c) noexcept {
         if(action==botty::Model::Action::quit){if(!network.busy())return false;model.quitDialog=false;actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Wait for the pending request before quitting.");showResult=true;}
         if(model.tab==4&&!model.quitDialog){
             if(action==botty::Model::Action::add||action==botty::Model::Action::menu||action==botty::Model::Action::retry)workflow.search();
-            if(model.details){model.details=false;if(model.selected<catalog.resultCount&&!catalog.results[model.selected].complete)workflow.grab(catalog.results[model.selected]);}
+            if(model.details){model.details=false;if(model.selected<catalog.resultCount&&!catalog.results[model.selected].complete)workflow.grab(catalog.results[model.selected],false,catalog.storageSupported);}
         }
         if(model.tab==5&&!model.quitDialog){
             if(action==botty::Model::Action::explore||action==botty::Model::Action::add||action==botty::Model::Action::retry||action==botty::Model::Action::menu){exploreRequested=true;exploreRefresh=action!=botty::Model::Action::explore;}
-            if(model.details){model.details=false;if(!catalog.exploreBusy&&!catalog.exploreAdding&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.grab(catalog.exploreResults[model.selected],true);}
+            if(model.details){model.details=false;if(!catalog.exploreBusy&&!catalog.exploreAdding&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.grab(catalog.exploreResults[model.selected],true,catalog.storageSupported);}
         }
         if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
         if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
@@ -388,15 +435,16 @@ bool draw(Canvas& c) noexcept {
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
     (void)network.read(connection,&catalog,&receivedResult);
+    static botty::Processing processing;
+    if(network.readProcessing(processing))++displayRevision;
+    catalog.processing=processing;
     if(receivedResult.revision!=resultRevision){actionResult=receivedResult;showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;}
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     const auto nextDeletion=network.deletion();
     if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}
-    static std::uint64_t deletionSecond=0;
-    if(deletion!=botty::Network::Deletion::idle&&(now-deletionStarted)/1000000!=deletionSecond){deletionSecond=(now-deletionStarted)/1000000;++displayRevision;}
     if(previousRevision!=catalog.revision)++displayRevision;
     if(model.tab<3) {
-        model.count=catalog.valid?botty::entryCount(catalog,model.tab,model.filter):0;
+        model.count=(catalog.valid||(model.tab==1&&catalog.processing.count))?botty::entryCount(catalog,model.tab,model.filter):0;
         if(previousRevision!=catalog.revision&&focused[0]) {
             bool found=false;
             for(unsigned i=0;i<model.count;++i)if(std::string_view(botty::entryAt(catalog,model.tab,model.filter,i)->id.data())==focused.data()){model.selected=i;found=true;break;}
@@ -456,10 +504,10 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
     c.backdrop(model.tab!=5);
     c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
-    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,56,28,8,border);c.label(356,80,"1.2.1",20,ink);
+    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,82,28,8,border);c.label(356,80,"1.3.2",20,ink);
     c.rounded(1488,69,336,48,24,card);
     statusDot(c,1510,87,online?success:warning);c.label(1536,77,state,24,online?success:warning);
-    const char* tabs[]={"Downloads","Extracted","Library","Connections","Search","Explore"};
+    const char* tabs[]={"Downloads","Processing","Library","Connections","Search","Explore"};
     c.rectangle(96,209,1728,1,border);
     for(unsigned i=0;i<6;++i){const unsigned x=96+i*288,tab=botty::Model::tabOrder[i];
         if(model.tab==tab)c.rounded(x,153,272,52,14,sectionColor());
@@ -539,26 +587,15 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.002.001",20,muted);
+    c.label(1620,1004,"01.003.003",20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
-    if(deletion!=botty::Network::Deletion::idle){
-        c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
-        c.label(140,332,deletingLibrary?"Deleting game...":"Deleting torrent & files...",40,ink);
-        shortLabel(c,140,420,deletionName.data(),28,1640,ink);
-        c.label(140,510,deletion==botty::Network::Deletion::checking?"Waiting for completion. Large games may take several minutes.":deletingLibrary?"Removing installed game files. This may take a while.":"Removing downloaded files. Large downloads may take a while.",26,muted);
-        c.label(140,568,deletingLibrary?"Torrent and archives are kept. Please wait.":"Library games are kept. Please wait before making another change.",26,muted);
-        char estimate[160];botty::formatDeletionEstimate(deletionBytes,estimate,sizeof(estimate));c.label(140,616,estimate,24,muted);
-        char elapsed[80];std::snprintf(elapsed,sizeof(elapsed),"Elapsed: %llu s",static_cast<unsigned long long>(deletionSecond));
-        c.label(140,672,elapsed,26,accent);
-        c.rounded(140,742,1640,8,4,border);c.rounded(140+(deletionSecond%8)*205,742,205,8,4,accent);
-        c.label(140,838,"The list will refresh automatically when Botty responds.",24,muted);
-    }
     if(showResult){
         c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
         c.label(140,306,actionResult.status==botty::ActionResult::Status::success?"Request confirmed":actionResult.status==botty::ActionResult::Status::uncertain?"Check the current state":"Request failed",36,ink);
         unsigned line=0;wrapped(c,actionResult.message.data(),line,0,accent);c.label(140,884,"Cross / Circle: Continue",24,muted);
     }
+    if(catalog.transferring){surface(c,96,920,1728,58);shortLabel(c,120,934,catalog.transferError[0]?catalog.transferError.data():catalog.transferPhase.data(),23,1670,accent);}
     if(model.quitDialog) {
         c.shade(170);
         c.rounded(488,334,1120,408,30,border);
@@ -577,12 +614,12 @@ bool draw(Canvas& c) noexcept {
 int main() {
 #ifdef BOTTY_HOST_PREVIEW
     const char* previewMode=std::getenv("BOTTY_PREVIEW_MODE");
-    model.tab=previewMode&&std::string_view(previewMode)=="explore"?5:previewMode&&std::string_view(previewMode)=="search"?4:0;
+    model.tab=previewMode&&(std::string_view(previewMode)=="explore"||std::string_view(previewMode)=="storage"||std::string_view(previewMode)=="download-mode")?5:previewMode&&std::string_view(previewMode)=="search"?4:0;
 #endif
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.002.001 - main entered");
+    botty::platform::log("Botty+ 01.003.003 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

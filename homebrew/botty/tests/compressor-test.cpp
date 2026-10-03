@@ -19,10 +19,11 @@ int main() {
   httplib::Server server;std::atomic<int> posts{0};std::atomic<bool> complete{false},lost{false},wrong{false};
   const auto epoch=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   server.set_pre_routing_handler([](const auto& req,auto& res){assert(req.get_param_value("token")==std::string(64,'a'));res.set_header("Content-Type","application/json");return httplib::Server::HandlerResponse::Unhandled;});
-  server.Get("/api/status",[](const auto&,auto& res){res.set_content(R"({"ok":true,"bottyWorker":"library-1.2"})","application/json");});
+  std::string workerVersion="library-1.2",expectedOutputRoot=root.string();
+  server.Get("/api/status",[&](const auto&,auto& res){res.set_content(json{{"ok",true},{"bottyWorker",workerVersion}}.dump(),"application/json");});
   server.Get("/api/gc/job",[&](const auto&,auto& res){res.set_content(json({{"ok",true},{"busy",posts.load()>0&&!complete},{"activeId",wrong?"op-9":"op-1"},{"phase","compressing"},{"copiedBytes",5},{"totalBytes",10}}).dump(),"application/json");});
   server.Post("/api/gc/compress",[&](const auto& req,auto& res){
-    ++posts;assert(req.get_param_value("sourcePath")==source.string());assert(req.get_param_value("deletePolicy")=="keep");assert(req.get_param_value("format")=="exfat");
+    ++posts;assert(req.get_param_value("bottyOutputRoot")==expectedOutputRoot);assert(req.get_param_value("sourcePath")==source.string());assert(req.get_param_value("deletePolicy")=="keep");assert(req.get_param_value("format")=="exfat");
     if(lost){res.status=503;res.set_content(R"({"ok":false})","application/json");return;}
     res.set_content(R"({"ok":true,"id":"op-1"})","application/json");
   });
@@ -85,5 +86,10 @@ int main() {
   assert(retry()["status"]=="running");assert(!fs::exists(temporary));
   seed(failed);std::ofstream(hashes)<<"hashes only";assert(retry()["status"]=="running");assert(!fs::exists(hashes));
   assert(readText(other)=="other game"&&readText(source/"eboot.bin")=="original");
+  fs::remove(root/"compressor/state.json");fs::remove(root/"compressor/games.json");
+  fs::create_directory(root/"usb");Storage storage;storage.init(paths,{root/"usb"});const auto external=storage.list()[1].at("id").get<std::string>();
+  Compressor externalCopy;externalCopy.init(paths,port,&storage);rejects([&]{externalCopy.start(job,external);});
+  workerVersion="library-1.3";expectedOutputRoot=storage.get(external).root.string();
+  const auto externalState=externalCopy.start(job,external);assert(externalState["storage"]==external&&externalState["sourceStorage"]=="internal");assert(readText(source/"eboot.bin")=="original");
   server.stop();thread.join();fs::remove_all(root);curl_global_cleanup();
 }

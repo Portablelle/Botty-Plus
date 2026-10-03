@@ -8,8 +8,13 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <pthread.h>
 #include <vector>
 namespace {
+thread_local bool progressWorker=false;
+thread_local std::string progressRequest,progressResponse;
+thread_local std::size_t progressOffset=0;
+unsigned workerStarts=0;
 std::string response, request;
 std::vector<std::string> responses;unsigned requests=0;
 std::size_t offset=0, chunk=7;
@@ -20,31 +25,54 @@ std::string wire(const std::string& body) {
     return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
 }
 void reset(std::string data) {
-    response=std::move(data);request.clear();offset=0;closes=0;clockUs=0;
+    workerStarts=0;response=std::move(data);request.clear();offset=0;closes=0;clockUs=0;
     responses.clear();requests=0;connected=true;receiveError=false;receiveCost=100;chunk=7;
 }
 }
 namespace botty::platform {
-std::uint64_t now() noexcept {return clockUs;}
+std::uint64_t now() noexcept {if(progressWorker)return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();return clockUs;}
 void sleep(unsigned n) noexcept {if(workerAllowed)std::this_thread::sleep_for(std::chrono::microseconds(n));else clockUs+=n;}
 void log(const char*) noexcept {}
-int connectLocal() noexcept {if(requests<responses.size())response=responses[requests];++requests;offset=0;return connected?3:-1;}
+int connectLocal() noexcept {if(progressWorker){progressRequest.clear();progressResponse.clear();progressOffset=0;return 4;}if(requests<responses.size())response=responses[requests];++requests;offset=0;return connected?3:-1;}
 int send(int,const void* bytes,std::size_t size) noexcept {
+    if(progressWorker){progressRequest.append(static_cast<const char*>(bytes),size);return int(size);}
     const auto n=std::min(size,chunk);request.append(static_cast<const char*>(bytes),n);return static_cast<int>(n);
 }
 int receive(int,void* bytes,std::size_t size) noexcept {
+    if(progressWorker){
+        if(progressResponse.empty())progressResponse=wire(progressRequest.find("GET /api/bootstrap ")==0?R"({"apiVersion":1,"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})":R"({"tasks":[{"id":"42","kind":"deletion","name":"Fixture","status":"running","phase":"Deleting files","unit":"items","bytes":2,"total":10,"eta":8,"rate":1}]})");
+        const auto n=std::min(size,progressResponse.size()-progressOffset);std::memcpy(bytes,progressResponse.data()+progressOffset,n);progressOffset+=n;return int(n);
+    }
     clockUs+=receiveCost;
     if(response=="#long-timeout"){clockUs+=121000000;return -1;}
     if(receiveError||response=="#timeout")return -1;
     const auto n=std::min({size,chunk,response.size()-offset});
     std::memcpy(bytes,response.data()+offset,n);offset+=n;return static_cast<int>(n);
 }
-void closeSocket(int) noexcept {++closes;}
-bool startWorker(void* (*fn)(void*),void* context,void** handle) noexcept {if(!workerAllowed)return false;*handle=new std::thread([=]{fn(context);});return true;}
-void joinWorker(void* handle) noexcept {auto* thread=static_cast<std::thread*>(handle);thread->join();delete thread;}
+void closeSocket(int) noexcept {if(!progressWorker)++closes;}
+struct WorkerStart {void* (*fn)(void*);void* context;bool progress;pthread_t thread;};
+bool startWorker(void* (*fn)(void*),void* context,void** handle) noexcept {
+    if(!workerAllowed)return false;
+    auto* worker=new WorkerStart{fn,context,(++workerStarts)==2,{}};
+    pthread_attr_t attr;assert(pthread_attr_init(&attr)==0);
+    // Reproduce the PS5 budget: the previous Processing buffers overflowed it.
+    if(worker->progress)assert(pthread_attr_setstacksize(&attr,64*1024)==0);
+    const int rc=pthread_create(&worker->thread,&attr,[](void* arg)->void*{
+        auto* w=static_cast<WorkerStart*>(arg);progressWorker=w->progress;return w->fn(w->context);
+    },worker);
+    pthread_attr_destroy(&attr);if(rc){delete worker;return false;}*handle=worker;return true;
+}
+void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(handle);pthread_join(worker->thread,nullptr);delete worker;}
 }
 int main() {
     using namespace botty;
+    Processing processing;
+    assert(parseProcessing(R"({"tasks":[{"id":"task-a","kind":"compression","status":"waiting-close","bytes":100,"total":100,"eta":0}]})",processing));
+    assert(processing.tasks[0].active&&processing.tasks[0].total==0&&processing.tasks[0].eta==-1);
+    assert(!parseProcessing(R"({"tasks":[{"name":"missing ID"}]})",processing));
+    Catalog control;control.processing=processing;control.jobCount=1;control.jobs[0].complete=true;
+    assert(entryCount(control,1,0)==2&&entryAt(control,1,0,0)->task);
+    Workflow monitored;monitored.open(entryAt(control,1,0,0),1,control);assert(monitored.panel==Workflow::Panel::closed);
     char estimate[160];
     formatDeletionEstimate(250122412221.0,estimate,sizeof(estimate));assert(std::string_view(estimate).find("5-10 min")!=std::string_view::npos);
     formatDeletionEstimate(100000000000.0,estimate,sizeof(estimate));assert(std::string_view(estimate).find("2-4 min")!=std::string_view::npos);
@@ -241,6 +269,8 @@ int main() {
     reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),wire(boot),wire("{}"),wire(health),wire(boot),wire(login),wire(actionable)};
     workerAllowed=true;Network queued;assert(queued.start());Connection snapshot;ActionResult result;
     for(unsigned i=0;i<200;++i){queued.read(snapshot,&catalog,&result);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    Processing live;for(unsigned i=0;i<200;++i){queued.readProcessing(live);if(live.count)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(live.count==1&&live.tasks[0].items&&live.tasks[0].eta==8);
     assert(snapshot.status==Probe::ready);command.operation=Operation::pause;
     assert(queued.submit(command));assert(!queued.submit(command));
     for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
@@ -359,8 +389,19 @@ int main() {
     }
 
     {
-        Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true}}]})",release));
+        Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true,"sourceStorage":"internal","storage":"external-test"}}]})",release));
         auto& e=release.jobs[0];assert(e.compressed&&e.originalKept&&e.compressionVerified);
+        std::array<LibraryCopy,2> copies{};
+        assert(libraryCopies(e,copies)==2);
+        assert(std::string_view(copies[0].format)=="Compressed"&&std::string_view(copies[0].storage)=="external-test");
+        assert(std::string_view(copies[1].format)=="Uncompressed"&&std::string_view(copies[1].storage)=="internal");
+        auto pending=e;pending.compressionVerified=false;std::snprintf(pending.kind.data(),pending.kind.size(),"folder");
+        std::snprintf(pending.compressionState.data(),pending.compressionState.size(),"running");
+        assert(libraryCopies(pending,copies)==1&&std::string_view(copies[0].format)=="Uncompressed");
+        std::snprintf(pending.compressionState.data(),pending.compressionState.size(),"restored");
+        assert(libraryCopies(pending,copies)==2&&copies[1].retained);
+        e.originalKept=false;assert(libraryCopies(e,copies)==1);e.originalKept=true;
+        char label[100];storageLabel(release,"external-missing",label,sizeof(label));assert(std::string_view(label)=="Offline: external SSD");
         Workflow w;w.open(&e,2,release);assert(w.options[0]==Operation::removeOriginal&&w.options[1]==Operation::restoreOriginal);
         assert(!*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::compress,&e,release));
         Command cmd;cmd.operation=Operation::removeOriginal;cmd.id=e.id;char body[512];size_t n=0;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
@@ -375,6 +416,19 @@ int main() {
         assert(w.command.operation==Operation::removeLibrary);
         release.compressionBusy=true;assert(*unavailable(Operation::removeLibrary,&e,release));
         release.compressionBusy=false;std::snprintf(e.compressionState.data(),e.compressionState.size(),"uncertain");assert(*unavailable(Operation::removeLibrary,&e,release));
+    }
+
+    {
+        Catalog c;assert(parseCatalog(R"({"freeBytes":123,"transmissionReady":true,"searchSupported":true,"torrents":[],"jobs":[],"storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":123},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD","available":true,"freeBytes":999}]})",c));
+        assert(c.storageCount==2&&c.storage[1].freeBytes==999);
+        Entry game;std::snprintf(game.id.data(),game.id.size(),"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        Workflow w;w.grab(game,false,true);assert(w.panel==Workflow::Panel::storage);
+        w.press(Buttons::down,c,false);w.press(Buttons::cross,c,false);assert(w.panel==Workflow::Panel::mode);
+        w.press(Buttons::down,c,false);assert(!w.command.automatic);w.press(Buttons::cross,c,false);assert(w.panel==Workflow::Panel::confirm&&!w.confirm);
+        w.press(Buttons::right,c,false);c.storage[1].available=false;assert(!w.press(Buttons::cross,c,false));c.storage[1].available=true;assert(w.press(Buttons::cross,c,false));
+        char body[512];size_t n=0;assert(encodeCommand(w.command,body,sizeof(body),n));assert(std::string_view(body).find("\"automatic\":false")!=std::string_view::npos);assert(std::string_view(body).find(c.storage[1].id.data())!=std::string_view::npos);
+        Command cmd;cmd.operation=Operation::transfer;cmd.torrent=true;std::snprintf(cmd.id.data(),cmd.id.size(),"42");cmd.storage=c.storage[1].id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).starts_with("{\"id\":42"));assert(std::string_view(body).find("\"kind\":\"torrent\"")!=std::string_view::npos);
+        cmd.torrent=false;cmd.id=game.id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"kind\":\"job\"")!=std::string_view::npos);
     }
 
 }
