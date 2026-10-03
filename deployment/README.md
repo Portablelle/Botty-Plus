@@ -216,7 +216,7 @@ browser access to the HTTPS portal does not need custom DNS.
    sudo systemctl reload nginx
    ```
 
-6. Follow the [PS5 DNS and User's Guide walkthrough](../README.md#open-the-portal-through-the-users-guide)
+6. Follow the [PS5 DNS and User's Guide walkthrough](../docs/CONSOLE-SETUP.md)
    to set the console's DNS fields and open the portal from Settings. Give users
    the reachable resolver IP and the expected HTTPS portal URL. A certificate warning or browser refusal may occur
    at the Guide hop; this route still needs real-console validation. The target
