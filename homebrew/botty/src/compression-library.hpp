@@ -1,6 +1,7 @@
 #pragma once
 #include "core.hpp"
 #include "httplib.h"
+#include "notification.hpp"
 #include <fstream>
 #include <sstream>
 #include <cstring>
@@ -53,7 +54,7 @@ public:
     return out;
   }
   bool idle(const std::string& title) {try{api("games/unmount",{{"title_id",title}});return true;}catch(...){return false;}}
-  void activate(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress) {
+  void activate(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress,const std::function<void(const std::string&)>& notify=notifySystem) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
     if(!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||!std::regex_match(id,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Invalid compression identity");
     const fs::path source=rec.at("source").get<std::string>(),image=rec.at("output").get<std::string>();
@@ -82,6 +83,9 @@ public:
     compareCompression(original,runtime_/title,progress);
     api("games/unmount",{{"title_id",title}});
     rec["status"]="ready";rec["phase"]="Compressed game ready. Test the game before deleting the original.";rec["originalKept"]=true;rec["verified"]=true;rec["error"]="";save();
+    // Notify only after verification, runtime release and the durable ready checkpoint.
+    // A failed notification must not turn a successfully verified copy into recovery.
+    try {notify("Botty+: Verification complete ("+title+"). You can reopen Botty+. Original kept.");}catch(...) {}
   }
   void restore(json& rec,const std::function<void()>& save) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();

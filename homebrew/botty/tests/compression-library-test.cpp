@@ -48,7 +48,19 @@ void runTests(bool external){
  CompressionLibrary library(outputPaths,port,shadow,apps,root/"runtime",&paths);assert(!library.idle("PPSA12345"));busy=false;library.api("games/unmount",{{"title_id","PPSA12345"}});assert(library.idle("PPSA12345"));
  json rec={{"titleId","PPSA12345"},{"jobId",std::string(32,'a')},{"source",source.string()},{"output",image.string()}};std::vector<std::string> phases;
  auto save=[&]{phases.push_back(rec.at("status"));writeJson(root/"journal.json",rec);};
- library.activate(rec,save,{});assert(rec["status"]=="ready"&&rec["verified"]==true&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
+ unsigned notifications=0;
+ auto notify=[&](const std::string& message){
+  ++notifications;assert(!mount);assert(rec["status"]=="ready"&&rec["verified"]==true);
+  assert(json::parse(readText(root/"journal.json"))["status"]=="ready");
+  assert(message.find("Verification complete (PPSA12345)")!=std::string::npos);
+  assert(message.find("You can reopen Botty+")!=std::string::npos);
+ };
+ // A mismatch must never announce success; recover the preserved original for retry.
+ std::ofstream(mounted/"eboot.bin")<<"corrupted before verification";
+ rejects([&]{library.activate(rec,save,{},notify);});assert(notifications==0);
+ library.restore(rec,save);
+ fs::copy_file(source/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
+ library.activate(rec,save,{},notify);assert(notifications==1);assert(rec["status"]=="ready"&&rec["verified"]==true&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
  std::ofstream(mounted/"eboot.bin")<<"corrupted after validation";rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));
  fs::copy_file(original/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
  library.restore(rec,save);assert(fs::exists(source)&&!fs::exists(original)&&fs::exists(image));assert(rec["status"]=="restored");

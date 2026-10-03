@@ -1,4 +1,4 @@
-# Botty service 1.3.1
+# Botty service 1.3.3
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.3.1`; its installed marker is in the parent directory.
+`/data/botty/manager/1.3.3`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -227,3 +227,11 @@ callbacks retain descriptor-relative path checks. Counters measure items removed
 or checked absent; ETA is phase-local and omitted until enough rate samples exist.
 Compression verification publishes live counters independently of durable records.
 Botty+ 01.003.001 combines these snapshots with extraction jobs in Processing.
+
+## Verification completion notification (1.3.3)
+
+After a compressed copy passes the complete file comparison, the service releases
+its runtime mount and saves the ready state before sending a PS5 notification:
+“Botty+: Verification complete (title ID). You can reopen Botty+. Original kept.”
+Verification failures never announce success. Notification delivery is best-effort;
+a delivery failure does not invalidate a verified copy.

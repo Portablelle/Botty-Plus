@@ -23,7 +23,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.3.1/ui"
+#define BOTTY_UI "/data/botty/manager/1.3.3/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -365,7 +365,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted transfer. Copies and metadata need inspection before further file operations.";transferring=true;}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.3.1"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.3.3"}});
     stage="creating HTTP server";
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -391,7 +391,7 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.3.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.3.3"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
