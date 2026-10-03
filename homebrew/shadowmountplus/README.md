@@ -1,4 +1,4 @@
-# ShadowMountPlus 1.7beta3-botty.3
+# ShadowMountPlus 1.7beta4-botty.1
 
 Botty's narrow patch to ShadowMountPlus fixes a TitleDir bridge that remained
 unusable for the entire session after one failed hook check. This is a modified
@@ -101,3 +101,46 @@ No legacy Kstuff enable/disable operation is used.
 `patches/pin-shellcore-hooks.patch` contains this change. Host tests cover page
 boundaries, shared pages, missing Kstuff and failures at every lock step.
 Console acceptance must verify the bytes remain installed and Botty+ starts.
+
+## 1.7beta4 integration and Botty workflow
+
+The upstream 1.7beta4 release is pinned at
+`d7e35e6ce90abc6f9d0880ff40c2a5cc1fbfa075`; the modified build is
+`1.7beta4-botty.1`. All three Botty patches apply with zero fuzz. Upstream did
+not replace the TitleDir recovery, resident hook pages, or Lite control guard.
+
+Beta4 adds `/data`, `/mnt`, and individual connected `/mnt/usb0..7` and
+`/mnt/ext0..1` mounts to each supported application's sandbox. These mounts are
+part of launch preparation and are cleaned up with the application session;
+they are not limited to Botty and remain enabled when fakelib is excluded.
+This is filesystem visibility, not unrestricted process privileges. Validate
+actual file access on the console before depending on it.
+
+For Botty+, this could support direct read-only artwork caching, local diagnostic
+exports, or an offline catalog snapshot. The current native UI still uses the
+Botty HTTP API, packaged `/app0` assets, and `/download0` logs. The background
+service already accesses `/data` and external storage, so this release alone
+adds no download/extraction/compression throughput improvement. Preserve the
+service as owner of mutable jobs and files; a direct UI file reader would need
+atomic snapshots and an API fallback for older ShadowMount installations.
+
+The requirement to close Botty+ before compressed-image activation, verification,
+restoration or deletion remains: ShadowMount's runtime mutation guard still
+returns EBUSY while an application is active. Making `/data` visible does not
+remove that guard. Botty's `waiting-close` workflow remains unchanged.
+
+Other upstream changes include installed PKG entries in the API/web library,
+per-title fakelib policy, LAPY homebrew IDs and storage overview deduplication.
+The existing Botty compression integration selects sources by exact path/title
+and checks folder/image types; PKG entries do not authorize package mutation.
+Upstream also deletes `libSceAmpr.sprx`, `libScePlayGo.sprx` and `libkernel.sprx`
+from the standard backport's `fakelib` in the specifically detected PPR/NSFS
+package case. This is actual source-file cleanup, not just a hidden overlay.
+
+Validation on 2026-10-03: the PS5 cross-build and isolated production TitleDir
+regressions passed with the pinned SDK. After restarting the console and running
+LAUNCH, the user confirmed successful installation and normal Botty+ startup on
+the project console (firmware 13.00). Direct sandbox file access, long-running
+hook residency and compressed-game transitions were not independently retested
+for beta4. Retain the previous payload and use a fresh, idle console session for
+activation. Do not restart a busy console to activate it.

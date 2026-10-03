@@ -1,4 +1,4 @@
-# Botty+ 1.2.2 launch portal
+# Botty+ 1.3.7 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -6,8 +6,8 @@ Botty+, loads Kstuff and ShadowMountPlus, starts FTP on 2121 and prepares
 rTorrent and the Botty service. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Release 1.2.2 bundles native 01.002.001, service 1.2.2, rTorrent 0.16.24-botty2
-and ShadowMountPlus 1.7beta3-botty.3. Existing Transmission installations need an
+Release 1.3.7 bundles native 01.003.006, service 1.3.5, rTorrent 0.16.24-botty2
+and ShadowMountPlus 1.7beta4-botty.1. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.
 
@@ -54,7 +54,7 @@ object pool mismatch. The kernel stage combines an address leak with an
 Upstream revision is recorded in `manifest.json` and in the repository's
 `Relapse-Exploit` submodule. Preserve the upstream `LICENSE` and attribution.
 
-The bundled ShadowMountPlus `1.7beta3-botty.3` includes Botty's guarded TitleDir
+The bundled ShadowMountPlus `1.7beta4-botty.1` includes Botty's guarded TitleDir
 recovery and pinned ShellCore hooks. Its [notice](payloads/shadowmountplus-NOTICE.md),
 [GPL license](payloads/shadowmountplus-LICENSE.txt) and
 [complete corresponding source](payloads/shadowmountplus-source.tar.gz)

@@ -1,8 +1,8 @@
 # Modified ShadowMountPlus
 
-Version: 1.7beta3-botty.3
+Version: 1.7beta4-botty.1
 
-Upstream: https://github.com/drakmor/ShadowMountPlus, revision `f0d15ffc46e9237d41cc3555b1cf11362d9a32e0`.
+Upstream: https://github.com/drakmor/ShadowMountPlus, revision `d7e35e6ce90abc6f9d0880ff40c2a5cc1fbfa075`.
 
 Botty modification: guarded automatic TitleDir hook recovery and transient read handling; resident ShellCore hook pages; legacy Kstuff runtime toggles disabled for the bundled Lite implementation. This is not the unmodified upstream release.
 

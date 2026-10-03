@@ -101,7 +101,7 @@ executable source: rebuild first so the source and binary correspond.
 
 ### ShadowMountPlus recovery build
 
-The portal ships `1.7beta3-botty.3`, with guarded TitleDir recovery and resident
+The portal ships `1.7beta4-botty.1`, with guarded TitleDir recovery and resident
 ShellCore hook/bridge pages for Kstuff Lite v1.11. Follow
 [its build and test instructions](../homebrew/shadowmountplus/README.md), then run
 `python3 scripts/package-shadowmount.py` and regenerate the portal manifest.
