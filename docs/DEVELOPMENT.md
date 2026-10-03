@@ -134,11 +134,6 @@ own runtime copies plus the Relapse kernel stage and loader. Updating the
 `Relapse-Exploit` submodule alone does not update the customized portal: reconcile
 its browser code, offsets and payloads explicitly and rerun installer tests.
 
-`serve-local.py` and `Start-Relapse.command` serve the upstream checkout, not the
-Botty portal. `send-payload.py HOST payload.elf` and `send-prospero.py HOST` are
-manual tools for a running ELF loader on 9021. They are not required by the
-one-button workflow and a successful send does not prove payload startup.
-
 ## Prepare a public release
 
 1. Complete the relevant host tests and package checks. Review
