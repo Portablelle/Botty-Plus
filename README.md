@@ -14,7 +14,7 @@
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
 
-Botty+ lets you download, extract and manage your PS5 homebrew library directly
+Botty+ lets you download, extract and manage your PS5 game library directly
 from your console, using your controller. Downloads and file operations continue
 in the background when you close the app.
 
