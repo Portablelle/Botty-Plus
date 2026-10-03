@@ -6,7 +6,7 @@ const JOURNAL = '/data/botty/native/update.json';
 const BACKUPS = '/data/botty/native/backups';
 // Native executables exceed 16 MiB; keep a bounded allowance for older copies too.
 const MAX_NATIVE_FILE_BYTES = 32 * 1024 * 1024;
-const HASH = 'd94cd90315977e1802c30db573307892ac72bd5fb39a75f61e702ffe01b2d929';
+const HASH = 'd52af42b3de4be81d7d62547cf816f972338055385f765ed476d9fcdb58142ea';
 const FILES = ['assets/Manrope-OFL.txt', 'assets/build.txt', 'assets/nebula.rgb', 'assets/courier.rgba', 'assets/extractor.rgba', 'assets/vault.rgba', 'assets/ui-font.bin', 'eboot.bin', 'sce_module/libc.prx', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/param.json', 'sce_sys/snd0.at9'];
 
 const STAGE = '/data/botty/native/' + HASH + '/PPSA99071';

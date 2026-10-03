@@ -8,29 +8,12 @@ location = /botty-indexer/api/v1/search {
     proxy_set_header Cookie "";
     proxy_read_timeout 110s;
 }
-location = /botty-indexer/1/download {
+# Only positive numeric indexer download routes; administration remains private.
+location ~ ^/botty-indexer/([1-9][0-9]*)/download$ {
     if ($scheme != https) { return 403; }
     limit_except GET { deny all; }
     access_log off;
-    proxy_pass http://127.0.0.1:9696/1/download;
-    proxy_set_header Host 127.0.0.1:9696;
-    proxy_set_header Cookie "";
-    proxy_read_timeout 110s;
-}
-location = /botty-indexer/2/download {
-    if ($scheme != https) { return 403; }
-    limit_except GET { deny all; }
-    access_log off;
-    proxy_pass http://127.0.0.1:9696/2/download;
-    proxy_set_header Host 127.0.0.1:9696;
-    proxy_set_header Cookie "";
-    proxy_read_timeout 110s;
-}
-location = /botty-indexer/3/download {
-    if ($scheme != https) { return 403; }
-    limit_except GET { deny all; }
-    access_log off;
-    proxy_pass http://127.0.0.1:9696/3/download;
+    proxy_pass http://127.0.0.1:9696/$1/download$is_args$args;
     proxy_set_header Host 127.0.0.1:9696;
     proxy_set_header Cookie "";
     proxy_read_timeout 110s;

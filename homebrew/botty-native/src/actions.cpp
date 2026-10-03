@@ -58,7 +58,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
   return "";
  }
  if(op==Operation::restoreOriginal)return e->originalKept&&(std::string_view(e->compressionState.data())=="ready"||std::string_view(e->compressionState.data())=="uncertain")?"":"No original backup available for recovery.";
- if(op==Operation::removeOriginal)return c.compressionBusy||c.extracting?"Wait for the current file operation.":e->compressionVerified&&e->originalKept&&std::string_view(e->compressionState.data())=="ready"?"":"No verified uncompressed copy available.";
+ if(op==Operation::removeOriginal){const auto state=std::string_view(e->compressionState.data());const bool recovery=state=="uncertain"&&std::string_view(c.compressionStatus.data())=="uncertain"&&std::string_view(c.compressionJob.data())==e->id.data();return (c.compressionBusy&&!recovery)||c.extracting?"Wait for the current file operation.":e->originalKept&&(state=="ready"||state=="uncertain")?"":"No original backup available for deletion.";}
  if(op==Operation::cancelCompression)return (std::string_view(c.compressionStatus.data())=="running"||std::string_view(c.compressionStatus.data())=="starting")&&c.compressionBusy&&std::string_view(c.compressionJob.data())==e->id.data()?"":"No active compression for this game.";
  if(c.compressionBusy&&(op==Operation::extract||op==Operation::move||op==Operation::remove||op==Operation::removeLibrary||op==Operation::removeTorrent))return "Wait for compression to finish.";
  if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
@@ -84,7 +84,7 @@ void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
  if(e&&tab<3){targetId=e->id;targetName=e->name;if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;options[optionCount++]=Operation::removeTorrent;}else if(tab==2){if(std::string_view(e->status.data())=="ready"){options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;}else {if(c.compressionSupported){
    const bool current=c.compressionBusy&&std::string_view(c.compressionJob.data())==e->id.data();
    if(current&&(std::string_view(c.compressionStatus.data())=="running"||std::string_view(c.compressionStatus.data())=="starting"))options[optionCount++]=Operation::cancelCompression;
-   else if(e->compressed&&e->compressionVerified&&e->originalKept)options[optionCount++]=Operation::removeOriginal;
+   else if(e->compressed&&e->originalKept&&(std::string_view(e->compressionState.data())=="ready"||std::string_view(e->compressionState.data())=="uncertain"))options[optionCount++]=Operation::removeOriginal;
    else if(!e->compressed&&std::string_view(e->kind.data())=="folder"&&std::string_view(e->titleId.data()).starts_with("PPSA")&&std::string_view(e->titleId.data())!="PPSA99071")options[optionCount++]=Operation::compress;
   }if(e->originalKept&&(e->compressionVerified||std::string_view(e->compressionState.data())=="uncertain"))options[optionCount++]=Operation::restoreOriginal;options[optionCount++]=Operation::removeLibrary;}}else{if(e->active)options[optionCount++]=Operation::cancel;options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}}
  if(e&&tab<3&&c.storageSupported&&(tab==0||std::string_view(e->status.data())=="ready"||std::string_view(e->status.data())=="moved"))options[optionCount++]=Operation::transfer;
@@ -92,6 +92,13 @@ void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
 }
 void Workflow::search() noexcept {close();command=Command{};command.operation=Operation::search;panel=Panel::keyboard;selected=0;keyPage=0;}
 void Workflow::grab(const Entry& e,bool exploration,bool storageSupported) noexcept {close();command=Command{};command.operation=exploration?Operation::exploreGrab:Operation::grab;command.id=e.id;targetName=e.name;panel=storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
+void Workflow::chooseSources(const Entry& e,const Catalog& c) noexcept {
+ grab(e,true,c.storageSupported);sourceCount=0;
+ for(unsigned i=0;i<e.sourceCount&&i<sources.size()&&e.sourceStart+i<c.sourceCount;++i)sources[sourceCount++]=c.sources[e.sourceStart+i];
+ // Older services provide a single source; still require an explicit choice.
+ if(!sourceCount){auto& source=sources[sourceCount++];source=DownloadSource{};source.id=e.id;source.name=e.name;std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;source.grabs=e.completedCount;source.published=e.published;}
+ panel=Panel::sources;selected=0;
+}
 void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
 std::string_view Workflow::keys(unsigned page) noexcept {
  switch(page%3){case 0:return "abcdefghijklmnopqrstuvwxyz0123456789-_.:";case 1:return "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:";default:return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~01234567";}
@@ -119,7 +126,10 @@ bool Workflow::press(unsigned edge,const Catalog& c,bool busy) noexcept {
  if(edge&Buttons::circle){close();return false;}
  if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
  const Entry* e=target(c);
- if(panel==Panel::menu){
+ if(panel==Panel::sources){
+  if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<sourceCount)++selected;
+  if(edge&Buttons::cross){const char* reason=unavailable(command.operation,nullptr,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
+ }else if(panel==Panel::menu){
   if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<optionCount)++selected;
   if(edge&Buttons::cross){auto op=options[selected];const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
    if(op==Operation::add){add();return false;}command=Command{};command.operation=op;command.id=targetId;command.torrent=targetTab==0;confirm=false;notice.fill(0);

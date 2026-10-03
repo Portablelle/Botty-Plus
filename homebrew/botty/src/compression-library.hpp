@@ -134,19 +134,19 @@ public:
     api("scan",{{"reset_attempts",false}});
     rec["status"]="deleted";rec["verified"]=false;rec["originalKept"]=false;rec["phase"]="Game deleted. Saves, torrents and archives kept.";rec["error"]="";save();
   }
-  void removeOriginal(json& rec,const std::function<void()>& save,const std::function<void(uint64_t,uint64_t)>& progress,const DeleteProgress& deletionProgress={}) {
+  void removeOriginal(json& rec,const std::function<void()>& save,const DeleteProgress& deletionProgress={}) {
     const auto title=rec.at("titleId").get<std::string>(),id=rec.at("jobId").get<std::string>();
-    if(rec.value("status","")!="ready"||!rec.value("verified",false)||!rec.value("originalKept",false))throw std::runtime_error("No verified original copy available for deletion");
+    if(rec.value("status","")!="ready"||!rec.value("originalKept",false))throw std::runtime_error("No original copy available for deletion");
     const fs::path original=rec.at("originalPath").get<std::string>();
     if(!std::regex_match(id,std::regex("[a-f0-9]{32}"))||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||original!=source_.root/"compressor/originals"/id)throw std::runtime_error("Invalid original backup path");
     containedExisting(source_.root/"compressor/originals",original);
+    const fs::path image=rec.at("output").get<std::string>();
+    if(image!=paths_.root/"compressor/output"/(title+".ffpfsc")||!fs::is_regular_file(containedExisting(image.parent_path(),image)))throw std::runtime_error("Compressed copy is missing or its path changed");
     const auto info=api("games/info",{{"title_id",title}});if(info.value("path","")!=rec.at("output").get<std::string>()||!info.value("image_backed",false))throw std::runtime_error("Compressed source is not selected");
-    api("games/mount",{{"title_id",title},{"mode","ro"}});
-    compareCompression(original,runtime_/title,progress); // Never trust an old validation after disk changes.
     api("games/unmount",{{"title_id",title}});
     rec["status"]="deleting-original";rec["originalDeletionStarted"]=true;rec["originalKept"]=false;save();
     compressionFiles(original);deleteGameDirectory(original.parent_path(),original.filename(),deletionProgress);if(fs::exists(fs::symlink_status(original)))throw std::runtime_error("Original deletion incomplete");
-    rec["status"]="ready";rec["originalKept"]=false;rec["phase"]="Compressed game ready. Original copy deleted; archives kept.";save();
+    rec["status"]="ready";rec["originalKept"]=false;rec["phase"]="Original copy deleted. Compressed copy and archives kept.";save();
   }
 };
 }

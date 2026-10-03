@@ -9,7 +9,8 @@ struct Entry {
     std::array<char,512> name{}, error{}, destination{}, phase{};
     std::array<char,32> status{}, kind{}, titleId{};
     std::array<char,2048> files{};
-    unsigned fileCount=0,archiveStart=0,archiveCount=0;
+    unsigned fileCount=0,archiveStart=0,archiveCount=0,sourceStart=0,sourceCount=0;
+    bool sourcesOmitted=false;
     bool task=false,items=false;
     double elapsed=0;
     std::array<char,512> currentFile{};
@@ -22,6 +23,12 @@ struct Entry {
     std::array<char,40> published{};
     int peers=-1,downloadingPeers=-1,uploadingPeers=-1;
     bool etaEstimated=false,complete=false,active=false;
+};
+struct DownloadSource {
+    std::array<char,96> id{},tracker{};
+    std::array<char,512> name{};
+    std::array<char,40> published{};
+    double size=0;int seeders=0,leechers=0,grabs=0;
 };
 struct StorageDevice {std::array<char,64> id{},label{};double freeBytes=0;bool available=false;};
 struct Processing {
@@ -40,7 +47,8 @@ struct Catalog {
     std::array<Entry,100> results{};
     unsigned resultCount=0;
     std::array<Entry,100> exploreResults{};
-    unsigned exploreCount=0;
+    unsigned exploreCount=0,sourceCount=0;
+    std::array<DownloadSource,3200> sources{};
     bool exploreSupported=false,exploreBusy=false,exploreAdding=false;
     std::array<char,32> exploreSort{};
     std::array<char,512> exploreError{},exploreNotice{};

@@ -1,4 +1,4 @@
-# Botty service 1.3.3
+# Botty service 1.3.5
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.3.3`; its installed marker is in the parent directory.
+`/data/botty/manager/1.3.5`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -158,8 +158,10 @@ The authenticated `POST /api/delete-library-game` endpoint requires a tracked jo
 
 Library → Options → **Compress game** creates a separate compressed PS5 folder
 game. Close Botty+ when prompted so ShadowMount can mount and verify every file.
-Test the game before selecting **Delete uncompressed copy**. That action verifies
-the image again and retains saves, compressed content and download archives.
+Test the game before selecting **Delete uncompressed copy**. That action deletes the original without another file comparison, regardless of
+the compression verification flag. It retains saves, compressed content and
+download archives. A retained backup, the selected compressed image and a closed
+game are still required; active compression and deletion cannot be interrupted.
 **Restore uncompressed game** can return to a retained original. Existing images
 and APR games without an existing index are not supported by this workflow. See the game-compressor component
 for build instructions, dependency notices and validation limits.
@@ -228,10 +230,14 @@ or checked absent; ETA is phase-local and omitted until enough rate samples exis
 Compression verification publishes live counters independently of durable records.
 Botty+ 01.003.001 combines these snapshots with extraction jobs in Processing.
 
-## Verification completion notification (1.3.3)
+## Verification completion notification (1.3.5)
 
 After a compressed copy passes the complete file comparison, the service releases
 its runtime mount and saves the ready state before sending a PS5 notification:
 “Botty+: Verification complete (title ID). You can reopen Botty+. Original kept.”
 Verification failures never announce success. Notification delivery is best-effort;
 a delivery failure does not invalidate a verified copy.
+
+## Provider-neutral search (1.3.5)
+
+Search and Explore use all enabled Prowlarr torrent indexers in the Console category tree. Botty merges duplicate releases and sorts the returned subset locally by seeders, grabs or date. Missing grabs count as zero. No tracker-specific indexer IDs or ranking profiles are required. See `deployment/README.md` for proxy setup and cache behavior.

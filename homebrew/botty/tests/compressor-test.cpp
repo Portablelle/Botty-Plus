@@ -91,5 +91,14 @@ int main() {
   Compressor externalCopy;externalCopy.init(paths,port,&storage);rejects([&]{externalCopy.start(job,external);});
   workerVersion="library-1.3";expectedOutputRoot=storage.get(external).root.string();
   const auto externalState=externalCopy.start(job,external);assert(externalState["storage"]==external&&externalState["sourceStorage"]=="internal");assert(readText(source/"eboot.bin")=="original");
+  // Original deletion is independent of the compression verification result.
+  for(const auto* status:{"ready","uncertain"}) {
+    auto unverified=ready;unverified["status"]=status;unverified["verified"]=false;unverified["originalKept"]=true;
+    unverified["originalPath"]=(root/"compressor/originals"/id).string();seed(unverified);
+    Compressor remove;remove.init(paths,port);const auto request=remove.requestOriginalDeletion(id);
+    assert(request["deleteRequested"]==true&&request["status"]=="waiting-close"&&!request["verified"].get<bool>());
+    assert(request["phase"].get<std::string>().find("verify")==std::string::npos);
+    rejects([&]{remove.requestOriginalDeletion(id);});
+  }
   server.stop();thread.join();fs::remove_all(root);curl_global_cleanup();
 }

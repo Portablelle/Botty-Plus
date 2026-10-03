@@ -70,7 +70,7 @@ int main() {
     assert(parseProcessing(R"({"tasks":[{"id":"task-a","kind":"compression","status":"waiting-close","bytes":100,"total":100,"eta":0}]})",processing));
     assert(processing.tasks[0].active&&processing.tasks[0].total==0&&processing.tasks[0].eta==-1);
     assert(!parseProcessing(R"({"tasks":[{"name":"missing ID"}]})",processing));
-    Catalog control;control.processing=processing;control.jobCount=1;control.jobs[0].complete=true;
+    static Catalog control;control.processing=processing;control.jobCount=1;control.jobs[0].complete=true;
     assert(entryCount(control,1,0)==2&&entryAt(control,1,0,0)->task);
     Workflow monitored;monitored.open(entryAt(control,1,0,0),1,control);assert(monitored.panel==Workflow::Panel::closed);
     char estimate[160];
@@ -352,6 +352,16 @@ int main() {
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"completed","busy":false,"results":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Demo PS5","size":123,"seeders":4,"completed":77,"published":"2026-10-01T12:00:00Z"}]}})",catalog));
     assert(catalog.exploreSupported&&catalog.exploreCount==1&&catalog.exploreResults[0].completedCount==77);
     flow.grab(catalog.exploreResults[0],true);flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(flow.command.operation==Operation::exploreGrab);
+    assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","results":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Demo PS5","sources":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tracker":"Tracker One","name":"Demo PS5","size":100,"seeders":20,"leechers":2,"completed":12},{"id":"cccccccccccccccccccccccccccccccc","tracker":"Tracker Two","name":"Demo PS5 Deluxe","size":200,"seeders":3,"completed":50}]}]}})",catalog));
+    assert(catalog.exploreResults[0].sourceCount==2&&catalog.sourceCount==2&&catalog.sources[1].grabs==50&&catalog.sources[1].size==200);
+    flow.chooseSources(catalog.exploreResults[0],catalog);assert(flow.panel==Workflow::Panel::sources);
+    assert(!flow.press(Buttons::down,catalog,false)&&flow.selected==1);
+    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    assert(std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");
+    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::closed); // Cancel defaults to no download.
+    catalog.storageSupported=true;flow.chooseSources(catalog.exploreResults[0],catalog);
+    catalog.exploreBusy=true;assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sources);catalog.exploreBusy=false;
+    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::storage);flow.press(Buttons::circle,catalog,false);assert(flow.panel==Workflow::Panel::closed);catalog.storageSupported=false;
     command=Command{};command.operation=Operation::explore;std::snprintf(command.text.data(),command.text.size(),"completed");assert(encodeCommand(command,encoded.data(),encoded.size(),encodedSize));
     assert(parseCatalog(actionable,catalog));catalog.torrentRemovalSupported=true;
     flow.open(&catalog.torrents[0],0,catalog);assert(flow.options[3]==Operation::removeTorrent);flow.selected=3;assert(!flow.press(Buttons::cross,catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
@@ -359,7 +369,7 @@ int main() {
     catalog.extracting=true;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));catalog.extracting=false;catalog.torrentRemovalSupported=false;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));
     std::cout<<"Protocol fragmentation, failure cleanup, bounded responses, API versions, focus and input tests passed\n";
     {
-        Catalog lib;assert(parseCatalog(R"({"freeBytes":1,"libraryDeletionSupported":true,"transmissionReady":true,"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Test game","status":"moved","dismissed":true,"content":{"kind":"folder"}}]})",lib));
+        static Catalog lib;assert(parseCatalog(R"({"freeBytes":1,"libraryDeletionSupported":true,"transmissionReady":true,"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Test game","status":"moved","dismissed":true,"content":{"kind":"folder"}}]})",lib));
         assert(lib.libraryDeletionSupported&&entryCount(lib,1,0)==0&&entryCount(lib,2,0)==1);
         Workflow menu;menu.open(&lib.jobs[0],2,lib);
         assert(menu.optionCount==1&&menu.options[0]==Operation::removeLibrary);
@@ -373,7 +383,7 @@ int main() {
     }
 
     {
-        Catalog beta;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false,"status":"idle"},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"LEGO","status":"moved","content":{"kind":"folder","titleId":"PPSA23732"}}]})",beta));
+        static Catalog beta;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false,"status":"idle"},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"LEGO","status":"moved","content":{"kind":"folder","titleId":"PPSA23732"}}]})",beta));
         Workflow menu;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::compress);
         assert(!*unavailable(Operation::compress,&beta.jobs[0],beta));
         assert(!menu.press(Buttons::cross,beta,false));assert(!menu.confirm);
@@ -389,7 +399,7 @@ int main() {
     }
 
     {
-        Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true,"sourceStorage":"internal","storage":"external-test"}}]})",release));
+        static Catalog release;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Compressed game","status":"moved","content":{"kind":"compressed","titleId":"PPSA12345"},"compression":{"status":"ready","verified":true,"originalKept":true,"sourceStorage":"internal","storage":"external-test"}}]})",release));
         auto& e=release.jobs[0];assert(e.compressed&&e.originalKept&&e.compressionVerified);
         std::array<LibraryCopy,2> copies{};
         assert(libraryCopies(e,copies)==2);
@@ -404,6 +414,9 @@ int main() {
         char label[100];storageLabel(release,"external-missing",label,sizeof(label));assert(std::string_view(label)=="Offline: external SSD");
         Workflow w;w.open(&e,2,release);assert(w.options[0]==Operation::removeOriginal&&w.options[1]==Operation::restoreOriginal);
         assert(!*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::compress,&e,release));
+        e.compressionVerified=false;w.open(&e,2,release);assert(w.options[0]==Operation::removeOriginal);
+        assert(!*unavailable(Operation::removeOriginal,&e,release));
+        e.compressionVerified=true;
         Command cmd;cmd.operation=Operation::removeOriginal;cmd.id=e.id;char body[512];size_t n=0;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
         assert(std::string_view(actionPath(cmd.operation))=="/api/delete-uncompressed");
         e.originalKept=false;assert(*unavailable(Operation::removeOriginal,&e,release));assert(*unavailable(Operation::restoreOriginal,&e,release));
@@ -419,7 +432,7 @@ int main() {
     }
 
     {
-        Catalog c;assert(parseCatalog(R"({"freeBytes":123,"transmissionReady":true,"searchSupported":true,"torrents":[],"jobs":[],"storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":123},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD","available":true,"freeBytes":999}]})",c));
+        static Catalog c;assert(parseCatalog(R"({"freeBytes":123,"transmissionReady":true,"searchSupported":true,"torrents":[],"jobs":[],"storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":123},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD","available":true,"freeBytes":999}]})",c));
         assert(c.storageCount==2&&c.storage[1].freeBytes==999);
         Entry game;std::snprintf(game.id.data(),game.id.size(),"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         Workflow w;w.grab(game,false,true);assert(w.panel==Workflow::Panel::storage);

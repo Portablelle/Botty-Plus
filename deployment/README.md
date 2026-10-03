@@ -117,24 +117,31 @@ narrow reverse proxy and a console client, not a Prowlarr installation.
 1. Run Prowlarr bound to `127.0.0.1:9696` on the server. Configure indexers and
    credentials in its private administration interface, accessed through SSH
    forwarding or a private network. Do not expose that interface through Botty.
-2. The current service uses **indexer ID 1** for Search and **category 1080**
-   (Console/PS3 in the original mapping). These values are fixed in
-   `homebrew/botty/src/search.hpp`. Your indexer must map the intended results to
-   that category; arbitrary providers/categories are not plug-and-play.
-3. For Explore, configure indexers for the desired upstream rankings, then map
-   their numeric IDs to `seeders`, `completed` and `newest` in the console config.
-   The same ID may be used for all three, but ranking then applies only to the
-   returned subset. Results are limited to 100 and Explore requires a PS5 token
-   in the title. `completed` ranks the provider's completed-download count.
+2. Search and Explore query every enabled **torrent** indexer in Prowlarr using
+   `indexerIds=-2` and the Console category tree (`1000`). Usenet results cannot
+   be downloaded by the torrent service. Provider credentials stay in Prowlarr.
+3. Botty combines results and ranks locally by seeders, Prowlarr `grabs`, or date.
+   Explore requires a PS5 token in the title and displays up to 100 releases.
+   Rankings cover the returned subset (up to 100 per indexer), not each tracker's
+   entire catalogue. Missing grabs count as zero. Explore groups releases by game title before the PS5 token. Selecting a game
+   opens a source chooser with tracker, release, size, seeders, leechers, grabs
+   and date before storage, download mode and final confirmation. Each game retains
+   up to 32 sources, ordered by seeders. Search uses duplicate info hashes, or exact
+   normalized release titles and sizes when hashes are absent, produce one result with its sources;
+   Botty prefers the source with more seeders and keeps the highest grabs count
+   rather than adding counts. Separate editions/releases remain separate.
+   Special ranking indexers and `exploreIndexers` mappings are no longer required;
+   legacy mappings are ignored. Refresh Explore after changing providers to bypass
+   its ten-minute cache.
 4. Copy `botty-prowlarr.nginx` to `/etc/nginx/snippets/botty-prowlarr.conf`, enable
    its include in the portal's TLS block and run `nginx -t` before reloading.
-   The example permits download IDs 1–3. Add exact download routes for other IDs
-   you actually configured; keep the proxy confined to search/download/artwork.
-5. Copy `prowlarr.example.json` to a private working location, fill in the URL,
-   Prowlarr API key and indexer IDs, then provision it on the PS5 as
-   `/data/botty/prowlarr.json` with mode **0600**. Use trusted console management
-   tooling; the portal intentionally never provisions or receives this secret.
-   Keep `/data/botty` private and remove temporary credential copies afterward.
+   The proxy accepts positive numeric indexer download routes without exposing
+   Prowlarr administration.
+5. Copy `prowlarr.example.json` to a private working location, fill in the URL and
+   Prowlarr API key, then provision it on the PS5 as `/data/botty/prowlarr.json`
+   with mode **0600**. Use trusted console management tooling; the portal
+   intentionally never provisions or receives this secret. Keep `/data/botty`
+   private and remove temporary credential copies afterward.
 6. Ensure `caFile` points to the installed service's CA bundle. Update it when
    switching service versions. The URL must use HTTPS, have no trailing slash,
    query, fragment or embedded credentials. The API key must be 32 hex characters.

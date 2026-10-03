@@ -286,3 +286,30 @@ combinations on console remains separate from the host previews.
 The portal accepts the two historical completed manual-update journals and
 bounds native file reads at 32 MiB, allowing the current executable above 16 MiB.
 Installer tests enforce actual read limits and cover larger previous executables.
+
+## Provider merge and tracker chooser (release 1.3.6)
+
+Service 1.3.5 queries all enabled Prowlarr torrent indexers, combines Console
+results and sorts the returned subset by seeders, grabs or date. Explore retains
+source alternatives and the native 01.003.006 chooser displays tracker, release,
+size, seeders, leechers, grabs and date before storage, mode and confirmation.
+Host integration covers multiple providers, grouping, missing counts, source
+selection, opaque IDs, HTTPS origin confinement, durable queueing and original
+archive preservation. Native model, packaging, preview and action integration
+checks pass. The screenshot in `docs/screenshots/explore-trackers-1.3.6.png`
+uses synthetic data; it is not a console screenshot.
+
+The initial native 01.003.005 build reported cached raster allocation failure
+and a black screen on firmware 13.00 after allocating large source collections
+on the runtime heap. The corrected 01.003.006 stores these bounded collections
+in static Catalog storage; no source collection consumes the renderer's heap.
+Workflow panel logging also handles all panel values without indexing beyond
+its labels. The exact platform heap limit was not independently measured.
+
+Console acceptance on 2026-10-03: the user confirmed that 01.003.006 opens and
+the tracker chooser works. All 13 native files were read back and hash-verified
+in confirmed raw SELF mode, with complete rollback files retained. A live
+service search returned 97 games and 129 sources from IPTorrents configurations
+and TorrentLeech; 28 games offered multiple sources, and grabs order was checked.
+No real download was added as part of this live acceptance check; selected-source
+download and extraction were validated with isolated homebrew fixtures.

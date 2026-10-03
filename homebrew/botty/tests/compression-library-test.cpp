@@ -61,7 +61,7 @@ void runTests(bool external){
  library.restore(rec,save);
  fs::copy_file(source/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
  library.activate(rec,save,{},notify);assert(notifications==1);assert(rec["status"]=="ready"&&rec["verified"]==true&&rec["originalKept"]==true);assert(!fs::exists(source)&&fs::exists(original)&&!mount);assert(phases.front()=="activating");
- std::ofstream(mounted/"eboot.bin")<<"corrupted after validation";rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));
+ busy=true;rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));busy=false;
  fs::copy_file(original/"eboot.bin",mounted/"eboot.bin",fs::copy_options::overwrite_existing);
  library.restore(rec,save);assert(fs::exists(source)&&!fs::exists(original)&&fs::exists(image));assert(rec["status"]=="restored");
  library.activate(rec,save,{});library.removeOriginal(rec,save,{});assert(!fs::exists(original)&&fs::exists(image)&&rec["originalKept"]==false);rejects([&]{library.removeOriginal(rec,save,{});});
@@ -84,6 +84,14 @@ void runTests(bool external){
  std::ofstream(apps/"PPSA12345/mount.lnk")<<source.string();
  rec={{"titleId","PPSA12345"},{"jobId",std::string(32,'a')},{"source",source.string()},{"output",image.string()}};
  library.activate(rec,save,{});assert(fs::exists(original));
+ // Explicit original deletion never re-reads compressed content, even without
+ // a successful verification flag. A missing compressed image still blocks it.
+ rec["verified"]=false;fs::rename(image,image.string()+".kept");
+ rejects([&]{library.removeOriginal(rec,save,{});});assert(fs::exists(original));
+ fs::rename(image.string()+".kept",image);
+ std::ofstream(mounted/"eboot.bin")<<"deliberately different mounted bytes";
+ library.removeOriginal(rec,save,{});assert(!fs::exists(original)&&!rec["verified"].get<bool>()&&fs::exists(image));
+ rec["verified"]=true; // Separate compressed-game deletion contract below.
  library.removeGame(rec,save);assert(!fs::exists(original)&&!fs::exists(image)&&readText(outside)=="save data");
  server.stop();thread.join();deleteGameDirectory(root.parent_path(),root.filename());
 }

@@ -28,16 +28,17 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    url=urllib.parse.urlsplit(self.path)
    if url.path=='/api/v1/search':
     q=urllib.parse.parse_qs(url.query);queries.append(q)
-    row=dict(title='Original homebrew PS5 fixture',indexerId=1,protocol='torrent',size=size,seeders=4,leechers=1,categories=[{'id':1080}],downloadUrl='http://127.0.0.1:9696/1/download?apikey='+('b'*32)+'&link=fixture')
+    row=dict(indexer='Tracker One',title='Original homebrew PS5 fixture',indexerId=1,protocol='torrent',size=size,seeders=4,leechers=1,categories=[{'id':1080}],downloadUrl='http://127.0.0.1:9696/1/download?apikey='+('b'*32)+'&link=fixture')
+    assert q['indexerIds']==['-2'] and q['categories']==['1000']
+    other=dict(row,indexer='Tracker Eight',indexerId=8,downloadUrl='https://untrusted.invalid/8/download?apikey='+('c'*32)+'&link=fixture',categories=[{'id':1180}])
     if q['query']==['PS5']:
-     ident=int(q['indexerIds'][0]);row.update(indexerId=ident,downloadUrl=f'http://localhost/{ident}/download?link=fixture')
-     self.reply([dict(row,title='Demo PS5',seeders=10,grabs=3,publishDate='2026-09-01T00:00:00Z'),dict(row,title='Second PS5',seeders=2,grabs=50,publishDate='2026-10-01T00:00:00Z'),dict(row,title='Original homebrew fixture PS5'),dict(row,title='Installed Game PS5'),dict(row,title='Wrong PS4'),dict(row,title='False XPS5suffix'),dict(row,title='Foreign PS5',indexerId=99)])
-    else:self.reply([dict(row,indexerId=2),dict(row,categories=[{'id':2000}]),row])
+     self.reply([dict(row,title='Demo PS5',seeders=10,grabs=3,publishDate='2026-09-01T00:00:00Z'),dict(row,title='Second PS5',seeders=2,grabs=50,publishDate='2026-10-01T00:00:00Z'),dict(other,title='Third PS5',seeders=8,grabs=90,publishDate='2026-10-02T00:00:00Z'),dict(other,title='Demo PS5',seeders=9,grabs=5),dict(other,title='Demo PS5 Deluxe',size=size*2,seeders=7,grabs=12,downloadUrl='https://untrusted.invalid/8/download?link=deluxe'),dict(other,title='Null counts PS5',seeders=None,grabs=None,infoHash=None,publishDate=None),dict(other,title='Malformed PS5',indexerId='oops'),dict(row,title='Original homebrew fixture PS5'),dict(row,title='Installed Game PS5'),dict(row,title='Wrong PS4'),dict(row,title='False XPS5suffix'),dict(row,title='Foreign PS5',indexerId=99),dict(other,title='Wrong category PS5',categories=[{'id':2000}]),dict(other,title='Usenet PS5',protocol='usenet')])
+    else:self.reply([dict(row,indexerId=2),dict(row,categories=[{'id':2000}]),row,dict(other,title='Other homebrew PS5 fixture',seeders=6),dict(row,title='Original homebrew PS5 fixture',grabs=4)])
    elif url.path=='/artwork':
     cover_calls.append(self.path)
     data=bytes([12,80,160])*(160*240);self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
    else:
-    assert url.path in ['/1/download','/2/download','/3/download'] and 'apikey' not in urllib.parse.parse_qs(url.query)
+    assert url.path in ['/1/download','/8/download'] and 'apikey' not in urllib.parse.parse_qs(url.query)
     data=b'd4:infod4:name7:fixtureee';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
  rpc=RtorrentFixture(entries,rpc_hook);calls=rpc.calls;indexer=ThreadingHTTPServer(('127.0.0.1',0),Indexer)
  cert=root/'cert.pem';key=root/'key.pem'
@@ -64,15 +65,21 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   token=until(lambda:request('/api/bootstrap').get('token'))
   request('/api/search',{'query':'Homebrew & demo','categories':[2000],'indexerIds':[2]})
   state=until(lambda:(s if not s['search']['busy'] else None) if (s:=request('/api/state')) else None)
-  results=state['search']['results'];assert len(results)==1 and 'download' not in results[0]
-  assert queries[0]['categories']==['1080'] and queries[0]['indexerIds']==['1'] and queries[0]['query']==['Homebrew & demo']
+  results=state['search']['results'];assert len(results)==2 and all('download' not in r for r in results)
+  assert queries[0]['categories']==['1000'] and queries[0]['indexerIds']==['-2'] and queries[0]['query']==['Homebrew & demo']
   library=root/'test-library/installed/sce_sys';library.mkdir(parents=True)
   (library/'param.json').write_text(json.dumps({'localizedParameters':{'defaultLanguage':'en-US','en-US':{'titleName':'Installed Game'}}}))
-  for sort,ident,first in [('seeders','2','Demo PS5'),('completed','3','Second PS5'),('newest','1','Second PS5')]:
+  for sort,names in [('seeders',['Demo PS5','Third PS5','Second PS5','Null counts PS5']),('completed',['Third PS5','Second PS5','Demo PS5','Null counts PS5']),('newest',['Third PS5','Second PS5','Demo PS5','Null counts PS5'])]:
    request('/api/explore',{'sort':sort})
    browse=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
-   assert [r['name'] for r in browse['results']]==([first,'Second PS5'] if sort=='seeders' else [first,'Demo PS5']),browse
-   assert queries[-1]['indexerIds']==[ident] and queries[-1]['categories']==['1080']
+   assert [r['name'] for r in browse['results']]==names,browse
+   assert next(r for r in browse['results'] if r['name']=='Demo PS5')['completed']==12
+   assert next(r for r in browse['results'] if r['name']=='Null counts PS5')['completed']==0
+   demo=next(r for r in browse['results'] if r['name']=='Demo PS5')
+   assert len(demo['sources'])==3 and {r['size'] for r in demo['sources']}=={size,size*2}
+   assert all('download' not in source for game in browse['results'] for source in game['sources'])
+   assert {r['tracker'] for r in demo['sources']}=={'Tracker One','Tracker Eight'}
+   assert queries[-1]['indexerIds']==['-2'] and queries[-1]['categories']==['1000']
    assert request('/api/state')['search']['results']==results
   query_count=len(queries)
   request('/api/explore',{'sort':'newest'})
@@ -103,10 +110,12 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   except urllib.error.HTTPError as e:assert e.code==400
   try: request('/api/search/add',{'id':'invalid'});raise AssertionError('Invalid ID accepted')
   except urllib.error.HTTPError as e:assert e.code==400
-  selected=browse['results'][0]['id']
+  demo=next(r for r in browse['results'] if r['name']=='Demo PS5')
+  selected=next(source['id'] for source in demo['sources'] if source['tracker']=='Tracker Eight' and source['size']==size)
+  assert selected!=demo['id']
   request('/api/explore/add',{'id':selected})
   until(lambda:not request('/api/state')['explore']['adding'])
-  assert selected not in [r['id'] for r in request('/api/state')['explore']['results']]
+  assert not any(r['name']=='Demo PS5' for r in request('/api/state')['explore']['results'])
   request('/api/explore/add',{'id':selected})
   assert sum(c['method']=='load.start' for c in calls)==1
   assert not request('/api/state')['jobs']
@@ -144,6 +153,6 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   def failed():return next((j for j in request('/api/state')['jobs'] if j.get('hash')=='d'*40 and j['status']=='failed'),None)
   until(failed);assert (complete/'broken.rar').is_file()
   rpc.assert_clean()
-  print('Search pipeline passed: HTTPS, fixed category/indexer, opaque IDs, duplicate prevention, durable queue, automatic extraction/publication and archive preservation.')
+  print('Search pipeline passed: HTTPS, all-provider merge, grabs ranking, null metrics, download origin confinement, opaque IDs, duplicate prevention, durable queue, automatic extraction/publication and archive preservation.')
  finally:
   proc.terminate();proc.wait(timeout=5);rpc.shutdown();indexer.shutdown()

@@ -124,10 +124,10 @@ public:
   }
   json requestOriginalDeletion(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
-    if(pending(state_))throw std::runtime_error("Wait for the current file operation");
+    if(pending(state_)&&!(state_.value("status","")=="uncertain"&&state_.value("jobId","")==id))throw std::runtime_error("Wait for the current file operation");
     auto rec=records_.value(id,json::object());
-    if(rec.value("status","")!="ready"||!rec.value("verified",false)||!rec.value("originalKept",false))throw std::runtime_error("No verified original copy available");
-    state_=rec;state_["deleteRequested"]=true;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to verify the compressed copy and delete the original.";save();return state_;
+    if((rec.value("status","")!="ready"&&rec.value("status","")!="uncertain")||!rec.value("originalKept",false)||!rec.contains("originalPath")||rec.value("originalDeletionStarted",false)||rec.value("gameDeletionStarted",false))throw std::runtime_error("No original backup available for deletion");
+    state_=rec;state_["deleteRequested"]=true;state_["deleteGameRequested"]=false;state_["restoreRequested"]=false;state_["status"]="waiting-close";state_["phase"]="Close Botty+ and games to delete the original. Compressed copy and archives are kept.";save();return state_;
   }
   json requestRestore(const std::string& id) {
     std::lock_guard<std::mutex> g(mutex_);
@@ -192,7 +192,7 @@ public:
       auto checkpoint=[&]{std::lock_guard<std::mutex> guard(mutex_);state_=work;state_["bytes"]=0;state_["total"]=0;state_["unit"]="bytes";save();};
       auto progress=[&](uint64_t bytes,uint64_t total){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=bytes;state_["total"]=total;state_["status"]="verifying";state_["unit"]="bytes";state_["phase"]="Verifying every file through the mounted compressed image";measure();};
       auto deletionProgress=[&](uint64_t done,uint64_t total,const std::string& file){std::lock_guard<std::mutex> guard(mutex_);state_["bytes"]=done;state_["total"]=total;state_["unit"]="items";state_["file"]=file;state_["phase"]="Deleting files and folders";measure();};
-      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,progress,deletionProgress);}else library.activate(work,checkpoint,progress);}
+      try {if(work.value("deleteGameRequested",false)){work["status"]="ready";library.removeGame(work,checkpoint,deletionProgress);}else if(work.value("restoreRequested",false))library.restore(work,checkpoint);else if(work.value("deleteRequested",false)){work["status"]="ready";library.removeOriginal(work,checkpoint,deletionProgress);}else library.activate(work,checkpoint,progress);}
       catch(const std::exception& e){work["status"]="uncertain";work["error"]=e.what();work["phase"]="Compression needs recovery before other file operations. Retained files were not automatically removed.";checkpoint();}
       return;
     }

@@ -150,7 +150,7 @@ Connection probeConnection(Catalog* catalog) noexcept {
     if(out.status==Probe::ready&&!parseConnection(response.view(),out))out.status=Probe::malformed;
     if(catalog&&(out.status==Probe::ready||out.status==Probe::transmissionUnavailable)) {
         // Worker-only storage avoids putting a large response on the PS5 thread stack.
-        static Response<1048577> state;
+        static Response<4194305> state;
         state.status=0;state.length=0;
         const auto result=get("/api/state",token,state,platform::now()+10000000);
         if(result!=Probe::ready)out.status=result;

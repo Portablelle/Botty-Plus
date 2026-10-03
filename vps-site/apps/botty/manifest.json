@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "id": "1.3.3",
+  "id": "1.3.5",
   "files": [
     {
       "path": "botty-manager.elf",
-      "size": 11600144,
-      "sha256": "7e894787423db7d59afa17a26bfa58448c877fbe96bce01ea48eec2cd9ab68c0"
+      "size": 11640416,
+      "sha256": "a983c3c85ddf0667c4626abd0880377310cebb2ad6b073c3adbe5372a592d87c"
     },
     {
       "path": "icon0.png",

@@ -200,3 +200,14 @@ combinations on console remains separate from the host previews.
 The portal accepts the two historical completed manual-update journals and
 bounds native file reads at 32 MiB, allowing the current executable above 16 MiB.
 Installer tests enforce actual read limits and cover larger previous executables.
+
+## Delete uncompressed copy (01.003.006 / service 1.3.5)
+
+Original deletion does not perform another full comparison or require a successful
+compression verification flag. The confirmation explains this explicitly. The
+service still checks the retained backup, compressed image path and closed-game
+state before deleting only the original. Active file operations remain protected.
+
+## Prowlarr source chooser (01.003.006)
+
+Explore combines the configured torrent indexers. Select a game to compare tracker, release name, size, seeders, leechers, grabs and date before choosing storage, download mode and confirming. Circle cancels without adding a torrent. The source list is captured when opened so background polling cannot change the selected tracker.
