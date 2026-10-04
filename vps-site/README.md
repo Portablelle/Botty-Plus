@@ -1,4 +1,8 @@
-# Botty+ 1.5.1 launch portal
+# Botty+ 1.5.2 launch portal
+
+Release 1.5.2 improves game cover matching through the companion artwork service.
+Deploy `botty-artwork-1.5.2.tar.gz` separately on the artwork host and merge its
+verified aliases and product mappings into the existing configuration.
 
 Service 1.5.1 fixes the native app's Offline regression introduced in 1.5.0 by
 restoring the flat `/health` API contract. Rest-mode maintenance is retained.
@@ -22,7 +26,7 @@ confirm installation. See its [notice](payloads/ppr-patch-NOTICE.md),
 
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.5.1 includes service 1.5.1: missing or invalid Prowlarr configuration
+Portal release 1.5.2 includes service 1.5.1: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when

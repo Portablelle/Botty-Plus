@@ -28,12 +28,30 @@ Merge the seed `aliases.json` into the installed alias file when deploying, pres
 operator entries. It covers the eFootball 2027 seasonal name, Sonic Unleashed's
 unofficial recompilation port, and Resident Evil 4's explicit remake release name.
 The latter uses the verified 2023 PlayStation product in `sources.json`.
+It also restores the missing ampersands in The Bearer & The Last Flame and
+Snoopy & The Great Mystery Club, and maps WILD HEARTS Karakuri Edition to its game.
 
 Verified PlayStation product pages can be registered in `/opt/botty-artwork/sources.json`
 (mapping normalized game names to official product URLs; seed file provided). The
 resolver reads Product JSON-LD, verifies the title and sequel, and downloads only
 from allowlisted PlayStation origins. Publisher prefixes such as EA SPORTS and
 trademark marks do not change identity. This mapping survives service upgrades.
+
+Release 1.5.2 includes verified PS5 product mappings for God of War Sons of Sparta,
+Resident Evil 4 (2023), Infliction: Extended Cut, Snoopy & The Great Mystery Club,
+and Crazy Chicken Shooter Edition. Keep `Shooter Edition` in Crazy Chicken's name:
+it identifies the product and is not a generic edition suffix.
+
+To update an existing installation, retain rollback copies of `server.py`,
+`aliases.json` and `sources.json`, replace the server code, and merge both seed
+JSON objects into their installed counterparts. Preserve existing operator entries
+outside the updated keys. Keep the API key, cache ownership and service user.
+Restart only `botty-artwork` if the server code changed; mappings are read on each
+request. An alias changes the canonical cache key automatically. For a newly
+mapped product with the same canonical name, let its one-hour negative cache expire
+or back up and remove only that title's empty RGB cache and matching JSON metadata.
+On the console, failed lookups retry after one minute; change Explore pages and
+return to request the artwork again. No console binary update is required.
 
 Coverage cannot be guaranteed for every release: games missing from both sources
 retain an explicit title placeholder. Do not silently substitute another sequel.

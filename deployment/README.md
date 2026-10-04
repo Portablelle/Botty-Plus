@@ -169,6 +169,7 @@ sudo useradd --system --no-create-home --shell /usr/sbin/nologin botty-artwork
 sudo install -d -o root -g botty-artwork -m 0750 /opt/botty-artwork
 sudo install -m 0644 deployment/botty-artwork/server.py /opt/botty-artwork/server.py
 sudo install -m 0644 deployment/botty-artwork/sources.json /opt/botty-artwork/sources.json
+sudo install -m 0644 deployment/botty-artwork/aliases.json /opt/botty-artwork/aliases.json
 sudo install -o root -g botty-artwork -m 0640 /dev/null /opt/botty-artwork/api-key
 sudoedit /opt/botty-artwork/api-key
 sudo install -m 0644 deployment/botty-artwork/botty-artwork.service /etc/systemd/system/
