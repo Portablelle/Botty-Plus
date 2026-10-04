@@ -58,7 +58,7 @@ function render(){if(!state)return;const focused=document.activeElement&&documen
  $('space').textContent=(state.storage||[{label:'Internal SSD',available:true,freeBytes:state.freeBytes}]).map(d=>d.label+': '+(d.available?size(d.freeBytes)+' free':'Disconnected')).join(' · ');if(state.transfer&&['running','uncertain'].includes(state.transfer.status))say(state.transfer.error||state.transfer.phase);$('connection').hidden=state.transmissionReady;$('connection').textContent=state.error||'';
  const values=tab==='jobs'?state.jobs.filter(j=>!j.dismissed):state.torrents.filter(t=>tab!=='complete'||t.leftUntilDone===0);
  values.forEach(value=>items.appendChild(tab==='jobs'?jobCard(value):torrentCard(value)));
- if(!values.length)items.appendChild(node('p',tab==='jobs'?'No extractions yet. Choose a completed archive to get started.':'No downloads here yet. Add a magnet link or use rTorrent on your phone.','empty'));
+ if(!values.length)items.appendChild(node('p',tab==='jobs'?'No extractions yet. Choose a completed archive to get started.':'No downloads here yet. Add a magnet link or upload a .torrent file.','empty'));
  for(const key of ['all','complete','jobs'])$('tab-'+key).setAttribute('aria-pressed',String(tab===key));
  if(focused&&$(focused)&&!$(focused).disabled)$(focused).focus({preventScroll:true});
 }
@@ -81,6 +81,23 @@ async function refreshProcessing(){
 async function refresh(){try{if(!token)token=(await api('/api/bootstrap')).token;state=await api('/api/state');if($('modal').hidden)render();}catch(error){$('connection').hidden=false;$('connection').textContent=error.message+' If the PS5 was restarted, start a session from the Botty portal.';}}
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>{tab=element.dataset.tab;render();};
 $('refresh').onclick=refresh;$('add').onclick=()=>modal('Add a download','Paste a magnet link. Files will download directly onto this PS5.','Add magnet',magnet=>chooseStorage('internal',true,choice=>action('/api/torrent',{action:'add',magnet:magnet.trim(),...choice},'Torrent added.')),{name:'Magnet link'});
+$('upload').onclick=()=>{if(!busy){$('torrent-file').value='';$('torrent-file').click();}};
+$('torrent-file').onchange=async()=>{
+ const file=$('torrent-file').files[0];if(!file||busy)return;
+ if(!/\.torrent$/i.test(file.name)){say('Choose a .torrent file.');return;}
+ if(!file.size||file.size>1024*1024){say('Torrent files must be between 1 byte and 1 MiB.');return;}
+ busy=true;$('upload').disabled=true;
+ try{
+  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
+  for(let offset=0;offset<bytes.length;offset+=8192)binary+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
+  const metainfo=btoa(binary);
+  // Refresh disks before offering a destination; external storage may have changed.
+  state=await api('/api/state');busy=false;
+  const add=choice=>action('/api/torrent',{action:'add',metainfo,...choice},'Torrent added.');
+  if((state.storage||[]).some(d=>d.id!=='internal'&&d.available))chooseStorage('internal',true,add);
+  else await add({storage:'internal',automatic:false});
+ }catch(error){say(error.message);}finally{busy=false;$('upload').disabled=false;}
+};
 function focusables(){const scope=$('modal').hidden?document:$('modal');return Array.from(scope.querySelectorAll('button:not(:disabled),input,select')).filter(el=>el.getClientRects().length);}
 function navigate(direction){const choices=focusables(),current=document.activeElement;if(!choices.includes(current)){if(choices[0])choices[0].focus();return;}const rect=current.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2;let best=null,score=Infinity;for(const item of choices){if(item===current)continue;const r=item.getBoundingClientRect(),dx=r.left+r.width/2-x,dy=r.top+r.height/2-y;const primary=direction==='left'?-dx:direction==='right'?dx:direction==='up'?-dy:dy;const secondary=direction==='left'||direction==='right'?Math.abs(dy):Math.abs(dx);if(primary>5&&primary+secondary*2<score){score=primary+secondary*2;best=item;}}if(best){best.focus();best.scrollIntoView({block:'nearest'});}}
 window.addEventListener('keydown',event=>{if(event.key==='Escape'||event.key==='Backspace'&&document.activeElement.tagName!=='INPUT'){if(!$('modal').hidden){event.preventDefault();closeModal();}return;}if(event.key==='Tab'&&!$('modal').hidden){event.preventDefault();const list=focusables(),index=list.indexOf(document.activeElement);list[(index+(event.shiftKey?-1:1)+list.length)%list.length].focus();return;}if(document.activeElement.tagName==='SELECT')return;if(document.activeElement.tagName==='INPUT'&&!['ArrowUp','ArrowDown'].includes(event.key))return;const directions={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'};if(directions[event.key]){event.preventDefault();navigate(directions[event.key]);}});

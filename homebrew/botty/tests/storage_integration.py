@@ -1,5 +1,5 @@
 """Real service + synthetic RAR and SCGI, entirely isolated from mounted user disks."""
-import json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error,threading
+import base64,hashlib,json,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,urllib.error,threading
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from rtorrent_fixture import RtorrentFixture
 from shadow_fixture import ShadowFixture
@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
   if method in ('load.start','load.normal'):
    assert len(params)==3 and params[2].startswith('d.directory.set="')
    directory=params[2].split('"')[1];assert pathlib.Path(directory).is_dir()
-   hash=params[1].split('btih:')[1];n=len(entries)+1
+   hash=params[1].split('btih:')[1] if params[1].startswith('magnet:') else pathlib.Path(params[1]).stem;n=len(entries)+1
    entries.append(dict(id=n,hashString=hash,name='new.rar',status=4,leftUntilDone=123,totalSize=123,downloadDir=directory,files=[]));return 0
   return NotImplemented
  rpc=RtorrentFixture(entries,hook)
@@ -51,6 +51,16 @@ with tempfile.TemporaryDirectory(prefix='botty-storage-http-') as tmp:
   for digit,automatic,storage in [('2',False,external),('3',True,external),('4',False,'internal')]:
    request('/api/torrent',dict(action='add',magnet='magnet:?xt=urn:btih:'+digit*40,storage=storage,automatic=automatic))
    task=json.loads((root/'automatic'/ (digit*40+'.json')).read_text());assert task['storage']==storage and (task['status']=='waiting')==automatic
+  # Uploaded metadata follows the same storage, enrollment and catalog pipeline.
+  info=b'd6:lengthi123e4:name10:upload.rar12:piece lengthi16384e6:pieces20:12345678901234567890e'
+  metadata=b'd4:info'+info+b'e';encoded=base64.b64encode(metadata).decode();uploaded_hash=hashlib.sha1(info).hexdigest()
+  request('/api/torrent',dict(action='add',metainfo=encoded,storage=external,automatic=False))
+  uploaded=next(t for t in request('/api/state')['torrents'] if t['hashString']==uploaded_hash)
+  assert uploaded['downloadDir']==str(usb/'botty/downloads/complete') and uploaded['status']!=0
+  assert (root/'rtorrent/state/incoming'/ (uploaded_hash+'.torrent')).read_bytes()==metadata
+  task=json.loads((root/'automatic'/ (uploaded_hash+'.json')).read_text());assert task['storage']==external and task['status']!='waiting'
+  request('/api/torrent',dict(action='add',metainfo=base64.b64encode(b'invalid').decode()),400)
+  request('/api/torrent',dict(action='add',metainfo=encoded,magnet='magnet:?xt=urn:btih:'+'5'*40),400)
   assert entries[1]['downloadDir']==str(usb/'botty/downloads/complete')
   auto=usb/'botty/downloads/complete/auto.rar';single(auto,[('Auto/sce_sys/param.json',b'{"titleId":"PPSA12346"}'),('Auto/eboot.bin',b'auto game')]);n=auto.stat().st_size
   entries[2].update(name='auto.rar',status=6,leftUntilDone=0,totalSize=n,files=[dict(name='auto.rar',length=n,bytesCompleted=n)])

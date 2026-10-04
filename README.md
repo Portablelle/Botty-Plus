@@ -9,7 +9,7 @@
 <p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Bundled Relapse jailbreak range. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.4.2</a> ·
+  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.4.3</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
@@ -20,7 +20,7 @@ in the background when you close the app.
 
 ## What you can do
 
-- **Browse and download:** find content through Search and Explore, or add a magnet link. Pause, resume and check your downloads.
+- **Browse and download:** find content through Search and Explore, or add a magnet link or upload a `.torrent` file through the web interface. Pause, resume and check your downloads.
 - **Follow every task:** Processing brings extraction, compression, moves and deletion together, with progress and estimated time remaining.
 - **Manage your Library:** view covers, compress supported games and see where each copy is stored. When both formats exist, their locations appear separately.
 - **Use external storage:** choose the PS5 SSD or an external exFAT disk, check free space and transfer content between them.
@@ -28,7 +28,7 @@ in the background when you close the app.
 
 Search and Explore merge all enabled Prowlarr torrent indexers. In Explore,
 choose a game, then compare its tracker sources by size, seeders, leechers, grabs
-and date before downloading. Search and Explore require optional Prowlarr setup. Manual magnet downloads work
+and date before downloading. Search and Explore require optional Prowlarr setup. Manual magnet and torrent-file downloads work
 without it. Extraction supports RAR archives; ZIP/7z extraction, PKG installation
 and automatic game launching are not supported.
 
@@ -40,7 +40,7 @@ for downloads and extracted files, and a Botty+ portal hosted over trusted HTTPS
 ### 1. Get access to a portal
 
 If someone already hosts Botty+ for you, ask them for the portal URL and skip to
-step 2. To host it yourself, download **botty-portal-1.4.2.tar.gz** from the
+step 2. To host it yourself, download **botty-portal-1.4.3.tar.gz** from the
 [latest release](https://github.com/Portablelle/botty-ps5/releases/latest) and
 follow the [hosting guide](deployment/README.md#host-the-portal). It covers
 uploading the complete site, configuring HTTPS and checking the installation.

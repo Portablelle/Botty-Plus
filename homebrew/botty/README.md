@@ -291,3 +291,11 @@ Search and Explore display an inline configuration message; Downloads, Processin
 and Library remain available. Correct the private configuration and retry Search
 or refresh Explore without restarting the service. Existing search choices are
 cleared when configuration is unavailable.
+
+## Torrent file uploads (1.4.2)
+
+The web interface accepts .torrent files up to 1 MiB alongside magnet links.
+Uploads use the same rTorrent queue and appear in Botty+ with normal download
+progress. When an external disk is connected, choose the destination and either
+download only or full automatic processing. Otherwise downloads start on the
+internal SSD. Invalid metadata is rejected before loading the torrent.
