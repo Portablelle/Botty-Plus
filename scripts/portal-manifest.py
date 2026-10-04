@@ -9,9 +9,10 @@ import shutil
 
 PUBLIC_FILES = ('index.html', 'portal.css', 'README.md', 'LICENSE')
 PAYLOADS = ('ProsperoMgr.elf', 'elfldr-ps5-1360.elf', 'ftpsrv-ps5.elf',
-            'kexp_2026_05_25.bin', 'kstuff.elf', 'shadowmountplus.elf')
+            'a53_ppr_install.elf', 'kexp_2026_05_25.bin', 'kstuff.elf', 'shadowmountplus.elf')
 PAYLOAD_NOTICES = ('shadowmountplus-source.tar.gz', 'shadowmountplus-LICENSE.txt',
-                   'shadowmountplus-NOTICE.md')
+                   'shadowmountplus-NOTICE.md', 'ppr-patch-source.tar.gz',
+                   'ppr-patch-LICENSE.txt', 'ppr-patch-NOTICE.md')
 PACKAGE_NOTICES = {
     'cheatrunner': ('NOTICE.md', 'LICENSE', 'cheatrunner-source.tar.gz'),
     'rtorrent': ('README.md', 'LICENSE', 'rtorrent-source.tar.gz'),

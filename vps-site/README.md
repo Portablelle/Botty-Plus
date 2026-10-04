@@ -1,4 +1,4 @@
-# Botty+ 1.4.4 launch portal
+# Botty+ 1.4.5 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -8,9 +8,18 @@ All three default to enabled; choices are saved in this browser. LAUNCH starts
 the selected services in the same sequence. Unchecking a service skips its
 startup without stopping an existing instance. Without rTorrent running, torrent
 downloads are unavailable. After **READY**, press PS and open **Botty+**.
+The optional **A53 PPR patch** is unchecked by default and available only on firmware
+up to 11.40. Its choice is saved in this browser. Close games and let mounts and
+unmounts finish before using it. The standard `a53_ppr_install.elf` runs after
+Kstuff and before ShadowMountPlus. Wait for its successful notification, then
+select **CONTINUE**; on failure, restart the console. Delivery alone does not
+confirm installation. See its [notice](payloads/ppr-patch-NOTICE.md),
+[license](payloads/ppr-patch-LICENSE.txt) and
+[source](payloads/ppr-patch-source.tar.gz).
+
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.4.4 includes service 1.4.3: missing or invalid Prowlarr configuration
+Portal release 1.4.5 includes service 1.4.3: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when
@@ -32,7 +41,7 @@ The full repository includes `README.md`, `deployment/README.md` and
 This is the current launch portal shown on a supported PS5 browser. Select
 **LAUNCH** to start the setup sequence.
 
-![Botty+ PS5 launch options](../docs/screenshots/portal-launch-options.png)
+![Botty+ PS5 launch options](../docs/screenshots/portal-ppr-options.png)
 
 Host the complete verified export at the root of a trusted HTTPS origin. Package
 verification requires Web Crypto. The browser fetches payloads and applications

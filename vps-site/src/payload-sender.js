@@ -1,7 +1,7 @@
 // Same-console delivery after Relapse has created the userland ROP runtime.
 // Payloads are fetched from this site's pinned release files, never from user input.
 const SYS = { WRITE: 4, CLOSE: 6, SOCKET: 97, CONNECT: 98 };
-const FILES = ["kstuff.elf", "shadowmountplus.elf", "ftpsrv-ps5.elf", "ProsperoMgr.elf"];
+const FILES = ["kstuff.elf", "shadowmountplus.elf", "ftpsrv-ps5.elf", "ProsperoMgr.elf", "a53_ppr_install.elf"];
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function sendPayload(runtime, name, fetchFile = fetch, delay = pause) {

@@ -320,3 +320,15 @@ for (let mask = 0; mask < 8; mask++) test('launch honors optional service combin
   assert.equal(result.cheatrunner.ready, services.cheatrunner);
   if (!services.cheatrunner) assert.equal(result.cheatrunner.skipped, true);
 });
+
+test('unsupported PPR firmware stops before jailbreak or installation', async () => {
+  await assert.rejects(launchSession({services:{ppr:true},firmware:'13.00',jailbreak:async()=>assert.fail('must not jailbreak')}), /up to 11.40/);
+});
+
+test('compatible opt-in launch installs PPR before mounts and service startup', async () => {
+  const events=[];
+  await launchSession({services:{ppr:true,ftp:false,rtorrent:false,cheatrunner:false},firmware:'11.20',
+    jailbreak:async()=>({}),io:{},nativeIO:{},native:async()=>{},manager:async()=>events.push('manager'),
+    send:async(_,name)=>events.push(name),wait:async()=>{},confirmPpr:async()=>events.push('confirmed')});
+  assert.deepEqual(events,['kstuff.elf','a53_ppr_install.elf','confirmed','shadowmountplus.elf','manager']);
+});

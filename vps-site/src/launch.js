@@ -1,4 +1,4 @@
-import { normalizeLaunchServices } from './launch-options.js';
+import { normalizeLaunchServices, supportsPpr } from './launch-options.js';
 import { CheatRunnerIO, installAndStartCheatRunner, cheatRunnerStatus } from './cheatrunner.js';
 import { PS5IO, sleep } from './ps5-io.js';
 import { NativeIO, installNative } from './botty-native.js';
@@ -9,6 +9,7 @@ import { installAndStartManager } from './botty-manager.js';
 
 export async function launchSession(options) {
   const services = normalizeLaunchServices(options.services);
+  if (services.ppr && !supportsPpr(options.firmware)) throw Error('A53 PPR supports PS5 firmware up to 11.40 only.');
   const report = options.report || (() => {});
   const send = options.send || sendPayload;
   const wait = options.wait || sleep;
@@ -17,7 +18,7 @@ export async function launchSession(options) {
   const io = options.io || new PS5IO(runtime);
   // Publish the complete title before ShadowMountPlus scans the homebrew directory.
   const native = await (options.native || installNative)(options.nativeIO || new NativeIO(runtime), { report, reuseNewer: true });
-  await loadRequiredPayloads(runtime, { send, wait, report, markSent() {} });
+  await loadRequiredPayloads(runtime, { send, wait, report, ppr: services.ppr, confirmPpr: options.confirmPpr, markSent() {} });
   if (services.ftp) {
     report('Starting FTP…');
     if (!await io.listening(2121)) {

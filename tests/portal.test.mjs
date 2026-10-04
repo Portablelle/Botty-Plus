@@ -64,3 +64,12 @@ test('Kstuff failure prevents ShadowMountPlus delivery',async()=>{
   const events=[];await assert.rejects(loadRequiredPayloads({}, {send:async(_,name)=>{events.push(name);throw Error('failed');},report(){},markSent(){},wait:async()=>assert.fail('must not wait')}),/failed/);
   assert.deepEqual(events,['kstuff.elf']);
 });
+
+test('PPR waits for user confirmation before ShadowMountPlus', async () => {
+  const events = [];
+  await loadRequiredPayloads({}, {ppr:true, send:async(_,name)=>events.push(name), wait:async()=>{}, report(){}, markSent(){}, confirmPpr:async()=>events.push('confirmed')});
+  assert.deepEqual(events, ['kstuff.elf', 'a53_ppr_install.elf', 'confirmed', 'shadowmountplus.elf']);
+  const sent=[];
+  await assert.rejects(loadRequiredPayloads({}, {ppr:true, send:async(_,name)=>sent.push(name), wait:async()=>{}, report(){}, markSent(){}}), /requires confirmation/);
+  assert.deepEqual(sent, ['kstuff.elf']);
+});

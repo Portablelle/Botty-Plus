@@ -98,6 +98,19 @@ button.addEventListener("click", async () => {
       jailbreak: async () => { await window.offsetsReady; return await run(); },
       report,
       services,
+      firmware: window.fw_str,
+      confirmPpr: () => new Promise(resolve => {
+        report('Wait for the A53 PPR success notification, then select CONTINUE. On failure, restart your PS5.');
+        button.textContent = 'CONTINUE';
+        button.disabled = false;
+        button.setAttribute('aria-busy', 'false');
+        button.addEventListener('click', () => {
+          button.disabled = true;
+          button.textContent = 'LAUNCHING';
+          button.setAttribute('aria-busy', 'true');
+          resolve();
+        }, { once: true });
+      }),
     });
     button.textContent = "READY";
     status.textContent = result.manager?.updatePending
