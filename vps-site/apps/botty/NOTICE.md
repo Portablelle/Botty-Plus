@@ -283,3 +283,11 @@ not a full content hash verification.
 Host tests cover responsiveness during deletion, source preservation, remote
 rejection/failure, lost status, and no replay across service restart. Console
 acceptance of these changes remains pending for release 1.4.0.
+
+## Optional search configuration (1.4.1)
+
+Missing, unreadable or invalid `prowlarr.json` configuration leaves Botty usable.
+Search and Explore display an inline configuration message; Downloads, Processing
+and Library remain available. Correct the private configuration and retry Search
+or refresh Explore without restarting the service. Existing search choices are
+cleared when configuration is unavailable.

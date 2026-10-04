@@ -65,9 +65,16 @@ public:
   void start(const Paths& paths,const std::string& text,const std::string& sort="",bool refresh=false){
     if(!sort.empty()&&sort!="seeders"&&sort!="completed"&&sort!="newest")throw std::runtime_error("Invalid Explore sort");
     if(text.empty()||text.size()>200||text.find_first_of("\r\n")!=std::string::npos)throw std::runtime_error("Enter a search from 1 to 200 characters");
-    auto settings=config(paths);
     std::lock_guard<std::mutex> g(mutex);
     if(busy||adding)throw std::runtime_error("Wait for the current search or download request");
+    json settings;
+    try{settings=config(paths);}catch(const std::exception&){
+      // Search setup is optional. Report it in the tab state so an automatic
+      // Explore request at startup never opens a blocking action error.
+      query=text;order=sort;rows=json::array();notice.clear();
+      error="Search is unavailable. Check the Prowlarr configuration. Other tabs remain available.";
+      return;
+    }
     busy=true;query=text;order=sort;rows=json::array();error.clear();notice.clear();
     const auto cache=paths.root/"cache"/("explore-"+sort+".json");
     const auto scope=settings.at("url").get<std::string>()+"#all-torrents-console-sources-v3";

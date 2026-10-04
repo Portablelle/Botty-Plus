@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.load_cert_chain(cert,key);indexer.socket=ctx.wrap_socket(indexer.socket,server_side=True)
  for server in [indexer]:threading.Thread(target=server.serve_forever,daemon=True).start()
- (root/'prowlarr.json').write_text(json.dumps(dict(url=f'https://localhost:{indexer.server_port}',apiKey='b'*32,caFile=str(cert),exploreIndexers={'seeders':2,'completed':3,'newest':1})))
+ config=json.dumps(dict(url=f'https://localhost:{indexer.server_port}',apiKey='b'*32,caFile=str(cert),exploreIndexers={'seeders':2,'completed':3,'newest':1}))
  credentials=root/'rtorrent/state';credentials.mkdir(parents=True);(credentials/'botty-credentials.json').write_text(json.dumps(dict(username='botty',password='TESTpw')))
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
  command=[str(HERE.parent/'build/botty-native'),'--root',str(root),'--port',str(port),'--rpc-port',str(rpc.server_port),'--ui',str(HERE.parent/'ui')]
@@ -63,6 +63,20 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   raise AssertionError('Timed out')
  try:
   token=until(lambda:request('/api/bootstrap').get('token'))
+  # A fresh console starts without private search setup. Requests must succeed
+  # with an inline error, leaving the catalog and other actions available.
+  for broken in [None,'{broken json',json.dumps(dict(url='http://invalid',apiKey='b'*32)),json.dumps(dict(url=f'https://localhost:{indexer.server_port}',apiKey='invalid'))]:
+   if broken is not None:(root/'prowlarr.json').write_text(broken)
+   for path,body,section in [('/api/explore',{'sort':'seeders'},'explore'),('/api/search',{'query':'demo'},'search')]:
+    assert request(path,body)['ok']
+    state=request('/api/state');unavailable=state[section]
+    assert not unavailable['busy'] and not unavailable['adding'] and unavailable['results']==[]
+    assert 'Prowlarr configuration' in unavailable['error'] and 'Other tabs remain available' in unavailable['error']
+    assert str(root) not in unavailable['error'] and 'b'*32 not in unavailable['error']
+    assert state['torrents'] and 'jobs' in state and 'storage' in state
+   assert not queries
+  # Provisioning configuration recovers immediately, without a service restart.
+  (root/'prowlarr.json').write_text(config)
   request('/api/search',{'query':'Homebrew & demo','categories':[2000],'indexerIds':[2]})
   state=until(lambda:(s if not s['search']['busy'] else None) if (s:=request('/api/state')) else None)
   results=state['search']['results'];assert len(results)==2 and all('download' not in r for r in results)
@@ -152,6 +166,13 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   (root/'automatic'/('d'*40+'.json')).write_text(json.dumps({'hash':'d'*40,'status':'waiting'}))
   def failed():return next((j for j in request('/api/state')['jobs'] if j.get('hash')=='d'*40 and j['status']=='failed'),None)
   until(failed);assert (complete/'broken.rar').is_file()
+  # Losing setup after a successful search also drops stale download choices.
+  (root/'prowlarr.json').unlink()
+  for path,body,section in [('/api/explore',{'sort':'newest','refresh':True},'explore'),('/api/search',{'query':'demo'},'search')]:
+   assert request(path,body)['ok']
+   state=request('/api/state')
+   assert state[section]['results']==[] and not state[section]['busy'] and state[section]['error']
+   assert state['torrents'] and any(j['id']==job_id for j in state['jobs'])
   rpc.assert_clean()
   print('Search pipeline passed: HTTPS, all-provider merge, grabs ranking, null metrics, download origin confinement, opaque IDs, duplicate prevention, durable queue, automatic extraction/publication and archive preservation.')
  finally:
