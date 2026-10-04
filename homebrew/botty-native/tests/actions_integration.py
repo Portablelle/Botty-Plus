@@ -40,6 +40,8 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
    try:token=get('/api/bootstrap')['token'];break
    except OSError:time.sleep(.05)
   assert token
+  probe=subprocess.run([str(ROOT/'build/action-client'),str(port),'--probe'],capture_output=True,text=True,timeout=20)
+  assert probe.returncode==0,(probe.stdout,probe.stderr) # Real /health -> bootstrap -> connection -> catalog.
   action(2,1);assert entries[0]['status']==6
   action(1,1);assert entries[0]['status']==0
   action(3,1);assert entries[0]['status']==2

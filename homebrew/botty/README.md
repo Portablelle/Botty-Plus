@@ -310,6 +310,10 @@ The portal now also recognizes both previous service versions during upgrades.
 
 ## Background services in rest mode (1.5.0)
 
+Service 1.5.1 restores the flat `/health` response required by the installed
+native app. The nested health field added in 1.5.0 caused Botty+ to show Offline
+even with a healthy backend. Rest-mode status remains on the API routes below.
+
 The PS5 manager requests `sceSystemStateMgrRequestToKeepMainOnStandby` with the
 reason `BottyBackgroundServices` at startup, then renews it every ten seconds for
 the manager's whole lifetime. Unlike the diagnostic prototype, there is no
@@ -318,8 +322,9 @@ The feature is enabled for the portal's firmware range, 7.00–13.60. The module
 and API are resolved at runtime; missing support or a nonzero response stops
 renewals and exposes `failed` without disabling Botty's other features.
 
-`GET /api/rest-mode`, `/api/state.restMode`, and `/health.restMode` report
+`GET /api/rest-mode` and `/api/state.restMode` report
 `supported`, `active`, `status`, `lastResult`, `renewalSeconds`, and `leaseSeconds`.
+`/health` retains its flat API v1 contract for installed native clients.
 API routes retain normal authentication. `supported` means the configured
 firmware range, and `active` means a successful request less than sixty seconds
 old, not an independent power-meter reading or a guarantee of every workload.

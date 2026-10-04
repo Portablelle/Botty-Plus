@@ -70,9 +70,10 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         start()
         assert request('/health')['app']=='Botty'
         assert request('/health')['apiVersion']==1
-        assert request('/health')['restMode']['status']=='unsupported'
+        assert set(request('/health'))=={'app','version','titleId','apiVersion'} # Installed native clients reject nested fields.
         request('/api/rest-mode',auth=False,expected=403)
         assert request('/api/rest-mode')['active'] is False
+        assert request('/api/rest-mode')['status']=='unsupported'
         assert 'password' not in request('/health')
         assert 'password' not in request('/api/bootstrap')
         request('/api/connections',auth=False,expected=403)

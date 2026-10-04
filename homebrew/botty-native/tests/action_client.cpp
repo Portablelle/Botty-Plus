@@ -34,6 +34,12 @@ void joinWorker(void*) noexcept{}
 }
 int main(int argc,char** argv){
  if(argc<3)return 2;botty::platform::port=static_cast<unsigned>(std::atoi(argv[1]));
+ if(std::string_view(argv[2])=="--probe") {
+  static botty::Catalog catalog;
+  const auto connection=botty::probeConnection(&catalog);
+  std::puts(botty::probeText(connection.status));
+  return connection.status==botty::Probe::ready&&catalog.valid?0:1;
+ }
  botty::Command cmd;for(auto op:{botty::Operation::pause,botty::Operation::resume,botty::Operation::verify,botty::Operation::add,botty::Operation::extract,botty::Operation::move,botty::Operation::remove,botty::Operation::removeLibrary,botty::Operation::compress,botty::Operation::cancelCompression})if(std::atoi(argv[2])==static_cast<int>(op))cmd.operation=op;
  if(argc>3)std::snprintf(cmd.id.data(),cmd.id.size(),"%s",argv[3]);
  if(argc>4)std::snprintf(cmd.archive.data(),cmd.archive.size(),"%s",argv[4]);
