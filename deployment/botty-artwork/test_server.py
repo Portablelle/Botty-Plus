@@ -65,10 +65,11 @@ class Covers(unittest.TestCase):
   releases=[('eFootball 2027 PS5-PPSA03073[FPKG]','eFootball'),
             ('Sonic Unleashed (recompiled) unofficial port PS5','Sonic Unleashed'),
             ('sonic unleashed recompiled unofficial port','Sonic Unleashed'),
-            ('Resident Evil 4 remake PS5-PPSA07411[LIZARD]','Resident Evil 4 (2023 video game)')]
+            ('Resident Evil 4 remake PS5-PPSA07411[LIZARD]','Resident Evil 4 (2023 video game)'),
+            ('The Bearer The Last Flame PS5-PPSA18697[LIZARD]','The Bearer & The Last Flame')]
   for release,canonical in releases:
    self.assertEqual(len(self.module.cover(release)),115200)
-  self.assertEqual(names,['eFootball','Sonic Unleashed','Resident Evil 4 (2023 video game)'])
+  self.assertEqual(names,['eFootball','Sonic Unleashed','Resident Evil 4 (2023 video game)','The Bearer & The Last Flame'])
   aliases=json.loads(self.module.ALIASES.read_text())
   self.assertNotIn(self.module.normalize('eFootball 2026'),aliases)
   self.assertNotIn(self.module.normalize('Resident Evil 3 remake'),aliases)
