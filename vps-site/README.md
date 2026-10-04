@@ -1,4 +1,4 @@
-# Botty+ 1.4.3 launch portal
+# Botty+ 1.4.4 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -10,7 +10,7 @@ startup without stopping an existing instance. Without rTorrent running, torrent
 downloads are unavailable. After **READY**, press PS and open **Botty+**.
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.4.3 includes service 1.4.2: missing or invalid Prowlarr configuration
+Portal release 1.4.4 includes service 1.4.3: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when

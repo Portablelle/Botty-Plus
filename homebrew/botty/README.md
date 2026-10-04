@@ -299,3 +299,9 @@ Uploads use the same rTorrent queue and appear in Botty+ with normal download
 progress. When an external disk is connected, choose the destination and either
 download only or full automatic processing. Otherwise downloads start on the
 internal SSD. Invalid metadata is rejected before loading the torrent.
+
+## Web asset update correction (1.4.3)
+
+The PS5 service loads web assets from its own versioned installation directory.
+Service 1.4.2 incorrectly retained the 1.4.1 path, displaying the old web UI.
+The portal now also recognizes both previous service versions during upgrades.
