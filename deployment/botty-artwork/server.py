@@ -35,6 +35,9 @@ def clean_title(title):
     title = re.sub(r'\[[^\]]*\]', ' ', title)
     title = re.split(r'\bPS5\b|\s+(?:incl\.?|including|v\d|update|MULTI\d*|CUSA\d+|PPSA\d+)\b', title, maxsplit=1, flags=re.I)[0]
     title = re.sub(r'\s+(?:DLC|add[ -]?on)(?:\s+add[ -]?on)?\s*$', '', title, flags=re.I)
+    # Scene quality tags can follow the edition name, so remove them before
+    # trimming edition suffixes (for example, "Deluxe Edition PROPER").
+    title = re.sub(r'\s+(?:proper|repack|rerip|readnfo|internal)\s*$', '', title, flags=re.I)
     title = re.sub(r'\s+(?:the shores|(?:standard|digital deluxe|deluxe|ultimate|complete|gold|precious|anniversary|definitive|premium|special|collectors?|game of the year) edition|directors? ?cut|goty)\s*$', '', title, flags=re.I)
     return re.sub(r'\s+', ' ', title).strip(' .-')
 
