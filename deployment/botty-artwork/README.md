@@ -24,6 +24,11 @@ updates. Example: `{"regionalname":"Canonical Game"}`. No arbitrary image URL is
 accepted from the client. HTTPS destinations and redirects are allowlisted, response
 sizes and image dimensions are bounded. Images retain their complete composition.
 
+Merge the seed `aliases.json` into the installed alias file when deploying, preserving
+operator entries. It covers the eFootball 2027 seasonal name, Sonic Unleashed's
+unofficial recompilation port, and Resident Evil 4's explicit remake release name.
+The latter uses the verified 2023 PlayStation product in `sources.json`.
+
 Verified PlayStation product pages can be registered in `/opt/botty-artwork/sources.json`
 (mapping normalized game names to official product URLs; seed file provided). The
 resolver reads Product JSON-LD, verifies the title and sequel, and downloads only

@@ -56,6 +56,22 @@ class Covers(unittest.TestCase):
   def candidate(title):names.append(title);yield {'provider':'Steam','image':'https://cdn.akamai.steamstatic.com/example.jpg'}
   self.module.steam_candidates=candidate;self.module.raster=lambda _:b'x'*115200
   self.assertEqual(len(self.module.cover('Regional Name')),115200);self.assertEqual(names,['Canonical Game'])
+ def test_verified_release_aliases(self):
+  self.module.ALIASES=pathlib.Path(__file__).with_name('aliases.json')
+  names=[]
+  def candidate(title):names.append(title);yield {'provider':'PlayStation','image':'fixture'}
+  self.module.playstation_candidates=candidate
+  self.module.raster=lambda _:bytes([20,40,60,200,180,160])*19200
+  releases=[('eFootball 2027 PS5-PPSA03073[FPKG]','eFootball'),
+            ('Sonic Unleashed (recompiled) unofficial port PS5','Sonic Unleashed'),
+            ('sonic unleashed recompiled unofficial port','Sonic Unleashed'),
+            ('Resident Evil 4 remake PS5-PPSA07411[LIZARD]','Resident Evil 4 (2023 video game)')]
+  for release,canonical in releases:
+   self.assertEqual(len(self.module.cover(release)),115200)
+  self.assertEqual(names,['eFootball','Sonic Unleashed','Resident Evil 4 (2023 video game)'])
+  aliases=json.loads(self.module.ALIASES.read_text())
+  self.assertNotIn(self.module.normalize('eFootball 2026'),aliases)
+  self.assertNotIn(self.module.normalize('Resident Evil 3 remake'),aliases)
  def test_playstation_identity(self):
   sources=pathlib.Path(self.temp.name)/'sources.json';sources.write_text(json.dumps({'nhl27':'https://store.playstation.com/en-us/product/TEST/'}));self.module.SOURCES=sources
   self.module.fetch=lambda *_:b'<script type="application/ld+json">{"@type":"Product","name":"NHL&#174; 27 Standard Edition PS5","image":"https://image.api.playstation.com/test.png"}</script>'
