@@ -1,4 +1,4 @@
-# Botty+ 1.4.5 launch portal
+# Botty+ 1.5.0 launch portal
 
 This directory is the customized static Relapse portal. Press **LAUNCH** once on
 a supported PS5 browser and keep the page open. The sequence verifies/installs
@@ -19,11 +19,22 @@ confirm installation. See its [notice](payloads/ppr-patch-NOTICE.md),
 
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.4.5 includes service 1.4.3: missing or invalid Prowlarr configuration
+Portal release 1.5.0 includes service 1.5.0: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when
 an external disk is connected and normal download tracking in Botty+.
+Service 1.5.0 renews the system's rest-mode keep-main request every ten seconds
+for its whole lifetime on firmware 7.00–13.60. Its web footer and API expose the
+current acceptance/expiry/failure status. There is no ten-minute limit. Missing
+API support or a rejected request disables maintenance while keeping Botty usable.
+Closing Botty+ leaves the service and maintenance running. This holds the main
+processor in standby and may use more power than deep rest.
+FTP and a generated 8 MiB torrent download passed rest-mode trials on 13.00;
+upload, extraction, compression and other firmwares remain unvalidated on hardware.
+If an older service is running, LAUNCH stages 1.5.0 without stopping its work;
+start a fresh console session and LAUNCH to activate it.
+
 Native 01.004.000, rTorrent 0.16.24-botty3
 and ShadowMountPlus 1.7beta4-botty.2 retain their existing versions. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.

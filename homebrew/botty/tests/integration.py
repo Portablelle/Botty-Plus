@@ -70,6 +70,9 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         start()
         assert request('/health')['app']=='Botty'
         assert request('/health')['apiVersion']==1
+        assert request('/health')['restMode']['status']=='unsupported'
+        request('/api/rest-mode',auth=False,expected=403)
+        assert request('/api/rest-mode')['active'] is False
         assert 'password' not in request('/health')
         assert 'password' not in request('/api/bootstrap')
         request('/api/connections',auth=False,expected=403)
@@ -91,6 +94,7 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         request('/fs/etc/passwd',expected=404)
         state=request('/api/state');assert len(state['torrents'])==3 and state['transmissionReady']
         assert state['torrentEngine']=='rtorrent'
+        assert state['restMode']['status']=='unsupported'
         assert state['torrents'][0]['peersConnected']==12
         assert state['torrents'][0]['peersSendingToUs']==7 and state['torrents'][0]['peersGettingFromUs']==3
         assert state['torrents'][1]['peersConnected']==0

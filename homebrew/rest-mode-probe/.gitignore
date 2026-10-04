@@ -1,0 +1,4 @@
+/rest-probe-host
+/rest-probe.elf
+/keep-main-probe.elf
+/rest-probe-*.jsonl

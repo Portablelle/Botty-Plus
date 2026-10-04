@@ -4,6 +4,11 @@ let token='',state=null,tab='all',busy=false,modalAction=null,lastFocus=null,mod
 const size=bytes=>{if(!Number.isFinite(bytes))return 'Unknown';for(const unit of ['B','KiB','MiB','GiB','TiB']){if(bytes<1024||unit==='TiB')return bytes.toFixed(unit==='B'?0:1)+' '+unit;bytes/=1024;}};
 function node(tag,text,cls){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;if(cls)element.className=cls;return element;}
 async function api(path,body){const response=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'X-Botty-Token':token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});const result=await response.json();if(!response.ok)throw Error(result.error||'Request failed');return result;}
+function restModeText(mode){
+ if(mode?.status==='active'&&mode.active)return 'Rest mode enabled for background services.';
+ if(mode?.status==='failed'||mode?.status==='expired')return 'Rest-mode maintenance unavailable. Keep your PS5 awake.';
+ return 'Keep your PS5 awake during downloads and file operations.';
+}
 function say(text){$('message').textContent=text;}
 async function action(path,body,message){if(busy)return;busy=true;try{await api(path,body);say(message);await refresh();}catch(error){say(error.message);}finally{busy=false;}}
 function button(text,id,callback,disabled=false){const result=node('button',text);result.id=id;result.disabled=disabled;result.addEventListener('click',callback);return result;}
@@ -55,7 +60,7 @@ function jobCard(job){const card=node('article',undefined,'card');card.appendChi
  if(state.compression?.jobId===job.id&&state.compression?.verifyRequested&&['waiting-close','verifying'].includes(state.compression.status))actions.appendChild(button('Skip verification','job-'+job.id+'-skip-verify',()=>action('/api/skip-verification',{id:job.id},'Stopping verification safely. Original kept.')));
  card.appendChild(node('p',storageLabel(job.storage),'muted'));card.appendChild(actions);return card;}
 function render(){if(!state)return;const focused=document.activeElement&&document.activeElement.id;const items=$('items');while(items.firstChild)items.removeChild(items.firstChild);
- $('space').textContent=(state.storage||[{label:'Internal SSD',available:true,freeBytes:state.freeBytes}]).map(d=>d.label+': '+(d.available?size(d.freeBytes)+' free':'Disconnected')).join(' · ');if(state.transfer&&['running','uncertain'].includes(state.transfer.status))say(state.transfer.error||state.transfer.phase);$('connection').hidden=state.transmissionReady;$('connection').textContent=state.error||'';
+ $('rest-mode').textContent=restModeText(state.restMode);$('space').textContent=(state.storage||[{label:'Internal SSD',available:true,freeBytes:state.freeBytes}]).map(d=>d.label+': '+(d.available?size(d.freeBytes)+' free':'Disconnected')).join(' · ');if(state.transfer&&['running','uncertain'].includes(state.transfer.status))say(state.transfer.error||state.transfer.phase);$('connection').hidden=state.transmissionReady;$('connection').textContent=state.error||'';
  const values=tab==='jobs'?state.jobs.filter(j=>!j.dismissed):state.torrents.filter(t=>tab!=='complete'||t.leftUntilDone===0);
  values.forEach(value=>items.appendChild(tab==='jobs'?jobCard(value):torrentCard(value)));
  if(!values.length)items.appendChild(node('p',tab==='jobs'?'No extractions yet. Choose a completed archive to get started.':'No downloads here yet. Add a magnet link or upload a .torrent file.','empty'));
@@ -78,7 +83,7 @@ async function refreshProcessing(){
   }
  }catch(error){const section=$('processing');section.hidden=false;section.replaceChildren(node('p','Live task status unavailable. Reconnecting…','notice'));}
 }
-async function refresh(){try{if(!token)token=(await api('/api/bootstrap')).token;state=await api('/api/state');if($('modal').hidden)render();}catch(error){$('connection').hidden=false;$('connection').textContent=error.message+' If the PS5 was restarted, start a session from the Botty portal.';}}
+async function refresh(){try{if(!token)token=(await api('/api/bootstrap')).token;state=await api('/api/state');if($('modal').hidden)render();}catch(error){$('rest-mode').textContent='Rest-mode status unavailable. Keep your PS5 awake.';$('connection').hidden=false;$('connection').textContent=error.message+' If the PS5 was restarted, start a session from the Botty portal.';}}
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>{tab=element.dataset.tab;render();};
 $('refresh').onclick=refresh;$('add').onclick=()=>modal('Add a download','Paste a magnet link. Files will download directly onto this PS5.','Add magnet',magnet=>chooseStorage('internal',true,choice=>action('/api/torrent',{action:'add',magnet:magnet.trim(),...choice},'Torrent added.')),{name:'Magnet link'});
 $('upload').onclick=()=>{if(!busy){$('torrent-file').value='';$('torrent-file').click();}};

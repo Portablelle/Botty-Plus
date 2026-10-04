@@ -9,7 +9,7 @@
 <p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Bundled Relapse jailbreak range. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.4.5</a> ·
+  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.5.0</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
@@ -40,7 +40,7 @@ for downloads and extracted files, and a Botty+ portal hosted over trusted HTTPS
 ### 1. Get access to a portal
 
 If someone already hosts Botty+ for you, ask them for the portal URL and skip to
-step 2. To host it yourself, download **botty-portal-1.4.5.tar.gz** from the
+step 2. To host it yourself, download **botty-portal-1.5.0.tar.gz** from the
 [latest release](https://github.com/Portablelle/botty-ps5/releases/latest) and
 follow the [hosting guide](deployment/README.md#host-the-portal). It covers
 uploading the complete site, configuring HTTPS and checking the installation.
@@ -110,7 +110,10 @@ Compression keeps the original until you explicitly delete it. Full content
 verification is optional; a skipped check is shown as **Not verified**. If
 compression is interrupted, retrying on the same disk cleans its tracked
 temporary files and starts from zero. Interrupted RAR extraction can reuse and verify partial output
-on the same disk. Keep the console awake while tasks are running.
+on the same disk. Botty 1.5.0 maintains background services during rest mode on
+firmware 7.00–13.60 while its service is running. Check the rest-mode status in the
+web interface. FTP and a generated torrent download were tested in rest on 13.00;
+upload, extraction, compression and other firmwares still need hardware validation.
 
 ## Preview
 

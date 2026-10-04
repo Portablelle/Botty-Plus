@@ -16,14 +16,15 @@ build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp
 	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/core-test: tests/core-test.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-test: build/core-test build/botty-native build/storage-test
+test: build/core-test build/botty-native build/storage-test build/rest-mode-test
 	./build/core-test
+	./build/rest-mode-test
 	python3 tests/integration.py
 	python3 tests/search_integration.py
 	./build/storage-test
@@ -55,3 +56,10 @@ test-storage: build/storage-test build/botty-native
 	./build/storage-test
 	python3 tests/storage_integration.py
 	python3 tests/background_storage_integration.py
+
+.PHONY: test-rest-mode
+build/rest-mode-test: tests/rest-mode-test.cpp src/rest-mode.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
+test-rest-mode: build/rest-mode-test
+	./build/rest-mode-test

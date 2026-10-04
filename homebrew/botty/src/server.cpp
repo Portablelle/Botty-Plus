@@ -4,6 +4,7 @@
 #include "operations.hpp"
 #include "search.hpp"
 #include "rtorrent.hpp"
+#include "rest-mode.hpp"
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
 #include "compressor.hpp"
@@ -23,7 +24,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.4.3/ui"
+#define BOTTY_UI "/data/botty/manager/1.5.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -382,8 +383,9 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.4.3"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.0"}});
     stage="creating HTTP server";
+    RestModeKeeper restMode(currentRestModeSupported(),requestRestMode);
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     server.set_read_timeout(5);server.set_write_timeout(10);
     const auto origin="http://127.0.0.1:"+std::to_string(port);
@@ -408,7 +410,8 @@ int main(int argc,char** argv) {
       if(retiring&&req.method=="POST"){reply(res,{{"error","Botty is shutting down"}},503);return httplib::Server::HandlerResponse::Handled;}
       return httplib::Server::HandlerResponse::Unhandled;
     });
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.4.3"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[&restMode](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"restMode",restMode.state()}});});
+    server.Get("/api/rest-mode",[&restMode](const auto&,auto& res){reply(res,restMode.state());});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -431,11 +434,12 @@ int main(int argc,char** argv) {
       }
       reply(res,{{"tasks",tasks}});
     });
-    server.Get("/api/state",[](const auto&,auto& res){
+    server.Get("/api/state",[&restMode](const auto&,auto& res){
       json result={{"storage",storage.list()},{"storageSupported",true},{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"libraryDeletionSupported",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
       try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]="rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting||transferring;result["transfer"]=transferState;}
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
+      result["restMode"]=restMode.state();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["compression"]=compressor.state();
       for(auto& job:result["jobs"]){const auto c=compressor.game(job.value("id",""));job["compression"]=c;if(c.value("status","")=="ready"){job["destination"]=c.at("output");job["storage"]=c.value("storage","internal");job["content"]["kind"]="compressed";}}
@@ -634,6 +638,7 @@ int main(int argc,char** argv) {
     server.set_exception_handler([](const auto&,auto& res,std::exception_ptr error){try{std::rethrow_exception(error);}catch(const std::exception& failure){reply(res,{{"error",failure.what()}},400);}catch(...){reply(res,{{"error","Operation failed"}},500);}});
     stage="binding HTTP port";
     if(!server.bind_to_port("0.0.0.0",port))throw std::runtime_error("Botty port is already in use");
+    restMode.start();
     std::thread(automaticDownloads).detach();
     std::thread([]{for(;;){
       std::this_thread::sleep_for(std::chrono::seconds(2));compressor.poll();
