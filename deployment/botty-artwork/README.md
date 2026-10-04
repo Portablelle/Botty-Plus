@@ -15,7 +15,8 @@ lookups coalesce and network concurrency is bounded to four.
 
 Near-uniform provider images are rejected, including grey CDN placeholders returned
 with HTTP 200. Existing cached placeholders are re-resolved rather than retained for
-thirty days. Battlefield 6 has a verified PlayStation product mapping in the seed file.
+thirty days. Battlefield 6 and God of War Sons of Sparta have verified PlayStation
+product mappings in the seed file.
 
 For regional names or verified exceptions, `/opt/botty-artwork/aliases.json` can map
 a normalized title to a canonical game name. It is read on each request and survives

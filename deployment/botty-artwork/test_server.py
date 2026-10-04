@@ -24,6 +24,13 @@ class Covers(unittest.TestCase):
   self.assertEqual(self.module.clean_title('007 First Light Deluxe Edition PROPER PS5-PPSA11386[FPKG]'), '007 First Light')
   self.assertEqual(self.module.clean_title('Example Game REPACK PS5-PPSA00000[FPKG]'), 'Example Game')
   self.assertEqual(self.module.clean_title('Super Mega Baseball 4 Ballpark Edition PS5-PPSA06142[FPKG]'), 'Super Mega Baseball 4')
+  self.assertEqual(self.module.clean_title('God of War Sons of Sparta PROPER PS5-PPSA28997[FPKG]'), 'God of War Sons of Sparta')
+  self.assertEqual(self.module.clean_title('Kena Bridge of Spirits PROPER PS5-PPSA01746[FPKG]'), 'Kena Bridge of Spirits')
+  self.assertEqual(self.module.clean_title('God of War Sons of Sparta Deluxe Edition DLC ONLY PS5-PPSA28997[FPKG]'), 'God of War Sons of Sparta')
+  self.assertEqual(self.module.clean_title('Super Mega Baseball 4 Ballpark Edition DLC ONLY PS5-PPSA06142[FPKG]'), 'Super Mega Baseball 4')
+  self.assertEqual(self.module.clean_title('Example Game Deluxe Edition DLC Addon PROPER REPACK PS5-PPSA00000[FPKG]'), 'Example Game')
+  self.assertEqual(self.module.clean_title('Example Game Deluxe Edition PROPER DLC Addon PS5-PPSA00000[FPKG]'), 'Example Game')
+  self.assertEqual(self.module.clean_title('God of War Ghost of Sparta PS5'), 'God of War Ghost of Sparta')
   self.assertEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares 3'))
   self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
   self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
@@ -58,6 +65,18 @@ class Covers(unittest.TestCase):
   self.assertEqual(list(self.module.playstation_candidates('NHL 27')),[])
  def test_origin_confinement(self):
   with self.assertRaises(ValueError):self.module.fetch('http://localhost/private',100)
+ def test_sparta_release_uses_verified_playstation_source(self):
+  self.module.SOURCES=pathlib.Path(__file__).with_name('sources.json')
+  calls=[]
+  def fetch(url,limit):
+   calls.append(url)
+   return b'<script type="application/ld+json">{"@type":"Product","name":"God of War Sons of Sparta","image":"https://image.api.playstation.com/sparta.png"}</script>'
+  self.module.fetch=fetch
+  title=self.module.clean_title('God of War Sons of Sparta PROPER PS5-PPSA28997[FPKG]')
+  candidates=list(self.module.playstation_candidates(title))
+  self.assertEqual(len(candidates),1)
+  self.assertIn('UP9000-PPSA28997_00-SONSOFSPARTAPS50',calls[0])
+  self.assertEqual(list(self.module.playstation_candidates('God of War Ghost of Sparta')),[])
  def test_blank_provider_image_falls_back(self):
   blank=io.BytesIO();Image.new('RGB',(20,30),(75,75,75)).save(blank,format='JPEG')
   picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));real=io.BytesIO();picture.save(real,format='PNG')
