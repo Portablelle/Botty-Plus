@@ -23,6 +23,7 @@ class Covers(unittest.TestCase):
   self.assertEqual(self.module.clean_title('Little Nightmares III The Shores'), 'Little Nightmares III')
   self.assertEqual(self.module.clean_title('007 First Light Deluxe Edition PROPER PS5-PPSA11386[FPKG]'), '007 First Light')
   self.assertEqual(self.module.clean_title('Example Game REPACK PS5-PPSA00000[FPKG]'), 'Example Game')
+  self.assertEqual(self.module.clean_title('Super Mega Baseball 4 Ballpark Edition PS5-PPSA06142[FPKG]'), 'Super Mega Baseball 4')
   self.assertEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares 3'))
   self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
   self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
