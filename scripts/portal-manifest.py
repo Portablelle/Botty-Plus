@@ -14,6 +14,7 @@ PAYLOAD_NOTICES = ('shadowmountplus-source.tar.gz', 'shadowmountplus-LICENSE.txt
                    'shadowmountplus-NOTICE.md', 'ppr-patch-source.tar.gz',
                    'ppr-patch-LICENSE.txt', 'ppr-patch-NOTICE.md')
 PACKAGE_NOTICES = {
+    'codex': ('NOTICE.md', 'LICENSE'),
     'cheatrunner': ('NOTICE.md', 'LICENSE', 'cheatrunner-source.tar.gz'),
     'rtorrent': ('README.md', 'LICENSE', 'rtorrent-source.tar.gz'),
     'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz', 'game-compressor-source.tar.gz', 'game-compressor-NOTICE.md'),
@@ -67,6 +68,7 @@ def digest(path):
 
 def verify_packages(root):
     for package, installer, constant in (
+        ('codex', 'codex-install.js', 'HASH'),
         ('cheatrunner', 'cheatrunner.js', 'HASH'),
         ('botty', 'botty-manager.js', 'HASH'),
         ('rtorrent', 'rtorrent.js', 'HASH'),
