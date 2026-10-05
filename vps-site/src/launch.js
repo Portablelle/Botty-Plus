@@ -1,3 +1,4 @@
+import { CodexIO, startCodex, codexStatus } from './codex.js';
 import { normalizeLaunchServices, supportsPpr } from './launch-options.js';
 import { CheatRunnerIO, installAndStartCheatRunner, cheatRunnerStatus } from './cheatrunner.js';
 import { PS5IO, sleep } from './ps5-io.js';
@@ -45,5 +46,10 @@ export async function launchSession(options) {
     cheatrunner = { ready: false, reason: 'CheatRunner setup: ' + (error.message || String(error)) };
   }
   report(cheatRunnerStatus(cheatrunner));
-  return {native, manager, cheatrunner};
+  let codex = { ready: false, skipped: true };
+  if (services.codex) try {
+    codex = await (options.codex || startCodex)(options.codexIO || new CodexIO(runtime), { report, wait });
+  } catch (error) { codex = { ready: false, reason: 'Codex PS5: ' + (error.message || String(error)) }; }
+  if (services.codex) report(codexStatus(codex));
+  return {native, manager, cheatrunner, codex};
 }

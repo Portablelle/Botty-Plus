@@ -24,9 +24,23 @@ confirm installation. See its [notice](payloads/ppr-patch-NOTICE.md),
 [license](payloads/ppr-patch-LICENSE.txt) and
 [source](payloads/ppr-patch-source.tar.gz).
 
+**Codex PS5 (prototype)** is an opt-in launch option. When selected, LAUNCH checks
+its pinned release manifest and installs or updates the native title, multilingual
+Whisper base model and assistant engine before starting it. Downloads use verified
+1 MiB blocks and reuse unchanged local blocks. Old installations are backed up,
+with a journal to finish interrupted publication on the next launch. ChatGPT
+credentials and the workspace are preserved. Updates wait while Botty is busy or
+native apps are open. Close native apps before LAUNCH; a legacy engine without the
+new control endpoint needs one full PS5 restart after its files are updated.
+Subsequent idle engines can stop cleanly and restart with the new release.
+Open Codex PS5 in the game library: L1 signs in to ChatGPT; Triangle records local
+voice dictation; Options sends the prompt. The model is GPT 6.1 SOL with low
+reasoning effort. Native dictation and administration tools were tested on the
+console; this automatic update flow still needs acceptance through PS5 LAUNCH.
+
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.5.2 includes service 1.5.1: missing or invalid Prowlarr configuration
+Portal release 1.5.3 includes service 1.5.1: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when
