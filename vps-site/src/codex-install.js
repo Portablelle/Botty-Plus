@@ -24,6 +24,52 @@ export function nativeIdentity(bytes) {
     throw Error('Unrecognized Codex title. Existing files preserved.');
   return p;
 }
+const RECEIPT = UPDATE + '/verified.json';
+function packageFiles(m) {
+  return [...m.native.map(f => ({...f, absolute: NATIVE + '/' + f.path})),
+    ...m.service.map(f => ({...f, absolute: SERVICE + '/' + f.path}))];
+}
+function sameStamp(a, b) {
+  return !!a && !!b && a.size === b.size && typeof a.stamp === 'string' && /^[a-f0-9]{176}$/.test(a.stamp) && a.stamp === b.stamp;
+}
+async function installedMatches(io, m, digest, report) {
+  // An unavailable/unknown stat ABI falls back to full verification, never to trust.
+  let receipt;
+  try { const bytes = await io.readFile(RECEIPT, 16384); if (bytes) receipt = JSON.parse(decoder.decode(bytes)); } catch (_) {}
+  const cached = receipt?.schema === 1 && receipt.target === HASH && receipt.files && typeof receipt.files === 'object';
+  const entries = {};
+  let reusable = typeof io.fileStamp === 'function', changed = false;
+  for (const file of packageFiles(m)) {
+    const before = io.fileStamp ? await io.fileStamp(file.absolute) : null;
+    if (before?.size === file.size && cached && sameStamp(before, receipt.files[file.absolute])) {
+      entries[file.absolute] = before; continue;
+    }
+    report('Verifying Codex ' + file.path + '…');
+    if (!await io.matchesFile(file.absolute, file, digest)) return false;
+    const after = io.fileStamp ? await io.fileStamp(file.absolute) : null;
+    if (before && after && !sameStamp(before, after)) throw Error('Codex file changed during verification. Relaunch the portal.');
+    if (!sameStamp(before, after) || after?.size !== file.size) reusable = false;
+    else entries[file.absolute] = after;
+    changed = true;
+  }
+  if (reusable && (changed || !cached)) {
+    await io.writeFile(RECEIPT, encoder.encode(JSON.stringify({schema: 1, target: HASH, files: entries})));
+    await io.syncDirectory(UPDATE);
+  }
+  return true;
+}
+async function recordVerified(io, m) {
+  // Publication already hashed each file. Capture metadata only after this succeeds.
+  if (!io.fileStamp) return;
+  const files = {};
+  for (const file of packageFiles(m)) {
+    const stamp = await io.fileStamp(file.absolute);
+    if (!stamp || stamp.size !== file.size) return;
+    files[file.absolute] = stamp;
+  }
+  await io.writeFile(RECEIPT, encoder.encode(JSON.stringify({schema: 1, target: HASH, files})));
+  await io.syncDirectory(UPDATE);
+}
 async function matches(io, root, files, digest) {
   for (const f of files) if (!await io.matchesFile(root + '/' + f.path, f, digest)) return false;
   return true;
@@ -53,6 +99,7 @@ async function recover(io, j, digest, report) {
   }
   await io.syncCodexMetadata(j.backup, digest);
   await save(io, {...j, status: 'complete'});
+  if (j.target === HASH) await recordVerified(io, j.manifest);
   report('Codex update installed; previous files retained in backup.');
 }
 export async function installCodex(io, options = {}) {
@@ -74,7 +121,7 @@ export async function installCodex(io, options = {}) {
       throw Error('Codex update journal damaged. Existing files preserved.');
     await recover(io, j, digest, report);
   }
-  const current = await matches(io, NATIVE, m.native, digest) && await matches(io, SERVICE, m.service, digest);
+  const current = await installedMatches(io, m, digest, report);
   await io.mkdirs('/data/ps5-ai-cli'); // SDK spawn shim; credentials/workspace are never installer targets.
   if (current) return {...m, updated: false};
   await io.assertNativeStopped();

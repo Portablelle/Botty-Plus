@@ -28,7 +28,13 @@ confirm installation. See its [notice](payloads/ppr-patch-NOTICE.md),
 its pinned release manifest and installs or updates the native title, multilingual
 Whisper base model and assistant engine before starting it. Downloads use verified
 1 MiB blocks and reuse unchanged local blocks. Old installations are backed up,
-with a journal to finish interrupted publication on the next launch. ChatGPT
+with a journal to finish interrupted publication on the next launch. After successful verification, a release-bound receipt caches each file's size,
+inode, modification/change timestamps and other stable stat metadata. Unchanged
+files skip content hashing on later launches; changed or unknown metadata and a
+missing/invalid receipt trigger full verification. The first launch after upgrading
+from portal 1.5.3 creates this receipt once. The engine is always verified block by
+block during its single transfer to the loader; cold boots still require that
+transfer. Codex reads/writes use bounded 1 MiB buffers to reduce ROP calls. ChatGPT
 credentials and the workspace are preserved. Updates wait while Botty is busy or
 native apps are open. Close native apps before LAUNCH; a legacy engine without the
 new control endpoint needs one full PS5 restart after its files are updated.
@@ -40,7 +46,7 @@ console; this automatic update flow still needs acceptance through PS5 LAUNCH.
 
 Home-screen registration is asynchronous. Restart after a failed session.
 
-Portal release 1.5.3 includes service 1.5.1: missing or invalid Prowlarr configuration
+Portal release 1.5.4 includes service 1.5.1: missing or invalid Prowlarr configuration
 shows an inline Search/Explore message and leaves other tabs available. Search
 recovers after configuration is corrected without restarting the service.
 The web interface also accepts `.torrent` uploads, with destination selection when
