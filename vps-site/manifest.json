@@ -1,9 +1,9 @@
 {
-  "release": "v1.5.3",
+  "release": "v1.5.4",
   "upstream": "dd8e4e0914c5e9d066ee1f9b056be76cb992c8e0",
   "sha256": {
     "LICENSE": "27733007935689bfd85e2a13aae08144377e385b9d2aec9b72de295b9a6218f0",
-    "README.md": "45c370613e4399d6e565940670cb4c6c11235761adfda3a973a4b060884d07a2",
+    "README.md": "fcbb72fdfe60d4413edef5628e7eb928f593d7cacb21e953666b808363d96f54",
     "apps/botty-native/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "apps/botty-native/NOTICE.md": "03599c9a66900784ed9130daab280b961371e546e36bee449e5ac930ab7f5a03",
     "apps/botty-native/assets/Manrope-OFL.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
@@ -421,9 +421,9 @@
     "src/botty-manager.js": "ab124a20294a20e0c11a721c7e58b00bc470fafd133aeeb34a335e7f3a282e78",
     "src/botty-native.js": "e67afd4bf79390f8965d49cd0d65109ff9b3896878de606f0d5e0e5d731007ea",
     "src/cheatrunner.js": "e4e51a5831d47d6f21a6d6eaaee4d0990493a8db112324d88e805f76fd02e2fd",
-    "src/codex-install.js": "94ea34f3b8a51e9540ea7387c0736d4b795d550f5203d363471d843915c16ad0",
+    "src/codex-install.js": "a97e12b89b5990c5005be453e4c5a53451d8b6d4fb8fa269f17642135d85702a",
     "src/codex-payload.js": "01944581d2346be544bb0b93339da015dce800f06a718d2173962c1104175263",
-    "src/codex.js": "b10aed9dca88fdb754548eff6035c7fac3d7dc860bfbeef399ef9575a5ec3621",
+    "src/codex.js": "09d075a74d2bab2e1a6a1f9e4d6c489b16266651438d3e103be4e77d87de3945",
     "src/firmware.js": "0266eb3ab0a674a83ddcd708f2bd2ff9cbde7aabac50d077f1baaad21b195bf4",
     "src/kexp.js": "bbbd824f23a654f0fb1860e13822a421e2feec1047b464b450c9770f92b42481",
     "src/launch-options.js": "b2addd193eec181f1253dace815e4cc1b6e71d68cb1635f4999a40727ec3b9e9",

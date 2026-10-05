@@ -5,6 +5,45 @@ import { PAYLOAD } from './codex-payload.js';
 const PATH = '/data/codex-ps5/payloads/assistant-service/assistant-service.elf';
 
 export class CodexIO extends PS5IO {
+  constructor(runtime) {
+    super(runtime);
+    // One verified block per ROP read/write instead of sixteen 64 KiB calls.
+    this.buffer = runtime.p.malloc(1048576, 1);
+    this.statBuffer = runtime.p.malloc(256, 1);
+  }
+  async writeAll(fd, bytes) {
+    const capacity = Math.min(1048576, this.buffer.backing.length);
+    for (let offset = 0; offset < bytes.length;) {
+      const size = Math.min(capacity, bytes.length - offset);
+      this.buffer.backing.set(bytes.subarray(offset, offset + size));
+      let sent = 0;
+      while (sent < size) {
+        const n = await this.call('write', fd, this.buffer.add32(sent), size - sent);
+        if (n <= 0 || n > size - sent) throw Error('Codex write interrupted (connection or disk space).');
+        sent += n;
+      }
+      offset += size;
+    }
+  }
+  async fileStamp(path) {
+    this.checkedPath(path);
+    const fd = await this.call('open', this.string(path), 0x100, 0);
+    if (fd < 0) return null;
+    try {
+      this.statBuffer.backing.fill(0);
+      // SDK FreeBSD 11 ABI: fstat=189, struct stat=120, size=72, mode=8.
+      const result = await this.runtime.chain.syscall(189, fd, this.statBuffer);
+      if ((result.low | 0) !== 0) return null;
+      const bytes = this.statBuffer.backing;
+      const view = new DataView(bytes.buffer, bytes.byteOffset);
+      if ((view.getUint16(8, true) & 0xf000) !== 0x8000 || view.getUint32(76, true) !== 0) return null;
+      const size = view.getUint32(72, true);
+      if (!size || size > 256 * 1024 * 1024) return null;
+      // Exclude atime (24..39), which changes when we read an unchanged file.
+      const stable = [...bytes.subarray(0, 24), ...bytes.subarray(40, 80), ...bytes.subarray(92, 100), ...bytes.subarray(104, 120)];
+      return {size, stamp: stable.map(b => b.toString(16).padStart(2, '0')).join('')};
+    } finally { await this.close(fd); }
+  }
   checkedPath(path) {
     const roots = [NATIVE, SERVICE, UPDATE, '/data/codex-ps5/backups'];
     const metadata = ['/user/app/PPSA99105/sce_sys', '/user/appmeta/PPSA99105', '/system_data/priv/appmeta/PPSA99105'];
@@ -56,8 +95,8 @@ export class CodexIO extends PS5IO {
       for (;;) {
         const block = new Uint8Array(1048576); let size = 0;
         while (size < block.length) {
-          const n = await this.call('read', fd, this.buffer, Math.min(65536, block.length - size));
-          if (n < 0 || n > Math.min(65536, block.length - size)) throw Error('Codex file read failed.');
+          const n = await this.call('read', fd, this.buffer, Math.min(this.buffer.backing.length, block.length - size));
+          if (n < 0 || n > Math.min(this.buffer.backing.length, block.length - size)) throw Error('Codex file read failed.');
           if (!n) break;
           block.set(this.buffer.backing.subarray(0, n), size); size += n;
         }
@@ -144,8 +183,8 @@ export class CodexIO extends PS5IO {
         const size = Math.min(PAYLOAD.chunkSize, PAYLOAD.size - total);
         const block = new Uint8Array(size); let offset = 0;
         while (offset < size) {
-          const n = await this.call('read', fd, this.buffer, Math.min(65536, size - offset));
-          if (n <= 0 || n > Math.min(65536, size - offset)) throw Error('Codex payload read interrupted.');
+          const n = await this.call('read', fd, this.buffer, Math.min(this.buffer.backing.length, size - offset));
+          if (n <= 0 || n > Math.min(this.buffer.backing.length, size - offset)) throw Error('Codex payload read interrupted.');
           block.set(this.buffer.backing.subarray(0, n), offset); offset += n;
         }
         if (await digest(block) !== expected) throw Error('Installed Codex payload differs from this portal build; relaunch the portal to update it.');
@@ -201,11 +240,9 @@ export async function startCodex(io, options = {}) {
     }
     if (!closed) throw Error('Previous Codex engine is still stopping. No payload sent.');
   }
-  report('Verifying Codex PS5 ' + installed.version + '…');
-  await io.visitPayload();
   if (await busy(io)) return {ready: false, reason: 'Codex startup deferred while Botty is processing files.'};
   if (await io.listening(49322)) throw Error('Another Codex engine started during update. No payload sent.');
-  report('Starting Codex PS5…');
+  report('Starting Codex PS5 (verified transfer)…');
   await io.deliverPayload();
   for (let attempt = 0; attempt < 40; attempt++) {
     if (await io.listening(49322)) return { ready: true, version: installed.version };

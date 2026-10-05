@@ -76,8 +76,52 @@ function serviceFixture(legacy=false) {
   return {io,events,options:{install:async()=>{events.push('install');return {version:'0.0.2',serviceBuild:'b'.repeat(64)};},wait:async()=>{}}};
 }
 test('already running old service still checks updates and stops cleanly before one delivery',async()=>{
-  const f=serviceFixture();assert.equal((await startCodex(f.io,f.options)).ready,true);assert.deepEqual(f.events,['install','stop','verify','send']);
+  const f=serviceFixture();assert.equal((await startCodex(f.io,f.options)).ready,true);assert.deepEqual(f.events,['install','stop','send']);
 });
 test('legacy engine installs updates but requests a full restart without killing or resending',async()=>{
   const f=serviceFixture(true);const r=await startCodex(f.io,f.options);assert.equal(r.updatePending,true);assert.match(codexStatus(r),/Fully restart/);assert.deepEqual(f.events,['install']);
+});
+
+function enableStamps(f) {
+  let sequence = 1;
+  const stamps = new Map();
+  f.io.fileStamp = async path => {
+    const data = f.disk.get(path);
+    if (!data) return null;
+    const key = hash(data);
+    let item = stamps.get(path);
+    if (!item || item.key !== key) { item = {key, stamp: (sequence++).toString(16).padStart(176, '0')}; stamps.set(path, item); }
+    return {size: data.length, stamp: item.stamp};
+  };
+}
+test('verified receipt avoids every content read and rewrite on unchanged launch', async () => {
+  const f = fixture(); enableStamps(f);
+  await installCodex(f.io, f.options);
+  f.io.matchesFile = async () => {throw Error('Unexpected full content read');};
+  f.events.length = 0;
+  assert.equal((await installCodex(f.io, f.options)).updated, false);
+  assert.deepEqual(f.events, [['fetch', './apps/codex/manifest.json']]);
+});
+test('changed file stamp rechecks content and repairs it; auth remains untouched', async () => {
+  const f = fixture(); enableStamps(f); await installCodex(f.io, f.options);
+  const damaged = NATIVE + '/assets/ui-font.bin'; f.put(damaged, encode('changed-font'));
+  const checked = [], matches = f.io.matchesFile;
+  f.io.matchesFile = async (path, file) => {checked.push(path); return matches(path, file);};
+  await installCodex(f.io, f.options);
+  assert.ok(checked.includes(damaged)); assert.equal(hash(f.disk.get(damaged)), f.m.native.find(x=>x.path==='assets/ui-font.bin').sha256);
+  assert.equal(new TextDecoder().decode(f.disk.get('/data/codex-ps5/home/.codex/auth.json')), 'keep-auth');
+});
+test('missing, damaged or obsolete receipt requires full verification once', async () => {
+  for (const record of [null, encode('bad json'), encode({schema:1,target:'f'.repeat(64),files:{}})]) {
+    const f=fixture(); enableStamps(f); await installCodex(f.io,f.options);
+    if(record) f.put(UPDATE+'/verified.json',record); else f.disk.delete(UPDATE+'/verified.json');
+    const checked=[],matches=f.io.matchesFile; f.io.matchesFile=async(p,v)=>{checked.push(p);return matches(p,v);};
+    await installCodex(f.io,f.options);assert.equal(checked.length,7);assert.ok(f.disk.has(UPDATE+'/verified.json'));
+  }
+});
+test('unavailable file metadata keeps full verification without caching', async () => {
+  const f=fixture();f.io.fileStamp=async()=>null;await installCodex(f.io,f.options);
+  assert.equal(f.disk.has(UPDATE+'/verified.json'),false);
+  let reads=0; const matches=f.io.matchesFile;f.io.matchesFile=async(p,v)=>{reads++;return matches(p,v);};
+  await installCodex(f.io,f.options);assert.equal(reads,7);
 });
