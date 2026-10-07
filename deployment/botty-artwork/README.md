@@ -5,7 +5,9 @@ using the systemd service and authenticated TLS nginx route shipped alongside it
 The API key remains in `/opt/botty-artwork/api-key`, never in this repository.
 
 Scene suffixes such as PROPER and INTERNAL are removed only when the input has
-a PS5, CUSA/PPSA title-ID, or [FPKG] marker. Metadata and edition suffixes are
+a PS5, CUSA/PPSA title-ID, [FPKG], UPDATE, version, MULTI, or incl/including
+marker. Release detection and metadata truncation share the same pattern, with
+[FPKG] also recognized before bracket removal. Metadata and edition suffixes are
 trimmed repeatedly in either order; unmarked canonical scene words are preserved.
 
 Resolution uses normalized game names (scene tags, editions, punctuation, accents,

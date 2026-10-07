@@ -46,8 +46,17 @@ class Covers(unittest.TestCase):
     title='Example '+word
     self.assertEqual(self.module.clean_title(title),title)
     self.assertEqual(self.module.clean_title(title+' Deluxe Edition'),title)
-    for marker in [' PS5', ' PPSA00000', '[FPKG]']:
-     self.assertEqual(self.module.clean_title(title+marker),'Example')
+    for marker in [' PS5', ' PPSA00000', ' CUSA12345', '[FPKG]',
+                   ' UPDATE', ' v1.02', ' MULTI', ' MULTI5',
+                   ' incl DLC', ' incl. DLC', ' including DLC']:
+     with self.subTest(marker=marker):
+      self.assertEqual(self.module.clean_title(title+marker),'Example')
+ def test_scene_words_before_release_metadata(self):
+  for marker in ['UPDATE', 'v1.02', 'MULTI5', 'incl DLC', 'including DLC']:
+   with self.subTest(marker=marker):
+    title='Ratchet and Clank Rift Apart'
+    self.assertEqual(self.module.clean_title(title+' PROPER '+marker),title)
+    self.assertEqual(self.module.clean_title(title+' PROPER Deluxe Edition REPACK '+marker),title)
  def test_steam_and_fallback(self):
   image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG')
   def fetch(url,limit):
