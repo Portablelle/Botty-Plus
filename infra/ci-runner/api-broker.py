@@ -37,8 +37,11 @@ def main():
                "--method", method]
     if payload is not None:
         command += ["--input", "-"]
-    reply = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=30,
-                           cwd="/home/ubuntu", env={"HOME": "/home/ubuntu", "PATH": "/usr/bin:/bin:/snap/bin", "LANG": "C.UTF-8"})
+    try:
+        reply = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=30,
+                               cwd="/home/ubuntu", env={"HOME": "/home/ubuntu", "PATH": "/usr/bin:/bin:/snap/bin", "LANG": "C.UTF-8"})
+    except subprocess.TimeoutExpired:
+        raise SystemExit("GitHub runner API timed out after 30 seconds.")
     if reply.returncode:
         # A JIT identity already disappears automatically after its job.
         if operation == "delete" and "(HTTP 404)" in reply.stderr:
@@ -46,10 +49,16 @@ def main():
         sys.stderr.write(reply.stderr)
         raise SystemExit(reply.returncode)
     if operation == "create":
-        data = json.loads(reply.stdout)
+        try:
+            data = json.loads(reply.stdout)
+        except (ValueError, TypeError):
+            raise SystemExit("GitHub returned invalid JSON.")
+        if not isinstance(data, dict):
+            raise SystemExit("GitHub returned no JIT response object.")
         if not isinstance(data.get("encoded_jit_config"), str) or not data["encoded_jit_config"]:
             raise SystemExit("GitHub returned no JIT configuration.")
-        if not isinstance(data.get("runner", {}).get("id"), int):
+        runner = data.get("runner")
+        if not isinstance(runner, dict) or type(runner.get("id")) is not int or runner["id"] <= 0:
             raise SystemExit("GitHub returned no runner ID.")
         sys.stdout.write(reply.stdout)
 

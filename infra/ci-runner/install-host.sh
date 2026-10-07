@@ -5,7 +5,10 @@ cd "$(dirname "$0")"
 sudo apt-get update
 sudo apt-get install -y curl jq python3 sudo
 # This account and its rootless Docker daemon already exist for Ciaobella.
-id gh-runner >/dev/null
+[[ $(id -u gh-runner) == 1001 ]] || {
+  echo "This dedicated-host configuration requires gh-runner UID 1001." >&2
+  exit 1
+}
 # Required by Docker bridge inter-container isolation; persist across reboots.
 sudo modprobe br_netfilter
 printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/plus-runner.conf >/dev/null
@@ -26,10 +29,14 @@ done
 sudo chmod 755 /home/gh-runner/plus-runner/{build-image,slot,stop-slot}.sh
 sudo -u gh-runner env HOME=/home/gh-runner XDG_RUNTIME_DIR=/run/user/1001 \
   DOCKER_HOST=unix:///run/user/1001/docker.sock PATH=/home/gh-runner/bin:/usr/bin:/bin bash -c '
+    set -euo pipefail
     docker info >/dev/null
     mkdir -p ~/.config/systemd/user
     cp ~/plus-runner/*.service ~/plus-runner/*.timer ~/.config/systemd/user/
     systemctl --user daemon-reload
     ~/plus-runner/build-image.sh
-    systemctl --user enable --now plus-runner@botty plus-runner@portal plus-runner-image.timer
+    systemctl --user enable plus-runner@botty plus-runner@portal plus-runner-image.timer
+    # Installation/migration must replace any old persistent-identity process.
+    systemctl --user restart plus-runner@botty plus-runner@portal
+    systemctl --user start plus-runner-image.timer
   '

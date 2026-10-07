@@ -72,6 +72,32 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(call.call_args.args[0][-3:], ["repos/Portablelle/Portal-Plus/actions/runners/123", "--method", "DELETE"])
         self.assertIsNone(call.call_args.kwargs["input"])
 
+    def test_create_failure_propagates_without_writing_a_configuration(self):
+        run = Mock(return_value=Mock(returncode=7, stdout="", stderr="GitHub is unavailable\n"))
+        with patch.object(self.broker.sys, "stderr", new_callable=io.StringIO) as stderr:
+            exc, call, output = self.invoke("botty", "create", run=run)
+        self.assertEqual(exc.code, 7)
+        self.assertEqual(output, "")
+        self.assertIn("GitHub is unavailable", stderr.getvalue())
+        call.assert_called_once()
+
+    def test_create_rejects_malformed_jit_responses_without_writing_stdout(self):
+        for reply in ({"runner": {"id": 42}},
+                      {"encoded_jit_config": "jit", "runner": {"id": "42"}},
+                      {"encoded_jit_config": "jit", "runner": None}):
+            with self.subTest(reply=reply):
+                run = Mock(return_value=Mock(returncode=0, stdout=json.dumps(reply), stderr=""))
+                exc, _, output = self.invoke("portal", "create", run=run)
+                self.assertIsInstance(exc, SystemExit)
+                self.assertEqual(output, "")
+
+    def test_delete_not_found_is_idempotent(self):
+        run = Mock(return_value=Mock(returncode=1, stdout="", stderr="gh: Not Found (HTTP 404)\n"))
+        exc, call, output = self.invoke("botty", "delete", "9", run=run)
+        self.assertIsNone(exc)
+        self.assertEqual(output, "")
+        call.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

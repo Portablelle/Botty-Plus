@@ -58,5 +58,5 @@ RUN mv /home/runner /opt/actions-runner && mkdir /home/runner \
   && chown runner:runner /home/runner
 
 USER runner
-# slot.sh copies the repository-scoped identity, then runs as runner with --once.
-ENTRYPOINT ["./run.sh"]
+# slot.sh supplies the JIT configuration and bootstraps the bounded writable home.
+CMD ["bash"]
