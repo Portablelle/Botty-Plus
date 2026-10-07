@@ -82,6 +82,8 @@ def current_is_release(current, target):
 
 
 def deployment_record(commit, release, previous):
+    if previous is not None and not is_release_directory(Path(previous)):
+        previous = None
     return {'commit': commit, 'release': str(release),
             'previous': str(previous) if previous else None}
 
@@ -105,7 +107,8 @@ def reconcile_activation(state, root):
         raise RuntimeError('Invalid activation journal')
     current = root / 'current'
     if current_is_release(current, target):
-        write_json_atomically(state / 'last-deploy.json', pending)
+        write_json_atomically(state / 'last-deploy.json',
+                              deployment_record(commit, target, previous))
     pending_path.unlink()
 
 
@@ -113,15 +116,18 @@ def reconcile_deploy_record(state, commit, target):
     """Repair metadata left stale by an older interrupted activation."""
     record_path = state / 'last-deploy.json'
     existing = read_deploy_record(record_path)
-    expected = deployment_record(commit, target, None)
+    previous = None
     if existing and existing.get('commit') == commit and existing.get('release') == str(target):
-        return
+        previous = existing.get('previous') if isinstance(existing.get('previous'), str) else None
     # Before activation, the recorded release was the active one. This preserves
     # the rollback target when recovering a deployment made by an older service.
-    if existing and isinstance(existing.get('release'), str) and existing['release'] != str(target):
-        expected['previous'] = existing['release']
+    elif existing and isinstance(existing.get('release'), str) and existing['release'] != str(target):
+        previous = existing['release']
     elif existing and isinstance(existing.get('previous'), str):
-        expected['previous'] = existing['previous']
+        previous = existing['previous']
+    expected = deployment_record(commit, target, previous)
+    if existing == expected:
+        return
     write_json_atomically(record_path, expected)
 
 
