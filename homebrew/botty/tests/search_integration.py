@@ -106,6 +106,14 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   cached=request('/api/state')['explore'];assert not cached['busy'] and cached['results']==browse['results']
   assert 'outdated' in cached['notice']
   assert len(queries)==query_count
+  (root/'prowlarr.json').write_text('{broken json')
+  request('/api/explore',{'sort':'newest'})
+  assert request('/api/state')['explore']['results']==[]
+  try:request('/api/explore/add',{'id':cached['results'][0]['sources'][0]['id']});raise AssertionError('Invalidated source accepted after configuration failure')
+  except urllib.error.HTTPError as e:assert e.code==400
+  (root/'prowlarr.json').write_text(config)
+  request('/api/explore',{'sort':'newest'})
+  recovered=request('/api/state')['explore'];assert not recovered['busy'] and recovered['results']==cached['results'] and len(queries)==query_count
   request('/api/explore',{'sort':'newest','refresh':True})
   browse=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
   assert len(queries)==query_count+1 and browse['results']==cached['results']
@@ -140,6 +148,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   refreshing=request('/api/state')['explore'];assert refreshing['busy'] and refreshing['results']==browse['results']
   refresh_release.set()
   refreshed=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
+  delayed_refresh=False;refresh_started.clear();refresh_release.clear()
   refreshed_demo=next(r for r in refreshed['results'] if r['id']==demo['id'])
   assert refreshed_demo['name']=='Demo PS5 Deluxe'
   assert refreshed_demo['id']==demo['id'] and all(s['id']!=selected for s in refreshed_demo['sources'])

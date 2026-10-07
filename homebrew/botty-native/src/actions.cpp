@@ -124,11 +124,11 @@ bool Workflow::finishUnicode() noexcept {
 bool Workflow::press(unsigned edge,const Catalog& c,bool busy) noexcept {
  if(panel==Panel::closed||!edge)return false;++revision;
  if(edge&Buttons::circle){close();return false;}
- if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
+ if(busy&&panel!=Panel::sources){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
  const Entry* e=target(c);
  if(panel==Panel::sources){
   if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<sourceCount)++selected;
-  if(edge&Buttons::cross){notice.fill(0);const char* reason=unavailable(command.operation,nullptr,c);if(*reason){if(!c.exploreBusy)std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
+  if(edge&Buttons::cross){notice.fill(0);if(busy)return false;const char* reason=unavailable(command.operation,nullptr,c);if(*reason){if(!c.exploreBusy)std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
  }else if(panel==Panel::menu){
   if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<optionCount)++selected;
   if(edge&Buttons::cross){auto op=options[selected];const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}

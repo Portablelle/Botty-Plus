@@ -72,7 +72,7 @@ public:
     try{settings=config(paths);}catch(const std::exception&){
       // Search setup is optional. Report it in the tab state so an automatic
       // Explore request at startup never opens a blocking action error.
-      query=text;order=sort;rows=json::array();notice.clear();
+      query=text;order=sort;rows=json::array();previousRows=json::array();notice.clear();
       error="Search is unavailable. Check the Prowlarr configuration. Other tabs remain available.";
       return;
     }
@@ -84,7 +84,7 @@ public:
     if(!sort.empty())try{
       auto saved=json::parse(readText(cache,16*1024*1024));
       if(saved.at("source")==scope&&saved.at("results").is_array()&&saved.at("results").size()<=100){
-        if(!sameSelection)rows=saved.at("results");const auto age=std::time(nullptr)-saved.at("saved").get<long long>();
+        if(!sameSelection||rows.empty())rows=saved.at("results");const auto age=std::time(nullptr)-saved.at("saved").get<long long>();
         if(!refresh){busy=false;notice=age>=0&&age<600?"Cached results. Square: Refresh.":"Saved results may be outdated. Square: Refresh.";return;}
         notice="Refreshing results. You can still browse and select games.";
       }
