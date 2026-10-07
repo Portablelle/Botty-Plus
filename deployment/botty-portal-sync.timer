@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Botty portal main for updates after each synchronization
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=botty-portal-sync.service
+
+[Install]
+WantedBy=timers.target
