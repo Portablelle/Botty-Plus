@@ -1,0 +1,17 @@
+[Unit]
+Description=Rebuild the Plus runner image
+After=docker.service
+Wants=docker.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+CPUWeight=10
+MemoryMax=8G
+MemorySwapMax=0
+Restart=on-failure
+RestartSec=60
+Environment=PATH=%h/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DOCKER_HOST=unix://%t/docker.sock
+ExecStart=%h/plus-runner/build-image.sh
