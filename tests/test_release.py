@@ -34,6 +34,7 @@ class ReleaseTests(unittest.TestCase):
             self.write('payloads/' + name)
         self.write('offsets/13.00.js')
         for package, installer, constant in (
+            ('codex', 'codex-install.js', 'HASH'),
             ('cheatrunner', 'cheatrunner.js', 'HASH'),
             ('botty', 'botty-manager.js', 'HASH'),
             ('rtorrent', 'rtorrent.js', 'HASH'),

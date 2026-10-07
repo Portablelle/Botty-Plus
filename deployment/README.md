@@ -240,6 +240,36 @@ public IP changes, update the resolver's firewall allowlist.
 
 ### Portal
 
+For automatic publication from `main`, install the pull-based service below on
+the portal server (Python 3.12+, Git, and outbound HTTPS to GitHub are required).
+It checks `main` every minute, exports only manifest-verified public files,
+rechecks the remote commit before activation, and atomically changes `current`.
+A failed fetch or validation keeps the last working release. Concurrent runs
+are locked. It retains the previous release and the three newest automatic
+releases; manually created releases remain untouched. It does not update or
+restart console processes.
+
+```sh
+sudo useradd --system --user-group --home-dir /var/lib/botty-portal --no-create-home botty-portal
+sudo install -d -m 0755 /opt/botty-portal
+sudo install -m 0644 deployment/sync-portal-main.py /opt/botty-portal/sync-portal-main.py
+sudo chown botty-portal:botty-portal /var/www/botty-ps5 /var/www/botty-ps5/releases
+sudo install -m 0644 deployment/botty-portal-sync.service deployment/botty-portal-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now botty-portal-sync.timer
+sudo systemctl start botty-portal-sync.service
+```
+
+Set `BOTTY_PORTAL_REPOSITORY` in `/etc/botty-portal-sync.env` when using another
+repository. The default public repository requires no GitHub or SSH secret.
+Status and errors are available through `systemctl status botty-portal-sync.timer`
+and `journalctl -u botty-portal-sync.service`. `/var/lib/botty-portal/last-deploy.json`
+records the deployed commit and rollback target. Before a manual rollback, stop
+the timer so it does not immediately restore the latest `main` release.
+The `Portal checks` GitHub workflow runs the portal/installer tests, Python
+regressions, and public manifest verification on pull requests and pushes to
+`main`; it does not need deployment secrets or access to the server.
+
 Export each update to a new directory, upload it to a new server release path,
 verify it and switch `current` as above. Keep the previous target. Roll back by
 switching the symlink to that retained release; do not overwrite a live directory
