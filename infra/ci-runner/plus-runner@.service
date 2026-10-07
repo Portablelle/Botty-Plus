@@ -7,6 +7,8 @@ Requires=docker.service
 Environment=PATH=%h/bin:/usr/local/bin:/usr/bin:/bin
 Environment=DOCKER_HOST=unix://%t/docker.sock
 ExecStart=%h/plus-runner/slot.sh %i
+KillMode=process
+TimeoutStopSec=45
 Restart=always
 RestartSec=10
 
