@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild the Plus runner image
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DOCKER_HOST=unix://%t/docker.sock
+ExecStart=%h/plus-runner/build-image.sh
