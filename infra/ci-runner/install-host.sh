@@ -6,6 +6,13 @@ sudo apt-get update
 sudo apt-get install -y curl jq python3 sudo
 # This account and its rootless Docker daemon already exist for Ciaobella.
 id gh-runner >/dev/null
+# Required by Docker bridge inter-container isolation; persist across reboots.
+sudo modprobe br_netfilter
+printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/plus-runner.conf >/dev/null
+[[ $(cat /proc/sys/net/bridge/bridge-nf-call-iptables) == 1 ]] || {
+  echo "Docker bridge filtering must be enabled before installing the slots." >&2
+  exit 1
+}
 sudo loginctl enable-linger gh-runner
 # This broker requires Ubuntu's existing GitHub login; no PAT is copied.
 sudo -u ubuntu /snap/bin/gh auth status >/dev/null
