@@ -77,7 +77,7 @@ async function refreshProcessing(){
    card.appendChild(node('p',task.phase||task.status));
    if(task.total>0){const bar=node('progress');bar.max=task.total;bar.value=Math.min(task.bytes||0,task.total);bar.setAttribute('aria-label',task.phase||'Progress');card.appendChild(bar);
     card.appendChild(node('p',task.unit==='items'?`${task.bytes||0} / ${task.total} items`:`${size(task.bytes||0)} / ${size(task.total)}`));}
-   if(task.rate>0&&task.unit!=='items')card.appendChild(node('p',`${size(task.rate)}/s · ${extractionETA(task.eta)}`));
+   if(task.unit!=='items'&&(task.rate>0||Number.isFinite(task.eta)&&task.eta>=0))card.appendChild(node('p',`${size(task.rate||0)}/s · ${extractionETA(task.eta)}`));
    if(task.error)card.appendChild(node('p',task.error,'error'));
    section.appendChild(card);
   }

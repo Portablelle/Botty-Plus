@@ -23,8 +23,7 @@ class Rtorrent {
   Paths paths_;
   int port_;
   bool policyApplied_=false;
-  struct DownloadEstimate {ExtractionEstimate progress;ExtractionEstimate::Clock::time_point updated{};};
-  std::map<std::string,DownloadEstimate> estimates_;
+  std::map<std::string,ExtractionEstimate> estimates_;
   struct Socket { int fd; ~Socket(){if(fd>=0)::close(fd);} };
   json call(const std::string& method,const json& params=json::array({""})) {
     Socket socket{::socket(AF_INET,SOCK_STREAM,0)};
@@ -71,8 +70,7 @@ class Rtorrent {
       present.insert(hash);double eta=-1;
       if(status==4&&left<=total){
         auto& estimate=estimates_[hash];
-        if(now-estimate.updated>std::chrono::seconds(30))estimate.progress=ExtractionEstimate{};
-        estimate.progress.update(now,total-left,total);estimate.updated=now;eta=estimate.progress.eta;
+        estimate.update(now,total-left,total);eta=estimate.eta;
       }else estimates_.erase(hash);
       fs::path directory=row[8].get<std::string>();bool multi=row[9].get<int>()!=0;
       const auto base=multi?directory.parent_path():directory;
