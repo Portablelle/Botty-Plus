@@ -129,7 +129,10 @@ public:
       for(const auto& item:items)if((id.is_number_integer()&&item.at("id")==id)||(id.is_string()&&item.at("hashString")==lower(id.get<std::string>())))hash=item.at("hashString");
       if(hash.empty())throw std::runtime_error("Torrent no longer exists");
       if(method=="torrent-stop")call("d.stop",{hash});
-      else if(method=="torrent-start"||method=="torrent-start-now")call("d.start",{hash});
+      else if(method=="torrent-start"||method=="torrent-start-now") {
+        call("d.start",{hash});
+        if(!call("d.is_active",{hash}).get<int>()&&!call("d.hashing",{hash}).get<int>())call("d.resume",{hash});
+      }
       else if(method=="torrent-verify"){call("d.stop",{hash});call("d.check_hash",{hash});}
       else if(method=="torrent-close"){call("d.stop",{hash});call("d.close",{hash});}
       else if(method=="torrent-set-location"){
