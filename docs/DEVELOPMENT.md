@@ -9,7 +9,7 @@ without a Portal+ checkout.
 ## Host validation
 
 Use Python 3.10+, Node.js 20+, make, a C++20 compiler, curl/OpenSSL development
-libraries and Pillow for artwork. Generate isolated RAR fixtures before testing.
+libraries and Pillow for artwork. CI uses Clang, matching the PS5 toolchains. Generate isolated RAR fixtures before testing.
 
 ```sh
 python3 homebrew/botty/tests/make_fixtures.py
