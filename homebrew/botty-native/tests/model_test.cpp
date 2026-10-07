@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
 #include <pthread.h>
@@ -66,6 +67,8 @@ void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(h
 }
 int main() {
     using namespace botty;
+    // Each Network owns a full catalog. Keep test instances off the main stack;
+    // the app uses global storage and the Processing worker still has 64 KiB.
     Processing processing;
     assert(parseProcessing(R"({"tasks":[{"id":"move-a","kind":"transfer","status":"running","bytes":25,"total":100,"rate":5,"eta":15,"phase":"Moving game to selected disk"}]})",processing));
     assert(processing.tasks[0].active&&processing.tasks[0].progress==.25&&processing.tasks[0].eta==15);
@@ -242,7 +245,7 @@ int main() {
     bool printable[127]={};printable[' ']=true;
     for(unsigned page=0;page<3;++page){assert(Workflow::keys(page).size()==40);for(char c:Workflow::keys(page))printable[static_cast<unsigned char>(c)]=true;}
     for(unsigned c=32;c<127;++c)assert(printable[c]);
-    Network worker;assert(!worker.start());assert(worker.state()==Probe::workerError);worker.stop();
+    auto workerOwner=std::make_unique<Network>();auto& worker=*workerOwner;assert(!worker.start());assert(worker.state()==Probe::workerError);worker.stop();
     Input input;Model ui;
     assert(input.update(Buttons::cross,true,0)==0); // held on launch
     assert(input.update(0,true,1)==0);
@@ -287,7 +290,7 @@ int main() {
     flow.press(Buttons::up,catalog,false);assert(flow.selected==39);
     flow.press(Buttons::down,catalog,false);assert(flow.selected==48);
     reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),wire(boot),wire("{}"),wire(health),wire(boot),wire(login),wire(actionable)};
-    workerAllowed=true;Network queued;assert(queued.start());Connection snapshot;ActionResult result;
+    workerAllowed=true;auto queuedOwner=std::make_unique<Network>();auto& queued=*queuedOwner;assert(queued.start());Connection snapshot;ActionResult result;
     for(unsigned i=0;i<200;++i){queued.read(snapshot,&catalog,&result);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     Processing live;for(unsigned i=0;i<200;++i){queued.readProcessing(live);if(live.count)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(live.count==1&&live.tasks[0].items&&live.tasks[0].eta==8);
@@ -308,7 +311,7 @@ int main() {
         }
         const auto finalState=scenario==3?std::string(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[]})"):actionable;
         for(const auto& value:{health,boot,login,finalState})responses.push_back(wire(value));
-        workerAllowed=true;Network deleting;assert(deleting.start());catalog.revision=0;result=ActionResult{};
+        workerAllowed=true;auto deletingOwner=std::make_unique<Network>();auto& deleting=*deletingOwner;assert(deleting.start());catalog.revision=0;result=ActionResult{};
         for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
         command=Command{};command.operation=scenario==3?Operation::removeLibrary:Operation::removeTorrent;std::snprintf(command.id.data(),command.id.size(),"%s",scenario==3?"j3":"9");
         assert(deleting.submit(command));assert(deleting.busy());assert(!deleting.submit(command));
@@ -326,7 +329,7 @@ int main() {
         assert(deletionPost!=std::string::npos&&request.find(endpoint,deletionPost+1)==std::string::npos);
     }
     reset("");responses={wire(health),wire(boot),wire(login),wire(actionable),"#timeout",wire(health),wire(boot),wire(login),wire(actionable)};
-    workerAllowed=true;Network recovering;assert(recovering.start());
+    workerAllowed=true;auto recoveringOwner=std::make_unique<Network>();auto& recovering=*recoveringOwner;assert(recovering.start());
     for(unsigned i=0;i<200;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(snapshot.status==Probe::ready&&catalog.valid&&!catalog.stale);
     const auto savedJobs=catalog.jobCount;recovering.retry();
@@ -337,7 +340,7 @@ int main() {
     for(unsigned i=0;i<800;++i){recovering.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(snapshot.status==Probe::ready&&catalog.valid&&!catalog.stale);recovering.stop();workerAllowed=false;
     reset("");chunk=4096;responses={wire(health),wire(boot),wire(login),wire(actionable),wire(health),wire(boot),"HTTP/1.1 400 Error\r\nContent-Length: 0\r\n\r\n",wire(huge),wire(health),wire(boot),wire(login),wire(actionable)};
-    workerAllowed=true;Network transmissionRetry;assert(transmissionRetry.start());catalog.revision=0;
+    workerAllowed=true;auto transmissionRetryOwner=std::make_unique<Network>();auto& transmissionRetry=*transmissionRetryOwner;assert(transmissionRetry.start());catalog.revision=0;
     for(unsigned i=0;i<200;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     const auto savedTorrents=catalog.torrentCount;assert(savedTorrents>0);transmissionRetry.retry();
     for(unsigned i=0;i<200;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::transmissionUnavailable)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
