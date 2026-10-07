@@ -35,11 +35,16 @@ struct Processing {
     std::array<Entry,4> tasks{};unsigned count=0,revision=0;bool stale=false;
 };
 struct NativeUpdate {
-    bool supported=false,requested=false,closeRequired=false;
+    bool supported=false,requested=false,closeRequired=false,updateAvailable=false;
+    std::array<char,16> scope{},installedServiceVersion{},availableServiceVersion{};
+    std::array<char,16> installedWorkerVersion{},availableWorkerVersion{};
+    std::array<char,32> installedEngineVersion{},availableEngineVersion{};
     std::array<char,16> status{},installedVersion{},availableVersion{};
     std::array<char,512> message{};
 };
 bool validNativeVersion(std::string_view) noexcept;
+bool validServiceVersion(std::string_view) noexcept;
+bool serviceVersionAtLeast(std::string_view,std::string_view) noexcept;
 bool newerNativeVersion(std::string_view,std::string_view) noexcept;
 const char* nativeUpdateLabel(const NativeUpdate&,bool stale) noexcept;
 bool nativeUpdateAvailable(const NativeUpdate&,bool stale) noexcept;

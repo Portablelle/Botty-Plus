@@ -349,6 +349,13 @@ int main() {
     assert(!transmissionRetry.submit(command));
     for(unsigned i=0;i<800;++i){transmissionRetry.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(snapshot.status==Probe::ready&&catalog.transmissionReady&&!catalog.transmissionStale);transmissionRetry.stop();workerAllowed=false;
+    reset("");chunk=4096;responses={wire(health),wire(boot),"HTTP/1.1 400 Error\r\nContent-Length: 0\r\n\r\n",wire(huge),wire(boot),wire("{}"),wire(health),wire(boot),wire(login),wire(actionable)};
+    workerAllowed=true;auto updateCheckOwner=std::make_unique<Network>();auto& updateCheck=*updateCheckOwner;assert(updateCheck.start());result=ActionResult{};
+    for(unsigned i=0;i<200;++i){updateCheck.read(snapshot,&catalog);if(snapshot.status==Probe::transmissionUnavailable)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(snapshot.status==Probe::transmissionUnavailable);
+    Command readonlyUpdate;readonlyUpdate.operation=Operation::checkNativeUpdate;assert(updateCheck.submit(readonlyUpdate));
+    for(unsigned i=0;i<800;++i){updateCheck.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    assert(result.revision&&result.status==ActionResult::Status::success);updateCheck.stop();workerAllowed=false;
     // Start in Explore and follow the browse -> prepare -> collect journey.
     Model searchModel;assert(searchModel.tab==5);
     searchModel.press(Buttons::r1);assert(searchModel.tab==4);

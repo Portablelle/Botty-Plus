@@ -51,6 +51,40 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
+The next package revision is `0.16.24-botty5`; upstream `system.client_version`
+remains `0.16.24`. Each launch publishes private `state/runtime.json` before
+upstream main can start a listener, including supervised launches. Its exact
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty5"`, and
+`boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
+This revision originates in the running binary, never installed metadata.
+Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
+outside 0..999999 fail startup closed. No kernel writes are performed.
+
+The publisher traverses the absolute state path with directory descriptors and
+`O_NOFOLLOW`, checks ownership, sets the state directory to 0700, and writes a
+bounded JSON record to an exclusive 0600 temporary file. It checks writes,
+fsyncs the file, atomically renames it and fsyncs the directory. Existing identity
+symlinks/nonregular files and unsafe paths are rejected. Backend consumers must
+compare `pid` with live `system.pid` and both boot fields with the current boot;
+the file alone is not proof that the daemon is running.
+
+The SHA256-pinned upstream archive registers exported `system.pid` (getpid),
+`session.save` (session persistence) and `system.shutdown.normal` (normal
+shutdown). `system.shutdown` is a non-exported redirect, not the RPC name to use.
+
+Run the entry/publisher harness on the VPS (not the local Mac):
+
+```sh
+c++ -std=c++20 -Wall -Wextra -Werror tests/runtime-identity-harness.cc -o /tmp/rtorrent-runtime-identity-test
+RT_IDENTITY_HARNESS=/tmp/rtorrent-runtime-identity-test python3 -m unittest discover -s tests -v
+```
+
+The injected sysctl supplies boot values and errors, and the injected state path
+isolates test writes. Tests cover exact fields, atomic replacement/private modes,
+invalid boot responses, unsafe paths/symlinks, and existing default/supervised
+arguments, singleton lock, chdir, log and PID behavior. Compiler support for the
+FreeBSD sysctl and filesystem calls, and PS5 launch acceptance, remain pending.
+
 The earlier prototype ran on the PS5 and passed generated single-file and
 multifile integrity checks. It did not establish a performance improvement.
 The production switch was requested without further benchmarks or a test suite;

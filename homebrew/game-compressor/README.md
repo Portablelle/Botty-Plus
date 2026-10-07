@@ -41,7 +41,7 @@ Per-game records and operation phases persist under `/data/botty/compressor`.
 The native app can close while the service continues the operation.
 
 Run `python3 prepare.py` in a clean component directory to verify and unpack the
-pinned archive and apply the copy-only, Library and storage patches. Build `build/` with SDK v0.43:
+pinned archive and apply the copy-only, Library, storage and runtime-identity patches. Build `build/` with SDK v0.43:
 
 ```sh
 docker run --rm -v "$PWD/build:/work" -w /work botty-ps5-build:0.43 \
@@ -79,3 +79,11 @@ output root. It writes the image and sidecar directly there, while the original
 folder stays on its source disk. Botty owns disk selection, durable identities,
 source retention and ShadowMount activation; the worker retains its copy-only
 contract. External hardware acceptance remains pending.
+
+The authenticated `GET /api/status` response keeps `bottyWorker: "library-1.3"`
+as its ABI identifier and adds `version: "1.3.1"` and a positive `pid` from
+`getpid()`. The version is compiled into the running worker, not read from
+installed metadata. JSON formatting is bounded and checked before sending.
+The source/patch regression checks the pinned patch chain and verifies that no
+other worker source changes. Compiler and PS5 runtime acceptance of this addition
+remain pending; existing validation results do not cover it.

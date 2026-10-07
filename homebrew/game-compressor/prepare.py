@@ -19,3 +19,5 @@ subprocess.run(['patch','-p1','-i',str(root/'patches/botty-copy-only.patch')],cw
 subprocess.run(["patch","-p1","-i",str(root/"patches/botty-library.patch")],cwd=out,check=True)
 
 subprocess.run(["patch","-p1","-i",str(root/"patches/botty-storage.patch")],cwd=out,check=True)
+
+subprocess.run(["patch","-p1","-i",str(root/"patches/botty-runtime-identity.patch")],cwd=out,check=True)

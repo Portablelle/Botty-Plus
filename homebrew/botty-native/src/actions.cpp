@@ -48,7 +48,7 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
 }
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(c.stale)return "Reconnecting to Botty. Wait for an updated status before making changes.";
- if(op==Operation::checkNativeUpdate)return c.nativeUpdate.supported?"":"Update the Botty service from Portal+ to enable in-app updates.";
+ if(op==Operation::checkNativeUpdate)return c.nativeUpdate.supported&&std::string_view(c.nativeUpdate.scope.data())=="installation"?"":"Update the Botty service from Portal+ to enable installation updates.";
  if(op==Operation::nativeUpdate)return nativeUpdateAvailable(c.nativeUpdate,c.stale)?"":"Check for an available update before installing.";
  if(!c.valid)return "Reconnect to Botty before performing an action.";
  if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy)return "Explore is refreshing. Browse sources now; download when it finishes.";if(c.exploreAdding)return "Wait for the current download request.";return op==Operation::explore||c.transmissionReady?"":"Wait for rTorrent to reconnect.";}

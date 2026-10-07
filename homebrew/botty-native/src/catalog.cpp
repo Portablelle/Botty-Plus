@@ -57,22 +57,36 @@ bool validNativeVersion(std::string_view value) noexcept {
 bool newerNativeVersion(std::string_view available,std::string_view installed) noexcept {
     return validNativeVersion(available)&&validNativeVersion(installed)&&available>installed;
 }
+bool validServiceVersion(std::string_view value) noexcept {
+    unsigned parts=0,digits=0;
+    if(value.empty()||value.size()>15)return false;
+    for(char c:value){
+        if(c=='.'){if(!digits||++parts>2)return false;digits=0;}
+        else {if(c<'0'||c>'9'||++digits>4)return false;}
+    }
+    return parts==2&&digits;
+}
+bool serviceVersionAtLeast(std::string_view actual,std::string_view required) noexcept {
+    if(!validServiceVersion(actual)||!validServiceVersion(required))return false;
+    const auto parts=[](std::string_view value){std::array<unsigned,3> result{};unsigned at=0;for(char c:value){if(c=='.')++at;else result[at]=result[at]*10+static_cast<unsigned>(c-'0');}return result;};
+    return parts(actual)>=parts(required);
+}
 bool nativeUpdateAvailable(const NativeUpdate& update,bool stale) noexcept {
-    return !stale&&update.supported&&!update.requested&&std::string_view(update.status.data())=="available"&&newerNativeVersion(update.availableVersion.data(),nativeVersion);
+    return !stale&&update.supported&&!update.requested&&update.updateAvailable&&std::string_view(update.scope.data())=="installation"&&std::string_view(update.status.data())=="available"&&validNativeVersion(update.availableVersion.data())&&std::string_view(update.availableVersion.data())>=nativeVersion&&serviceVersionAtLeast(update.availableServiceVersion.data(),update.installedServiceVersion.data());
 }
 const char* nativeUpdateLabel(const NativeUpdate& update,bool stale) noexcept {
     if(stale)return "Update status unavailable";
-    if(!update.supported)return "Update service from Portal+";
+    if(!update.supported||std::string_view(update.scope.data())!="installation")return "Update service from Portal+";
     const std::string_view status=update.status.data();
     if(status=="blocked")return update.requested?"Update needs recovery":"Update unavailable";
     if(update.requested)return "Update queued - Close app";
-    if(status=="checking")return "Checking for updates...";
+    if(status=="checking")return "Checking installation...";
     if(nativeUpdateAvailable(update,false))return "Update available";
     if(status=="current"||status=="complete"||status=="available"){
         if(!validNativeVersion(update.installedVersion.data())||!validNativeVersion(update.availableVersion.data()))return "Update status unavailable";
         if(newerNativeVersion(update.installedVersion.data(),nativeVersion))return "Reopen updated app";
         if(newerNativeVersion(update.availableVersion.data(),nativeVersion))return "Update available";
-        return "Up to date";
+        return "Installation up to date";
     }
     if(status=="waiting")return "Waiting for file operations";
     if(status=="installing")return "Installing update...";
@@ -98,11 +112,16 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     if(field(update,"supported")=="true"){
         NativeUpdate next;
         const bool decoded=decode(field(update,"status"),next.status,true)&&decode(field(update,"installedVersion"),next.installedVersion,true)&&decode(field(update,"availableVersion"),next.availableVersion,true);
+        decode(field(update,"scope"),next.scope,true);decode(field(update,"installedServiceVersion"),next.installedServiceVersion,true);decode(field(update,"availableServiceVersion"),next.availableServiceVersion,true);
+        decode(field(update,"installedWorkerVersion"),next.installedWorkerVersion,true);decode(field(update,"availableWorkerVersion"),next.availableWorkerVersion,true);
+        decode(field(update,"installedEngineVersion"),next.installedEngineVersion,true);decode(field(update,"availableEngineVersion"),next.availableEngineVersion,true);
         const std::string_view status=next.status.data();
         const auto requested=field(update,"requested"),closeRequired=field(update,"closeRequired");
-        const bool versions=(status!="current"&&status!="available"&&status!="complete")||(validNativeVersion(next.installedVersion.data())&&validNativeVersion(next.availableVersion.data()));
-        if(decoded&&versions&&(status=="checking"||status=="current"||status=="available"||status=="waiting"||status=="installing"||status=="complete"||status=="error"||status=="blocked")&&(requested=="true"||requested=="false")&&(closeRequired=="true"||closeRequired=="false")){
-            next.supported=true;next.requested=requested=="true";next.closeRequired=closeRequired=="true";
+        const auto updateAvailable=field(update,"updateAvailable");
+        const bool flag=std::string_view(next.scope.data())!="installation"||updateAvailable=="true"||updateAvailable=="false";
+        const bool versions=(status!="current"&&status!="available"&&status!="complete")||(validNativeVersion(next.installedVersion.data())&&validNativeVersion(next.availableVersion.data())&&std::string_view(next.scope.data())=="installation"&&validServiceVersion(next.installedServiceVersion.data())&&validServiceVersion(next.availableServiceVersion.data()));
+        if(decoded&&flag&&versions&&(status=="checking"||status=="current"||status=="available"||status=="waiting"||status=="installing"||status=="complete"||status=="error"||status=="blocked")&&(requested=="true"||requested=="false")&&(closeRequired=="true"||closeRequired=="false")){
+            next.supported=true;next.requested=requested=="true";next.closeRequired=closeRequired=="true";next.updateAvailable=updateAvailable=="true";
             decode(field(update,"message"),next.message);out.nativeUpdate=next;
         }
     }

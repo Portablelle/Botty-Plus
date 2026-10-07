@@ -42,6 +42,7 @@ PY
         fi
         if test "$component" = rtorrent; then
             cp /work/ps5-entry.hpp src/ps5-entry.hpp
+            cp /work/runtime-identity.hpp src/runtime-identity.hpp
             python3 - <<'PY'
 from pathlib import Path
 p = Path('src/main.cc')

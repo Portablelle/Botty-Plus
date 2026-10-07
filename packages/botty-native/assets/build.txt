@@ -1,2 +1,2 @@
-Botty+ 01.004.001
+Botty+ 01.004.002
 rTorrent download engine

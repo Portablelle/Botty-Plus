@@ -109,6 +109,11 @@ class Rtorrent {
     if(out.empty()||out.size()>2*1024*1024)throw std::runtime_error("Invalid torrent size");return out;
   }
 public:
+  json installationRpc(const std::string& method,const json& params=json::array({""})) {
+    static const std::set<std::string> allowed={"system.pid","session.save","d.multicall","d.stop","d.start","d.resume","d.is_active","d.hashing","system.shutdown.normal"};
+    if(!allowed.count(method))throw std::runtime_error("Unexpected installation engine method");
+    std::lock_guard<std::mutex> guard(mutex_);return call(method,params);
+  }
   Rtorrent(const Paths& paths,int port):paths_(paths),port_(port) {fs::create_directories(paths_.root/"rtorrent/state/incoming");}
   json request(const std::string& method,const json& args) {
     std::lock_guard<std::mutex> guard(mutex_);

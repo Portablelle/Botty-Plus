@@ -8,7 +8,7 @@
 #endif
 
 namespace botty {
-inline void nativeProcessesStopped(const std::vector<unsigned char>& bytes,int self) {
+inline void nativeProcessesStopped(const std::vector<unsigned char>& bytes,int self,int manager=0) {
   if(bytes.empty()||bytes.size()>4*1024*1024)throw std::runtime_error("Cannot confirm the native process table.");
   bool foundSelf=false;
   for(size_t offset=0;offset<bytes.size();) {
@@ -23,20 +23,22 @@ inline void nativeProcessesStopped(const std::vector<unsigned char>& bytes,int s
     const std::string value(name,end);
     if(value.empty())throw std::runtime_error("Malformed native process name.");
     for(unsigned char c:value)if(c<32||c>126)throw std::runtime_error("Malformed native process name.");
-    if(pid!=self&&std::regex_match(value,std::regex("(eboot(\\.bin)?|botty.*)",std::regex::icase)))throw std::runtime_error("Close Botty+ and other native apps to finish the update.");
+    const bool knownManager=pid==manager&&manager>1&&std::regex_match(value,std::regex("botty-manager.*",std::regex::icase));
+    if(pid!=self&&!knownManager&&std::regex_match(value,std::regex("(eboot(\\.bin)?|botty.*)",std::regex::icase)))throw std::runtime_error("Close Botty+ and other native apps to finish the update.");
     foundSelf=foundSelf||pid==self;
     offset+=size_t(size);
   }
   if(!foundSelf)throw std::runtime_error("The manager is missing from the native process table.");
 }
-inline void confirmNativeProcessesStopped() {
+inline void confirmNativeProcessesStopped(int manager=0) {
 #ifdef __PS5__
   int mib[4]={1,14,8,0};size_t size=0;
   if(sysctl(mib,4,nullptr,&size,nullptr,0)||size>4*1024*1024-65536)throw std::runtime_error("Cannot inspect native processes. Keep Botty+ closed.");
   std::vector<unsigned char> bytes(size+65536);size=bytes.size();
   if(sysctl(mib,4,bytes.data(),&size,nullptr,0)||size>bytes.size())throw std::runtime_error("Native process table changed. Waiting for a safe update.");
-  bytes.resize(size);nativeProcessesStopped(bytes,getpid());
+  bytes.resize(size);nativeProcessesStopped(bytes,getpid(),manager);
 #else
+  (void)manager;
   throw std::runtime_error("Native process inspection requires PS5 runtime validation.");
 #endif
 }

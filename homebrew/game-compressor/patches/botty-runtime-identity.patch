@@ -1,0 +1,13 @@
+--- a/src/gc_websrv.c
++++ b/src/gc_websrv.c
+@@ -273,6 +273,10 @@
+   if(reading && !strcmp(req->path, "/api/status")) {
+-    const char *body = "{\"ok\":true,\"bottyWorker\":\"library-1.3\"}";
++    char body[160];
++    pid_t pid = getpid();
++    int n = snprintf(body, sizeof(body), "{\"ok\":true,\"bottyWorker\":\"library-1.3\",\"version\":\"1.3.1\",\"pid\":%ld}", (long)pid);
++    if(pid <= 0 || n <= 0 || (size_t)n >= sizeof(body))
++      return websrv_send_error_json(req->fd, 500, "Runtime identity unavailable");
+     return websrv_send(req->fd, 200, "application/json", body, strlen(body));
+   }
+   if(!((reading && (!strcmp(req->path, "/api/gc/job") || !strcmp(req->path, "/api/gc/history"))) ||

@@ -30,6 +30,7 @@ public:
   friend std::string nativeRead(const fs::path&, size_t);
   friend void nativeWrite(const fs::path&, const std::string&, bool);
   friend void validateNativeManifest(const json&);
+  friend std::string nativeTransactionId();
   struct Config {
     fs::path nativeRoot = "/data/homebrew/PPSA99071";
     fs::path stateRoot = "/data/botty/native";
@@ -71,6 +72,13 @@ public:
   bool targetComplete(const json& manifest,const std::string& hash) const {
     validate(manifest);checkHash(hash);auto record=journal();
     return record&&record->at("status")=="complete"&&record->at("target")==hash&&matches(cfg.nativeRoot,manifest);
+  }
+  bool stagedComplete(const json& manifest,const std::string& hash) const {
+    validate(manifest);checkHash(hash);const auto root=stageRoot(hash);
+    if(!exists(root))return false;
+    inspectStage(root);
+    const auto param=read(root/"sce_sys/param.json",16384);
+    return matches(root,manifest)&&param&&identity(*param).at("contentVersion")==manifest.at("version");
   }
   bool canReleaseRequest(const std::string& fingerprint) const {
     checkHash(fingerprint);
@@ -310,16 +318,28 @@ private:
     }
   }
   static void copyTree(const fs::path& from,const fs::path& to) {
+    inspectTree(from);
     mkdirs(to);
+    std::vector<std::pair<fs::path,mode_t>> directories;
+    struct stat root{};
+    if(::lstat(from.c_str(),&root)||!S_ISDIR(root.st_mode))fail("Cannot inspect backup root mode");
+    directories.emplace_back(to,root.st_mode&07777);
     for(const auto& e:fs::recursive_directory_iterator(from)) {
       auto dest=to/e.path().lexically_relative(from);
-      if(e.is_directory()) mkdirs(dest);
+      if(e.is_directory()) {
+        struct stat st{};if(::lstat(e.path().c_str(),&st)||!S_ISDIR(st.st_mode))fail("Cannot inspect backup directory mode");
+        mkdirs(dest);directories.emplace_back(dest,st.st_mode&07777);
+      }
       else {
-        auto data=read(e.path(),maxFileBytes);struct stat st{};if(::lstat(e.path().c_str(),&st))fail("Cannot inspect backup mode");write(dest,*data,st.st_mode&0777);
+        auto data=read(e.path(),maxFileBytes);struct stat st{};if(::lstat(e.path().c_str(),&st))fail("Cannot inspect backup mode");write(dest,*data,st.st_mode&07777);
         auto restored=read(dest,maxFileBytes);if(!restored||restored->size()!=data->size()||nativeSha256(*restored)!=nativeSha256(*data))fail("Restored backup verification failed; backup retained");
       }
     }
-    sync(to);
+    for(auto it=directories.rbegin();it!=directories.rend();++it) {
+      ancestors(it->first);
+      if(::chmod(it->first.c_str(),it->second))fail("Cannot restore backup directory mode");
+      sync(it->first);
+    }
   }
   void metadata(const json& m,const fs::path& backup) {
     std::vector<fs::path> paths;
@@ -357,6 +377,7 @@ private:
   }
 };
 inline std::string nativeHash(const std::string& bytes) { return nativeSha256(bytes); }
+inline std::string nativeTransactionId() { return NativeTransaction::randomHex(); }
 inline bool nativeFileAllowed(const std::string& path) {
   const auto& files=NativeTransaction::files();
   return std::find(files.begin(),files.end(),path)!=files.end();
