@@ -51,6 +51,7 @@ while true; do
     --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777 \
     --log-driver local --log-opt max-size=10m --log-opt max-file=2 \
     --entrypoint bash plus-runner:latest -c '
+      set -euo pipefail
       cp -a /opt/actions-runner/. /home/runner/
       cp -a /opt/hostedtoolcache /home/runner/_toolcache
       exec ./run.sh

@@ -40,7 +40,9 @@ if [[ ! "$node_sha256" =~ ^[0-9a-fA-F]{64}$ ]]; then
 fi
 
 image_tag="runner-${runner#v}-node-${node#v}"
-docker build --pull --quiet --tag plus-runner:latest --tag "plus-runner:$image_tag" \
+# Legacy Docker builder applies these limits to build containers: 2 CPUs and 4 GiB RAM/swap.
+docker build --pull --quiet --cpu-period 100000 --cpu-quota 200000 --memory 4g --memory-swap 4g \
+  --tag plus-runner:latest --tag "plus-runner:$image_tag" \
   --build-arg "RUNNER_VERSION=${runner#v}" --build-arg "NODE_VERSION=${node#v}" \
   --build-arg "RUNNER_SHA256=$runner_sha256" --build-arg "NODE_SHA256=$node_sha256" .
 
