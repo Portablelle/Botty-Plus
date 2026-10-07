@@ -1,14 +1,17 @@
 [Unit]
 Description=GitHub Actions runner slot %i (Plus repositories)
 After=docker.service
-Requires=docker.service
+Wants=docker.service
 
 [Service]
 Environment=PATH=%h/bin:/usr/local/bin:/usr/bin:/bin
 Environment=DOCKER_HOST=unix://%t/docker.sock
 ExecStart=%h/plus-runner/slot.sh %i
-KillMode=process
-TimeoutStopSec=45
+ExecStopPost=%h/plus-runner/stop-slot.sh %i
+KillMode=mixed
+TimeoutStopSec=90
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
 Restart=always
 RestartSec=10
 
