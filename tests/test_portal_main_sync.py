@@ -228,6 +228,35 @@ class PortalMainSyncTests(unittest.TestCase):
                 self.deploy()
         self.assertEqual((self.root / 'current').resolve(), previous)
 
+    def test_recovery_discards_missing_or_invalid_rollback_targets(self):
+        head = self.git('rev-parse', 'HEAD')
+        self.deploy()
+        target = (self.root / 'current').resolve()
+        missing = self.root / 'releases/pruned-release'
+        regular_file = self.root / 'releases/not-a-directory'
+        regular_file.write_text('invalid rollback')
+        link = self.root / 'releases/release-link'
+        link.symlink_to(self.manual)
+        record_path = self.state / 'last-deploy.json'
+        pending_path = self.state / 'activation-pending.json'
+        expected = {'commit': head, 'release': str(target), 'previous': None}
+        for previous in (missing, regular_file, link):
+            for recovery in ('journal', 'legacy-release', 'legacy-previous', 'unchanged'):
+                with self.subTest(previous=previous.name, recovery=recovery):
+                    record = dict(expected, previous=str(previous))
+                    if recovery == 'journal':
+                        pending_path.write_text(json.dumps(record))
+                        sync.reconcile_activation(self.state, self.root)
+                        self.assertFalse(pending_path.exists())
+                    else:
+                        if recovery == 'legacy-release':
+                            record.update(commit='0' * 40, release=str(previous), previous=str(self.manual))
+                        elif recovery == 'legacy-previous':
+                            record['commit'] = '0' * 40
+                        record_path.write_text(json.dumps(record))
+                        sync.reconcile_deploy_record(self.state, head, target)
+                    self.assertEqual(json.loads(record_path.read_text()), expected)
+
     def test_concurrent_run_does_not_fetch_or_activate(self):
         self.state.mkdir()
         with (self.state / 'deploy.lock').open('a') as lock:

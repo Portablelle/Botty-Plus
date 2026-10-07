@@ -266,13 +266,16 @@ repository. The default public repository requires no GitHub or SSH secret.
 `StateDirectoryMode=0700` keeps the service's Git cache private, including any
 repository URL credentials, while `UMask=0022` leaves published portal files
 readable by Nginx. After enabling automatic publication, `botty-portal` owns
-the release tree. For a manual upload, create the release directory and run
-`rsync` with elevated remote permissions:
+the release tree. For a manual upload, first transfer into the deploy user's
+home directory, then copy into the release tree from a privileged server-side
+shell. `ssh -t` allocates a terminal so `sudo` can prompt for a password;
+no passwordless sudo rule is required. Use a fresh release ID:
 
 ```sh
 release_id=manual-release-1
-ssh deploy@your-server "sudo install -d -o botty-portal -g botty-portal /var/www/botty-ps5/releases/$release_id"
-rsync -a --rsync-path='sudo rsync' dist/portal/ "deploy@your-server:/var/www/botty-ps5/releases/$release_id/"
+ssh deploy@your-server "mkdir -p botty-portal-upload/$release_id"
+rsync -a dist/portal/ "deploy@your-server:botty-portal-upload/$release_id/"
+ssh -t deploy@your-server "sudo install -d -o botty-portal -g botty-portal /var/www/botty-ps5/releases/$release_id && sudo rsync -a botty-portal-upload/$release_id/ /var/www/botty-ps5/releases/$release_id/"
 ```
 
 Status and errors are available through `systemctl status botty-portal-sync.timer`
