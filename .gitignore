@@ -17,5 +17,3 @@ api-key
 *.key
 *.p12
 *.pfx
-/vps-site/apps/botty-*/
-!/vps-site/apps/botty-native/
