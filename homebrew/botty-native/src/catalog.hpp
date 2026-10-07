@@ -22,7 +22,7 @@ struct Entry {
     int completedCount=0;
     std::array<char,40> published{};
     int peers=-1,downloadingPeers=-1,uploadingPeers=-1;
-    bool etaEstimated=false,complete=false,active=false;
+    bool etaEstimated=false,complete=false,active=false,downloading=false;
 };
 struct DownloadSource {
     std::array<char,96> id{},tracker{};
