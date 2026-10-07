@@ -9,7 +9,7 @@ from rtorrent_fixture import RtorrentFixture
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def check(started, status, expected_resume, method='torrent-start', incomplete=False):
+def check(started, status, expected_resume, method='torrent-start', incomplete=False, fail_command=None):
     with tempfile.TemporaryDirectory(prefix='botty-resume-') as directory:
         root = pathlib.Path(directory)
         complete = root/'downloads/complete'
@@ -22,15 +22,13 @@ def check(started, status, expected_resume, method='torrent-start', incomplete=F
 
         def hook(command, params):
             nonlocal started
+            if command == fail_command:
+                raise RuntimeError('Injected resume RPC failure')
             if command == 'd.start':
                 if not started:
                     started = True
                     torrent['status'] = 4 if incomplete else 6
                 return 0
-            if command == 'd.is_active':
-                return int(torrent['status'] in (4, 6))
-            if command == 'd.hashing':
-                return int(torrent['status'] == 2)
             if command == 'd.resume':
                 torrent['status'] = 4 if incomplete else 6
                 return 0
@@ -41,6 +39,11 @@ def check(started, status, expected_resume, method='torrent-start', incomplete=F
             result = subprocess.run([str(ROOT/'build/rtorrent-resume-client'),
                                      str(root), str(rpc.server_port), method],
                                     capture_output=True, text=True, timeout=15)
+            if fail_command:
+                assert result.returncode == 1 and not result.stdout, result
+                assert 'rTorrent: Injected resume RPC failure' in result.stderr, result.stderr
+                assert len(rpc.errors) == 1 and 'Injected resume RPC failure' in rpc.errors[0], rpc.errors
+                return
             assert result.returncode == 0, result.stderr
             state = json.loads(result.stdout)['torrents'][0]
             assert state['status'] == (2 if status == 2 else 4 if incomplete else 6), state
@@ -61,4 +64,6 @@ for method in ('torrent-start', 'torrent-start-now'):
     check(True, 6, 0, method)
     check(True, 2, 0, method)
     check(True, 0, 1, method, incomplete=True)
+    for command in ('d.is_active', 'd.hashing', 'd.resume'):
+        check(True, 0, 0, method, fail_command=command)
 print('rTorrent resume regression passed')

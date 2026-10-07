@@ -38,7 +38,7 @@ build/compressor-test: tests/compressor-test.cpp src/core.cpp src/storage.cpp sr
 test-compressor: build/compressor-test
 	./build/compressor-test
 
-build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp
+build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
 
