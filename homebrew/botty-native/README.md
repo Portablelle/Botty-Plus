@@ -87,12 +87,12 @@ the PS5 builder's safe tar extraction; the Docker image supplies it.
 The native runtime uses SDK v0.42 and is independent of the service's v0.43
 runtime. Resolved apt package versions can change between image builds.
 
-From the repository root, publish that verified build into the local portal:
+From the repository root, publish that verified build and check the Botty+
+delivery contract:
 
 ```sh
 python3 scripts/package-native.py
-python3 scripts/portal-manifest.py --release YOUR_RELEASE_LABEL
-python3 scripts/portal-manifest.py --check
+python3 scripts/botty-packages.py --check
 ```
 
 For documentation-only changes, `package-native.py --source-only` updates the

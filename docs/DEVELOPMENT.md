@@ -26,9 +26,11 @@ hardware compatibility. See the component READMEs and native VALIDATION.md.
 
 ## Publish packages for Portal+
 
-Build the service and compression worker with `homebrew/botty/Dockerfile`,
+Build the service with `homebrew/botty/Dockerfile`, the compression worker by
+following its [component build instructions](../homebrew/game-compressor/README.md#architecture-and-build),
 the native title with `homebrew/botty-native/Dockerfile`, and rTorrent with its
-own Dockerfile. Keep service and native versions distinct. Then run:
+own Dockerfile. Copy the worker binary to `homebrew/botty/build/game-compressor.elf`
+before packaging the service. Keep service and native versions distinct. Then run:
 
 ```sh
 python3 scripts/package-botty.py
