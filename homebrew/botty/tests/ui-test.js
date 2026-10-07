@@ -10,14 +10,20 @@ class Element {
  setAttribute(){}
 }
 const elements=new Map();
+const intervals=[];
 const context=vm.createContext({
  document:{getElementById(id){if(!elements.has(id))elements.set(id,new Element('section'));return elements.get(id);},createElement:tag=>new Element(tag),querySelectorAll:()=>[]},
- window:{addEventListener(){}},fetch:()=>new Promise(()=>{}),setInterval(){},requestAnimationFrame(){}
+ window:{addEventListener(){}},fetch:()=>new Promise(()=>{}),setInterval(callback,delay){intervals.push({callback,delay});},requestAnimationFrame(){}
 });
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../ui/app.js'),'utf8'),context);
+const processingIntervals=intervals.filter(interval=>interval.delay===1000);
+assert.equal(processingIntervals.length,1);
+const processingInterval=processingIntervals[0];
+assert.equal(processingInterval.callback,vm.runInContext('refreshProcessing',context));
 async function render(task){
  context.fixture=task;
- await vm.runInContext("token='fixture';api=async()=>({tasks:[fixture]});refreshProcessing()",context);
+ vm.runInContext("token='fixture';api=async()=>({tasks:[fixture]})",context);
+ await processingInterval.callback();
  return elements.get('processing').children[0].children.filter(child=>child.tag==='p').map(child=>child.textContent);
 }
 (async()=>{
