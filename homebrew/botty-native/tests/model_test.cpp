@@ -152,6 +152,21 @@ int main() {
     assert(entryCount(catalog,0,1)==1&&entryCount(catalog,0,2)==1);
     assert(entryCount(catalog,1,0)==2&&entryCount(catalog,2,0)==2);
     assert(std::string_view(entryAt(catalog,2,0,1)->id.data())=="j2");
+    {
+        static Catalog ordered;
+        assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":1,"name":"Seeding","status":6,"leftUntilDone":0},{"id":2,"name":"Paused","status":0,"leftUntilDone":100},{"id":3,"name":"Downloading","status":4,"leftUntilDone":100,"rateDownload":10},{"id":4,"name":"Verifying","status":2,"leftUntilDone":100},{"id":5,"name":"Waiting for peers","status":4,"leftUntilDone":100,"rateDownload":0},{"id":6,"name":"Queued","status":3,"leftUntilDone":100},{"id":7,"name":"Completed","status":0,"leftUntilDone":0},{"id":8,"name":"Finishing","status":4,"leftUntilDone":0}],"jobs":[]})",ordered));
+        const unsigned all[]={3,5,1,2,4,6,7,8},active[]={3,5,1,4,6,8},completed[]={1,7,8};
+        const auto check=[&](unsigned filter,const auto& ids){
+            assert(entryCount(ordered,0,filter)==std::size(ids));
+            for(unsigned i=0;i<std::size(ids);++i)assert(std::string_view(entryAt(ordered,0,filter,i)->id.data())==std::to_string(ids[i]));
+            assert(entryAt(ordered,0,filter,std::size(ids))==nullptr);
+        };
+        check(0,all);check(1,active);check(2,completed);
+        assert(ordered.torrents[2].downloading&&ordered.torrents[4].downloading&&!ordered.torrents[7].downloading);
+        ordered.torrents[2].downloading=false;ordered.torrents[2].active=false;
+        assert(std::string_view(entryAt(ordered,0,0,0)->id.data())=="5");
+        assert(std::string_view(entryAt(ordered,0,1,0)->id.data())=="5");
+    }
     char formatted[64];formatETA(catalog.torrents[0],formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA ~17 min");
     formatETA(catalog.torrents[1],formatted,sizeof(formatted));assert(std::string_view(formatted)=="Completed");
     auto paused=catalog.torrents[0];paused.eta=-1;formatETA(paused,formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA unavailable");
