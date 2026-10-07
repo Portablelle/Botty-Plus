@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a verified native build to the local portal, or refresh source/notices only."""
+"""Publish a verified native build to standalone packages, or refresh source/notices only."""
 import argparse
 import hashlib
 import json
@@ -16,7 +16,7 @@ def main():
     args = parser.parse_args()
     project = Path(__file__).resolve().parents[1]
     source = project / 'homebrew/botty-native'
-    out = project / 'vps-site/apps/botty-native'
+    out = project / 'packages/botty-native'
     out.mkdir(parents=True, exist_ok=True)
     if not args.source_only:
         sys.path.insert(0, str(source / 'tools'))
@@ -31,11 +31,6 @@ def main():
             shutil.copyfile(dist / expected['titleId'] / item['path'], target)
         shutil.copyfile(manifest, out / 'manifest.json')
         digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
-        installer = project / 'vps-site/src/botty-native.js'
-        text, count = re.subn(r"const HASH\s*=\s*'[a-f0-9]{64}';", "const HASH = '" + digest + "';", installer.read_text())
-        if count != 1:
-            raise ValueError('Missing native installer hash')
-        installer.write_text(text)
         print('Native manifest:', digest)
     source_archive(source, out / 'botty-native-source.tar.gz',
                    ['src', 'assets', 'sce_sys', 'vendor', 'tests', 'tools', 'artwork',
@@ -44,6 +39,8 @@ def main():
     shutil.copyfile(source / 'LICENSE', out / 'LICENSE')
     shutil.copyfile(source / 'vendor/NOTICE.md', out / 'NOTICE.md')
     print('Native source and notices refreshed')
+    import subprocess
+    subprocess.run([sys.executable, str(project / 'scripts/botty-packages.py')], check=True)
 
 
 if __name__ == '__main__':

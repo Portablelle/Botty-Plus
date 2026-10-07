@@ -59,8 +59,9 @@ header and footer were updated from the private beta labels to release 1.2.
   integration, plus renderer preview of the new Library actions.
 - PFSC validator fixtures: compressed blocks, final partial-block hashes, bad
   hashes, mismatching file sets and corrupted image data.
-- Portal/installer and public export/source-package regressions; package hashes
-  and installer manifest pins checked before publication.
+- Botty package-contract regressions, including source packages and package
+  hashes. Portal installer and public-export checks run in the separate Portal+
+  repository before publication.
 
 The service HTTP, search-to-Library and native action integration suites pass
 against a local rTorrent JSON-RPC/SCGI fixture. They exercise the actual service

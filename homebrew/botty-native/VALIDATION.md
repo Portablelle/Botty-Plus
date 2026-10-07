@@ -13,8 +13,6 @@ The repository includes automated checks for:
   controller press/release guards, action confirmation and uncertain responses.
 - Package integrity, traversal/duplicate paths, extra files, corrupted FSELF
   containers, mismatched ZIPs, title metadata and invalid validation claims.
-- Portal launch order, installer hashes, credential migration, state preservation,
-  service coexistence and temporary launcher cleanup.
 - Original synthetic RAR fixtures, including 163 volumes across `.r99` → `.s00`,
   Unicode conversion, CRC failures, missing volumes, cancellation, parallel worker
   error isolation, path confinement and original-source preservation.
@@ -47,11 +45,15 @@ extraction and native replacement on a closed app.
 
 ## Portal update implementation
 
-Host regressions cover verified staging, identity/downgrade checks, closed-app
-guards, full-directory backup, metadata refresh, interrupted-swap recovery and
-service staging without stopping active work. These update paths have not yet
-been exercised on PS5 hardware. Existing hardware observations above do not
-validate the new updater.
+The separate [Portal+ repository](https://github.com/Portablelle/Portal-Plus)
+contains the updater implementation and its host regressions for package staging,
+identity/downgrade checks, state preservation, service coexistence, launch order,
+installer hashes and launcher cleanup. See its
+[installer tests](https://github.com/Portablelle/Portal-Plus/tree/main/tests),
+including `launch.test.mjs` and `codex-install.test.mjs`. Botty+ validates the
+delivery artifacts and the service/native behavior described above. These update
+paths have not yet been exercised on PS5 hardware. Existing hardware observations
+above do not validate the updater.
 
 ## Remaining acceptance checks
 
