@@ -14,15 +14,23 @@ sync = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync)
 
 # A small independent public-export contract, avoiding the large binary packages
-# while exercising Git fetching, verification, publication, and rollback.
+# while exercising Git fetching, verification, publication, and rollback.  It
+# deliberately checks both a fixed public-file set and the manifest envelope:
+# validating only whatever a manifest happens to list would miss an incomplete
+# portal export.
 VALIDATOR = '''import argparse, hashlib, json, pathlib, shutil
+REQUIRED = ('index.html', 'portal.css', 'README.md', 'LICENSE', 'src/app.js')
 p=argparse.ArgumentParser();p.add_argument('--root',type=pathlib.Path);p.add_argument('--output',type=pathlib.Path);p.add_argument('--check',action='store_true');a=p.parse_args()
 m=json.loads((a.root/'manifest.json').read_text())
-for name,digest in m.items():
- if hashlib.sha256((a.root/name).read_bytes()).hexdigest()!=digest:raise SystemExit('Invalid public file')
+hashes=m.get('sha256')
+if not isinstance(hashes,dict) or set(hashes) != set(REQUIRED): raise SystemExit('Stale public manifest')
+for name in REQUIRED:
+ path=a.root/name
+ if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=hashes[name]: raise SystemExit('Invalid public file')
 if a.output:
  a.output.mkdir()
- for name in [*m,'manifest.json']:shutil.copyfile(a.root/name,a.output/name)
+ for name in [*REQUIRED,'manifest.json']:
+  target=a.output/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(a.root/name,target)
 '''
 
 
@@ -41,6 +49,15 @@ class PortalMainSyncTests(unittest.TestCase):
         (self.repo / 'scripts').mkdir()
         (self.repo / 'scripts/portal-manifest.py').write_text(VALIDATOR)
         (self.repo / 'vps-site').mkdir()
+        for name, content in {
+                'portal.css': 'body {}',
+                'README.md': '# Portal',
+                'LICENSE': 'Test license',
+                'src/app.js': 'export default null;',
+        }.items():
+            path = self.repo / 'vps-site' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
         (self.repo / 'vps-site/private.txt').write_text('Not a public export')
         self.commit('first')
         self.manual = self.root / 'releases/manual-release'
@@ -52,10 +69,19 @@ class PortalMainSyncTests(unittest.TestCase):
         return subprocess.run(['git', '-C', str(self.repo), *args], check=True,
                               text=True, capture_output=True).stdout.strip()
 
-    def commit(self, content, valid=True):
+    def commit(self, content, valid=True, missing=(), manifest_omits=()):
         (self.repo / 'vps-site/index.html').write_text(content)
-        digest = hashlib.sha256(content.encode()).hexdigest() if valid else '0' * 64
-        (self.repo / 'vps-site/manifest.json').write_text(json.dumps({'index.html': digest}))
+        root = self.repo / 'vps-site'
+        for name in missing:
+            (root / name).unlink()
+        public = ('index.html', 'portal.css', 'README.md', 'LICENSE', 'src/app.js')
+        hashes = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+                  for name in public if (root / name).exists()}
+        for name in manifest_omits:
+            hashes.pop(name)
+        if not valid:
+            hashes['index.html'] = '0' * 64
+        (root / 'manifest.json').write_text(json.dumps({'release': content, 'sha256': hashes}))
         self.git('add', '.')
         self.git('commit', '-m', content)
         return self.git('rev-parse', 'HEAD')
@@ -84,6 +110,22 @@ class PortalMainSyncTests(unittest.TestCase):
         self.assertEqual((self.root / 'current').resolve(), previous)
         self.assertFalse(any(p.name.startswith('.staging-') for p in (self.root / 'releases').iterdir()))
 
+    def test_missing_required_public_file_preserves_served_release(self):
+        self.deploy()
+        previous = (self.root / 'current').resolve()
+        self.commit('missing stylesheet', missing=('portal.css',))
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.deploy()
+        self.assertEqual((self.root / 'current').resolve(), previous)
+
+    def test_manifest_that_omits_a_public_file_preserves_served_release(self):
+        self.deploy()
+        previous = (self.root / 'current').resolve()
+        self.commit('stale manifest', manifest_omits=('src/app.js',))
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.deploy()
+        self.assertEqual((self.root / 'current').resolve(), previous)
+
     def test_branch_changes_are_never_published(self):
         self.deploy()
         previous = (self.root / 'current').resolve()
@@ -107,6 +149,76 @@ class PortalMainSyncTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.deploy()
         self.assertEqual((self.root / 'current').resolve(), self.manual)
+
+    def test_dangling_current_symlink_is_repaired_by_a_verified_release(self):
+        (self.root / 'current').unlink()
+        (self.root / 'current').symlink_to('releases/no-longer-present')
+        head = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.deploy(), 'deployed ' + head)
+        target = (self.root / 'current').resolve()
+        self.assertEqual(target.name, 'main-' + head)
+        self.assertIsNone(json.loads((self.state / 'last-deploy.json').read_text())['previous'])
+
+    def test_unchanged_release_regenerates_missing_deployment_metadata(self):
+        head = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.deploy(), 'deployed ' + head)
+        target = (self.root / 'current').resolve()
+        (self.state / 'last-deploy.json').unlink()
+
+        self.assertEqual(self.deploy(), 'unchanged')
+        self.assertEqual(json.loads((self.state / 'last-deploy.json').read_text()), {
+            'commit': head,
+            'release': str(target),
+            'previous': None,
+        })
+
+    def test_unchanged_release_repairs_stale_metadata_and_keeps_rollback(self):
+        first = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.deploy(), 'deployed ' + first)
+        previous = (self.root / 'current').resolve()
+        second = self.commit('second release')
+        self.assertEqual(self.deploy(), 'deployed ' + second)
+        target = (self.root / 'current').resolve()
+        (self.state / 'last-deploy.json').write_text(json.dumps({
+            'commit': first,
+            'release': str(previous),
+            'previous': str(self.manual),
+        }))
+
+        self.assertEqual(self.deploy(), 'unchanged')
+        self.assertEqual(json.loads((self.state / 'last-deploy.json').read_text()), {
+            'commit': second,
+            'release': str(target),
+            'previous': str(previous),
+        })
+
+    def test_interrupted_activation_recovers_deployment_metadata(self):
+        first = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.deploy(), 'deployed ' + first)
+        previous = (self.root / 'current').resolve()
+        second = self.commit('second release')
+        real_replace = sync.os.replace
+
+        def interrupt_after_activation(source, destination):
+            real_replace(source, destination)
+            if Path(source) == self.root / '.current.next':
+                raise OSError('simulated crash after activation')
+
+        with patch.object(sync.os, 'replace', side_effect=interrupt_after_activation):
+            with self.assertRaises(OSError):
+                self.deploy()
+        target = self.root / 'releases' / ('main-' + second)
+        self.assertEqual((self.root / 'current').resolve(), target)
+        self.assertTrue((self.state / 'activation-pending.json').exists())
+
+        self.assertEqual(self.deploy(), 'unchanged')
+        record = json.loads((self.state / 'last-deploy.json').read_text())
+        self.assertEqual(record, {
+            'commit': second,
+            'release': str(target),
+            'previous': str(previous),
+        })
+        self.assertFalse((self.state / 'activation-pending.json').exists())
 
     def test_network_failure_preserves_served_release(self):
         self.deploy()

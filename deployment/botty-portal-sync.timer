@@ -1,5 +1,5 @@
 [Unit]
-Description=Check Botty portal main for updates every minute
+Description=Check Botty portal main for updates after each synchronization
 
 [Timer]
 OnBootSec=30s
