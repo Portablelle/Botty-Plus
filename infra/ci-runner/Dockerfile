@@ -34,6 +34,10 @@ RUN mkdir -p "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
   && touch "/opt/hostedtoolcache/node/${NODE_VERSION}/x64.complete" \
   && chown -R runner:runner /opt/hostedtoolcache
 
+# Native Botty tests also link zlib.
+RUN apt-get update && apt-get install -y --no-install-recommends zlib1g-dev \
+  && rm -rf /var/lib/apt/lists/*
+
 USER runner
 # slot.sh copies the repository-scoped identity, then runs as runner with --once.
 ENTRYPOINT ["./run.sh"]
