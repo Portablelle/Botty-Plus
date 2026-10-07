@@ -337,7 +337,7 @@ void drawWorkflow(Canvas& c) noexcept {
             char size[48],line[256];botty::formatBytes(source.size,size,sizeof(size));std::snprintf(line,sizeof(line),"%s   /   %d seeders   /   %d leechers   /   %d grabs   /   %.10s",size,source.seeders,source.leechers,source.grabs,source.published.data());c.label(164,y+48,line,22,muted);
         }
         char footer[160];std::snprintf(footer,sizeof(footer),"%u / %u sources. More seeders usually means better availability.",workflow.selected+1,workflow.sourceCount);
-        const char* reason=botty::unavailable(workflow.command.operation,nullptr,catalog);
+        const char* reason=network.busy()?"Sending request... You can still browse sources.":botty::unavailable(workflow.command.operation,nullptr,catalog);
         c.label(140,838,*reason?reason:workflow.notice[0]?workflow.notice.data():footer,22,*reason||workflow.notice[0]?accent:muted);c.label(140,899,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
     }else if(workflow.panel==Panel::archives){
         c.label(140,322,"Choose an archive",40,ink);
@@ -575,7 +575,7 @@ bool draw(Canvas& c) noexcept {
             else {gamePattern(c,x,y,172,258,i);c.label(x+14,y+16,"PS5",24,ink);c.rectangle(x,y+140,172,118,background);titleLines(c,x+14,y+146,e.name.data(),20,146,3,ink);}
             if(focus)c.rounded(x+62,y+268,48,4,2,coral);
         }
-        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing... Displayed games remain selectable.":"Loading this selection... You can change sort or tab."):catalog.exploreError[0]?catalog.exploreError.data():catalog.exploreNotice[0]?catalog.exploreNotice.data():!model.count?"No new PS5 games found in this selection.":"";
+        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing... Displayed games remain selectable.":"Loading this selection... You can change sort or tab."):catalog.exploreError[0]?catalog.exploreError.data():!model.count?"No new PS5 games found in this selection.":catalog.exploreNotice[0]?catalog.exploreNotice.data():"";
         if(!model.count){surface(c,96,656,1200,258);shortLabel(c,136,696,state,28,1120,accent);c.label(136,770,"Square: Refresh   /   L1 or R1: Change tab",24,muted);}
         char footer[220];std::snprintf(footer,sizeof(footer),"%u games  /  Page %u  /  Artwork: Steam, Wikipedia, PlayStation",model.count,model.count?first/6+1:0);
         shortLabel(c,96,947,*state&&model.count?state:footer,20,1240,muted);
