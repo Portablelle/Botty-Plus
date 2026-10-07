@@ -8,6 +8,7 @@ or assign a blanket license to all files.
 | --- | --- |
 | Botty service | [GPL-3.0 license text](homebrew/botty/LICENSE), [dependency provenance](homebrew/botty/README.md#third-party-provenance) |
 | Botty+ native title | [GPL-3.0 license text](homebrew/botty-native/LICENSE), [native dependencies](homebrew/botty-native/vendor/NOTICE.md) |
+| rTorrent / Rakshasa libtorrent | [GPL-2.0-or-later license text](packages/rtorrent/LICENSE), [pinned upstream provenance](homebrew/rtorrent/README.md#source-and-licenses) |
 | Native runtime / boilerplate | Pinned source archive `homebrew/botty-native/vendor/boilerplate-dd44bbd.tar.gz`, including upstream notices |
 | UnRAR | [UnRAR license](homebrew/botty/vendor/unrar/license.txt), including its additional restrictions |
 | cpp-httplib | [MIT notice](homebrew/botty/vendor/HTTPLIB-LICENSE) |

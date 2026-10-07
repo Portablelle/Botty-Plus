@@ -13,8 +13,9 @@ The repository includes automated checks for:
   controller press/release guards, action confirmation and uncertain responses.
 - Package integrity, traversal/duplicate paths, extra files, corrupted FSELF
   containers, mismatched ZIPs, title metadata and invalid validation claims.
-- Portal launch order, installer hashes, credential migration, state preservation,
-  service coexistence and temporary launcher cleanup.
+- Package staging, identity/downgrade checks, state preservation and service
+  coexistence. Portal launch order, installer hashes and launcher cleanup are
+  validated in the separate Portal+ repository.
 - Original synthetic RAR fixtures, including 163 volumes across `.r99` → `.s00`,
   Unicode conversion, CRC failures, missing volumes, cancellation, parallel worker
   error isolation, path confinement and original-source preservation.
@@ -47,11 +48,11 @@ extraction and native replacement on a closed app.
 
 ## Portal update implementation
 
-Host regressions cover verified staging, identity/downgrade checks, closed-app
-guards, full-directory backup, metadata refresh, interrupted-swap recovery and
-service staging without stopping active work. These update paths have not yet
-been exercised on PS5 hardware. Existing hardware observations above do not
-validate the new updater.
+The separate Portal+ repository covers launch order, installer hashes and its
+update implementation. Botty+ host regressions cover package staging,
+identity/downgrade checks, state preservation and service coexistence. These
+update paths have not yet been exercised on PS5 hardware. Existing hardware
+observations above do not validate the updater.
 
 ## Remaining acceptance checks
 

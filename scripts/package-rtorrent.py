@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the PS5 port and pin its installer to the exact manifest."""
+"""Package the PS5 rTorrent port and its manifest."""
 import hashlib
 import json
 from pathlib import Path
