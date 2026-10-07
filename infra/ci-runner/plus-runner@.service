@@ -1,0 +1,14 @@
+[Unit]
+Description=GitHub Actions runner slot %i (Plus repositories)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Environment=PATH=%h/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DOCKER_HOST=unix://%t/docker.sock
+ExecStart=%h/plus-runner/slot.sh %i
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
