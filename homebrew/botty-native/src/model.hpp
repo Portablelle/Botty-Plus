@@ -53,6 +53,8 @@ struct InputEvents {
     }
 };
 struct Model {
+    static constexpr std::array<const char*,3> exploreSorts{"newest","completed","seeders"};
+    static constexpr std::array<const char*,3> exploreLabels{"Newest","Most grabbed","Most seeded"};
     // Browse -> find -> download -> prepare -> collect -> connect.
     static constexpr std::array<unsigned,6> tabOrder{5,4,0,1,2,3};
     unsigned tab=5, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;

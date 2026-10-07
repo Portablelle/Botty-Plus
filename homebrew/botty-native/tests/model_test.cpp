@@ -381,6 +381,15 @@ int main() {
     assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::closed); // Cancel defaults to no download.
     catalog.storageSupported=true;flow.chooseSources(catalog.exploreResults[0],catalog);
     catalog.exploreBusy=true;assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sources);catalog.exploreBusy=false;
+    assert(std::string_view(Model::exploreSorts[0])=="newest"&&std::string_view(Model::exploreSorts[1])=="completed"&&std::string_view(Model::exploreSorts[2])=="seeders");
+    assert(std::string_view(Model::exploreLabels[0])=="Newest");
+    assert(std::string_view(Model::exploreLabels[1])=="Most grabbed"&&std::string_view(Model::exploreLabels[2])=="Most seeded");
+    flow.chooseSources(catalog.exploreResults[0],catalog);flow.press(Buttons::down,catalog,true);assert(flow.selected==1);
+    assert(!flow.press(Buttons::cross,catalog,true)&&flow.panel==Workflow::Panel::sources&&!flow.notice[0]);
+    catalog.exploreBusy=true;flow.chooseSources(catalog.exploreResults[0],catalog);
+    flow.press(Buttons::down,catalog,false);assert(flow.selected==1);
+    assert(!flow.press(Buttons::cross,catalog,false)&&std::string_view(unavailable(Operation::exploreGrab,nullptr,catalog)).find("Browse sources")!=std::string_view::npos&&!flow.notice[0]);
+    catalog.exploreBusy=false;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::storage&&std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");
     assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::storage);flow.press(Buttons::circle,catalog,false);assert(flow.panel==Workflow::Panel::closed);catalog.storageSupported=false;
     command=Command{};command.operation=Operation::explore;std::snprintf(command.text.data(),command.text.size(),"completed");assert(encodeCommand(command,encoded.data(),encoded.size(),encodedSize));
     assert(parseCatalog(actionable,catalog));catalog.torrentRemovalSupported=true;

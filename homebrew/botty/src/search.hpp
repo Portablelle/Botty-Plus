@@ -15,6 +15,7 @@ namespace botty {
 class Search {
   std::mutex mutex;
   json rows=json::array();
+  json previousRows=json::array();
   std::map<std::string,std::string> covers;
   std::map<std::string,std::string> catalogTitles;
   std::map<std::string,std::time_t> coverFailedAt;
@@ -71,19 +72,21 @@ public:
     try{settings=config(paths);}catch(const std::exception&){
       // Search setup is optional. Report it in the tab state so an automatic
       // Explore request at startup never opens a blocking action error.
-      query=text;order=sort;rows=json::array();notice.clear();
+      query=text;order=sort;rows=json::array();previousRows=json::array();notice.clear();
       error="Search is unavailable. Check the Prowlarr configuration. Other tabs remain available.";
       return;
     }
-    busy=true;query=text;order=sort;rows=json::array();error.clear();notice.clear();
+    const bool sameSelection=!sort.empty()&&query==text&&order==sort;
+    previousRows=sort.empty()?json::array():rows;
+    busy=true;query=text;order=sort;if(!sameSelection)rows=json::array();error.clear();notice.clear();
     const auto cache=paths.root/"cache"/("explore-"+sort+".json");
     const auto scope=settings.at("url").get<std::string>()+"#all-torrents-console-sources-v3";
     if(!sort.empty())try{
       auto saved=json::parse(readText(cache,16*1024*1024));
       if(saved.at("source")==scope&&saved.at("results").is_array()&&saved.at("results").size()<=100){
-        rows=saved.at("results");const auto age=std::time(nullptr)-saved.at("saved").get<long long>();
-        if(!refresh&&age>=0&&age<600){busy=false;notice="Cached results. Press Square to refresh.";return;}
-        notice="Showing cached results while refreshing...";
+        if(!sameSelection||rows.empty())rows=saved.at("results");const auto age=std::time(nullptr)-saved.at("saved").get<long long>();
+        if(!refresh){busy=false;notice=age>=0&&age<600?"Cached results. Square: Refresh.":"Saved results may be outdated. Square: Refresh.";return;}
+        notice="Refreshing results. You can still browse and select games.";
       }
     }catch(...){}
     for(auto it=covers.begin();it!=covers.end();)if(it->second.empty())it=covers.erase(it);else ++it;
@@ -115,7 +118,7 @@ public:
             if(!sort.empty())releaseKey="game:"+gameKey(title);
             result["tracker"]=row.value("indexer",std::string("Indexer ")+std::to_string(indexer));
             const auto duplicate=releases.find(releaseKey);
-            if(duplicate==releases.end()){releases[releaseKey]=found.size();auto group=result;group["sources"]=json::array({result});found.push_back(std::move(group));}
+            if(duplicate==releases.end()){releases[releaseKey]=found.size();auto group=result;if(!sort.empty())group["id"]=randomId();group["sources"]=json::array({result});found.push_back(std::move(group));}
             else{
               auto& old=found[duplicate->second];auto& sources=old["sources"];bool repeated=false;
               for(auto& source:sources)if(source.at("download")==path){source["completed"]=std::max(source.at("completed").get<long long>(),result.at("completed").get<long long>());repeated=true;break;}
@@ -123,7 +126,7 @@ public:
               const auto grabs=std::max(old.at("completed").get<long long>(),result.at("completed").get<long long>());
               const auto published=std::max(old.at("published").get<std::string>(),result.at("published").get<std::string>());
               // Keep the strongest source as the default for older clients; retain alternatives for the chooser.
-              if(result.at("seeders")>old.at("seeders")){auto alternatives=std::move(sources);old=result;old["sources"]=std::move(alternatives);}
+              if(result.at("seeders")>old.at("seeders")){auto alternatives=std::move(sources);const auto id=old.at("id");old=result;if(!sort.empty())old["id"]=id;old["sources"]=std::move(alternatives);}
               old["completed"]=grabs;old["published"]=published;
             }
           }catch(const json::exception&){continue;} // One malformed provider row must not discard the other providers.
@@ -133,10 +136,10 @@ public:
         for(auto& row:found){auto& sources=row["sources"];std::stable_sort(sources.begin(),sources.end(),[](const json& a,const json& b){return a.at("seeders")>b.at("seeders");});if(sources.size()>32)sources.erase(sources.begin()+32,sources.end());}
         std::lock_guard<std::mutex> guard(mutex);
         for(auto& row:found)for(const auto& old:rows){
-          if(row.at("download")==old.at("download")&&row.at("name")==old.at("name")){row["id"]=old.at("id");row["added"]=old.value("added",false);}
+          if((!sort.empty()&&gameKey(row.at("name"))==gameKey(old.at("name")))||(row.at("download")==old.at("download")&&row.at("name")==old.at("name"))){row["id"]=old.at("id");row["added"]=old.value("added",false);}
           for(auto& source:row["sources"])for(const auto& prior:old.value("sources",json::array()))if(source.at("download")==prior.at("download")&&source.at("name")==prior.at("name")&&source.at("size")==prior.at("size"))source["id"]=prior.at("id");
         }
-        rows=std::move(found);busy=false;notice.clear();
+        previousRows=sort.empty()?json::array():rows;rows=std::move(found);busy=false;notice=sort.empty()?"":"Results updated. Square: Refresh.";
         if(!sort.empty())try{fs::create_directories(cache.parent_path());writeJson(cache,{{"source",scope},{"saved",std::time(nullptr)},{"results",rows}});}catch(...){}
 
       }catch(...){std::lock_guard<std::mutex> guard(mutex);error="Search failed. Check Prowlarr, its API key and the configured indexers.";busy=false;}
@@ -181,7 +184,25 @@ public:
   }
   template<class RPC> void add(const Paths& paths,const std::string& id,RPC rpc){
     std::lock_guard<std::mutex> g(mutex);if(busy||adding)throw std::runtime_error("Wait for the current request");
-    std::string path,groupId;for(auto& row:rows){if(row.at("id")==id){if(row.value("added",false))return;path=row.at("download");groupId=row.at("id");break;}for(const auto& source:row.value("sources",json::array()))if(source.at("id")==id){if(row.value("added",false))return;path=source.at("download");groupId=row.at("id");break;}if(!path.empty())break;}
+    std::string path,groupId;
+    for(auto* snapshot:{&rows,&previousRows}){
+      for(const auto& row:*snapshot){
+        for(const auto& source:row.value("sources",json::array()))if(source.at("id")==id){
+          if(row.value("added",false))return;
+          path=source.at("download");groupId=row.at("id");break;
+        }
+        if(!path.empty())break;
+      }
+      if(!path.empty())break;
+    }
+    if(path.empty())for(auto* snapshot:{&rows,&previousRows}){
+      for(const auto& row:*snapshot)if(row.at("id")==id){
+        if(row.value("added",false))return;
+        path=row.at("download");groupId=row.at("id");break;
+      }
+      if(!path.empty())break;
+    }
+    for(const auto& row:rows)if(row.at("id")==groupId&&row.value("added",false))return;
     if(path.empty())throw std::runtime_error("Search result expired. Search again.");adding=true;error.clear();notice="Adding torrent...";
     try{std::thread([this,paths,path,groupId,rpc]{
       try{
@@ -189,7 +210,7 @@ public:
         const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string base64;unsigned value=0,bits=0;
         for(unsigned char ch:bytes){value=(value<<8)|ch;bits+=8;while(bits>=6){bits-=6;base64+=alphabet[(value>>bits)&63];}}if(bits)base64+=alphabet[(value<<(6-bits))&63];while(base64.size()%4)base64+='=';
         rpc("torrent-add",json{{"metainfo",base64},{"download-dir",paths.complete.string()},{"paused",false}});
-        std::lock_guard<std::mutex> guard(mutex);for(auto& row:rows)if(row.at("id")==groupId)row["added"]=true;adding=false;notice="Torrent added or already present. Open Torrents to follow progress.";
+        std::lock_guard<std::mutex> guard(mutex);for(auto* snapshot:{&rows,&previousRows})for(auto& row:*snapshot)if(row.at("id")==groupId)row["added"]=true;adding=false;notice="Torrent added or already present. Open Torrents to follow progress.";
       }catch(...){std::lock_guard<std::mutex> guard(mutex);adding=false;notice.clear();error="Could not confirm the download. Check Torrents before retrying; verify Prowlarr and the torrent service.";}
     }).detach();}catch(...){adding=false;throw;}
   }
