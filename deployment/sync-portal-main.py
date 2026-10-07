@@ -54,6 +54,77 @@ def prune_releases(releases, current, previous):
             shutil.rmtree(path)
 
 
+def write_json_atomically(path, value):
+    next_path = path.with_name(path.stem + '.next' + path.suffix)
+    next_path.write_text(json.dumps(value) + '\n')
+    os.replace(next_path, path)
+
+
+def read_deploy_record(path):
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError('Invalid deployment record') from error
+    if not isinstance(value, dict):
+        raise RuntimeError('Invalid deployment record')
+    return value
+
+
+def is_release_directory(path):
+    return path.is_dir() and not path.is_symlink()
+
+
+def current_is_release(current, target):
+    return (current.is_symlink() and is_release_directory(target)
+            and current.resolve() == target.resolve())
+
+
+def deployment_record(commit, release, previous):
+    return {'commit': commit, 'release': str(release),
+            'previous': str(previous) if previous else None}
+
+
+def reconcile_activation(state, root):
+    """Finish or discard an activation that was interrupted after its journal."""
+    pending_path = state / 'activation-pending.json'
+    pending = read_deploy_record(pending_path)
+    if pending is None:
+        return
+    commit = pending.get('commit')
+    release = pending.get('release')
+    previous = pending.get('previous')
+    if (not isinstance(commit, str) or not re.fullmatch('[a-f0-9]{40}', commit)
+            or not isinstance(release, str)
+            or previous is not None and not isinstance(previous, str)):
+        raise RuntimeError('Invalid activation journal')
+    releases = root / 'releases'
+    target = releases / ('main-' + commit)
+    if Path(release) != target:
+        raise RuntimeError('Invalid activation journal')
+    current = root / 'current'
+    if current_is_release(current, target):
+        write_json_atomically(state / 'last-deploy.json', pending)
+    pending_path.unlink()
+
+
+def reconcile_deploy_record(state, commit, target):
+    """Repair metadata left stale by an older interrupted activation."""
+    record_path = state / 'last-deploy.json'
+    existing = read_deploy_record(record_path)
+    expected = deployment_record(commit, target, None)
+    if existing and existing.get('commit') == commit and existing.get('release') == str(target):
+        return
+    # Before activation, the recorded release was the active one. This preserves
+    # the rollback target when recovering a deployment made by an older service.
+    if existing and isinstance(existing.get('release'), str) and existing['release'] != str(target):
+        expected['previous'] = existing['release']
+    elif existing and isinstance(existing.get('previous'), str):
+        expected['previous'] = existing['previous']
+    write_json_atomically(record_path, expected)
+
+
 def sync_main(repository, state, root):
     state.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
@@ -64,13 +135,20 @@ def sync_main(repository, state, root):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 'busy'
+        reconcile_activation(state, root)
         head = remote_head(repository)
         current = root / 'current'
         target = releases / ('main-' + head)
-        if current.is_symlink() and current.resolve() == target.resolve():
+        if current_is_release(current, target):
+            reconcile_deploy_record(state, head, target)
             return 'unchanged'
         if current.exists() and not current.is_symlink():
             raise RuntimeError('current must be a release symlink')
+        # Capture this before creating target: a dangling current link can name
+        # the release we are about to publish, but it is not a rollback point.
+        previous = current.resolve() if current.is_symlink() and current.exists() else None
+        if previous is not None and not is_release_directory(previous):
+            previous = None
         cache = state / 'repository.git'
         if not cache.exists():
             command(['git', 'init', '--bare', str(cache)])
@@ -102,7 +180,8 @@ def sync_main(repository, state, root):
                     command([sys.executable, str(validator), '--root', str(target), '--check'])
                 else:
                     export.rename(target)
-                previous = current.resolve() if current.is_symlink() else None
+                pending = deployment_record(head, target, previous)
+                write_json_atomically(state / 'activation-pending.json', pending)
                 next_link = root / '.current.next'
                 if next_link.is_symlink():
                     next_link.unlink()
@@ -110,10 +189,8 @@ def sync_main(repository, state, root):
                     raise RuntimeError('Unexpected activation staging path')
                 next_link.symlink_to('releases/' + target.name)
                 os.replace(next_link, current)
-        record = state / 'last-deploy.next.json'
-        record.write_text(json.dumps({'commit': head, 'release': str(target),
-                                     'previous': str(previous) if previous else None}) + '\n')
-        os.replace(record, state / 'last-deploy.json')
+        write_json_atomically(state / 'last-deploy.json', pending)
+        (state / 'activation-pending.json').unlink()
         prune_releases(releases, target, previous)
         # Only this locked service uses this cache; discard unreachable old snapshots.
         command(['git', '-C', str(cache), 'gc', '--quiet', '--prune=now'])

@@ -38,7 +38,7 @@ sudo install -d -o deploy -g deploy /var/www/botty-ps5/releases
 sudo install -d /var/www/botty-acme
 ```
 
-From your workstation:
+From your workstation, before enabling automatic publication:
 
 ```sh
 release_id=public-preview-1
@@ -242,7 +242,8 @@ public IP changes, update the resolver's firewall allowlist.
 
 For automatic publication from `main`, install the pull-based service below on
 the portal server (Python 3.12+, Git, and outbound HTTPS to GitHub are required).
-It checks `main` every minute, exports only manifest-verified public files,
+It schedules the next check of `main` 60 seconds after each sync run finishes
+and exports only manifest-verified public files,
 rechecks the remote commit before activation, and atomically changes `current`.
 A failed fetch or validation keeps the last working release. Concurrent runs
 are locked. It retains the previous release and the three newest automatic
@@ -262,10 +263,29 @@ sudo systemctl start botty-portal-sync.service
 
 Set `BOTTY_PORTAL_REPOSITORY` in `/etc/botty-portal-sync.env` when using another
 repository. The default public repository requires no GitHub or SSH secret.
+`StateDirectoryMode=0700` keeps the service's Git cache private, including any
+repository URL credentials, while `UMask=0022` leaves published portal files
+readable by Nginx. After enabling automatic publication, `botty-portal` owns
+the release tree. For a manual upload, create the release directory and run
+`rsync` with elevated remote permissions:
+
+```sh
+release_id=manual-release-1
+ssh deploy@your-server "sudo install -d -o botty-portal -g botty-portal /var/www/botty-ps5/releases/$release_id"
+rsync -a --rsync-path='sudo rsync' dist/portal/ "deploy@your-server:/var/www/botty-ps5/releases/$release_id/"
+```
+
 Status and errors are available through `systemctl status botty-portal-sync.timer`
 and `journalctl -u botty-portal-sync.service`. `/var/lib/botty-portal/last-deploy.json`
 records the deployed commit and rollback target. Before a manual rollback, stop
-the timer so it does not immediately restore the latest `main` release.
+both the timer and an in-flight sync service, then switch the symlink:
+
+```sh
+sudo systemctl stop botty-portal-sync.timer botty-portal-sync.service
+cd /var/www/botty-ps5
+sudo ln -s releases/RETAINED_RELEASE current.next
+sudo mv -Tf current.next current
+```
 The `Portal checks` GitHub workflow runs the portal/installer tests, Python
 regressions, and public manifest verification on pull requests and pushes to
 `main`; it does not need deployment secrets or access to the server.
