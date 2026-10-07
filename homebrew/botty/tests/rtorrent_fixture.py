@@ -43,6 +43,10 @@ class RtorrentFixture(socketserver.ThreadingTCPServer):
                      int(all(f['bytesCompleted'] == f['length'] for f in t['files'])),
                      t.get('errorString', ''), t.get('peersConnected', 0)] for t in self.entries]
         t = next(t for t in self.entries if t['hashString'] == params[0])
+        if method == 'd.is_active':
+            return int(t['status'] in (4, 6))
+        if method == 'd.hashing':
+            return int(t['status'] == 2)
         if method == 'f.multicall':
             assert params[1:] == ['', 'f.path=', 'f.size_bytes=', 'f.completed_chunks=', 'f.size_chunks=']
             return [[f['name'], f['length'], f['bytesCompleted'], f['length']] for f in t['files']]
