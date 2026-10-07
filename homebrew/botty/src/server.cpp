@@ -24,7 +24,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.5.1/ui"
+#define BOTTY_UI "/data/botty/manager/1.5.2/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -266,7 +266,13 @@ json startTransfer(const json& body) {
       const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");};
       ExtractionEstimate estimate;uint64_t previousTotal=0;
       const auto copyProgress=[&](uint64_t bytes,uint64_t total,const std::string& file){if(total!=previousTotal){estimate=ExtractionEstimate{};previousTotal=total;}estimate.update(std::chrono::steady_clock::now(),bytes,total);transfers.progress({{"bytes",bytes},{"total",total},{"file",file},{"unit","bytes"},{"rate",estimate.rate},{"eta",estimate.eta},{"phase","Copying files; source kept until completion"}});};
-      const auto remoteReport=[&](const json& task){auto progress=backgroundProgress(task);transfers.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);};
+      const auto remoteReport=[&](const json& task){
+        auto progress=backgroundProgress(task);
+        if(task.value("state","")=="transferring"){
+          estimate.update(std::chrono::steady_clock::now(),progress.at("bytes").get<uint64_t>(),progress.at("total").get<uint64_t>());progress["eta"]=estimate.eta;
+        }else estimate=ExtractionEstimate{};
+        transfers.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);
+      };
       const auto waitForGame=[&](const std::string& title){
         CompressionLibrary library(source,shadowPort);
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::minutes(5);
@@ -383,7 +389,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.1"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.2"}});
     stage="creating HTTP server";
     RestModeKeeper restMode(currentRestModeSupported(),requestRestMode);
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
@@ -412,7 +418,7 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.2"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/rest-mode",[&restMode](const auto&,auto& res){reply(res,restMode.state());});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.

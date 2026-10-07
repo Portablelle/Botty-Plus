@@ -1,4 +1,4 @@
-# Botty service 1.3.5
+# Botty service 1.5.2
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.3.5`; its installed marker is in the parent directory.
+`/data/botty/manager/1.5.2`; its installed marker is in the parent directory.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
@@ -67,6 +67,19 @@ still consume storage concurrently; write failure leaves a failed job rather tha
 publishing incomplete output. Progress updates are throttled to four per second,
 with durable checkpoints every ten seconds and immediate phase/terminal writes.
 Saved progress can lag after power loss; it is not a resumable decoder checkpoint.
+
+Service 1.5.2 estimates remaining time from measured progress over a rolling
+60-second window, using the full observed interval during the first minute.
+Torrent, extraction, compression and move ETAs wait for five seconds of
+measurements. On each measurement, the estimator makes the ETA unavailable after
+15 seconds without progress. Move and compression responses also clear the rate
+and ETA when their last update is more than five seconds old. Extraction records
+refresh on progress callbacks, so their last estimate can remain visible until
+the next callback. History resets for a new phase, changed totals, counter rollback
+or a torrent pause/resume; observations more than 30 seconds apart start a new
+measurement interval for all users of the estimator.
+Displayed transfer rates remain independent of the ETA. Estimates cover the
+current phase, not later verification or cleanup work.
 
 Non-solid, unencrypted RAR method versions up to 29 use three independent member
 workers by default. Solid, encrypted and newer formats use the sequential path;

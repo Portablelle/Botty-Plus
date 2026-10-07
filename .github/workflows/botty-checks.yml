@@ -12,6 +12,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
       - name: Test runner API broker boundaries
         run: python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
       - name: Verify delivery contract
@@ -21,6 +24,7 @@ jobs:
       - name: Test service and native app
         run: |
           python3 homebrew/botty/tests/make_fixtures.py
+          node homebrew/botty/tests/ui-test.js
           make -C homebrew/botty NATIVE_CXX=clang++ test
           make -C homebrew/botty-native CXX=clang++ test integration
           python3 deployment/botty-artwork/test_server.py
