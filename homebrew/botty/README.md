@@ -68,6 +68,15 @@ publishing incomplete output. Progress updates are throttled to four per second,
 with durable checkpoints every ten seconds and immediate phase/terminal writes.
 Saved progress can lag after power loss; it is not a resumable decoder checkpoint.
 
+Service 1.5.2 estimates remaining time from measured progress over a rolling
+60-second window, using the full observed interval during the first minute.
+Torrent, extraction, compression and move ETAs wait for five seconds of
+measurements and become unavailable after 15 seconds without progress. History
+resets for a new phase, changed totals, counter rollback or a torrent pause/resume;
+torrent observations more than 30 seconds apart start a new measurement interval.
+Displayed transfer rates remain independent of the ETA. Estimates cover the
+current phase, not later verification or cleanup work.
+
 Non-solid, unencrypted RAR method versions up to 29 use three independent member
 workers by default. Solid, encrypted and newer formats use the sequential path;
 RAR5 may use UnRAR's internal decoder threads. Each member has a single owner and
