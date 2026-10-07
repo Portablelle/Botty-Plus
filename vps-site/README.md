@@ -62,7 +62,7 @@ upload, extraction, compression and other firmwares remain unvalidated on hardwa
 If an older service is running, LAUNCH stages 1.5.1 without stopping its work;
 start a fresh console session and LAUNCH to activate it.
 
-Native 01.004.000, rTorrent 0.16.24-botty3
+Native 01.004.000, rTorrent 0.16.24-botty4
 and ShadowMountPlus 1.7beta4-botty.2 retain their existing versions. Existing Transmission installations need an
 explicit migration before rTorrent can start; keep original metadata and downloads.
 The separate artwork service must also be updated to obtain the blank-cover fix.

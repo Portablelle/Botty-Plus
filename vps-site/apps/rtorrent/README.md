@@ -26,6 +26,14 @@ commands without authentication. Botty provides its own authenticated LAN web UI
 on port 8088 using the saved Botty credentials. Ports 51414 and 8088 serve peers
 and the web UI respectively; port 9091 is no longer used.
 
+The botty4 configuration requests up to 200 peer addresses. Downloading torrents
+allow up to 200 connections each, with a target of 100; completed torrents use
+a separate 50-peer seeding limit. rTorrent replenishes peers automatically
+when connections and available addresses fall below its target, respecting each
+tracker's announce minimum. A private tracker can impose a one-hour minimum;
+the displayed seeder count is not a guarantee of reachable or fast peers.
+The socket manager continues to share its bounded resources across torrents.
+
 ## Migration
 
 Stop both clients before changing data paths. Preserve Transmission metadata and

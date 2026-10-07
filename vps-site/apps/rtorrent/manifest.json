@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "0.16.24-botty3",
+  "id": "0.16.24-botty4",
   "files": [
     {
       "path": "rtorrent.elf",
@@ -9,8 +9,8 @@
     },
     {
       "path": "rtorrent.rc",
-      "size": 1054,
-      "sha256": "eba8ff708d10d08e5f3c2dd6feb9d04f51ce0b814221ee0b96a20a935900d431"
+      "size": 1275,
+      "sha256": "99f4a1c6ebd07c69d460494cb8d5d069cdaad57a74e89954fb1c544a0cc0d25e"
     },
     {
       "path": "cacert.pem",

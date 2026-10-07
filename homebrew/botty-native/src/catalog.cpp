@@ -106,7 +106,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
                 e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
-            }else{const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;
+            }else{const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
                 const char* label=status==0?"Paused":status==1||status==2?"Verifying":e.complete?"Completed":status==3?"Queued":"Downloading";
                 std::snprintf(e.status.data(),e.status.size(),"%s",label);decode(field(obj,"errorString"),e.error);e.total=number(field(obj,"totalSize"));e.download=number(field(obj,"rateDownload"));e.upload=number(field(obj,"rateUpload"));e.progress=number(field(obj,"percentDone"));
                 const auto count=[&](std::string_view key){const auto value=field(obj,key);const double n=value.empty()?-1:number(value);return n>=0&&n<=2147483647?static_cast<int>(n):-1;};
@@ -162,6 +162,13 @@ bool parseProcessing(std::string_view body,Processing& out) noexcept {
     out=next;return true;
 }
 const Entry* entryAt(const Catalog& s,unsigned tab,unsigned filter,unsigned index) noexcept {
+    if(tab==0&&filter<2){
+        for(bool downloading:{true,false})for(unsigned i=0;i<s.torrentCount;++i){
+            const auto& e=s.torrents[i];
+            if(visible(e,tab,filter)&&e.downloading==downloading&&index--==0)return &e;
+        }
+        return nullptr;
+    }
     // Active work is always above completed extraction history in Processing.
     if(tab==1)for(bool active:{true,false}){
         for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(e.active==active&&index--==0)return &e;}
