@@ -50,6 +50,8 @@ Host prerequisites are `curl`, `jq`, Python 3, sudo and rootless Docker.
 `sudo apt-get install -y curl jq` installs the build tools on Ubuntu/Debian;
 install-host.sh installs the APT dependencies and verifies the existing accounts,
 UID, rootless Docker daemon and GitHub runners API access for both repositories.
+It also verifies JIT write permission by creating and immediately deleting
+one unused identity per repository before installing/enabling the user services.
 It also loads/persists the standard br_netfilter kernel module and verifies
 bridge filtering, required by Docker network isolation. It never bypasses a
 failed bridge-filtering check. It persists bridge-nf-call-iptables=1 through

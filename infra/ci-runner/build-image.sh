@@ -15,11 +15,19 @@ for command in curl jq docker; do
 done
 
 # Rootless Docker ignores resource caps without delegated cgroup v2 controllers.
-[[ $(docker info --format '{{.CgroupVersion}} {{.CgroupDriver}}') == '2 systemd' ]] || {
-  echo "Rootless build limits require Docker cgroup v2 with the systemd driver." >&2
+if ! docker_cgroups=$(docker info --format '{{.CgroupVersion}} {{.CgroupDriver}}'); then
+  echo "DOCKER_NOT_READY: start the gh-runner rootless daemon and verify DOCKER_HOST." >&2
+  exit 1
+fi
+[[ "$docker_cgroups" == '2 systemd' ]] || {
+  echo "CGROUP_NOT_SUPPORTED: rootless build limits require Docker cgroup v2 with the systemd driver." >&2
   exit 1
 }
 controllers="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers"
+[[ -r "$controllers" ]] || {
+  echo "CGROUP_CONTROLLERS_NOT_READY: start the gh-runner systemd user session before building." >&2
+  exit 1
+}
 for controller in cpu memory pids; do
   if ! grep -qw "$controller" "$controllers"; then
     echo "Delegate $controller to gh-runner user@.service before building (systemd Delegate=cpu memory pids)." >&2

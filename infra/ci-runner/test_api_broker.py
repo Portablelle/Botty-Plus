@@ -91,6 +91,28 @@ class BrokerTests(unittest.TestCase):
                 self.assertIsInstance(exc, SystemExit)
                 self.assertEqual(output, "")
 
+    def test_create_timeout_reports_unknown_outcome_without_writing_stdout(self):
+        run = Mock(side_effect=self.broker.subprocess.TimeoutExpired(["gh"], 30))
+        with patch.object(self.broker.sys, "stderr", new_callable=io.StringIO) as stderr:
+            exc, call, output = self.invoke("botty", "create", run=run)
+        self.assertIsInstance(exc, SystemExit)
+        self.assertIn("JIT_CREATE_TIMEOUT", str(exc))
+        self.assertIn("unknown", str(exc))
+        self.assertEqual(output, "")
+        self.assertEqual(stderr.getvalue(), "")
+        call.assert_called_once()
+
+    def test_delete_timeout_reports_retained_id_without_writing_stdout(self):
+        run = Mock(side_effect=self.broker.subprocess.TimeoutExpired(["gh"], 30))
+        with patch.object(self.broker.sys, "stderr", new_callable=io.StringIO) as stderr:
+            exc, call, output = self.invoke("portal", "delete", "123", run=run)
+        self.assertIsInstance(exc, SystemExit)
+        self.assertIn("JIT_DELETE_TIMEOUT", str(exc))
+        self.assertIn("retained runner ID", str(exc))
+        self.assertEqual(output, "")
+        self.assertEqual(stderr.getvalue(), "")
+        call.assert_called_once()
+
     def test_delete_not_found_is_idempotent(self):
         run = Mock(return_value=Mock(returncode=1, stdout="", stderr="gh: Not Found (HTTP 404)\n"))
         exc, call, output = self.invoke("botty", "delete", "9", run=run)
