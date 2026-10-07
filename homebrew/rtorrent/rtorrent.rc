@@ -14,7 +14,11 @@ network.listen.port.random.set = false
 # Upstream 0.16.24 enforces a minimum 512 MiB mapping budget (not a preallocation).
 pieces.memory.max.set = 536870912
 pieces.hash.on_completion.set = false
-throttle.max_peers.normal.set = 50
+# Ask for a larger initial batch: private trackers may require an hour before
+# another announce. Keep a bounded connection budget for concurrent downloads.
+trackers.numwant.set = 200
+throttle.min_peers.normal.set = 100
+throttle.max_peers.normal.set = 200
 throttle.max_peers.seed.set = 50
 network.http.cacert.set = /data/botty/rtorrent/state/cacert.pem
 log.open_file = botty, /data/botty/rtorrent/state/rtorrent.log
