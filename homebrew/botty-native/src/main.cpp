@@ -336,7 +336,9 @@ void drawWorkflow(Canvas& c) noexcept {
             shortLabel(c,164,y+8,source.tracker.data(),26,340,i==workflow.selected?accent:ink);shortLabel(c,520,y+8,source.name.data(),23,1230,ink);
             char size[48],line[256];botty::formatBytes(source.size,size,sizeof(size));std::snprintf(line,sizeof(line),"%s   /   %d seeders   /   %d leechers   /   %d grabs   /   %.10s",size,source.seeders,source.leechers,source.grabs,source.published.data());c.label(164,y+48,line,22,muted);
         }
-        char footer[160];std::snprintf(footer,sizeof(footer),"%u / %u sources. More seeders usually means better availability.",workflow.selected+1,workflow.sourceCount);c.label(140,838,workflow.notice[0]?workflow.notice.data():footer,22,workflow.notice[0]?accent:muted);c.label(140,899,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
+        char footer[160];std::snprintf(footer,sizeof(footer),"%u / %u sources. More seeders usually means better availability.",workflow.selected+1,workflow.sourceCount);
+        const char* reason=botty::unavailable(workflow.command.operation,nullptr,catalog);
+        c.label(140,838,*reason?reason:workflow.notice[0]?workflow.notice.data():footer,22,*reason||workflow.notice[0]?accent:muted);c.label(140,899,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
     }else if(workflow.panel==Panel::archives){
         c.label(140,322,"Choose an archive",40,ink);
         if(target){const unsigned first=(workflow.archiveIndex/6)*6;
@@ -409,7 +411,7 @@ bool draw(Canvas& c) noexcept {
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
     static bool exploreRequested=false,quietExplore=false,exploreRefresh=false,exploreVisited=false;
-    static const char* exploreSorts[]={"seeders","completed","newest"};
+    const auto& exploreSorts=botty::Model::exploreSorts;
     const unsigned oldTab=model.tab;
     const unsigned edge=pollPad(now);if(edge)++displayRevision;
     if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
@@ -432,13 +434,14 @@ bool draw(Canvas& c) noexcept {
         }
         if(model.tab==5&&!model.quitDialog){
             if(action==botty::Model::Action::explore||action==botty::Model::Action::add||action==botty::Model::Action::retry||action==botty::Model::Action::menu){exploreRequested=true;exploreRefresh=action!=botty::Model::Action::explore;}
-            if(model.details){model.details=false;if(!catalog.exploreBusy&&!catalog.exploreAdding&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog);}
+            if(model.details){model.details=false;if(std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog);}
         }
         if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
         if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
     }
     std::array<char,96> focused{};
     if(model.tab<3){const auto* old=botty::entryAt(catalog,model.tab,model.filter,model.selected);if(old)focused=old->id;}
+    if(model.tab==5&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)focused=catalog.exploreResults[model.selected].id;
     const auto previousRevision=catalog.revision;
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
@@ -462,13 +465,14 @@ bool draw(Canvas& c) noexcept {
     }
     if(model.tab==4){model.count=catalog.resultCount;if(model.selected>=model.count)model.selected=model.count?model.count-1:0;}
     if(model.tab==5){
-        if((!exploreVisited||oldTab!=5)&&!catalog.exploreSort[0])exploreRequested=true;
+        if((!exploreVisited||oldTab!=5)&&std::string_view(catalog.exploreSort.data())!=exploreSorts[model.exploreSort]){exploreRequested=true;exploreRefresh=false;}
         exploreVisited=true;
         if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==botty::Workflow::Panel::closed&&!showResult){
             botty::Command command;command.operation=botty::Operation::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",exploreSorts[model.exploreSort]);
             if(network.submit(command)){exploreRequested=false;quietExplore=true;}
         }
         model.count=std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]?catalog.exploreCount:0;
+        if(previousRevision!=catalog.revision&&focused[0])for(unsigned i=0;i<model.count;++i)if(catalog.exploreResults[i].id==focused){model.selected=i;break;}
         if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
     }
     {
@@ -544,7 +548,7 @@ bool draw(Canvas& c) noexcept {
         shortLabel(c,670,939,state,20,1154,muted);
     }else if(model.tab==5){
         const unsigned first=(model.selected/6)*6,slot=model.selected-first;
-        const char* sorts[]={"Most seeded","Most grabbed","Newest"};
+        const auto& sorts=botty::Model::exploreLabels;
         c.label(96,248,"DISCOVER  /  PS5",24,coral);
         if(model.count){
             const auto& e=catalog.exploreResults[model.selected];
@@ -571,7 +575,7 @@ bool draw(Canvas& c) noexcept {
             else {gamePattern(c,x,y,172,258,i);c.label(x+14,y+16,"PS5",24,ink);c.rectangle(x,y+140,172,118,background);titleLines(c,x+14,y+146,e.name.data(),20,146,3,ink);}
             if(focus)c.rounded(x+62,y+268,48,4,2,coral);
         }
-        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing PS5 games...":"Loading PS5 games..."):catalog.exploreError[0]?catalog.exploreError.data():!model.count?"No new PS5 games found in this selection.":"";
+        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing... Displayed games remain selectable.":"Loading this selection... You can change sort or tab."):catalog.exploreError[0]?catalog.exploreError.data():catalog.exploreNotice[0]?catalog.exploreNotice.data():!model.count?"No new PS5 games found in this selection.":"";
         if(!model.count){surface(c,96,656,1200,258);shortLabel(c,136,696,state,28,1120,accent);c.label(136,770,"Square: Refresh   /   L1 or R1: Change tab",24,muted);}
         char footer[220];std::snprintf(footer,sizeof(footer),"%u games  /  Page %u  /  Artwork: Steam, Wikipedia, PlayStation",model.count,model.count?first/6+1:0);
         shortLabel(c,96,947,*state&&model.count?state:footer,20,1240,muted);

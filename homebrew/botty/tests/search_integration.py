@@ -12,6 +12,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  size=(complete/'sample.rar').stat().st_size
  torrent=dict(id=1,hashString=hashlib.sha1(b'd4:name7:fixturee').hexdigest(),name='Original homebrew fixture',status=4,error=0,leftUntilDone=size,totalSize=size,downloadDir=str(complete),files=[dict(name='sample.rar',length=size,bytesCompleted=0)])
  calls=[]; queries=[]; cover_calls=[]
+ refresh_started=threading.Event();refresh_release=threading.Event();delayed_refresh=False
  def rpc_hook(method, params):
   if method=='load.start':
    assert pathlib.Path(params[1]).read_bytes()==b'd4:infod4:name7:fixtureee'
@@ -22,6 +23,9 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  class Indexer(BaseHTTPRequestHandler):
   def log_message(self,*args): pass
   def reply(self,obj):
+   if delayed_refresh and isinstance(obj,list):
+    refresh_started.set();assert refresh_release.wait(10)
+    obj=[r for r in obj if r.get('title')!='Demo PS5']
    data=json.dumps(obj).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
   def do_GET(self):
    assert self.headers.get('X-Api-Key')=='b'*32
@@ -95,9 +99,12 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    assert {r['tracker'] for r in demo['sources']}=={'Tracker One','Tracker Eight'}
    assert queries[-1]['indexerIds']==['-2'] and queries[-1]['categories']==['1000']
    assert request('/api/state')['search']['results']==results
+  stale_cache=root/'cache/explore-newest.json'
+  saved=json.loads(stale_cache.read_text());saved['saved']=int(time.time())-3600;stale_cache.write_text(json.dumps(saved))
   query_count=len(queries)
   request('/api/explore',{'sort':'newest'})
   cached=request('/api/state')['explore'];assert not cached['busy'] and cached['results']==browse['results']
+  assert 'outdated' in cached['notice']
   assert len(queries)==query_count
   request('/api/explore',{'sort':'newest','refresh':True})
   browse=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
@@ -125,10 +132,20 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   try: request('/api/search/add',{'id':'invalid'});raise AssertionError('Invalid ID accepted')
   except urllib.error.HTTPError as e:assert e.code==400
   demo=next(r for r in browse['results'] if r['name']=='Demo PS5')
+  assert all(source['id']!=demo['id'] for source in demo['sources'])
   selected=next(source['id'] for source in demo['sources'] if source['tracker']=='Tracker Eight' and source['size']==size)
   assert selected!=demo['id']
+  delayed_refresh=True
+  request('/api/explore',{'sort':'newest','refresh':True});assert refresh_started.wait(5)
+  refreshing=request('/api/state')['explore'];assert refreshing['busy'] and refreshing['results']==browse['results']
+  refresh_release.set()
+  refreshed=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
+  refreshed_demo=next(r for r in refreshed['results'] if r['id']==demo['id'])
+  assert refreshed_demo['name']=='Demo PS5 Deluxe'
+  assert refreshed_demo['id']==demo['id'] and all(s['id']!=selected for s in refreshed_demo['sources'])
   request('/api/explore/add',{'id':selected})
   until(lambda:not request('/api/state')['explore']['adding'])
+  assert all(r['id']!=demo['id'] for r in request('/api/state')['explore']['results'])
   assert not any(r['name']=='Demo PS5' for r in request('/api/state')['explore']['results'])
   request('/api/explore/add',{'id':selected})
   assert sum(c['method']=='load.start' for c in calls)==1

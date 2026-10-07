@@ -44,7 +44,7 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(c.stale)return "Reconnecting to Botty. Wait for an updated status before making changes.";
  if(!c.valid)return "Reconnect to Botty before performing an action.";
- if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy||c.exploreAdding)return "Wait for the current Explore request.";return op==Operation::explore||c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
+ if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy)return "Explore is refreshing. Browse sources now; download when it finishes.";if(c.exploreAdding)return "Wait for the current download request.";return op==Operation::explore||c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
  if(op==Operation::search||op==Operation::grab){if(!c.searchSupported)return "Update the Botty service to enable search.";if(c.searchBusy||c.searchAdding)return "Wait for the current search or download request.";if(op==Operation::search)return "";return c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
  if(op==Operation::add)return c.transmissionReady?"":"Wait for rTorrent to reconnect.";
  if(e&&e->task)return "This task is monitored in Processing. Use Library for game actions.";
@@ -128,7 +128,7 @@ bool Workflow::press(unsigned edge,const Catalog& c,bool busy) noexcept {
  const Entry* e=target(c);
  if(panel==Panel::sources){
   if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<sourceCount)++selected;
-  if(edge&Buttons::cross){const char* reason=unavailable(command.operation,nullptr,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
+  if(edge&Buttons::cross){notice.fill(0);const char* reason=unavailable(command.operation,nullptr,c);if(*reason){if(!c.exploreBusy)std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
  }else if(panel==Panel::menu){
   if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<optionCount)++selected;
   if(edge&Buttons::cross){auto op=options[selected];const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
