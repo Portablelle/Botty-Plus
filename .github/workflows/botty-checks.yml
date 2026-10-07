@@ -8,12 +8,12 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Install host build dependencies
-        run: sudo apt-get update && sudo apt-get install -y clang libcurl4-openssl-dev python3-pil
+      - name: Test runner API broker boundaries
+        run: python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
       - name: Verify delivery contract
         run: python3 scripts/botty-packages.py --check
       - name: Test app packaging contracts
