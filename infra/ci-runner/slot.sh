@@ -58,6 +58,7 @@ while true; do
   fi
   if ! docker network inspect "$network" >/dev/null 2>&1 &&
       ! docker network create --opt com.docker.network.bridge.enable_icc=false "$network" >/dev/null; then
+    echo "NETWORK_NOT_READY: could not create isolated Docker bridge $network." >&2
     backoff
     continue
   fi

@@ -25,6 +25,17 @@ for repository in Portablelle/Botty-Plus Portablelle/Portal-Plus; do
   sudo -u ubuntu /snap/bin/gh api "repos/$repository/actions/runners" >/dev/null
 done
 sudo install -o root -g root -m 755 api-broker.py /usr/local/sbin/plus-runner-api
+# Reading runner metadata does not prove JIT administration permission.
+# These identities are never started and are deleted immediately.
+for slot in botty portal; do
+  probe_reply=$(sudo /usr/local/sbin/plus-runner-api "$slot" create)
+  probe_id=$(jq -er '.runner.id' <<<"$probe_reply")
+  unset probe_reply
+  if ! sudo /usr/local/sbin/plus-runner-api "$slot" delete "$probe_id"; then
+    echo "JIT access preflight failed to delete $slot runner $probe_id; remove that unused identity manually." >&2
+    exit 1
+  fi
+done
 sudo visudo -cf plus-runner.sudoers
 sudo install -o root -g root -m 440 plus-runner.sudoers /etc/sudoers.d/plus-runner
 sudo install -d -o gh-runner -g gh-runner -m 755 /home/gh-runner/plus-runner
