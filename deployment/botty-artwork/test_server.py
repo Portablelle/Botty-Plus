@@ -70,10 +70,23 @@ class Covers(unittest.TestCase):
                 'Example Proper [ps5]', 'Example Proper-ppsa12345']:
    with self.subTest(title=title):
     self.assertEqual(self.module.clean_title(title),'Example')
-  for title in ['Example Proper XPPSA12345', 'Example Proper PPSA12345X',
-                'Example Proper [CUSA12345X]', 'Example Proper [PS50]']:
+  for title in ['Example Proper XPPSA12345', 'Example Proper PPSA12345X']:
    with self.subTest(title=title):
-    self.assertIn('Proper',self.module.clean_title(title))
+    self.assertEqual(self.module.clean_title(title),title)
+  for title in ['Example Proper [CUSA12345X]', 'Example Proper [PS50]']:
+   with self.subTest(title=title):
+    self.assertEqual(self.module.clean_title(title),'Example Proper')
+ def test_punctuation_joined_scene_suffixes(self):
+  """Strip punctuated scene suffixes only when release metadata is present."""
+  for separator in ['-', '.', ':']:
+   for word in ['PROPER', 'REPACK', 'RERIP', 'READNFO', 'INTERNAL']:
+    with self.subTest(separator=separator,word=word):
+     title='Some Game'+separator+word
+     self.assertEqual(self.module.clean_title(title+separator+'PPSA12345'),'Some Game')
+     self.assertEqual(self.module.clean_title(title+' [CUSA12345]'),'Some Game')
+     self.assertEqual(self.module.normalize(self.module.clean_title(title)),self.module.normalize(title))
+  self.assertEqual(self.module.clean_title('Some Game-PROPER:REPACK-PPSA12345'),'Some Game')
+  self.assertEqual(self.module.clean_title('Some Game Deluxe Edition-PROPER-PPSA12345'),'Some Game')
  def test_steam_and_fallback(self):
   image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG')
   def fetch(url,limit):

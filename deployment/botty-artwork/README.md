@@ -10,8 +10,11 @@ or `v10.02`), MULTI, or incl/including marker. The literal word `version` is
 not a marker. Release detection and metadata truncation share the same pattern;
 PS5, CUSA/PPSA IDs, and [FPKG] are also detected before bracket removal.
 Platform markers accept word boundaries, including bracketed IDs and hyphen,
-dot, or colon separators (for example `Proper-PPSA12345`). Other metadata
-markers require preceding whitespace. Metadata and edition suffixes are
+dot, or colon separators (for example `Proper-PPSA12345`). Scene suffixes
+also accept these separators when a release marker is present, so
+`Some Game-PROPER-PPSA12345` resolves to `Some Game`. UPDATE, `v<number>`, MULTI,
+and incl/including require preceding whitespace; `[FPKG]` does not.
+Metadata and edition suffixes are
 trimmed repeatedly in either order; unmarked canonical scene words are preserved.
 
 Resolution uses normalized game names (scene tags, editions, punctuation, accents,

@@ -44,7 +44,7 @@ def clean_title(title):
     while True:
         trimmed = re.sub(r'\s+(?:DLC|add[ -]?on)(?:\s+add[ -]?on)?(?:\s+only)?\s*$', '', title, flags=re.I)
         if release_name:
-            trimmed = re.sub(r'\s+(?:proper|repack|rerip|readnfo|internal)\s*$', '', trimmed, flags=re.I)
+            trimmed = re.sub(r'[\s.:-]+(?:proper|repack|rerip|readnfo|internal)[\s.:-]*$', '', trimmed, flags=re.I)
         trimmed = re.sub(r'\s+(?:the shores|(?:standard|digital deluxe|deluxe|ultimate|complete|gold|precious|anniversary|definitive|premium|special|ballpark|collectors?|game of the year) edition|directors? ?cut|goty)\s*$', '', trimmed, flags=re.I)
         if trimmed == title: break
         title = trimmed
