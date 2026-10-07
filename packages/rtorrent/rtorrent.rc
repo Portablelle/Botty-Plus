@@ -1,0 +1,27 @@
+# Botty rTorrent service. RPC is console-local; Botty authenticates web access.
+system.daemon.set = true
+system.umask.set = 0077
+directory.default.set = /data/botty/downloads/complete
+# The entry point holds daemon.lock with flock for the entire process lifetime.
+# Upstream's PID lock can remain after reboot and mistake a reused PID for a peer.
+session.use_lock.set = false
+session.path.set = /data/botty/rtorrent/state/session
+network.scgi.open_port = 127.0.0.1:5001
+network.rpc.use_jsonrpc.set = true
+network.rpc.use_xmlrpc.set = false
+network.listen.port.range.set = 51414-51414
+network.listen.port.random.set = false
+# Upstream 0.16.24 enforces a minimum 512 MiB mapping budget (not a preallocation).
+pieces.memory.max.set = 536870912
+pieces.hash.on_completion.set = false
+# Ask for a larger initial batch: private trackers may require an hour before
+# another announce. Keep a bounded connection budget for concurrent downloads.
+trackers.numwant.set = 200
+throttle.min_peers.normal.set = 100
+throttle.max_peers.normal.set = 200
+throttle.max_peers.seed.set = 50
+network.http.cacert.set = /data/botty/rtorrent/state/cacert.pem
+log.open_file = botty, /data/botty/rtorrent/state/rtorrent.log
+log.add_output = info, botty
+
+schedule = session_save, 60, 60, ((session.save))

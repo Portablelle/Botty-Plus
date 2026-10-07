@@ -109,15 +109,15 @@ is `build/botty-manager.elf`. From the repository root, package it with:
 
 ```sh
 python3 scripts/package-botty.py
-python3 scripts/portal-manifest.py --release YOUR_RELEASE_LABEL
-python3 scripts/portal-manifest.py --check
+python3 scripts/botty-packages.py --check
 ```
 
 For documentation-only changes, `package-botty.py --source-only` refreshes the
 source archive and notices while retaining the packaged binary and manifest.
 Changing service versions also requires updating its default UI path and the
-portal installer's version constant; keep the installed path and health version
-consistent.
+packaged binary; keep the installed path and health version consistent. Portal+
+reads the verified package contract from Botty+ `main` and owns its installer
+configuration.
 
 ## Validation and operations
 

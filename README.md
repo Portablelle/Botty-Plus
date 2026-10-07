@@ -6,10 +6,10 @@
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
-<p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Bundled Relapse jailbreak range. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
+<p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Requires a compatible jailbreak session. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/botty-ps5/releases/latest">Download 1.5.4</a> ·
+  <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">Download 1.5.4</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
@@ -37,28 +37,25 @@ and automatic game launching are not supported.
 You need a [compatible PS5](homebrew/botty-native/VALIDATION.md), enough storage
 for downloads and extracted files, and a Botty+ portal hosted over trusted HTTPS.
 
-### 1. Get access to a portal
+### 1. Get access to Portal+
 
-If someone already hosts Botty+ for you, ask them for the portal URL and skip to
-step 2. To host it yourself, download **botty-portal-1.5.4.tar.gz** from the
-[latest release](https://github.com/Portablelle/botty-ps5/releases/latest) and
-follow the [hosting guide](deployment/README.md#host-the-portal). It covers
-uploading the complete site, configuring HTTPS and checking the installation.
-
-Use the complete portal bundle: the native app ZIP alone does not install the
-required background services.
+Botty+ is the console app and its background services. The jailbreak, DNS and
+installer live in [Portal+](https://github.com/Portablelle/Portal-Plus).
+Use a hosted Portal+ instance or follow its hosting guide. Portal+ automatically
+publishes the verified Botty+ packages from this repository's `main` branch.
+The native ZIP alone does not start the required background services.
 
 ### 2. Open the portal on your PS5
 
 Open the portal's HTTPS URL using your working PS5 browser entry point. If your
 host provides a User's Guide redirect, use the
-[PS5 DNS and User's Guide walkthrough](docs/CONSOLE-SETUP.md): it explains which
+[PS5 DNS and User's Guide walkthrough](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md): it explains which
 network settings to change, how to open the Guide and what to check if the
 redirect fails. You need the DNS address supplied by your host for that route.
 
 ### 3. Install and launch Botty+
 
-Select **LAUNCH** once and keep the page open until it shows **READY**. The portal
+Enable **Botty+** in the launch options, then select **LAUNCH** once and keep the page open until it shows **READY**. The portal
 prepares the native app and its background services. Press **PS**, return to the
 home screen and open **Botty+**; allow some time for the icon to appear on the
 first installation.
@@ -80,7 +77,7 @@ To manage Botty+ from a phone or computer on the same network, open
 
 ### 5. Keep your installation up to date
 
-Your host updates the portal using the latest complete bundle. Close Botty+
+Portal+ follows the latest verified packages committed to Botty+ `main`. Close Botty+
 before running **LAUNCH** from that updated portal. If a service update is
 pending, let ongoing tasks finish before restarting the console and launching
 again. See [updates and rollback](deployment/README.md#updates-and-rollback)
@@ -134,14 +131,14 @@ location of each copy. Missing disks are marked **Offline**.
 
 ## Guides
 
-- [Hosting, Search/Explore setup and updates](deployment/README.md)
-- [PS5 User's Guide and DNS setup](docs/CONSOLE-SETUP.md)
+- [Search/Explore setup and service updates](deployment/README.md)
+- [PS5 User's Guide and DNS setup](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md)
 - [Native app guide](homebrew/botty-native/README.md)
 - [Compression and recovery](homebrew/game-compressor/README.md)
 - [External storage](homebrew/botty/README.md#external-storage-13)
 - [Compatibility and known limitations](homebrew/botty-native/VALIDATION.md)
 - [Building and contributing](docs/DEVELOPMENT.md)
-- [Release notes and downloads](https://github.com/Portablelle/botty-ps5/releases)
+- [Release notes and downloads](https://github.com/Portablelle/Botty-Plus/releases)
 
 ## Credits and licenses
 

@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "app": "Botty+",
+  "titleId": "PPSA99071",
+  "version": "01.004.000",
+  "milestone": 4,
+  "hardwareValidated": false,
+  "registrationVerified": false,
+  "identityStatus": "provisional-until-console-inventory",
+  "readOnly": false,
+  "files": [
+    {
+      "path": "assets/Manrope-OFL.txt",
+      "size": 4387,
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+    },
+    {
+      "path": "assets/build.txt",
+      "size": 43,
+      "sha256": "0dddbd8aefd027fa74560720985264491d58e74a55b6c30e78f6dd9b69c3a033"
+    },
+    {
+      "path": "assets/courier.rgba",
+      "size": 1048576,
+      "sha256": "52b768f8e0a8587340508b7c7c62f2f928c5aaba3ca71fc2e23bf767fbab53d1"
+    },
+    {
+      "path": "assets/extractor.rgba",
+      "size": 1048576,
+      "sha256": "394e22655673e381a606b2a903371437aa189aa133f759590bb55095a651536f"
+    },
+    {
+      "path": "assets/nebula.rgb",
+      "size": 1555200,
+      "sha256": "86e016792eb91775163b9ffea8691314ee3a96ddeb1acacfdcc2d60a210caff1"
+    },
+    {
+      "path": "assets/ui-font.bin",
+      "size": 526811,
+      "sha256": "c2b6891a746f62c9ee8ed68ebd2074fbff0d40aea70e78b1c85c1cc200e56845"
+    },
+    {
+      "path": "assets/vault.rgba",
+      "size": 1048576,
+      "sha256": "22ce003865a105b63b886c71f81d9550e6189d4051bc8df88322fd09f984c15a"
+    },
+    {
+      "path": "eboot.bin",
+      "size": 25175580,
+      "sha256": "886e69d6ca494eeba067e0a73897a1144a54ede851c2a40ad05ae4eceaa3da98"
+    },
+    {
+      "path": "sce_module/libc.prx",
+      "size": 1284674,
+      "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
+    },
+    {
+      "path": "sce_sys/icon0.png",
+      "size": 471819,
+      "sha256": "b04611b29f7fbd980d6ea550379df4cc897d077bed06b69eaaa59ec58ea2987d"
+    },
+    {
+      "path": "sce_sys/param.json",
+      "size": 842,
+      "sha256": "cd152f219e035665d8ad8218e22bf2812882984a860f0cb219e16d6b692aa83d"
+    },
+    {
+      "path": "sce_sys/pic0.dds",
+      "size": 8294548,
+      "sha256": "1005350b9f1feecdd6eb1006c389a6bd738d31b1090325deecaf799c8c695724"
+    },
+    {
+      "path": "sce_sys/snd0.at9",
+      "size": 1440424,
+      "sha256": "4284d15a2bae57739c944355c917ab11fce7b18d9b47054e2c7e3746a3c57218"
+    }
+  ]
+}
