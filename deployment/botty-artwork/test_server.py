@@ -34,6 +34,20 @@ class Covers(unittest.TestCase):
   self.assertEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares 3'))
   self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
   self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
+ def test_release_suffix_order(self):
+  for suffix in ['DLC ONLY Deluxe Edition', 'PROPER Deluxe Edition',
+                 'PROPER Deluxe Edition REPACK DLC ONLY', 'Deluxe Edition PROPER Ballpark Edition']:
+   with self.subTest(suffix=suffix):
+    self.assertEqual(self.module.clean_title('Example Game '+suffix+' PS5-PPSA00000[FPKG]'), 'Example Game')
+  self.assertEqual(self.module.clean_title('Example Game DLC ONLY Deluxe Edition'), 'Example Game')
+ def test_canonical_scene_words_preserved(self):
+  for word in ['Proper', 'Repack', 'Rerip', 'Readnfo', 'Internal']:
+   with self.subTest(word=word):
+    title='Example '+word
+    self.assertEqual(self.module.clean_title(title),title)
+    self.assertEqual(self.module.clean_title(title+' Deluxe Edition'),title)
+    for marker in [' PS5', ' PPSA00000', '[FPKG]']:
+     self.assertEqual(self.module.clean_title(title+marker),'Example')
  def test_steam_and_fallback(self):
   image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG')
   def fetch(url,limit):
@@ -95,7 +109,12 @@ class Covers(unittest.TestCase):
   candidates=list(self.module.playstation_candidates(title))
   self.assertEqual(len(candidates),1)
   self.assertIn('UP9000-PPSA28997_00-SONSOFSPARTAPS50',calls[0])
+  sources=json.loads(self.module.SOURCES.read_text())
+  sources['godofwarghostofsparta']=sources['godofwarsonsofsparta']
+  self.module.SOURCES=pathlib.Path(self.temp.name)/'sources.json'
+  self.module.SOURCES.write_text(json.dumps(sources))
   self.assertEqual(list(self.module.playstation_candidates('God of War Ghost of Sparta')),[])
+  self.assertEqual(calls,[sources['godofwarsonsofsparta']]*2)
  def test_blank_provider_image_falls_back(self):
   blank=io.BytesIO();Image.new('RGB',(20,30),(75,75,75)).save(blank,format='JPEG')
   picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));real=io.BytesIO();picture.save(real,format='PNG')
