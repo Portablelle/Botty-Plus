@@ -15,7 +15,7 @@ for name,original in [('rtorrent.elf',source/'build/rtorrent.elf'),('rtorrent.rc
     shutil.copyfile(original,out/name)
     data=(out/name).read_bytes()
     files.append(dict(path=name,size=len(data),sha256=hashlib.sha256(data).hexdigest()))
-manifest=(json.dumps(dict(schema=1,id='0.16.24-botty3',files=files),indent=2)+'\n').encode()
+manifest=(json.dumps(dict(schema=1,id='0.16.24-botty4',files=files),indent=2)+'\n').encode()
 (out/'manifest.json').write_bytes(manifest)
 p=root/'vps-site/src/rtorrent.js'
 s,n=re.subn(r"const HASH='[a-f0-9]{64}';","const HASH='"+hashlib.sha256(manifest).hexdigest()+"';",p.read_text())
