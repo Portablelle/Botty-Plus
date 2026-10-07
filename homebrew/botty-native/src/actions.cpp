@@ -13,9 +13,13 @@ void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
  else std::snprintf(out,size,"Estimated total: about %.0f-%.0f min. Actual time varies.",low,high);
 }
 const char* operationLabel(Operation op) noexcept {
+ if(op==Operation::nativeUpdate)return "Update Botty+";
+ if(op==Operation::checkNativeUpdate)return "Check for updates";
  switch(op){case Operation::transfer:return "Transfer to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Processing";default:return "Actions";}
 }
 const char* actionPath(Operation op) noexcept {
+ if(op==Operation::nativeUpdate)return "/api/native-update";
+ if(op==Operation::checkNativeUpdate)return "/api/native-update/check";
  switch(op){case Operation::transfer:return "/api/transfer";case Operation::restoreOriginal:return "/api/restore-uncompressed";case Operation::removeOriginal:return "/api/delete-uncompressed";case Operation::compress:return "/api/compress-game";case Operation::cancelCompression:return "/api/cancel-compression";case Operation::removeLibrary:return "/api/delete-library-game";case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
 }
 bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t& length) noexcept {
@@ -24,7 +28,8 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
  const auto quote=[&](std::string_view s){append("\"");for(unsigned char c:s){if(c=='"')append("\\\"");else if(c=='\\')append("\\\\");else if(c<32){char b[7];std::snprintf(b,sizeof(b),"\\u%04x",c);append(b);}else {char b=static_cast<char>(c);append({&b,1});}}append("\"");};
  if(cmd.operation==Operation::none)return false;
  append("{");
- if(cmd.operation==Operation::explore){const auto sort=std::string_view(cmd.text.data());if(sort!="seeders"&&sort!="completed"&&sort!="newest")return false;append("\"sort\":");quote(sort);if(cmd.refresh)append(",\"refresh\":true");}
+ if(cmd.operation==Operation::nativeUpdate||cmd.operation==Operation::checkNativeUpdate){}
+ else if(cmd.operation==Operation::explore){const auto sort=std::string_view(cmd.text.data());if(sort!="seeders"&&sort!="completed"&&sort!="newest")return false;append("\"sort\":");quote(sort);if(cmd.refresh)append(",\"refresh\":true");}
  else if(cmd.operation==Operation::search){if(!cmd.text[0]||std::string_view(cmd.text.data()).size()>200)return false;append("\"query\":");quote(cmd.text.data());}
  else if(cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab){if(std::string_view(cmd.id.data()).size()!=32)return false;append("\"id\":");quote(cmd.id.data());}
  else if(cmd.operation==Operation::add){if(!std::string_view(cmd.text.data()).starts_with("magnet:?"))return false;append("\"action\":\"add\",\"magnet\":");quote(cmd.text.data());}
@@ -36,13 +41,15 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
   else if(cmd.operation==Operation::extract){if(!cmd.archive[0]||std::string_view(cmd.text.data()).size()>1024)return false;append(",\"archive\":");quote(cmd.archive.data());append(",\"password\":");quote(cmd.text.data());}
   else if(cmd.operation!=Operation::transfer&&cmd.operation!=Operation::cancelCompression&&cmd.operation!=Operation::move&&cmd.operation!=Operation::remove&&cmd.operation!=Operation::cancel&&cmd.operation!=Operation::dismiss){append(",\"action\":");if(cmd.operation==Operation::removeTorrent){quote("remove-data");append(",\"confirmed\":true");}else quote(cmd.operation==Operation::pause?"pause":cmd.operation==Operation::resume?"resume":"verify");}
  }
- if(cmd.storage[0]){append(",\"storage\":");quote(cmd.storage.data());}
+ if(cmd.storage[0]&&cmd.operation!=Operation::nativeUpdate&&cmd.operation!=Operation::checkNativeUpdate){append(",\"storage\":");quote(cmd.storage.data());}
  if(cmd.operation==Operation::transfer){append(",\"kind\":");quote(cmd.torrent?"torrent":"job");}
  if(cmd.storage[0]&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
  append("}");if(length<capacity)out[length]=0;return ok;
 }
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(c.stale)return "Reconnecting to Botty. Wait for an updated status before making changes.";
+ if(op==Operation::checkNativeUpdate)return c.nativeUpdate.supported?"":"Update the Botty service from Portal+ to enable in-app updates.";
+ if(op==Operation::nativeUpdate)return nativeUpdateAvailable(c.nativeUpdate,c.stale)?"":"Check for an available update before installing.";
  if(!c.valid)return "Reconnect to Botty before performing an action.";
  if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy)return "Explore is refreshing. Browse sources now; download when it finishes.";if(c.exploreAdding)return "Wait for the current download request.";return op==Operation::explore||c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
  if(op==Operation::search||op==Operation::grab){if(!c.searchSupported)return "Update the Botty service to enable search.";if(c.searchBusy||c.searchAdding)return "Wait for the current search or download request.";if(op==Operation::search)return "";return c.transmissionReady?"":"Wait for rTorrent to reconnect.";}

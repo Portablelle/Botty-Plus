@@ -49,6 +49,35 @@ double number(std::string_view s){double n=0,scale=1;bool fraction=false,negativ
 }
 bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
 }
+bool validNativeVersion(std::string_view value) noexcept {
+    if(value.size()!=10)return false;
+    for(unsigned i=0;i<10;++i){if(i==2||i==6){if(value[i]!='.')return false;}else if(value[i]<'0'||value[i]>'9')return false;}
+    return true;
+}
+bool newerNativeVersion(std::string_view available,std::string_view installed) noexcept {
+    return validNativeVersion(available)&&validNativeVersion(installed)&&available>installed;
+}
+bool nativeUpdateAvailable(const NativeUpdate& update,bool stale) noexcept {
+    return !stale&&update.supported&&!update.requested&&std::string_view(update.status.data())=="available"&&newerNativeVersion(update.availableVersion.data(),nativeVersion);
+}
+const char* nativeUpdateLabel(const NativeUpdate& update,bool stale) noexcept {
+    if(stale)return "Update status unavailable";
+    if(!update.supported)return "Update service from Portal+";
+    const std::string_view status=update.status.data();
+    if(status=="blocked")return update.requested?"Update needs recovery":"Update unavailable";
+    if(update.requested)return "Update queued - Close app";
+    if(status=="checking")return "Checking for updates...";
+    if(nativeUpdateAvailable(update,false))return "Update available";
+    if(status=="current"||status=="complete"||status=="available"){
+        if(!validNativeVersion(update.installedVersion.data())||!validNativeVersion(update.availableVersion.data()))return "Update status unavailable";
+        if(newerNativeVersion(update.installedVersion.data(),nativeVersion))return "Reopen updated app";
+        if(newerNativeVersion(update.availableVersion.data(),nativeVersion))return "Update available";
+        return "Up to date";
+    }
+    if(status=="waiting")return "Waiting for file operations";
+    if(status=="installing")return "Installing update...";
+    return "Could not check updates";
+}
 bool responseObject(std::string_view body,std::array<char,512>& error) noexcept {
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
 }
@@ -64,6 +93,19 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    out.nativeUpdate=NativeUpdate{};
+    const auto update=field(body,"nativeUpdate");
+    if(field(update,"supported")=="true"){
+        NativeUpdate next;
+        const bool decoded=decode(field(update,"status"),next.status,true)&&decode(field(update,"installedVersion"),next.installedVersion,true)&&decode(field(update,"availableVersion"),next.availableVersion,true);
+        const std::string_view status=next.status.data();
+        const auto requested=field(update,"requested"),closeRequired=field(update,"closeRequired");
+        const bool versions=(status!="current"&&status!="available"&&status!="complete")||(validNativeVersion(next.installedVersion.data())&&validNativeVersion(next.availableVersion.data()));
+        if(decoded&&versions&&(status=="checking"||status=="current"||status=="available"||status=="waiting"||status=="installing"||status=="complete"||status=="error"||status=="blocked")&&(requested=="true"||requested=="false")&&(closeRequired=="true"||closeRequired=="false")){
+            next.supported=true;next.requested=requested=="true";next.closeRequired=closeRequired=="true";
+            decode(field(update,"message"),next.message);out.nativeUpdate=next;
+        }
+    }
     {
     const auto compression=field(body,"compression");
     out.compressedDeletionSupported=field(compression,"deletionSupported")=="true";out.compressionSupported=field(compression,"supported")=="true";out.compressionBusy=field(compression,"busy")=="true";

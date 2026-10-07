@@ -177,9 +177,14 @@ ActionResult performCommand(const Command& command) noexcept {
     if(response.status!=200&&response.status!=202){message(valid&&error[0]?error.data():response.status==403?"Access expired. Refresh and try again.":"Botty rejected this request.");return result;}
     if(!valid){result.status=ActionResult::Status::uncertain;message("Invalid confirmation. Check the refreshed state before trying again.");return result;}
     if(error[0]){message(error.data());return result;}
+    if(command.operation==Operation::nativeUpdate&&(!json.parse(response.view())||json.number("apiVersion")!=1||json.string("status")!="queued"||!newerNativeVersion(json.string("version"),nativeVersion))){
+        result.status=ActionResult::Status::uncertain;message("Update confirmation was incomplete. Keep Botty+ open and check its update status before retrying.");return result;
+    }
     result.status=ActionResult::Status::success;
     switch(command.operation){
     case Operation::explore:message("Explore updated.");break;
+    case Operation::nativeUpdate:message("Update queued. Botty+ will close; reopen after the installation notification. File operations finish first.");break;
+    case Operation::checkNativeUpdate:message("Checking for updates in the background.");break;
     case Operation::search:message("Search started. Results will appear in Search.");break;
     case Operation::exploreGrab:case Operation::grab:message("Download requested. Botty will extract and prepare supported content automatically.");break;
     case Operation::pause:message("Torrent paused.");break;

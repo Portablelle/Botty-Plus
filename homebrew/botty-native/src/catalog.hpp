@@ -34,9 +34,19 @@ struct StorageDevice {std::array<char,64> id{},label{};double freeBytes=0;bool a
 struct Processing {
     std::array<Entry,4> tasks{};unsigned count=0,revision=0;bool stale=false;
 };
+struct NativeUpdate {
+    bool supported=false,requested=false,closeRequired=false;
+    std::array<char,16> status{},installedVersion{},availableVersion{};
+    std::array<char,512> message{};
+};
+bool validNativeVersion(std::string_view) noexcept;
+bool newerNativeVersion(std::string_view,std::string_view) noexcept;
+const char* nativeUpdateLabel(const NativeUpdate&,bool stale) noexcept;
+bool nativeUpdateAvailable(const NativeUpdate&,bool stale) noexcept;
 bool parseProcessing(std::string_view,Processing&) noexcept;
 struct Catalog {
     Processing processing;
+    NativeUpdate nativeUpdate;
     std::array<char,512> transferPhase{},transferError{};
     bool transferring=false;
     bool storageSupported=false;

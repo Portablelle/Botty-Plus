@@ -411,6 +411,7 @@ bool draw(Canvas& c) noexcept {
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
     static bool exploreRequested=false,quietExplore=false,exploreRefresh=false,exploreVisited=false;
+    static bool updateSubmitting=false;
     const auto& exploreSorts=botty::Model::exploreSorts;
     const unsigned oldTab=model.tab;
     const unsigned edge=pollPad(now);if(edge)++displayRevision;
@@ -427,6 +428,21 @@ bool draw(Canvas& c) noexcept {
     }else {
         const auto action=model.press(edge);
         if(action==botty::Model::Action::retry)network.retry();
+        if(action==botty::Model::Action::update){
+            if(catalog.nativeUpdate.requested&&catalog.nativeUpdate.closeRequired&&std::string_view(catalog.nativeUpdate.status.data())!="blocked"){model.quitDialog=true;model.confirmQuit=false;}
+            else if(botty::nativeUpdateAvailable(catalog.nativeUpdate,catalog.stale)){model.updateDialog=true;model.confirmUpdate=false;}
+            else {
+                botty::Command command;command.operation=botty::Operation::checkNativeUpdate;
+                const auto reason=botty::unavailable(command.operation,nullptr,catalog);
+                if(*reason||!network.submit(command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"%s",*reason?reason:"Network is busy. Please try again.");showResult=true;}
+            }
+        }
+        if(action==botty::Model::Action::installUpdate){
+            botty::Command command;command.operation=botty::Operation::nativeUpdate;
+            const auto reason=botty::unavailable(command.operation,nullptr,catalog);
+            if(*reason||!network.submit(command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"%s",*reason?reason:"Network is busy. Please try again.");showResult=true;}
+            else updateSubmitting=true;
+        }
         if(action==botty::Model::Action::quit){if(!network.busy())return false;model.quitDialog=false;actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Wait for the pending request before quitting.");showResult=true;}
         if(model.tab==4&&!model.quitDialog){
             if(action==botty::Model::Action::add||action==botty::Model::Action::menu||action==botty::Model::Action::retry)workflow.search();
@@ -449,7 +465,11 @@ bool draw(Canvas& c) noexcept {
     static botty::Processing processing;
     if(network.readProcessing(processing))++displayRevision;
     catalog.processing=processing;
-    if(receivedResult.revision!=resultRevision){actionResult=receivedResult;showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;}
+    if(receivedResult.revision!=resultRevision){
+        actionResult=receivedResult;
+        if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
+        showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;
+    }
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     const auto nextDeletion=network.deletion();
     if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}
@@ -517,7 +537,10 @@ bool draw(Canvas& c) noexcept {
         status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
     c.backdrop(model.tab!=5);
     c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
-    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,82,28,8,border);c.label(356,80,"1.4.0",20,ink);
+    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,82,28,8,border);c.label(356,80,botty::nativeDisplayVersion,20,ink);
+    const bool updateStale=catalog.stale||!catalog.valid||!online;
+    const auto updateColor=botty::nativeUpdateAvailable(catalog.nativeUpdate,updateStale)?accent:muted;
+    shortLabel(c,450,82,botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),20,550,updateColor);
     c.rounded(1488,69,336,48,24,card);
     statusDot(c,1510,87,online?success:warning);c.label(1536,77,state,24,online?success:warning);
     const char* tabs[]={"Downloads","Processing","Library","Connections","Search","Explore"};
@@ -591,8 +614,12 @@ bool draw(Canvas& c) noexcept {
         shortLabel(c,1002,681,online?password:std::string_view("-"),password.size()>6?28:44,770,accent);
         if(online&&password.size()>6)c.label(1002,745,"Short password applies next session.",20,muted);
         if(!online)shortLabel(c,96,805,detail,24,1728,warning);
+        else shortLabel(c,96,805,catalog.nativeUpdate.message[0]?catalog.nativeUpdate.message.data():botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),22,1728,updateColor);
         const unsigned xs[2]={96,578};
         for(unsigned i=0;i<2;++i){surface(c,xs[i],858,446,70,model.selected==i);c.label(xs[i]+32,877,i==0?"Retry connection":"Quit app",28,model.selected==i?accent:ink);}
+        surface(c,1060,858,764,70,model.selected==2);
+        const char* updateButton=std::string_view(catalog.nativeUpdate.status.data())=="blocked"?"Retry update check":catalog.nativeUpdate.requested&&catalog.nativeUpdate.closeRequired?"Close for update":botty::nativeUpdateAvailable(catalog.nativeUpdate,updateStale)?"Update Botty+":"Check for updates";
+        c.label(1092,877,updateButton,28,model.selected==2?accent:ink);
     }
     c.rectangle(96,982,1728,1,border);
     key(c,96,1000,"X");c.label(146,1004,model.tab==5||model.tab==4?"Get game":model.details?"Select":"Open",20,ink);
@@ -600,7 +627,7 @@ bool draw(Canvas& c) noexcept {
     key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
     c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
     c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,"01.004.000",20,muted);
+    c.label(1620,1004,botty::nativeVersion,20,muted);
     if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
     if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
     if(showResult){
@@ -609,6 +636,17 @@ bool draw(Canvas& c) noexcept {
         unsigned line=0;wrapped(c,actionResult.message.data(),line,0,accent);c.label(140,884,"Cross / Circle: Continue",24,muted);
     }
     if(catalog.transferring){surface(c,96,920,1728,58);shortLabel(c,120,934,catalog.transferError[0]?catalog.transferError.data():catalog.transferPhase.data(),23,1670,accent);}
+    if(model.updateDialog){
+        c.shade(170);surface(c,360,300,1200,510);
+        c.label(410,342,"Update Botty+?",44,ink);
+        char version[128];std::snprintf(version,sizeof(version),"%s  >  %s",botty::nativeDisplayVersion,catalog.nativeUpdate.availableVersion.data());
+        c.label(410,416,version,28,accent);
+        c.label(410,478,"Compression and file operations finish before installation.",24,muted);
+        c.label(410,526,"Botty+ closes. Downloads and background services stay running.",24,muted);
+        c.label(410,574,"Reopen Botty+ after the installation notification.",24,muted);
+        for(unsigned i=0;i<2;++i){const bool chosen=model.confirmUpdate==(i==1);c.rounded(410+i*560,644,520,78,16,chosen?accent:background);c.label(442+i*560,667,i==0?"Cancel":"Install and close",28,chosen?background:ink);}
+        c.label(410,755,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
+    }
     if(model.quitDialog) {
         c.shade(170);
         c.rounded(488,334,1120,408,30,border);
@@ -628,11 +666,12 @@ int main() {
 #ifdef BOTTY_HOST_PREVIEW
     const char* previewMode=std::getenv("BOTTY_PREVIEW_MODE");
     model.tab=previewMode&&(std::string_view(previewMode)=="sources"||std::string_view(previewMode)=="explore"||std::string_view(previewMode)=="storage"||std::string_view(previewMode)=="download-mode")?5:previewMode&&std::string_view(previewMode)=="search"?4:0;
+    if(previewMode&&std::string_view(previewMode).starts_with("update-")){model.tab=3;model.selected=2;}
 #endif
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.004.000 - main entered");
+    botty::platform::log("Botty+ 01.004.001 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

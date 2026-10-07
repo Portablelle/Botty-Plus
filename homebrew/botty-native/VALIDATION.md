@@ -328,3 +328,29 @@ Host model, renderer preview and real-service action integration checks cover
 these changes. The ShadowMount background capability must be deployed separately;
 compression activation/restoration and new-title registration still have their
 existing session requirements. No console acceptance is claimed here.
+
+## In-app native updater (native 1.4.1 / service 1.5.3)
+
+The native client validates the update-state contract and durable queue response
+before requesting normal app exit. Focused host tests cover current/newer/stale
+versions, legacy services, Cancel-by-default confirmation, malformed/lost
+acknowledgments and no automatic replay. The actual renderer was built and
+driven with synthetic current, available, confirmation, queued and uncertain
+states on the VPS. An acknowledged request released the video, pad and network
+worker; an invalid acknowledgment kept the simulated app open.
+
+Manager host tests cover bounded trusted release/file hashes, malformed process
+tables, idle worker proof, full-pipeline waits, retained backups, registered
+metadata, failed requests, restart and interrupted publication. The updater
+accepts only the two known historical named backups for completed journals;
+pending recovery still requires the normal 32-hex backup identity. Native and
+manager PS5 packages were cross-built remotely; this is not hardware acceptance.
+
+Before enabling real installation, validate manager write access to the native
+and recognized metadata directories, the actual stopped-process table, orderly
+native exit, safe ShadowMount unmount and discovery, home-screen metadata and
+successful reopening. Test updates while downloads continue and while compression
+finishes, including its waiting-close/activation phase. Power-loss recovery and
+live permission failures also remain console acceptance items. Do not run a
+Portal installer concurrently with an in-app update. No console deployment or
+diagnostic payload was performed for this change.

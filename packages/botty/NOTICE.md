@@ -1,4 +1,4 @@
-# Botty service 1.5.2
+# Botty service 1.5.3
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,41 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.5.2`; its installed marker is in the parent directory.
+`/data/botty/manager/1.5.3`; its installed marker is in the parent directory.
+
+## Native app updates
+
+`GET /api/state` includes `nativeUpdate` with the installed and available native
+versions, a bounded English message, `requested`, `closeRequired` and a status of
+`checking`, `current`, `available`, `waiting`, `installing`, `complete`, `error`
+or `blocked`. Release checks run asynchronously and never download in state
+handlers. `POST /api/native-update/check` accepts `{}` to request another check.
+
+Authenticated `POST /api/native-update` accepts `{}` only after a newer release
+has been verified. Its HTTP 202 acknowledgment is flat JSON containing
+`apiVersion: 1`, `status: "queued"` and `version`. The request is flushed to disk
+before acknowledgment; repeated requests acknowledge the same queued version.
+The native app may then close normally. The manager waits for extraction,
+transfer, deletion, the complete compression/activation pipeline, a confirmed
+idle worker and all native app processes to exit. Existing work finishes; new
+file operations are blocked while the update is queued. Downloads and services
+keep running. No manager, rTorrent or compression worker restart is performed.
+
+Updates use only the fixed HTTPS GitHub release source, the manager package CA
+bundle and release-index-anchored SHA-256 hashes. The exact thirteen native files
+are staged, flushed and verified before transactional publication. The Portal
+native journal and retained backups allow guarded recovery after interruption;
+unexpected files or symlinks are never removed to make recovery succeed.
+Registered metadata refresh is confined to the known Botty+ metadata paths.
+ShadowMount unmount is requested only after native process exit is confirmed,
+and its normal scan follows verified publication and metadata refresh.
+
+The updater checks directory access and ownership before writing. PS5 runtime
+permission acceptance, process-table compatibility, unmount/scan behavior and
+power-loss recovery still require console acceptance; host tests do not prove
+these properties on a PS5. A blocked updater preserves files and requires the
+reported permission, worker or recovery issue to be resolved. App reopening is
+manual; the updater does not launch the native app.
 A running service is preserved. The portal stages a newer service in its own
 versioned directory and reports it as pending until the next console restart.
 
