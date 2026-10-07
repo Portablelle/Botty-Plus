@@ -2,6 +2,7 @@
 #include "core.hpp"
 #include "rartypes.hpp"
 #include "sha1.hpp"
+#include "progress.hpp"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <fstream>
 #include <mutex>
+#include <map>
 #include <regex>
 #include <set>
 #include <thread>
@@ -21,6 +23,8 @@ class Rtorrent {
   Paths paths_;
   int port_;
   bool policyApplied_=false;
+  struct DownloadEstimate {ExtractionEstimate progress;ExtractionEstimate::Clock::time_point updated{};};
+  std::map<std::string,DownloadEstimate> estimates_;
   struct Socket { int fd; ~Socket(){if(fd>=0)::close(fd);} };
   json call(const std::string& method,const json& params=json::array({""})) {
     Socket socket{::socket(AF_INET,SOCK_STREAM,0)};
@@ -58,11 +62,18 @@ class Rtorrent {
   json list() {
     auto rows=call("d.multicall",{"","main","d.hash=","d.name=","d.is_active=","d.complete=","d.left_bytes=","d.size_bytes=","d.down.rate=","d.up.rate=","d.directory=","d.is_multi_file=","d.hashing=","d.is_hash_checked=","d.message=","d.peers_connected="});
     json result=json::array();
+    const auto now=ExtractionEstimate::Clock::now();std::set<std::string> present;
     for(const auto& row:rows) {
       const auto hash=lower(row[0].get<std::string>());const auto name=row[1].get<std::string>();
       bool complete=row[3].get<int>()&&row[11].get<int>()&&!row[10].get<int>();
       uint64_t left=row[4],total=row[5],rate=row[6];
       int status=row[10].get<int>()?2:(row[2].get<int>()?(complete?6:4):0);
+      present.insert(hash);double eta=-1;
+      if(status==4&&left<=total){
+        auto& estimate=estimates_[hash];
+        if(now-estimate.updated>std::chrono::seconds(30))estimate.progress=ExtractionEstimate{};
+        estimate.progress.update(now,total-left,total);estimate.updated=now;eta=estimate.progress.eta;
+      }else estimates_.erase(hash);
       fs::path directory=row[8].get<std::string>();bool multi=row[9].get<int>()!=0;
       const auto base=multi?directory.parent_path():directory;
       json files=json::array();
@@ -74,8 +85,9 @@ class Rtorrent {
       int receiving=0,sending=0;
       for(const auto& peer:call("p.multicall",{hash,"","p.down_rate=","p.up_rate="})){receiving+=peer[0].get<uint64_t>()>0;sending+=peer[1].get<uint64_t>()>0;}
       const auto error=row[12].get<std::string>();
-      result.push_back({{"id",identity(hash)},{"hashString",hash},{"name",name},{"status",status},{"percentDone",total?double(total-left)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},{"eta",rate?int64_t(left/rate):int64_t(-1)},{"downloadDir",base.string()},{"rateDownload",rate},{"rateUpload",row[7]},{"error",error.empty()?0:1},{"errorString",error},{"files",files},{"peersConnected",row[13]},{"peersSendingToUs",receiving},{"peersGettingFromUs",sending}});
+      result.push_back({{"id",identity(hash)},{"hashString",hash},{"name",name},{"status",status},{"percentDone",total?double(total-left)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},{"eta",eta},{"downloadDir",base.string()},{"rateDownload",rate},{"rateUpload",row[7]},{"error",error.empty()?0:1},{"errorString",error},{"files",files},{"peersConnected",row[13]},{"peersSendingToUs",receiving},{"peersGettingFromUs",sending}});
     }
+    for(auto it=estimates_.begin();it!=estimates_.end();)if(!present.count(it->first))it=estimates_.erase(it);else ++it;
     return result;
   }
   // Parse bounded bencode, keeping the exact info slice used for the v1 hash.
@@ -139,6 +151,7 @@ public:
       }
       else if(method=="torrent-remove"){if(args.value("delete-local-data",false))throw std::runtime_error("Delete exact files through Botty first");call("d.erase",{hash});}
       else throw std::runtime_error("Unsupported torrent operation");
+      estimates_.erase(hash);
     }
     call("session.save");return json::object();
   }

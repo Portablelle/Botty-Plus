@@ -266,7 +266,13 @@ json startTransfer(const json& body) {
       const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");};
       ExtractionEstimate estimate;uint64_t previousTotal=0;
       const auto copyProgress=[&](uint64_t bytes,uint64_t total,const std::string& file){if(total!=previousTotal){estimate=ExtractionEstimate{};previousTotal=total;}estimate.update(std::chrono::steady_clock::now(),bytes,total);transfers.progress({{"bytes",bytes},{"total",total},{"file",file},{"unit","bytes"},{"rate",estimate.rate},{"eta",estimate.eta},{"phase","Copying files; source kept until completion"}});};
-      const auto remoteReport=[&](const json& task){auto progress=backgroundProgress(task);transfers.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);};
+      const auto remoteReport=[&](const json& task){
+        auto progress=backgroundProgress(task);
+        if(task.value("state","")=="transferring"){
+          estimate.update(std::chrono::steady_clock::now(),progress.at("bytes").get<uint64_t>(),progress.at("total").get<uint64_t>());progress["eta"]=estimate.eta;
+        }else estimate=ExtractionEstimate{};
+        transfers.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);
+      };
       const auto waitForGame=[&](const std::string& title){
         CompressionLibrary library(source,shadowPort);
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::minutes(5);
