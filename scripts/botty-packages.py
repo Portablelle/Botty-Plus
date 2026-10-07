@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 PACKAGES = {
@@ -33,6 +34,30 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def compatible_versions(root):
+    native = json.loads(regular_file(root / 'botty-native/manifest.json').read_text())
+    required = native.get('requires')
+    if required is None:
+        return
+    manager = json.loads(regular_file(root / 'botty/manifest.json').read_text())
+    engine = json.loads(regular_file(root / 'rtorrent/manifest.json').read_text())
+    if not isinstance(required, dict) or set(required) != {'manager', 'worker', 'rtorrent', 'apiVersion'}:
+        raise ValueError('Invalid native compatibility contract')
+    def version(value, engine=False):
+        pattern = r'([0-9]+)\.([0-9]+)\.([0-9]+)(?:-botty([0-9]+))' if engine else r'([0-9]+)\.([0-9]+)\.([0-9]+)'
+        match = re.fullmatch(pattern, value) if isinstance(value, str) else None
+        if not match:
+            raise ValueError('Invalid component version')
+        return tuple(int(part) for part in match.groups())
+    if (type(required['apiVersion']) is not int or required['apiVersion'] < 1 or
+            type(manager.get('apiVersion')) is not int or
+            manager.get('apiVersion') != required['apiVersion'] or
+            version(manager.get('id')) < version(required['manager']) or
+            version(manager.get('workerVersion')) < version(required['worker']) or
+            version(engine.get('id'), True) < version(required['rtorrent'], True)):
+        raise ValueError('Native and service packages are incompatible')
+
+
 def inventory(root):
     result = {}
     for package, notices in PACKAGES.items():
@@ -61,6 +86,7 @@ def inventory(root):
         extra = actual - set(names)
         if extra:
             raise ValueError('Unlisted package files: ' + package + ': ' + ', '.join(sorted(extra)))
+    compatible_versions(root)
     return dict(sorted(result.items()))
 
 

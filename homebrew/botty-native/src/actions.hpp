@@ -8,6 +8,7 @@ struct Command {
     Operation operation=Operation::none;
     bool refresh=false,automatic=true,torrent=false;
     std::array<char,64> storage{};
+    std::array<char,16> serviceVersion{};
     std::array<char,96> id{};
     std::array<char,4096> archive{};
     std::array<char,16385> text{}; // magnet or archive password; never logged

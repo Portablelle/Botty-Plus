@@ -5,6 +5,8 @@ COMMON := rar strlist strfn pathfn smallfn global file filefn filcreat archive a
 NATIVE_OBJ := $(addprefix build/native/,$(addsuffix .o,$(COMMON)))
 PS5_OBJ := $(addprefix build/ps5/,$(addsuffix .o,$(COMMON)))
 FLAGS := -O2 -std=c++17 -pthread -Ivendor -Isrc -I$(UNRAR) -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
+APP_FLAGS := $(FLAGS) -Wall -Wextra -Werror
+UPDATER_HEADERS := $(wildcard src/*.hpp) vendor/json.hpp vendor/httplib.h $(UNRAR)/sha256.hpp $(UNRAR)/rartypes.hpp
 RAR_FLAGS := -DRARDLL -DRAR_SMP -DSILENT -D_UNIX
 PS5_CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
 .PHONY: native ps5 test test-progress
@@ -17,10 +19,14 @@ build/native/sha1.o build/ps5/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp
-	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp
-	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) $(UPDATER_HEADERS)
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
+build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp
+	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+build/service-updater.elf: src/service-updater.cpp $(UPDATER_HEADERS) build/ps5/sha256.o
+	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+build/service-updater-embedded.hpp: build/service-updater.elf tools/embed-service-updater.py
+	python3 tools/embed-service-updater.py $< $@
 build/core-test: tests/core-test.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
 build/progress-test: tests/progress-test.cpp src/progress.hpp
@@ -28,13 +34,14 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 test-progress: build/progress-test
 	./build/progress-test
-test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test
+test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test
 	./build/progress-test
 	./build/core-test
 	./build/rest-mode-test
 	./build/native-transaction-test
 	./build/native-update-test
 	./build/native-idle-test
+	./build/installation-update-test
 	python3 tests/integration.py
 	python3 tests/rtorrent_resume.py
 	python3 tests/search_integration.py
@@ -48,20 +55,27 @@ build/compressor-test: tests/compressor-test.cpp src/core.cpp src/storage.cpp sr
 test-compressor: build/compressor-test
 	./build/compressor-test
 
-build/native-transaction-test: tests/native-transaction-test.cpp src/native-transaction.hpp build/native/sha256.o
+build/native-transaction-test: tests/native-transaction-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
-build/native-update-test: tests/native-update-test.cpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp build/native/sha256.o
+build/native-update-test: tests/native-update-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
-build/native-idle-test: tests/native-idle-test.cpp src/core.cpp src/storage.cpp src/compressor.hpp src/compression-library.hpp
+build/native-idle-test: tests/native-idle-test.cpp src/core.cpp src/storage.cpp $(UPDATER_HEADERS)
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp,$^) -o $@ -lcurl
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp,$^) -o $@ -lcurl
 .PHONY: test-native-update
 test-native-update: build/native-transaction-test build/native-update-test build/native-idle-test
 	./build/native-transaction-test
 	./build/native-update-test
 	./build/native-idle-test
+
+build/installation-update-test: tests/installation-update-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
+	@mkdir -p build
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
+.PHONY: test-installation-update
+test-installation-update: build/installation-update-test
+	./build/installation-update-test
 
 build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build

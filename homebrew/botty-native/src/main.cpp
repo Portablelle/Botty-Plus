@@ -439,6 +439,7 @@ bool draw(Canvas& c) noexcept {
         }
         if(action==botty::Model::Action::installUpdate){
             botty::Command command;command.operation=botty::Operation::nativeUpdate;
+            command.serviceVersion=catalog.nativeUpdate.installedServiceVersion;
             const auto reason=botty::unavailable(command.operation,nullptr,catalog);
             if(*reason||!network.submit(command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"%s",*reason?reason:"Network is busy. Please try again.");showResult=true;}
             else updateSubmitting=true;
@@ -538,7 +539,8 @@ bool draw(Canvas& c) noexcept {
     c.backdrop(model.tab!=5);
     c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
     c.label(174,62,"Botty+",44,ink);c.rounded(346,80,82,28,8,border);c.label(356,80,botty::nativeDisplayVersion,20,ink);
-    const bool updateStale=catalog.stale||!catalog.valid||!online;
+    const bool managerOnline=online||status==botty::Probe::transmissionUnavailable;
+    const bool updateStale=catalog.stale||!catalog.valid||!managerOnline;
     const auto updateColor=botty::nativeUpdateAvailable(catalog.nativeUpdate,updateStale)?accent:muted;
     shortLabel(c,450,82,botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),20,550,updateColor);
     c.rounded(1488,69,336,48,24,card);
@@ -613,7 +615,7 @@ bool draw(Canvas& c) noexcept {
         const std::string_view password=connection.password.data();
         shortLabel(c,1002,681,online?password:std::string_view("-"),password.size()>6?28:44,770,accent);
         if(online&&password.size()>6)c.label(1002,745,"Short password applies next session.",20,muted);
-        if(!online)shortLabel(c,96,805,detail,24,1728,warning);
+        if(!managerOnline)shortLabel(c,96,805,detail,24,1728,warning);
         else shortLabel(c,96,805,catalog.nativeUpdate.message[0]?catalog.nativeUpdate.message.data():botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),22,1728,updateColor);
         const unsigned xs[2]={96,578};
         for(unsigned i=0;i<2;++i){surface(c,xs[i],858,446,70,model.selected==i);c.label(xs[i]+32,877,i==0?"Retry connection":"Quit app",28,model.selected==i?accent:ink);}
@@ -638,12 +640,15 @@ bool draw(Canvas& c) noexcept {
     if(catalog.transferring){surface(c,96,920,1728,58);shortLabel(c,120,934,catalog.transferError[0]?catalog.transferError.data():catalog.transferPhase.data(),23,1670,accent);}
     if(model.updateDialog){
         c.shade(170);surface(c,360,300,1200,510);
-        c.label(410,342,"Update Botty+?",44,ink);
-        char version[128];std::snprintf(version,sizeof(version),"%s  >  %s",botty::nativeDisplayVersion,catalog.nativeUpdate.availableVersion.data());
-        c.label(410,416,version,28,accent);
-        c.label(410,478,"Compression and file operations finish before installation.",24,muted);
-        c.label(410,526,"Botty+ closes. Downloads and background services stay running.",24,muted);
-        c.label(410,574,"Reopen Botty+ after the installation notification.",24,muted);
+        c.label(410,342,"Update app and services?",44,ink);
+        char version[128];std::snprintf(version,sizeof(version),"App: %s  >  %s",botty::nativeVersion,catalog.nativeUpdate.availableVersion.data());
+        c.label(410,414,version,24,accent);
+        std::snprintf(version,sizeof(version),"Manager: %s  >  %s",catalog.nativeUpdate.installedServiceVersion.data(),catalog.nativeUpdate.availableServiceVersion.data());
+        c.label(410,452,version,24,accent);
+        char components[256];std::snprintf(components,sizeof(components),"Worker: %s > %s  /  Engine: %s > %s",catalog.nativeUpdate.installedWorkerVersion.data(),catalog.nativeUpdate.availableWorkerVersion.data(),catalog.nativeUpdate.installedEngineVersion.data(),catalog.nativeUpdate.availableEngineVersion.data());
+        shortLabel(c,410,496,components,20,1100,accent);
+        c.label(410,538,"File jobs finish first; reopen after the completion notification.",22,muted);
+        c.label(410,580,"Downloads pause only if rTorrent restarts, then resume.",22,muted);
         for(unsigned i=0;i<2;++i){const bool chosen=model.confirmUpdate==(i==1);c.rounded(410+i*560,644,520,78,16,chosen?accent:background);c.label(442+i*560,667,i==0?"Cancel":"Install and close",28,chosen?background:ink);}
         c.label(410,755,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
     }
@@ -671,7 +676,7 @@ int main() {
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if(fd>=0)(void)sceKernelClose(fd);
-    botty::platform::log("Botty+ 01.004.001 - main entered");
+    botty::platform::log("Botty+ 01.004.002 - main entered");
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();

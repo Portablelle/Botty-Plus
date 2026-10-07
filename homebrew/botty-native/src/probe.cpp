@@ -177,13 +177,19 @@ ActionResult performCommand(const Command& command) noexcept {
     if(response.status!=200&&response.status!=202){message(valid&&error[0]?error.data():response.status==403?"Access expired. Refresh and try again.":"Botty rejected this request.");return result;}
     if(!valid){result.status=ActionResult::Status::uncertain;message("Invalid confirmation. Check the refreshed state before trying again.");return result;}
     if(error[0]){message(error.data());return result;}
-    if(command.operation==Operation::nativeUpdate&&(!json.parse(response.view())||json.number("apiVersion")!=1||json.string("status")!="queued"||!newerNativeVersion(json.string("version"),nativeVersion))){
+    if(command.operation==Operation::nativeUpdate){
+        bool accepted=json.parse(response.view())&&json.number("apiVersion")==1&&json.string("scope")=="installation"&&json.string("status")=="queued"&&validNativeVersion(json.string("version"))&&json.string("version")>=nativeVersion&&validServiceVersion(json.string("serviceVersion"));
+        if(command.serviceVersion[0]&&!serviceVersionAtLeast(json.string("serviceVersion"),command.serviceVersion.data()))accepted=false;
+        const auto transaction=json.string("transaction");if(transaction.size()!=32)accepted=false;
+        for(char c:transaction)if(!((c>='a'&&c<='f')||(c>='0'&&c<='9')))accepted=false;
+        if(!accepted){
         result.status=ActionResult::Status::uncertain;message("Update confirmation was incomplete. Keep Botty+ open and check its update status before retrying.");return result;
+        }
     }
     result.status=ActionResult::Status::success;
     switch(command.operation){
     case Operation::explore:message("Explore updated.");break;
-    case Operation::nativeUpdate:message("Update queued. Botty+ will close; reopen after the installation notification. File operations finish first.");break;
+    case Operation::nativeUpdate:message("Installation update queued. Botty+ will close; reopen after the completion notification. File operations finish first.");break;
     case Operation::checkNativeUpdate:message("Checking for updates in the background.");break;
     case Operation::search:message("Search started. Results will appear in Search.");break;
     case Operation::exploreGrab:case Operation::grab:message("Download requested. Botty will extract and prepare supported content automatically.");break;
@@ -208,7 +214,8 @@ ActionResult performCommand(const Command& command) noexcept {
     return result;
 }
 bool Network::submit(const Command& command) noexcept {
-    if(!thread_||state_.load()!=Probe::ready||busy_.load()||gate_.test_and_set(std::memory_order_acquire))return false;
+    const auto state=state_.load();
+    if(!thread_||(state!=Probe::ready&&!(state==Probe::transmissionUnavailable&&command.operation==Operation::checkNativeUpdate))||busy_.load()||gate_.test_and_set(std::memory_order_acquire))return false;
     // One pending request, never replayed by reconnect or retry.
     if(busy_.exchange(true)){gate_.clear(std::memory_order_release);return false;}
     pending_=command;

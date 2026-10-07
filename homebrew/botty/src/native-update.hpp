@@ -9,10 +9,11 @@
 #include <thread>
 
 namespace botty {
-inline std::string nativeDownload(const std::string& path,size_t limit,const fs::path& ca) {
+inline std::string nativeDownload(const std::string& path,size_t limit,const fs::path& ca,const std::atomic<bool>* cancelled=nullptr) {
   if(!limit||limit>NativeTransaction::maxFileBytes)throw std::runtime_error("Unexpected native download bound.");
-  if(path!="botty-release.json"&&path!="botty-native/manifest.json"&&
-     (path.rfind("botty-native/",0)!=0||!nativeFileAllowed(path.substr(13))))throw std::runtime_error("Unexpected native release path.");
+  const std::vector<std::string> services={"botty/manifest.json","botty/botty-manager.elf","botty/icon0.png","botty/ui/index.html","botty/ui/app.js","botty/ui/style.css","botty/cacert.pem","botty/game-compressor.elf","rtorrent/manifest.json","rtorrent/rtorrent.elf","rtorrent/rtorrent.rc","rtorrent/cacert.pem"};
+  if(path!="botty-release.json"&&path!="botty-native/manifest.json"&&std::find(services.begin(),services.end(),path)==services.end()&&
+     (path.rfind("botty-native/",0)!=0||!nativeFileAllowed(path.substr(13))))throw std::runtime_error("Unexpected installation release path.");
   if(!fs::is_regular_file(fs::symlink_status(ca)))throw std::runtime_error("Manager CA bundle is missing. Update the manager installation before retrying.");
   CURL* raw=curl_easy_init();if(!raw)throw std::runtime_error("Cannot initialize native release check.");
   std::unique_ptr<CURL,decltype(&curl_easy_cleanup)> client(raw,curl_easy_cleanup);
@@ -28,6 +29,11 @@ inline std::string nativeDownload(const std::string& path,size_t limit,const fs:
   curl_easy_setopt(raw,CURLOPT_CAINFO,ca.c_str());curl_easy_setopt(raw,CURLOPT_NOSIGNAL,1L);
   curl_easy_setopt(raw,CURLOPT_CONNECTTIMEOUT,10L);curl_easy_setopt(raw,CURLOPT_TIMEOUT,120L);
   curl_easy_setopt(raw,CURLOPT_LOW_SPEED_LIMIT,1024L);curl_easy_setopt(raw,CURLOPT_LOW_SPEED_TIME,20L);
+  curl_easy_setopt(raw,CURLOPT_NOPROGRESS,0L);
+  curl_easy_setopt(raw,CURLOPT_XFERINFODATA,cancelled);
+  curl_easy_setopt(raw,CURLOPT_XFERINFOFUNCTION,+[](void* opaque,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int {
+    return opaque&&static_cast<const std::atomic<bool>*>(opaque)->load()?1:0;
+  });
   curl_easy_setopt(raw,CURLOPT_WRITEDATA,&response);
   curl_easy_setopt(raw,CURLOPT_WRITEFUNCTION,+[](char* p,size_t n,size_t m,void* opaque)->size_t {
     auto& r=*static_cast<Response*>(opaque);if(n&&m>SIZE_MAX/n)return 0;const auto size=n*m;

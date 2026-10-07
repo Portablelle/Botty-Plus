@@ -24,6 +24,7 @@ int main() {
   writeJson(root/"compressor/state.json",{{"status","ready"}});writeJson(root/"compressor/games.json",{{std::string(32,'a'),{{"status","uncertain"}}}});
   Compressor protectedRecord;protectedRecord.init(paths,port);rejects([&]{protectedRecord.confirmNativeUpdateIdle();});assert(posts==0);
   bool needsRecovery=false;try{protectedRecord.confirmNativeUpdateIdle();}catch(const std::logic_error&){needsRecovery=true;}assert(needsRecovery);
+  writeJson(root/"compressor/games.json",json::object());
   server.stop();thread.join();Compressor unavailable;unavailable.init(paths,port);rejects([&]{unavailable.confirmNativeUpdateIdle();});
   fs::remove_all(root);std::cout<<"Native idle gate tests passed\n";
 }

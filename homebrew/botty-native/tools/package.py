@@ -23,7 +23,7 @@ def main():
                     version=param['contentVersion'], milestone=4,
                     hardwareValidated=False, registrationVerified=False,
                     identityStatus='provisional-until-console-inventory',
-                    readOnly=False, files=files)
+                    readOnly=False, requires=json.loads((ROOT / 'update-compatibility.json').read_text()), files=files)
     (dist / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     with tarfile.open(dist / 'botty-native-source.tar.gz', 'w:gz') as archive:
         for p in sorted(ROOT.rglob('*')):

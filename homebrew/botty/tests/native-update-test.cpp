@@ -3,6 +3,12 @@
 #include <cassert>
 #include <iostream>
 #include <map>
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <thread>
+#include <vector>
+#include <unistd.h>
 
 using namespace botty;
 template<class F> void rejects(F fn) {bool rejected=false;try{fn();}catch(const std::exception&){rejected=true;}assert(rejected);}

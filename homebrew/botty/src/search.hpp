@@ -49,6 +49,10 @@ class Search {
     return data.data;
   }
 public:
+  void requireInstallationIdle() {
+    std::lock_guard<std::mutex> guard(mutex);
+    if(busy||adding||coversLoading)throw std::runtime_error("Waiting for search, torrent admission and artwork file work to finish.");
+  }
   static bool ps5Title(const std::string& text){
     for(size_t i=0;i+3<=text.size();++i)if((text[i]=='p'||text[i]=='P')&&(text[i+1]=='s'||text[i+1]=='S')&&text[i+2]=='5'&&(i==0||!std::isalnum(static_cast<unsigned char>(text[i-1])))&&(i+3==text.size()||!std::isalnum(static_cast<unsigned char>(text[i+3]))))return true;
     return false;
