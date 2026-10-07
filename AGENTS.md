@@ -1,45 +1,21 @@
-# Repository Guidelines
+# Botty+ repository guidelines
 
-## Project Structure & Module Organization
+Own the native app, Botty manager, rTorrent, compression worker and optional
+Prowlarr/artwork services here. Portal+, jailbreak, DNS and installers live in
+Portablelle/Portal-Plus. This repo builds independently of Portal+.
 
-- `homebrew/botty/`: C++17 download/extraction service. Implementation lives in `src/`, browser assets in `ui/`, and UnRAR dependencies in `vendor/`.
-- `homebrew/botty-native/`: C++20 controller-driven PS5 application. Use `src/`, `assets/`, `sce_sys/`, `tests/`, and packaging utilities in `tools/`.
-- `vps-site/`: browser portal, JavaScript ES modules in `src/`, and deployable packages in `apps/`.
-- `tests/`: portal and installer tests. Homebrew components have separate tests.
-- `scripts/` contains release packaging; `deployment/` contains server configuration. `Relapse-Exploit/` and `payloads/` hold exploit/payload components.
+Match surrounding C++/Python/JS style and keep UI text in English. Use focused
+host component tests; distinguish host validation from PS5 acceptance. Do not
+over-verify benign successful operations.
 
-## Build, Test, and Development Commands
+Packaging scripts write packages/ and regenerate botty-release.json. Check it
+with `python3 scripts/botty-packages.py --check`. Commit corresponding source,
+licenses, manifests and binaries together. Keep native and service versions
+distinct. Portal+ follows this repo's main for current packages.
 
-From the workspace root:
-
-- `node --test tests/*.test.mjs`: portal, installer, and Transmission integration contracts.
-- `python3 -m unittest discover -s tests -p 'test_*.py' -v`: public export and source-package regressions.
-- `python3 scripts/portal-manifest.py --check`: verify public files, package hashes and installer pins.
-- `python3 scripts/portal-manifest.py --output dist/portal`: export a verified site to a new directory.
-- `make -C homebrew/botty native`: build the host service.
-- `python3 homebrew/botty/tests/make_fixtures.py`: generate original RAR test fixtures.
-- `make -C homebrew/botty test`: C++ core tests and Python HTTP integration tests.
-- `make -C homebrew/botty-native test preview integration`: native model tests, Python packaging tests, macOS renderer preview, and native-client integration tests. Preview requires `sips`.
-- `make -C homebrew/botty ps5`: cross-build with `PS5_PAYLOAD_SDK`. Build the native title with its separate Dockerfile and pinned runtime.
-- `python3 scripts/package-botty.py`: package the compiled service and update the installer’s manifest hash.
-
-## Coding Style & Naming Conventions
-
-Match surrounding formatting. Use spaces in source files and tabs for Make recipes. Follow existing camelCase C++/JavaScript names, Python snake_case names, and kebab-case script filenames. No shared formatter is configured; native host builds enforce `-Wall -Wextra -Werror`.
-
-Keep UI text in English unless explicitly requested otherwise or the existing application uses another language.
-
-## Testing Guidelines
-
-Use Node’s built-in test runner (`*.test.mjs`), Python `unittest` (`test_*.py`), and C++ assertion tests. No coverage threshold is defined. Add focused regressions for changed behavior, covering CRC failures, cancellation, multivolume handling, path confinement, and source preservation. Use isolated fixtures, not user downloads. Distinguish host validation from actual PS5 testing.
-
-## Commit & Pull Request Guidelines
-
-Use concise imperative subjects. PRs should describe the problem, resulting behavior, tests, and deployment implications. Include screenshots for UI changes and link relevant issues.
-
-## Configuration & Deployment
-
-Keep credentials and archive passwords out of logs. Preserve original torrents and archives. Keep service and native-title versions distinct; regenerate package hashes after binary changes. Verify console transfers and retain rollback copies. Check extraction state before restarting the service; never interrupt active work merely to deploy an update.
+Preserve original downloads, archives, saves and running services. Never
+interrupt active extraction/compression for deployment. Keep credentials and
+console diagnostics in ignored backups/ directories.
 
 ## Console crash diagnostics (FTP and kernel trace)
 

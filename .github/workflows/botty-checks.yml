@@ -1,0 +1,26 @@
+name: Botty+ checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install host build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev python3-pil
+      - name: Verify delivery contract
+        run: python3 scripts/botty-packages.py --check
+      - name: Test app packaging contracts
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test service and native app
+        run: |
+          python3 homebrew/botty/tests/make_fixtures.py
+          make -C homebrew/botty test
+          make -C homebrew/botty-native test integration
+          python3 deployment/botty-artwork/test_server.py

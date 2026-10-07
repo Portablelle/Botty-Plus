@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package Botty and pin its installer; --source-only refreshes documentation/source."""
+"""Package the standalone Botty service; --source-only refreshes documentation/source."""
 import argparse
 import hashlib
 import json
@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
     project = Path(__file__).resolve().parents[1]
     source = project / 'homebrew/botty'
-    out = project / 'vps-site/apps/botty'
+    out = project / 'packages/botty'
     out.mkdir(parents=True, exist_ok=True)
     if not args.source_only:
         files = []
@@ -30,14 +30,6 @@ def main():
         manifest = (json.dumps(dict(schema=1, id=version, files=files), indent=2) + '\n').encode()
         (out / 'manifest.json').write_bytes(manifest)
         digest = hashlib.sha256(manifest).hexdigest()
-        installer = project / 'vps-site/src/botty-manager.js'
-        text, count = re.subn(r"const HASH='[a-f0-9]{64}';", "const HASH='" + digest + "';", installer.read_text())
-        if count != 1:
-            raise ValueError('Missing service installer hash')
-        text, count = re.subn(r"const VERSION='[0-9.]+';", "const VERSION='" + version + "';", text)
-        if count != 1:
-            raise ValueError('Missing service installer version')
-        installer.write_text(text)
         print('Botty manifest:', digest)
     source_archive(source, out / 'botty-source.tar.gz',
                    ['src', 'ui', 'vendor', 'tests', 'tools', 'Dockerfile', 'Makefile',
@@ -48,6 +40,8 @@ def main():
     source_archive(worker,out/'game-compressor-source.tar.gz',['prepare.py','provenance.json','patches','vendor','tools','tests','README.md','NOTICE.md'])
     shutil.copyfile(worker/'NOTICE.md',out/'game-compressor-NOTICE.md')
     print('Botty source and notices refreshed')
+    import subprocess, sys
+    subprocess.run([sys.executable, str(project / 'scripts/botty-packages.py')], check=True)
 
 
 if __name__ == '__main__':
