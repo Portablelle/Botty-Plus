@@ -30,17 +30,21 @@ def fetch(url, limit):
         return data
 
 def clean_title(title):
+    """Remove release metadata while preserving scene words in unmarked names."""
     title = title.replace('_', ' ')
     title = re.sub(r'(?<=[A-Za-z])\.(?=[A-Za-z])', ' ', title)
-    release_name = bool(re.search(r'\bPS5\b|\b(?:CUSA|PPSA)\d+\b|\[FPKG\]', title, flags=re.I))
+    platform_marker = r'\b(?:PS5|(?:CUSA|PPSA)\d+)\b'
+    platform_release = bool(re.search(platform_marker + r'|\[FPKG\]', title, flags=re.I))
     title = re.sub(r'\[[^\]]*\]', ' ', title)
-    title = re.split(r'\bPS5\b|\s+(?:incl\.?|including|v\d|update|MULTI\d*|CUSA\d+|PPSA\d+)\b', title, maxsplit=1, flags=re.I)[0]
+    release_marker = re.compile(platform_marker + r'|\s+(?:incl\.?|including|v\d+(?:\.\d+)*|update|MULTI\d*)\b', re.I)
+    release_name = platform_release or bool(release_marker.search(title))
+    title = release_marker.split(title, maxsplit=1)[0].rstrip(' .-:')
     # Alternate metadata and edition removal until stable, regardless of order.
     # Scene words are ambiguous in canonical names; require a release marker.
     while True:
         trimmed = re.sub(r'\s+(?:DLC|add[ -]?on)(?:\s+add[ -]?on)?(?:\s+only)?\s*$', '', title, flags=re.I)
         if release_name:
-            trimmed = re.sub(r'\s+(?:proper|repack|rerip|readnfo|internal)\s*$', '', trimmed, flags=re.I)
+            trimmed = re.sub(r'[\s.:-]+(?:proper|repack|rerip|readnfo|internal)[\s.:-]*$', '', trimmed, flags=re.I)
         trimmed = re.sub(r'\s+(?:the shores|(?:standard|digital deluxe|deluxe|ultimate|complete|gold|precious|anniversary|definitive|premium|special|ballpark|collectors?|game of the year) edition|directors? ?cut|goty)\s*$', '', trimmed, flags=re.I)
         if trimmed == title: break
         title = trimmed

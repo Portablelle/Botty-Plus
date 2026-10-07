@@ -35,19 +35,58 @@ class Covers(unittest.TestCase):
   self.assertNotEqual(self.module.normalize('Little Nightmares III'), self.module.normalize('Little Nightmares II'))
   self.assertEqual(self.module.normalize('ratchet and clank rift apart'), self.module.normalize('Ratchet & Clank: Rift Apart'))
  def test_release_suffix_order(self):
+  """Clean stacked scene, DLC, and edition suffixes in either order."""
   for suffix in ['DLC ONLY Deluxe Edition', 'PROPER Deluxe Edition',
                  'PROPER Deluxe Edition REPACK DLC ONLY', 'Deluxe Edition PROPER Ballpark Edition']:
    with self.subTest(suffix=suffix):
     self.assertEqual(self.module.clean_title('Example Game '+suffix+' PS5-PPSA00000[FPKG]'), 'Example Game')
   self.assertEqual(self.module.clean_title('Example Game DLC ONLY Deluxe Edition'), 'Example Game')
  def test_canonical_scene_words_preserved(self):
+  """Keep canonical scene words unless another release marker is present."""
   for word in ['Proper', 'Repack', 'Rerip', 'Readnfo', 'Internal']:
    with self.subTest(word=word):
     title='Example '+word
     self.assertEqual(self.module.clean_title(title),title)
     self.assertEqual(self.module.clean_title(title+' Deluxe Edition'),title)
-    for marker in [' PS5', ' PPSA00000', '[FPKG]']:
-     self.assertEqual(self.module.clean_title(title+marker),'Example')
+    for marker in [' PS5', ' PPSA00000', ' CUSA12345', '[FPKG]',
+                   ' [PS5]', ' [PPSA00000]', ' [CUSA12345]',
+                   '-PPSA12345', '.CUSA12345', ':PPSA12345',
+                   ' UPDATE', ' v1.02', ' v10.02', ' MULTI', ' MULTI5',
+                   ' incl DLC', ' incl. DLC', ' including DLC']:
+     with self.subTest(marker=marker):
+      self.assertEqual(self.module.clean_title(title+marker),'Example')
+ def test_scene_words_before_release_metadata(self):
+  """Release metadata enables cleanup of preceding scene and edition suffixes."""
+  for marker in ['UPDATE', 'v1.02', 'v10.02', 'MULTI5', 'incl DLC', 'including DLC']:
+   with self.subTest(marker=marker):
+    title='Ratchet and Clank Rift Apart'
+    self.assertEqual(self.module.clean_title(title+' PROPER '+marker),title)
+    self.assertEqual(self.module.clean_title(title+' PROPER Deluxe Edition REPACK '+marker),title)
+ def test_platform_marker_boundaries(self):
+  """Recognize bracketed and punctuated platform markers, not embedded words."""
+  for title in ['Example Proper [PPSA00000]', 'Example Internal [CUSA12345]',
+                'Example Repack [PS5]', 'Example Proper-PPSA12345',
+                'Example Internal-CUSA12345', 'Example Proper-[PPSA12345]',
+                'Example Proper [ps5]', 'Example Proper-ppsa12345']:
+   with self.subTest(title=title):
+    self.assertEqual(self.module.clean_title(title),'Example')
+  for title in ['Example Proper XPPSA12345', 'Example Proper PPSA12345X']:
+   with self.subTest(title=title):
+    self.assertEqual(self.module.clean_title(title),title)
+  for title in ['Example Proper [CUSA12345X]', 'Example Proper [PS50]']:
+   with self.subTest(title=title):
+    self.assertEqual(self.module.clean_title(title),'Example Proper')
+ def test_punctuation_joined_scene_suffixes(self):
+  """Strip punctuated scene suffixes only when release metadata is present."""
+  for separator in ['-', '.', ':']:
+   for word in ['PROPER', 'REPACK', 'RERIP', 'READNFO', 'INTERNAL']:
+    with self.subTest(separator=separator,word=word):
+     title='Some Game'+separator+word
+     self.assertEqual(self.module.clean_title(title+separator+'PPSA12345'),'Some Game')
+     self.assertEqual(self.module.clean_title(title+' [CUSA12345]'),'Some Game')
+     self.assertEqual(self.module.normalize(self.module.clean_title(title)),self.module.normalize(title))
+  self.assertEqual(self.module.clean_title('Some Game-PROPER:REPACK-PPSA12345'),'Some Game')
+  self.assertEqual(self.module.clean_title('Some Game Deluxe Edition-PROPER-PPSA12345'),'Some Game')
  def test_steam_and_fallback(self):
   image=io.BytesIO();picture=Image.new('RGB',(20,30),(20,60,80));picture.paste((220,180,100),(0,0,10,15));picture.save(image,format='PNG')
   def fetch(url,limit):
@@ -99,6 +138,7 @@ class Covers(unittest.TestCase):
  def test_origin_confinement(self):
   with self.assertRaises(ValueError):self.module.fetch('http://localhost/private',100)
  def test_sparta_release_uses_verified_playstation_source(self):
+  """Fetch the verified Sparta product and reject a deliberately wrong identity."""
   self.module.SOURCES=pathlib.Path(__file__).with_name('sources.json')
   calls=[]
   def fetch(url,limit):
