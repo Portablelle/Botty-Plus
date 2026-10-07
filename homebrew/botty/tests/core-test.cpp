@@ -67,7 +67,9 @@ int main(){
   fails([&]{downloadedFiles(root/"delete",{"sub"},true);});
   const auto fixtures=fs::path("tests/fixtures");
   std::atomic<bool> cancelled{false};
-  fails([&]{extractRar(fixtures/"app.rar",root/"cancelled",[&](const Progress&p){if(p.bytes>0)cancelled=true;},"",[&]{return cancelled.load();},1);});
+  fails([&]{extractRar(fixtures/"app.rar",root/"cancelled",[&](const Progress&p){if(p.phase=="Checking archive headers")cancelled=true;},"",[&]{return cancelled.load();},1);});
+  // This phase is reported before member paths are created. A byte-based
+  // request races a small member on tmpfs and cannot guarantee no output.
   assert(cancelled&&!fs::exists(root/"cancelled/Demo/eboot.bin"));
   assert(fs::exists(fixtures/"app.rar"));
   extractRar(fixtures/"app.rar",root/"app",[](const Progress&){});

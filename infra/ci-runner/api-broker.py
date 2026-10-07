@@ -41,7 +41,9 @@ def main():
         reply = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=30,
                                cwd="/home/ubuntu", env={"HOME": "/home/ubuntu", "PATH": "/usr/bin:/bin:/snap/bin", "LANG": "C.UTF-8"})
     except subprocess.TimeoutExpired:
-        raise SystemExit("GitHub runner API timed out after 30 seconds.")
+        if operation == "create":
+            raise SystemExit("JIT_CREATE_TIMEOUT: remote creation outcome is unknown; unused JIT identities expire automatically.")
+        raise SystemExit("JIT_DELETE_TIMEOUT: retry deletion of the retained runner ID.")
     if reply.returncode:
         # A JIT identity already disappears automatically after its job.
         if operation == "delete" and "(HTTP 404)" in reply.stderr:

@@ -12,13 +12,18 @@ sudo apt-get install -y curl jq python3 sudo
 # Required by Docker bridge inter-container isolation; persist across reboots.
 sudo modprobe br_netfilter
 printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/plus-runner.conf >/dev/null
+printf 'net.bridge.bridge-nf-call-iptables = 1\n' | sudo tee /etc/sysctl.d/99-plus-runner.conf >/dev/null
+sudo sysctl -p /etc/sysctl.d/99-plus-runner.conf >/dev/null
 [[ $(cat /proc/sys/net/bridge/bridge-nf-call-iptables) == 1 ]] || {
-  echo "Docker bridge filtering must be enabled before installing the slots." >&2
+  echo "Enable Docker bridge filtering with: sudo sysctl -w net.bridge.bridge-nf-call-iptables=1" >&2
   exit 1
 }
 sudo loginctl enable-linger gh-runner
 # This broker requires Ubuntu's existing GitHub login; no PAT is copied.
 sudo -u ubuntu /snap/bin/gh auth status >/dev/null
+for repository in Portablelle/Botty-Plus Portablelle/Portal-Plus; do
+  sudo -u ubuntu /snap/bin/gh api "repos/$repository/actions/runners" >/dev/null
+done
 sudo install -o root -g root -m 755 api-broker.py /usr/local/sbin/plus-runner-api
 sudo visudo -cf plus-runner.sudoers
 sudo install -o root -g root -m 440 plus-runner.sudoers /etc/sudoers.d/plus-runner

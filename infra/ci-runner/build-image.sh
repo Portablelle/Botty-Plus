@@ -14,6 +14,19 @@ for command in curl jq docker; do
   fi
 done
 
+# Rootless Docker ignores resource caps without delegated cgroup v2 controllers.
+[[ $(docker info --format '{{.CgroupVersion}} {{.CgroupDriver}}') == '2 systemd' ]] || {
+  echo "Rootless build limits require Docker cgroup v2 with the systemd driver." >&2
+  exit 1
+}
+controllers="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers"
+for controller in cpu memory pids; do
+  if ! grep -qw "$controller" "$controllers"; then
+    echo "Delegate $controller to gh-runner user@.service before building (systemd Delegate=cpu memory pids)." >&2
+    exit 1
+  fi
+done
+
 curl_args=(--fail --silent --show-error --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120)
 release=$(curl "${curl_args[@]}" https://api.github.com/repos/actions/runner/releases/latest)
 runner=$(jq -er '.tag_name // empty' <<<"$release")
