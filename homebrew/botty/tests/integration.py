@@ -101,11 +101,13 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert state['torrents'][1]['peersConnected']==0
         assert state['torrents'][0]['eta']==-1
         entries[0].update(leftUntilDone=1200,rateDownload=10,status=4)
+        observed_at=time.monotonic()
         assert request('/api/state')['torrents'][0]['eta']==-1
         time.sleep(5.1)
         entries[0].update(leftUntilDone=1149,rateDownload=100000)
         eta=request('/api/state')['torrents'][0]['eta']
-        assert 100<eta<140,eta
+        expected_eta=1149*(time.monotonic()-observed_at)/51
+        assert abs(eta-expected_eta)<10,(eta,expected_eta)
         request('/api/torrent',{'action':'pause','id':1})
         assert request('/api/state')['torrents'][0]['eta']==-1
         request('/api/torrent',{'action':'resume','id':1})
