@@ -17,9 +17,9 @@ build/native/sha1.o build/ps5/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp
+build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp
+build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp src/rest-mode.hpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp
 	$(PS5_CXX) $(FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/core-test: tests/core-test.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
@@ -28,10 +28,13 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 test-progress: build/progress-test
 	./build/progress-test
-test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client
+test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test
 	./build/progress-test
 	./build/core-test
 	./build/rest-mode-test
+	./build/native-transaction-test
+	./build/native-update-test
+	./build/native-idle-test
 	python3 tests/integration.py
 	python3 tests/rtorrent_resume.py
 	python3 tests/search_integration.py
@@ -44,6 +47,21 @@ build/compressor-test: tests/compressor-test.cpp src/core.cpp src/storage.cpp sr
 .PHONY: test-compressor
 test-compressor: build/compressor-test
 	./build/compressor-test
+
+build/native-transaction-test: tests/native-transaction-test.cpp src/native-transaction.hpp build/native/sha256.o
+	@mkdir -p build
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
+build/native-update-test: tests/native-update-test.cpp src/native-update.hpp src/native-transaction.hpp src/native-process.hpp build/native/sha256.o
+	@mkdir -p build
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
+build/native-idle-test: tests/native-idle-test.cpp src/core.cpp src/storage.cpp src/compressor.hpp src/compression-library.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp,$^) -o $@ -lcurl
+.PHONY: test-native-update
+test-native-update: build/native-transaction-test build/native-update-test build/native-idle-test
+	./build/native-transaction-test
+	./build/native-update-test
+	./build/native-idle-test
 
 build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build

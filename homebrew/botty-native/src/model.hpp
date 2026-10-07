@@ -4,6 +4,8 @@
 #include <array>
 #include <string_view>
 namespace botty {
+inline constexpr char nativeVersion[]="01.004.001";
+inline constexpr char nativeDisplayVersion[]="1.4.1";
 // string_view::substr pulls in exception support absent from the native runtime.
 inline std::string_view slice(std::string_view s, std::size_t pos,
                              std::size_t count=std::string_view::npos) noexcept {
@@ -60,8 +62,18 @@ struct Model {
     unsigned tab=5, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
     bool details=false;
     bool quitDialog=false, confirmQuit=false;
-    enum class Action { none, retry, quit, menu, add, explore };
+    bool updateDialog=false, confirmUpdate=false;
+    enum class Action { none, retry, quit, menu, add, explore, update, installUpdate };
     Action press(unsigned edge) noexcept {
+        if (updateDialog) {
+            if (edge & Buttons::circle) { updateDialog=false; return Action::none; }
+            if (edge & (Buttons::left|Buttons::right)) confirmUpdate=!confirmUpdate;
+            if (edge & Buttons::cross) {
+                updateDialog=false;
+                if (confirmUpdate) return Action::installUpdate;
+            }
+            return Action::none;
+        }
         if (quitDialog) {
             if (edge & Buttons::circle) { quitDialog=false; return Action::none; }
             if (edge & (Buttons::left|Buttons::right)) confirmQuit=!confirmQuit;
@@ -84,8 +96,9 @@ struct Model {
         if(edge & Buttons::triangle)return Action::retry;
         if(edge & Buttons::square)return Action::add;
         if(tab==3) {
-            if(edge&(Buttons::up|Buttons::down|Buttons::left|Buttons::right))selected=1-selected;
-            if(edge&Buttons::cross){if(selected==0)return Action::retry;quitDialog=true;confirmQuit=false;}
+            if(edge&(Buttons::right|Buttons::down))selected=(selected+1)%3;
+            else if(edge&(Buttons::left|Buttons::up))selected=(selected+2)%3;
+            if(edge&Buttons::cross){if(selected==0)return Action::retry;if(selected==2)return Action::update;quitDialog=true;confirmQuit=false;}
         }else if(tab==5){
             if((edge&Buttons::right)&&selected+1<count)++selected;
             if((edge&Buttons::left)&&selected)--selected;

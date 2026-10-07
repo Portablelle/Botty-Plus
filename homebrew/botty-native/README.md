@@ -36,7 +36,7 @@ confirmation with Cancel selected initially.
   and moving recognized content to the library. Moved jobs appear in Library.
 - **Library:** three-column grid, left/right moves one card, up/down one row,
   Cross opens details. This screen does not automatically launch games.
-- **Connections:** Transmission address, username and password for LAN access.
+- **Connections:** web address, username and password for LAN access, plus an app-update button. The header shows whether the running native app is up to date. Choose **Update Botty+**, then **Install and close** to queue an available update. Cancellation is selected by default.
 
 In details, up/down changes pages. The controller keyboard uses L1/R1 to switch
 key sets, Square to erase and Triangle to reveal/hide an archive password.
@@ -49,6 +49,29 @@ uncertain and is not automatically repeated. Network work is bounded and runs
 outside the render loop. Input-release guards prevent one button press from both
 opening and confirming a dialog. Missing service capabilities disable related
 actions instead of pretending they succeeded.
+
+## In-app native updates
+
+In-app updates require Botty service 1.5.3 or later. Use Portal+ once to install
+the native client and updated service; an already running older service stays
+untouched until a deliberately restarted console session. Older services show
+an update-service notice rather than claiming that the app is current.
+
+The update button checks the native package published on this repository's
+`main` branch. It does not update the manager, rTorrent or the compression worker.
+After a durably acknowledged request, the native app exits through its usual
+cleanup path. The manager waits for compression, including activation and
+verification, and other file operations to finish before installation. Downloads
+and services stay running. Close other native apps too, and reopen Botty+ after
+the installation notification. If the request confirmation is lost or invalid,
+the client stays open and asks you to check the current state instead of
+automatically sending the request again.
+
+Replacement files are hash-verified and the previous title and recognized
+registered metadata are backed up before publication. Installation is refused
+when required permissions, idle state or stopped processes cannot be confirmed.
+Keep the backup and update journal until the updated app has launched successfully.
+Host tests and renderer previews do not establish PS5 update acceptance.
 
 ## Build and validation
 

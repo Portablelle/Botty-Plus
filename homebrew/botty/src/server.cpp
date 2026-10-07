@@ -8,6 +8,8 @@
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
 #include "compressor.hpp"
+#include "native-update.hpp"
+#include "native-process.hpp"
 #include <chrono>
 #include <atomic>
 #include <csignal>
@@ -24,7 +26,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.5.2/ui"
+#define BOTTY_UI "/data/botty/manager/1.5.3/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -39,6 +41,8 @@ __attribute__((constructor(101))) static void startupLog() {
 namespace {
 Search search,explore;
 Compressor compressor;
+std::unique_ptr<NativeTransaction> nativeTransaction;
+std::unique_ptr<NativeUpdater> nativeUpdater;
 Operations operations;
 Operations transfers;
 std::mutex lock;
@@ -116,6 +120,7 @@ json startExtraction(const json& request, bool automatic=false) {
   if(password.size()>1024)throw std::runtime_error("Password too long");
   std::lock_guard<std::mutex> guard(lock);
   if(retiring)throw std::runtime_error("Botty is shutting down");
+  nativeUpdater->requireAdmission();
   compressor.requireIdle();
   if(transferring||extracting)throw std::runtime_error("Another extraction is running");
   const auto torrent=getTorrent(id);
@@ -237,6 +242,7 @@ void automaticDownloads(){
 }
 json startTransfer(const json& body) {
   std::lock_guard<std::mutex> guard(lock);
+  nativeUpdater->requireAdmission();
   compressor.requireIdle();if(extracting||transferring)throw std::runtime_error("Wait for the current file operation");
   const auto kind=body.value("kind","job");
   if(kind!="torrent"&&kind!="job"&&kind!="publish")throw std::runtime_error("Invalid transfer kind");
@@ -389,7 +395,24 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.2"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.3"}});
+    NativeTransaction::Config nativeConfig;
+#ifndef __PS5__
+    nativeConfig.nativeRoot=paths.root/"native-test/PPSA99071";
+    nativeConfig.stateRoot=paths.root/"native";
+    for(size_t i=0;i<nativeConfig.metadataRoots.size();++i)nativeConfig.metadataRoots[i]=paths.root/"native-test"/("metadata-"+std::to_string(i));
+#endif
+    nativeTransaction=std::make_unique<NativeTransaction>(nativeConfig);
+    nativeUpdater=std::make_unique<NativeUpdater>(*nativeTransaction,nativeConfig.stateRoot/"request.json",
+      [](const std::string& file,size_t limit){return nativeDownload(file,limit,fs::path(uiDir).parent_path()/"cacert.pem");},
+      []{
+        {std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring)throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");}
+        compressor.confirmNativeUpdateIdle();
+        std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||compressor.busy())throw std::runtime_error("Waiting for all file operations to finish.");
+      },confirmNativeProcessesStopped,
+      []{CompressionLibrary(paths,shadowPort).api("games/unmount",{{"title_id","PPSA99071"}});},
+      []{CompressionLibrary(paths,shadowPort).api("scan",{{"reset_attempts",false}});},notifySystem);
+    nativeUpdater->start();
     stage="creating HTTP server";
     RestModeKeeper restMode(currentRestModeSupported(),requestRestMode);
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
@@ -418,7 +441,15 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.2"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.3"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Post("/api/native-update",[](const auto& req,auto& res){
+      const auto body=json::parse(req.body);if(!body.is_object()||!body.empty())throw std::runtime_error("Native update accepts an empty object only.");
+      std::lock_guard<std::mutex> guard(lock);if(retiring)throw std::runtime_error("Botty is shutting down");reply(res,nativeUpdater->request(),202);
+    });
+    server.Post("/api/native-update/check",[](const auto& req,auto& res){
+      const auto body=json::parse(req.body);if(!body.is_object()||!body.empty())throw std::runtime_error("Native update check accepts an empty object only.");
+      nativeUpdater->recheck();reply(res,json::object(),202);
+    });
     server.Get("/api/rest-mode",[&restMode](const auto&,auto& res){reply(res,restMode.state());});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
@@ -450,6 +481,7 @@ int main(int argc,char** argv) {
       result["restMode"]=restMode.state();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["compression"]=compressor.state();
+      result["nativeUpdate"]=nativeUpdater->state();
       for(auto& job:result["jobs"]){const auto c=compressor.game(job.value("id",""));job["compression"]=c;if(c.value("status","")=="ready"){job["destination"]=c.at("output");job["storage"]=c.value("storage","internal");job["content"]["kind"]="compressed";}}
       result["catalogArtworkSupported"]=true;
       std::set<std::string> owned;
@@ -495,6 +527,7 @@ int main(int argc,char** argv) {
       if(action=="remove-data") {
         if(!body.value("confirmed",false))throw std::runtime_error("Confirm deletion of the torrent and downloaded files");
         std::lock_guard<std::mutex> guard(lock);
+        nativeUpdater->requireAdmission();
         compressor.requireIdle();
         if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
         const auto torrent=getTorrent(id);
@@ -550,7 +583,7 @@ int main(int argc,char** argv) {
     server.Post("/api/extract",[](const auto& req,auto& res){reply(res,startExtraction(json::parse(req.body)),202);});
     server.Post("/api/move",[](const auto& req,auto& res){
       auto body=json::parse(req.body);
-      if(!body.contains("storage")){std::lock_guard<std::mutex> guard(lock);compressor.requireIdle();if(extracting||transferring)throw std::runtime_error("Wait for the active file operation");auto job=findJob(body.at("id").template get<std::string>());const auto selected=storage.get(job.value("storage","internal"));job=movePrepared(selected,job);for(auto& old:jobs)if(old.at("id")==job.at("id"))old=job;reply(res,job);return;}
+      if(!body.contains("storage")){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(extracting||transferring)throw std::runtime_error("Wait for the active file operation");auto job=findJob(body.at("id").template get<std::string>());const auto selected=storage.get(job.value("storage","internal"));job=movePrepared(selected,job);for(auto& old:jobs)if(old.at("id")==job.at("id"))old=job;reply(res,job);return;}
       body["kind"]="publish";reply(res,startTransfer(body),202);
     });
     server.Post("/api/transfer",[](const auto& req,auto& res){reply(res,startTransfer(json::parse(req.body)),202);});
@@ -562,7 +595,7 @@ int main(int argc,char** argv) {
     });
     server.Post("/api/dismiss-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);if(transferring)throw std::runtime_error("Wait for the transfer to finish");auto job=findJob(id);const auto status=job.value("status","");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring)throw std::runtime_error("Wait for the transfer to finish");auto job=findJob(id);const auto status=job.value("status","");
       if(status!="ready"&&status!="moved"&&status!="failed"&&status!="cancelled"&&status!="interrupted")throw std::runtime_error("Only finished extractions can be removed from the list");
       if(status=="failed"||status=="cancelled"||status=="interrupted"){
         DeletionScope operation(operations,id,job.value("name","Partial extraction"));
@@ -576,6 +609,7 @@ int main(int argc,char** argv) {
     server.Post("/api/beta/shutdown",[&](const auto& req,auto& res){
       if(!json::parse(req.body).value("confirmed",false))throw std::runtime_error("Confirm beta shutdown");
       std::lock_guard<std::mutex> guard(lock);
+      nativeUpdater->requireAdmission();
       if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       compressor.stopWorker();retiring=true;reply(res,{{"ok",true}});
       std::thread([&server]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server.stop();}).detach();
@@ -584,21 +618,23 @@ int main(int argc,char** argv) {
       const auto body=json::parse(req.body);
       if(!body.value("confirmed",false))throw std::runtime_error("Confirm creating a separate compressed copy");
       std::lock_guard<std::mutex> guard(lock);
+      nativeUpdater->requireAdmission();
       if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       reply(res,compressor.start(findJob(body.at("id").template get<std::string>()),body.value("storage","")),202);
     });
     server.Post("/api/restore-uncompressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);if(!body.value("confirmed",false))throw std::runtime_error("Confirm restoring the original game");
-      std::lock_guard<std::mutex> guard(lock);if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestRestore(id),202);
     });
     server.Post("/api/delete-uncompressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);if(!body.value("confirmed",false))throw std::runtime_error("Confirm that you tested the compressed game before deleting its original");
-      std::lock_guard<std::mutex> guard(lock);if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestOriginalDeletion(id),202);
     });
     server.Post("/api/verify-compressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);std::lock_guard<std::mutex> guard(lock);
+      nativeUpdater->requireAdmission();
       if(extracting||transferring)throw std::runtime_error("Wait for the current file operation");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestVerification(id),202);
     });
@@ -608,7 +644,7 @@ int main(int argc,char** argv) {
       const auto request=json::parse(req.body);
       if(!request.value("confirmed",false))throw std::runtime_error("Confirm deletion of the installed game; archives are kept");
       const auto id=request.at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
       auto job=findJob(id);
       for(const auto& other:jobs)if(other.at("id")!=id&&other.value("destination","")==job.value("destination","")&&other.value("status","")=="moved")
         throw std::runtime_error("Another job uses this library destination; manual review required");
@@ -633,7 +669,7 @@ int main(int argc,char** argv) {
     });
     server.Post("/api/delete-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
       auto job=findJob(id);if(job.value("status","")=="moved" || job.value("status","")=="moving" || job.value("status","")=="move-error")throw std::runtime_error("Moved or uncertain library files require manual review");
       DeletionScope operation(operations,id,job.value("name","Extraction"));
       for(const auto& suffix:{"", ".working"}) {const auto selected=storage.get(job.value("storage","internal"));const auto path=selected.extracted/(id+suffix);if(fs::exists(fs::symlink_status(path)))deleteGameDirectory(selected.extracted,path.filename(),operation.reporter());}
@@ -659,6 +695,6 @@ int main(int argc,char** argv) {
     }}).detach();
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';
-    return server.listen_after_bind()?0:1;
+    const bool served=server.listen_after_bind();retiring=true;nativeUpdater.reset();return served?0:1;
   }catch(const std::exception& error){std::cerr<<"Botty failed while "<<stage<<": "<<error.what()<<'\n';return 1;}
 }

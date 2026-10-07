@@ -26,6 +26,7 @@ thread_local std::size_t offset=0;
 bool videoClosed=false,padClosed=false,workerJoined=false;
 thread_local std::string socketRequest,socketResponse;
 bool deletionSent=false;
+bool nativeUpdateSent=false;
 void snapshot() {
     FILE* f=std::fopen("build/preview.ppm","wb");
     if(!f)std::exit(2);
@@ -84,6 +85,7 @@ int sceNetRecv(int,void* b,std::size_t n,int){
         if(is("delete-game")&&socketRequest.find("GET /api/state ")==0){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");body.insert(1,"\"libraryDeletionSupported\":true,");}
         if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
+        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"status":"queued","version":"01.004.002"})";}
         socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
     }
     const auto size=std::min(n,socketResponse.size()-offset);std::memcpy(b,socketResponse.data()+offset,size);offset+=size;return static_cast<int>(size);
@@ -127,6 +129,10 @@ int scePadRead(int,PS5_PadData* p,int){
     if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if((is("sources")||is("storage")||is("download-mode"))&&reads==3)p->buttons=PS5_PAD_BUTTON_CROSS;
     if(is("download-mode")&&reads==5)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if((is("update-confirm")||is("update-exit")||is("update-uncertain"))&&reads==7)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if((is("update-exit")||is("update-uncertain"))&&reads==9)p->buttons=PS5_PAD_BUTTON_RIGHT;
+    if((is("update-exit")||is("update-uncertain"))&&reads==11)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(is("update-uncertain")&&reads==18)assert(nativeUpdateSent&&!videoClosed);
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}
     if(is("buffered-password")&&p->buttons){p[1]=p[0];p[1].buttons=0;++p[1].timestamp;return 2;}
     return 1;
@@ -135,6 +141,7 @@ int scePadClose(int){padClosed=true;return 0;}
 int sceSystemServiceLoadExec(const char* path,const char**){
     assert(std::strcmp(path,"exit")==0);
     assert(videoClosed&&padClosed&&workerJoined);
+    if(is("update-exit"))assert(nativeUpdateSent);
     std::puts("Orderly quit released video, controller and network worker");
     std::exit(0);
 }
