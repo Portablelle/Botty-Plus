@@ -48,10 +48,14 @@ membership in the system Docker group to `gh-runner`.
 
 Host prerequisites are `curl`, `jq`, Python 3, sudo and rootless Docker.
 `sudo apt-get install -y curl jq` installs the build tools on Ubuntu/Debian;
-install-host.sh installs these prerequisites and verifies the existing accounts.
+install-host.sh installs the APT dependencies and verifies the existing accounts,
+UID, rootless Docker daemon and GitHub runners API access for both repositories.
 It also loads/persists the standard br_netfilter kernel module and verifies
 bridge filtering, required by Docker network isolation. It never bypasses a
-failed bridge-filtering check.
+failed bridge-filtering check. It persists bridge-nf-call-iptables=1 through
+a dedicated sysctl file. Builds require cgroup v2, the systemd cgroup driver,
+and cpu/memory/pids delegated to gh-runner; the build script checks these
+before requesting version discovery or invoking Docker build.
 
 Run `bash infra/ci-runner/install-host.sh` from a reviewed checkout **on dedie**.
 It installs the root-owned broker and restricted sudoers rule, installs the
