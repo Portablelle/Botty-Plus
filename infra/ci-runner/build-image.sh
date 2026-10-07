@@ -5,7 +5,11 @@ cd "$(dirname "$0")"
 for command in curl jq docker; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Missing required host command: $command" >&2
-    echo "Install curl and jq with: sudo apt-get install -y curl jq" >&2
+    if [[ "$command" == docker ]]; then
+      echo "Provision gh-runner rootless Docker and its CLI before building." >&2
+    else
+      echo "Install curl and jq with: sudo apt-get install -y curl jq" >&2
+    fi
     exit 1
   fi
 done
@@ -41,7 +45,7 @@ fi
 
 image_tag="runner-${runner#v}-node-${node#v}"
 # Legacy Docker builder applies these limits to build containers: 2 CPUs and 4 GiB RAM/swap.
-docker build --pull --quiet --cpu-period 100000 --cpu-quota 200000 --memory 4g --memory-swap 4g \
+DOCKER_BUILDKIT=0 docker build --pull --quiet --cpu-period 100000 --cpu-quota 200000 --memory 4g --memory-swap 4g \
   --tag plus-runner:latest --tag "plus-runner:$image_tag" \
   --build-arg "RUNNER_VERSION=${runner#v}" --build-arg "NODE_VERSION=${node#v}" \
   --build-arg "RUNNER_SHA256=$runner_sha256" --build-arg "NODE_SHA256=$node_sha256" .

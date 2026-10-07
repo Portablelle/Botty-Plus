@@ -27,7 +27,7 @@ Internet access to fetch dependencies.
 The job runs as UID 1001 with no capabilities and no privilege escalation.
 The root filesystem is read-only. Writable data is restricted to tmpfs:
 `/home/runner` (4 GiB, including a fresh copy of the runner and Node cache),
-`/tmp` (512 MiB), and Docker's default `/dev/shm` (64 MiB). Those mounts count
+`/tmp` (2 GiB), and Docker's default `/dev/shm` (64 MiB). Those mounts count
 against the 8 GiB memory limit; swap is disabled for the job. CPU is capped at
 4, processes at 4096. Docker logs rotate at 10 MiB, keeping two files, so PR
 output cannot grow the host's Docker graph without bound.
@@ -55,7 +55,9 @@ failed bridge-filtering check.
 
 Run `bash infra/ci-runner/install-host.sh` from a reviewed checkout **on dedie**.
 It installs the root-owned broker and restricted sudoers rule, installs the
-user units, builds the image, and enables both slots and the weekly timer.
+user units, builds the image, restarts both slots to replace old runner processes,
+and enables the weekly timer. Run installation only when jobs may be stopped;
+reinstallation also restarts the slots. The configured host UID must be 1001.
 It also runs `sudo loginctl enable-linger gh-runner`, so these user services
 and the timer run after logout and reboot.
 
@@ -72,7 +74,8 @@ minutes, so a temporarily unavailable network at boot is retried.
 
 `plus-runner@botty` and `plus-runner@portal` use `Wants=docker.service` and
 restart after Docker failures. Each normal exit revokes any unused JIT
-identity. `ExecStopPost=stop-slot.sh` also stops/removes the container and
+identity; failed deletions retain their ID and are retried before a new
+registration. `ExecStopPost=stop-slot.sh` also stops/removes the container and
 revokes the identity after an unexpected/forced slot exit. Cleanup has bounded
 timeouts, and `KillMode=mixed` cleans up remaining unit processes.
 A manual service stop/restart intentionally aborts an in-flight CI job after

@@ -14,7 +14,10 @@ runner_id=
 env_file=
 unregister() {
   if [[ -n "$runner_id" ]]; then
-    sudo -n /usr/local/sbin/plus-runner-api "$slot" delete "$runner_id" || true
+    if ! sudo -n /usr/local/sbin/plus-runner-api "$slot" delete "$runner_id"; then
+      echo "JIT_CLEANUP_FAILED: preserving runner $runner_id for retry." >&2
+      return 1
+    fi
     runner_id=
   fi
   rm -f "$state/runner-id"
@@ -23,13 +26,22 @@ cleanup() {
   [[ -z "$env_file" ]] || rm -f "$env_file"
   timeout 25 docker stop --time 20 "$container" >/dev/null 2>&1 || true
   timeout 10 docker rm -f "$container" >/dev/null 2>&1 || true
-  unregister
+  unregister || true
 }
 trap 'exit 0' TERM INT
 trap cleanup EXIT
 docker rm -f "$container" >/dev/null 2>&1 || true
 retry_delay=15
 while true; do
+  # Recover a failed deletion after service/process restart before registering again.
+  if [[ -f "$state/runner-id" ]]; then
+    runner_id=$(cat "$state/runner-id")
+    [[ "$runner_id" =~ ^[1-9][0-9]*$ ]] || exit 2
+    if ! unregister; then
+      sleep 30 & wait $!
+      continue
+    fi
+  fi
   docker rm -f "$container" >/dev/null 2>&1 || true
   if ! reply=$(sudo -n /usr/local/sbin/plus-runner-api "$slot" create); then
     echo "JIT_REGISTRATION_FAILED: retrying in $retry_delay s; check the broker error above." >&2
@@ -43,12 +55,12 @@ while true; do
   printf 'ACTIONS_RUNNER_INPUT_JITCONFIG=%s\n' "$(jq -er '.encoded_jit_config | select(type == "string" and length > 0)' <<<"$reply")" > "$env_file"
   unset reply
   docker create --name "$container" --env-file "$env_file" \
-    --env RUNNER_MANUALLY_TRAP_SIG=1 --env AGENT_TOOLSDIRECTORY=/home/runner/_toolcache \
+    --env HOME=/home/runner --env RUNNER_MANUALLY_TRAP_SIG=1 --env AGENT_TOOLSDIRECTORY=/home/runner/_toolcache \
     --env RUNNER_TOOL_CACHE=/home/runner/_toolcache --network "$network" \
     --cpus 4 --memory 8g --memory-swap 8g --pids-limit 4096 \
     --read-only --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs /home/runner:rw,exec,nosuid,nodev,size=4g,uid=1001,gid=1001,mode=0700 \
-    --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777 \
+    --tmpfs /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777 \
     --log-driver local --log-opt max-size=10m --log-opt max-file=2 \
     --entrypoint bash plus-runner:latest -c '
       set -euo pipefail
@@ -61,7 +73,7 @@ while true; do
   docker start --attach "$container" &
   wait $! || echo "Runner exited with $?"
   docker rm -f "$container" >/dev/null 2>&1 || true
-  unregister
+  unregister || true
   retry_delay=15
   sleep 5 & wait $!
 done
