@@ -25,10 +25,16 @@ int main(){
  estimate.update(at(150),300000,300000);assert(estimate.eta==0);
  ExtractionEstimate complete;complete.update(at(0),100,100);assert(complete.eta==0);
  ExtractionEstimate irregular;irregular.update(at(0),0,1000000);
- irregular.update(at(17),17000,1000000);irregular.update(at(42),42000,1000000);
+ irregular.update(at(17),17000,1000000);irregular.update(at(42),42000,1000000);irregular.update(at(60),60000,1000000);
  irregular.update(at(75),75000,1000000);assert(irregular.eta==925);
  irregular.update(at(75),75000,1000000);assert(irregular.eta==925);
  irregular.update(at(90),75000,1000000);assert(irregular.eta==-1);
+ irregular.update(at(121),106000,1000000);assert(irregular.eta==-1&&irregular.rate==0);
+ irregular.update(at(126),111000,1000000);assert(irregular.eta==889);
+ ExtractionEstimate boundary;boundary.update(at(0),0,1000000);
+ boundary.update(at(30),30000,1000000);assert(boundary.eta==970);
+ boundary.update(at(31),31000,1000000);assert(boundary.eta==969);
+ boundary.update(at(62),62000,1000000);assert(boundary.eta==-1);
  ExtractionEstimate idle;idle.update(at(0),0,0);idle.update(at(30),0,0);assert(idle.eta==-1);
  std::cout<<"Progress ETA tests passed\n";
 }

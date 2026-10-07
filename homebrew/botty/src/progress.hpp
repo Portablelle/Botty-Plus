@@ -29,12 +29,12 @@ class ExtractionEstimate {
   using Clock=std::chrono::steady_clock;
   double rate=0,eta=-1;
   void update(Clock::time_point now,uint64_t bytes,uint64_t total) {
-    if(!started || bytes<observedBytes || total!=lastTotal){
-      started=true;sampled=false;last=lastProgress=now;lastBytes=observedBytes=bytes;lastTotal=total;rate=0;eta=total>0&&bytes>=total?0:-1;
+    if(!started || bytes<observedBytes || total!=lastTotal || now-observedAt>std::chrono::seconds(30)){
+      started=true;sampled=false;last=lastProgress=observedAt=now;lastBytes=observedBytes=bytes;lastTotal=total;rate=0;eta=total>0&&bytes>=total?0:-1;
       history.clear();history.push_back({now,double(bytes)});return;
     }
     if(bytes>observedBytes)lastProgress=now;
-    observedBytes=bytes;
+    observedBytes=bytes;observedAt=now;
     const double seconds=std::chrono::duration<double>(now-last).count();
     if(seconds>=1){const double sample=double(bytes-lastBytes)/seconds;
       rate=sampled?rate+(sample-rate)*(seconds/(5+seconds)):sample;
@@ -56,7 +56,7 @@ class ExtractionEstimate {
   bool started=false,sampled=false;
   struct Sample {Clock::time_point time;double bytes;};
   std::deque<Sample> history;
-  Clock::time_point last{},lastProgress{};uint64_t lastBytes=0,observedBytes=0,lastTotal=0;
+  Clock::time_point last{},lastProgress{},observedAt{};uint64_t lastBytes=0,observedBytes=0,lastTotal=0;
 };
 
 }
