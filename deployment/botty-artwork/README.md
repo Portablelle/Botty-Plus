@@ -4,6 +4,10 @@ Run `server.py` as the dedicated `botty-artwork` user with Python 3 and Pillow,
 using the systemd service and authenticated TLS nginx route shipped alongside it.
 The API key remains in `/opt/botty-artwork/api-key`, never in this repository.
 
+Scene suffixes such as PROPER and INTERNAL are removed only when the input has
+a PS5, CUSA/PPSA title-ID, or [FPKG] marker. Metadata and edition suffixes are
+trimmed repeatedly in either order; unmarked canonical scene words are preserved.
+
 Resolution uses normalized game names (scene tags, editions, punctuation, accents,
 Roman numerals, trademark symbols), Steam game search/library artwork, Wikipedia
 exact article lookup followed by search, then a Steam store banner if no portrait
