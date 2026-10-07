@@ -13,6 +13,7 @@ ps5: build/botty-manager.elf
 build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/native
 	$(NATIVE_CXX) $(FLAGS) $(RAR_FLAGS) -c $< -o $@
+build/native/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
