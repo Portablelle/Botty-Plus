@@ -13,8 +13,8 @@ libraries and Pillow for artwork. CI uses Clang, matching the PS5 toolchains. Ge
 
 ```sh
 python3 homebrew/botty/tests/make_fixtures.py
-make -C homebrew/botty test
-make -C homebrew/botty-native test integration
+make -C homebrew/botty NATIVE_CXX=clang++ test
+make -C homebrew/botty-native CXX=clang++ test integration
 python3 deployment/botty-artwork/test_server.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 scripts/botty-packages.py --check
