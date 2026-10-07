@@ -19,8 +19,12 @@ D-pad/stick moves selection; Cross opens details and Circle goes back. Options
 opens actions for the selected item. Each destructive action uses a separate
 confirmation with Cancel selected initially.
 
-- **Explore:** six-cover pages. Triangle cycles Most seeded / Most completed /
-  Newest; Square refreshes; Cross selects **Download and prepare**. Recognized
+- **Explore:** six-cover pages, starting with Newest. Triangle cycles Newest /
+  Most grabbed / Most seeded; Square explicitly refreshes saved results. Cached
+  results are labeled and remain selectable during refresh; the focused game is
+  retained when it is still available. Cross opens the tracker chooser, where
+  sources remain browsable while refreshing; downloads wait until it finishes.
+  Recognized
   owned/downloaded titles are hidden. Matching is conservative and artwork may
   remain unavailable for some titles.
 - **Search:** Square enters a query. Results show size, seeders and leechers.
