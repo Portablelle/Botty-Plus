@@ -1,0 +1,2 @@
+# The root-owned broker itself validates every argument and restricts the repositories.
+gh-runner ALL=(root) NOPASSWD: /usr/local/sbin/plus-runner-api

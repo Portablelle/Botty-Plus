@@ -1,8 +1,12 @@
 # The image every job of the dedie runners runs in: one fresh container per job (see slot.sh).
 FROM ubuntu:24.04
 
+LABEL com.portablelle.plus-runner=true
+
 ARG RUNNER_VERSION
 ARG NODE_VERSION
+ARG RUNNER_SHA256
+ARG NODE_SHA256
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
@@ -20,23 +24,38 @@ RUN git config --system init.defaultBranch main
 RUN useradd --create-home --uid 1001 runner
 WORKDIR /home/runner
 
-RUN curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
-    | tar xz \
+RUN runner_archive="$(mktemp)" \
+  && curl -fsSL --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+    "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
+    -o "$runner_archive" \
+  && echo "${RUNNER_SHA256}  $runner_archive" | sha256sum --check --status - \
+  && tar xzf "$runner_archive" \
+  && rm -f "$runner_archive" \
   && ./bin/installdependencies.sh \
   && rm -rf /var/lib/apt/lists/* \
   && chown -R runner:runner .
 
 # Node 24 where setup-node looks first, so jobs don't download it each time.
 ENV AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
-RUN mkdir -p "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
-  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-    | tar xJ --strip-components=1 -C "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
+ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+RUN node_archive="$(mktemp)" \
+  && mkdir -p "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
+  && curl -fsSL --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+    "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    -o "$node_archive" \
+  && echo "${NODE_SHA256}  $node_archive" | sha256sum --check --status - \
+  && tar xJf "$node_archive" --strip-components=1 -C "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
+  && rm -f "$node_archive" \
   && touch "/opt/hostedtoolcache/node/${NODE_VERSION}/x64.complete" \
   && chown -R runner:runner /opt/hostedtoolcache
 
 # Native Botty tests also link zlib.
 RUN apt-get update && apt-get install -y --no-install-recommends zlib1g-dev \
   && rm -rf /var/lib/apt/lists/*
+
+# Keep the immutable runner separate from the size-capped job home.
+RUN mv /home/runner /opt/actions-runner && mkdir /home/runner \
+  && chown runner:runner /home/runner
 
 USER runner
 # slot.sh copies the repository-scoped identity, then runs as runner with --once.
