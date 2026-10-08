@@ -9,6 +9,21 @@
 
 static const char* runtime_path;
 static unsigned random_calls;
+static uid_t test_real_uid() { return getenv("OWNER_TEST_MODE") ? 1 : getuid(); }
+static int test_directory_stat(int fd, struct stat* info) {
+    const int result = fstat(fd, info);
+    const char* mode = getenv("OWNER_TEST_MODE");
+    if (!result && mode) info->st_uid = !strcmp(mode, "foreign-directory") ? 2 : 0;
+    return result;
+}
+static int test_directory_chmod(int fd, mode_t mode) {
+    const char* owner = getenv("OWNER_TEST_MODE");
+    if (owner && !strcmp(owner, "chmod-denied")) { errno = EPERM; return -1; }
+    return fchmod(fd, mode);
+}
+#define BOTTY_RT_REAL_UID test_real_uid
+#define BOTTY_RT_FSTAT test_directory_stat
+#define BOTTY_RT_FCHMOD test_directory_chmod
 static int boot_query(const char* name, void* output, size_t* length, const void* input, size_t input_length) {
     if (strcmp(name, "kern.boottime") || input || input_length) return -1;
     const char* mode = getenv("BOOT_TEST_MODE");
@@ -43,12 +58,20 @@ static botty_rt_syscall_result test_at_syscall(long number, long first, long sec
     case 503: result = unlinkat((int)first, (const char*)second, (int)third); break;
     default: return {ENOSYS, true};
     }
+    const char* owner = getenv("OWNER_TEST_MODE");
+    if (number == 493 && result == 0 && owner)
+        ((struct stat*)third)->st_uid = !strcmp(owner, "foreign-file") ? 2 : 0;
     return {result < 0 ? errno : result, result < 0};
 }
 
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     runtime_path = argv[2];
+    if (!strcmp(argv[1], "owners")) {
+        if (!botty_rtorrent_trusted_owner(0, 1) || !botty_rtorrent_trusted_owner(1, 1) ||
+            botty_rtorrent_trusted_owner(2, 1) || botty_rtorrent_trusted_owner(1, 0)) return 12;
+        return 0;
+    }
     if (!strcmp(argv[1], "at-errors")) {
         setenv("AT_TEST_FAILURE", "all", 1);
         struct stat info = {};
