@@ -17,10 +17,19 @@
 #ifndef BOTTY_RT_RANDOM_BYTES
 #define BOTTY_RT_RANDOM_BYTES arc4random_buf
 #endif
+#ifndef BOTTY_RT_REAL_UID
+#define BOTTY_RT_REAL_UID getuid
+#endif
+#ifndef BOTTY_RT_FSTAT
+#define BOTTY_RT_FSTAT fstat
+#endif
+#ifndef BOTTY_RT_FCHMOD
+#define BOTTY_RT_FCHMOD fchmod
+#endif
 
 // Portal creates storage as root; ELF-loader payloads can have real uid 1.
 // Accept the privileged installer or this process, never an unrelated owner.
-static bool botty_rtorrent_trusted_owner(uid_t owner, uid_t process_uid = getuid()) {
+static bool botty_rtorrent_trusted_owner(uid_t owner, uid_t process_uid = BOTTY_RT_REAL_UID()) {
     return owner == 0 || owner == process_uid;
 }
 
@@ -50,7 +59,7 @@ static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorre
         if (!*cursor) { close(dir); return 1; }
     }
     struct stat st;
-    if (!*directory || fstat(dir, &st) != 0 || !botty_rtorrent_trusted_owner(st.st_uid) || fchmod(dir, 0700) != 0) {
+    if (!*directory || BOTTY_RT_FSTAT(dir, &st) != 0 || !botty_rtorrent_trusted_owner(st.st_uid) || BOTTY_RT_FCHMOD(dir, 0700) != 0) {
         close(dir); return 1;
     }
     if (botty_rt_fstatat(dir, "runtime.json", &st, AT_SYMLINK_NOFOLLOW) == 0) {
