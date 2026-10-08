@@ -28,7 +28,10 @@ static int botty_rtorrent_init(int& argc, char**& argv) {
     if (!pid) return 1;
     fprintf(pid, "%d\n", getpid());
     fclose(pid);
-    if (botty_rtorrent_publish_runtime(state) != 0) return 1;
+    if (botty_rtorrent_publish_runtime(state) != 0) {
+        fprintf(stderr, "Botty rTorrent runtime identity publication failed (pid %d, uid %d, errno %d)\n", getpid(), getuid(), errno);
+        return 1;
+    }
     fprintf(stderr, "Botty rTorrent payload entered (pid %d)\n", getpid());
     // Every invocation holds the kernel lock, including supervised launches.
     // Unlike a PID file, flock is released on exit and survives PID reuse safely.

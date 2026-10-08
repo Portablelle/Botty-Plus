@@ -49,6 +49,11 @@ static botty_rt_syscall_result test_at_syscall(long number, long first, long sec
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     runtime_path = argv[2];
+    if (!strcmp(argv[1], "owners")) {
+        if (!botty_rtorrent_trusted_owner(0, 1) || !botty_rtorrent_trusted_owner(1, 1) ||
+            botty_rtorrent_trusted_owner(2, 1) || botty_rtorrent_trusted_owner(1, 0)) return 12;
+        return 0;
+    }
     if (!strcmp(argv[1], "at-errors")) {
         setenv("AT_TEST_FAILURE", "all", 1);
         struct stat info = {};
