@@ -65,3 +65,13 @@ console diagnostics in ignored backups/ directories.
 - The subsequent LAUNCH blocker, `Native update journal is damaged`, matches an independently identified installation mistake: earlier completed manual journals used named backup directories (`botty-131-20261003` and `botty-131-stackfix-20261003`) while the portal accepted only 32 hexadecimal characters. It is not proof of filesystem corruption. The portal now accepts only these exact historical paths for completed journals; pending recovery remains strict. Future manual installers must use the normal journal schema and 32-hex backup IDs.
 - A narrow portal hotfix was deployed on `test` as `v1.2.2-journal-repair-20261003`, retaining the previous public binaries. Public JS hash and manifest verified. Console recovery and compression state still require confirmation; no FTP access was available after reboot because LAUNCH stopped before starting FTP. The current 1.3.2 build remains local and was not activated on the PS5.
 - Recovery completed afterward through the normal portal installer. A second portal blocker was its 16 MiB native-file read limit; native files now have a 32 MiB bound and tests enforce the real read limits. The user reported LAUNCH working; installed metadata showed 01.003.003 and service health returned 1.3.1. All 13 native and seven service package files were subsequently read back and hash-verified in confirmed raw SELF mode. The interrupted compression remained failed with originalKept=true; its two external temporary files were present. No automatic compression retry was performed. Direct LAN access to the worker port was refused; this alone does not imply a stopped loopback-only worker.
+
+## Claude review workflow
+
+Claude replaces Cubic for this repository at the maintainer's request. Before
+pushing, run the relevant host checks and review all changes to push using
+`.claude/commands/review-pr.md`; fix confirmed findings and repeat affected checks
+after edits. Cubic is no longer a prerequisite. All Claude review output must be in English,
+never French, including local findings, summaries, inline comments and replies.
+GitHub reviews use Opus, with
+at most two Sonnet autofix rounds on the same PR. A human merges the PR.
