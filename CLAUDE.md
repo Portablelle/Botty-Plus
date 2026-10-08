@@ -59,7 +59,12 @@ do not rewrite the review controls. Ordinary PR checks are not tamper-proof
 against repository writers editing workflows, so use GitHub rulesets/required
 workflows if enforcement against privileged PR authors is required.
 
-Autofix makes at most two rounds on the same PR branch. Configure
+Autofix makes at most two attempts on the same PR. Each attempt is reserved
+before Sonnet runs in a persistent `github-actions[bot]` PR comment keyed by
+workflow run/attempt. Squashing or rebasing commits does not reset the budget;
+failed/cancelled attempts remain counted. Reservations are serialized. Stale
+checkouts stop before invoking Claude; a head change during editing makes Claude
+stop before pushing. The action never asks Claude to pull or rebase. Configure
 `Claude review verdict` as a required branch check after activation if merge
 enforcement is wanted; the status alone does not enforce branch protection.
 

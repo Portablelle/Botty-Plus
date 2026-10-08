@@ -177,9 +177,11 @@ jobs:
             msg="✅ **Ready to merge.** $reason"
           elif [ "$code" = 1 ]; then
             # Findings a fix clears: Claude fixes them on this branch, twice at most per PR.
-            rounds=$(gh api "repos/$REPO/pulls/$PR/commits" --paginate \
-              --jq '.[] | select(.commit.message | startswith("Fix review findings")) | .sha' | wc -l)
-            if [ "$FORK" != true ] && [ "$rounds" -lt 2 ]; then
+            budget_code=0
+            rounds=$(bash .github/scripts/claude-autofix-attempt.sh count "$PR") || budget_code=$?
+            if [ "$budget_code" != 0 ]; then
+              msg="👉 **Your turn: check the autofix budget.** $reason The persistent attempt count could not be read; no autofix was started. Re-run after restoring API access. $override"
+            elif [ "$FORK" != true ] && [ "$rounds" -lt 2 ]; then
               [ "$FRESH" = true ] && echo autofix=true >>"$GITHUB_OUTPUT"
               msg="🔧 **Wait: Claude is fixing it on this branch** (round $((rounds + 1)) of 2). $reason The review then runs again, and this message will say when to merge."
             elif [ "$FORK" = true ]; then
@@ -206,7 +208,8 @@ jobs:
     if: failure() && needs.verdict.outputs.autofix == 'true'
     concurrency:
       group: claude-autofix-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      # Serialize reservations so concurrent verdicts cannot overspend the budget.
+      cancel-in-progress: false
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 45
     permissions:
@@ -236,7 +239,33 @@ jobs:
           done
           echo "CLAUDE_REVIEW_POLICY=$RUNNER_TEMP/claude-policy" >> "$GITHUB_ENV"
 
+      - name: Guard the head and reserve an autofix attempt
+        id: attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" != "$HEAD" ] ||
+             [ "$(git rev-parse HEAD)" != "$HEAD" ]; then
+            echo "::notice::The PR head changed; leave fixes to its new review."
+            exit 0
+          fi
+          git show "$BASE:.github/scripts/claude-autofix-attempt.sh" > "$RUNNER_TEMP/claude-autofix-attempt.sh"
+          code=0
+          round=$(bash "$RUNNER_TEMP/claude-autofix-attempt.sh" reserve "$PR" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT") || code=$?
+          if [ "$code" = 3 ]; then
+            echo "::notice::The two-attempt autofix budget is exhausted."
+            exit 0
+          fi
+          [ "$code" = 0 ] || exit "$code"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "Autofix attempt $round of 2 reserved." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fix the review's findings
+        if: steps.attempt.outputs.run == 'true'
         uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -248,6 +277,10 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
             BRANCH: ${{ github.event.pull_request.head.ref }} (checked out)
+            EXPECTED HEAD: ${{ github.event.pull_request.head.sha }}
+
+            Before editing, verify `git rev-parse HEAD` and the current PR head both equal
+            EXPECTED HEAD. Otherwise stop and leave the work to the new review.
 
             Claude's review of this PR left open findings or failing checks. Fix them on this
             branch, in this PR. Do the work yourself: no sub-agents, no background tasks.
@@ -265,11 +298,16 @@ jobs:
                the fix. If a finding looks wrong or needs a human decision, leave the code alone
                and say why in your comment (step 5): a maintainer decides.
             3. Run `bash scripts/botty-host-checks.sh` until it passes. Host tests do not prove PS5 acceptance.
-            4. Run `git pull --rebase` before the final validation. Recheck the final diff
-               against the trusted `review-pr.md` under `CLAUDE_REVIEW_POLICY`, fix any confirmed issue, and rerun
-               affected checks after edits. Commit all final fixes in one commit starting
-               with "Fix review findings" and the IDs (e.g. "Fix review findings R1, R3"),
-               then push to this branch. Never force-push or push to another branch.
+            4. Recheck the final diff against the trusted `review-pr.md` under
+               `CLAUDE_REVIEW_POLICY`, fix confirmed issues and rerun affected checks.
+               Before making a commit and again immediately before pushing, read this PR's
+               current head with `gh api repos/<REPO>/pulls/<PR> --jq .head.sha`.
+               If it differs from EXPECTED HEAD, stop without pushing and leave the fixes
+               to the new review; do not pull, merge, rebase or try to reconcile the branch.
+               Otherwise commit all fixes in one commit starting with "Fix review findings"
+               and the IDs (e.g. "Fix review findings R1, R3"), then push to this branch.
+               If the push is rejected as non-fast-forward, stop: never force-push or retry
+               by rewriting history, and never push to another branch.
             5. Post one PR comment (`gh pr comment`): per ID, what you changed or why you left
                it, then the commands you ran and their results.
 
