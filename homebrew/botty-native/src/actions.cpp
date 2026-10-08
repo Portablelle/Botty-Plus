@@ -110,15 +110,16 @@ void Workflow::add() noexcept {close();command=Command{};command.operation=Opera
 std::string_view Workflow::keys(unsigned page) noexcept {
  switch(page%3){case 0:return "1234567890qwertyuiopasdfghjkl;zxcvbnm,./";case 1:return "1234567890QWERTYUIOPASDFGHJKL:ZXCVBNM<>?";default:return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~01234567";}
 }
+unsigned Workflow::textLimit(Operation op) noexcept {return op==Operation::search?200:op==Operation::extract?1024:16384;}
 void Workflow::append(char c) noexcept {
  if(unicodeInput){unsigned length=static_cast<unsigned>(std::string_view(codepoint.data()).size());if(length<6&&((c>='0'&&c<='9')||(c>='a'&&c<='f')||(c>='A'&&c<='F'))){codepoint[length]=c;notice.fill(0);}else std::snprintf(notice.data(),notice.size(),"Enter up to six hexadecimal digits (0-9, A-F).");++revision;return;}
- auto length=std::string_view(command.text.data()).size();const unsigned limit=command.operation==Operation::search?200:command.operation==Operation::extract?1024:16384;if(length<limit){command.text[length]=c;command.text[length+1]=0;notice.fill(0);}else std::snprintf(notice.data(),notice.size(),"Maximum length reached.");++revision;}
+ auto length=std::string_view(command.text.data()).size();const unsigned limit=textLimit(command.operation);if(length<limit){command.text[length]=c;command.text[length+1]=0;notice.fill(0);}else std::snprintf(notice.data(),notice.size(),"Maximum length reached.");++revision;}
 void Workflow::erase() noexcept {if(unicodeInput){auto n=std::string_view(codepoint.data()).size();if(n)codepoint[n-1]=0;++revision;return;}auto length=std::string_view(command.text.data()).size();if(length){unsigned start=static_cast<unsigned>(length-1);while(start&&(static_cast<unsigned char>(command.text[start])&0xc0)==0x80)--start;for(unsigned i=start;i<length;++i)command.text[i]=0;}notice.fill(0);++revision;}
 bool Workflow::finishUnicode() noexcept {
  unsigned cp=0;for(char c:std::string_view(codepoint.data()))cp=cp*16+(c<='9'?c-'0':(c|32)-'a'+10);
  if(!codepoint[0]||cp<32||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)){std::snprintf(notice.data(),notice.size(),"Enter a Unicode code point from U+0020 to U+10FFFF (excluding surrogates).");return false;}
  unsigned bytes=cp<128?1:cp<2048?2:cp<65536?3:4;
- if(std::string_view(command.text.data()).size()+bytes>(command.operation==Operation::search?200:command.operation==Operation::extract?1024:16384)){std::snprintf(notice.data(),notice.size(),"Maximum input length reached.");return false;}
+ if(std::string_view(command.text.data()).size()+bytes>(textLimit(command.operation))){std::snprintf(notice.data(),notice.size(),"Maximum input length reached.");return false;}
  unicodeInput=false;
  if(bytes==1)append(static_cast<char>(cp));else {
   append(static_cast<char>(bytes==2?0xc0|(cp>>6):bytes==3?0xe0|(cp>>12):0xf0|(cp>>18)));
@@ -130,7 +131,8 @@ bool Workflow::finishUnicode() noexcept {
 }
 bool Workflow::acceptText(std::string_view text,const Catalog& c,bool busy) noexcept {
  if(panel!=Panel::keyboard)return false;
- const unsigned limit=command.operation==Operation::search?200:command.operation==Operation::extract?1024:16384;
+ if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");++revision;return false;}
+ const unsigned limit=textLimit(command.operation);
  if(text.size()>limit||text.find('\0')!=std::string_view::npos){std::snprintf(notice.data(),notice.size(),"Input exceeds the allowed length or contains a null character.");++revision;return false;}
  command.text.fill(0);for(unsigned i=0;i<text.size();++i)command.text[i]=text[i];
  unicodeInput=false;codepoint.fill(0);++revision;return finishInput(c,busy);

@@ -36,7 +36,8 @@ botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
 botty::NativeKeyboard nativeKeyboard;
-bool nativeKeyboardAttempted=false,nativeKeyboardFallback=false;
+enum class TextEntryState { idle, editing, ready, accepted, fallback };
+TextEntryState textEntryState=TextEntryState::idle;
 botty::ActionResult actionResult;
 bool showResult=false;
 botty::Network::Deletion deletion=botty::Network::Deletion::idle;
@@ -356,8 +357,8 @@ void drawWorkflow(Canvas& c) noexcept {
         if(password&&!workflow.passwordVisible&&!workflow.unicodeInput){const unsigned n=text.size()>90?90:static_cast<unsigned>(text.size());for(unsigned i=0;i<n;++i)visible[i]='*';}
         else {auto tail=botty::slice(text,text.size()>90?text.size()-90:0);for(unsigned i=0;i<tail.size();++i)visible[i]=tail[i];}
         c.rounded(140,382,1640,76,12,background);shortLabel(c,162,402,visible.data(),26,1580,ink);
-        char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:workflow.command.operation==Op::search?200:password?1024:16384,text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
-        if(!nativeKeyboardFallback){
+        char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:botty::Workflow::textLimit(workflow.command.operation),text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
+        if(textEntryState!=TextEntryState::fallback){
             c.label(140,538,nativeKeyboard.active()?"Enter text with the PS5 system keyboard.":"Cross: Open PS5 keyboard",28,ink);
             shortLabel(c,140,836,workflow.notice.data(),24,1640,accent);
             c.label(140,895,"Square: In-app keyboard (long links)    Circle: Cancel",22,muted);
@@ -413,6 +414,16 @@ void drawWorkflow(Canvas& c) noexcept {
         c.label(140,892,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
     }
 }
+bool finishNativeInput(unsigned edge,bool busy) noexcept {
+    if(edge&botty::Buttons::circle)workflow.close();
+    else if(busy){workflow.finishInput(catalog,true);return false;}
+    else {
+        const bool emit=workflow.acceptText(nativeKeyboard.text(),catalog,false);
+        nativeKeyboard.clearText();++displayRevision;textEntryState=workflow.panel==botty::Workflow::Panel::keyboard?TextEntryState::ready:TextEntryState::idle;return emit;
+    }
+    nativeKeyboard.clearText();++displayRevision;textEntryState=TextEntryState::idle;return false;
+}
+
 bool draw(Canvas& c) noexcept {
     const auto now=botty::platform::now();
     if(c.take_resumed()) {
@@ -421,38 +432,52 @@ bool draw(Canvas& c) noexcept {
     }
     static bool exploreRequested=false,quietExplore=false,exploreRefresh=false,exploreVisited=false;
     static bool updateSubmitting=false;
+    // The worker publishes result and busy under one gate. Consume that snapshot
+    // before dispatching deferred input, so its result overlay takes precedence.
+    const auto resultRevision=actionResult.revision;
+    botty::ActionResult receivedResult=actionResult;
+    bool inputNetworkBusy=true;
+    (void)network.read(connection,nullptr,&receivedResult,&inputNetworkBusy);
+    if(receivedResult.revision!=resultRevision){
+        actionResult=receivedResult;
+        if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
+        showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;
+    }
     const auto& exploreSorts=botty::Model::exploreSorts;
     const unsigned oldTab=model.tab;
     const bool keyboardWasActive=nativeKeyboard.active();
     const auto keyboardResult=nativeKeyboard.poll();
     unsigned edge=pollPad(now);
-    bool keyboardAccepted=false;
     if(keyboardWasActive){
         edge=0;input.reset();discardPadBatch=true;
         using Result=botty::NativeKeyboard::Result;
         if(keyboardResult==Result::accepted){
-            keyboardAccepted=true;
+            textEntryState=TextEntryState::accepted;
         }else if(keyboardResult==Result::cancelled){
+            textEntryState=TextEntryState::ready;
             std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard closed. Cross: Reopen or Square: Use in-app keyboard.");
         }
+        else if(keyboardResult==Result::tooLong){
+            textEntryState=TextEntryState::editing;
+            std::snprintf(workflow.notice.data(),workflow.notice.size(),"Input exceeds the byte limit. Shorten it in the PS5 keyboard.");
+        }
         else if(keyboardResult==Result::failed){
-            nativeKeyboardFallback=true;
+            textEntryState=TextEntryState::fallback;
             std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard could not accept this input. Use the in-app keyboard.");
         }
         if(keyboardResult!=Result::pending)++displayRevision;
     }
-    if(workflow.panel!=botty::Workflow::Panel::keyboard){nativeKeyboardAttempted=false;nativeKeyboardFallback=false;}
+    if(workflow.panel!=botty::Workflow::Panel::keyboard)textEntryState=TextEntryState::idle;
     if(edge)++displayRevision;
-    if(showResult&&workflow.panel!=botty::Workflow::Panel::keyboard){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
+    if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
     else if(workflow.panel!=botty::Workflow::Panel::closed){
         unsigned workflowEdge=edge;
-        if(workflow.panel==botty::Workflow::Panel::keyboard&&!nativeKeyboardFallback){
+        if(workflow.panel==botty::Workflow::Panel::keyboard&&textEntryState!=TextEntryState::fallback){
             workflowEdge=edge&botty::Buttons::circle;
-            if(!nativeKeyboard.active()&&(edge&botty::Buttons::square)){nativeKeyboardFallback=true;workflow.notice.fill(0);}
-            if(!nativeKeyboard.active()&&(edge&(botty::Buttons::cross|botty::Buttons::options)))nativeKeyboardAttempted=false;
+            if(!nativeKeyboard.active()&&textEntryState!=TextEntryState::accepted&&(edge&botty::Buttons::square)){textEntryState=TextEntryState::fallback;workflow.notice.fill(0);}
+            if(!nativeKeyboard.active()&&textEntryState!=TextEntryState::accepted&&(edge&(botty::Buttons::cross|botty::Buttons::options)))textEntryState=TextEntryState::idle;
         }
-        const bool emit=keyboardAccepted?workflow.acceptText(nativeKeyboard.text(),catalog,network.busy()):workflow.press(workflowEdge,catalog,network.busy());
-        if(keyboardAccepted)nativeKeyboard.clearText();
+        const bool emit=textEntryState==TextEntryState::accepted?finishNativeInput(edge,inputNetworkBusy):workflow.press(workflowEdge,catalog,network.busy());
         if(emit){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
             if(network.busy()){
@@ -492,32 +517,25 @@ bool draw(Canvas& c) noexcept {
         if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
         if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
     }
-    if(workflow.panel==botty::Workflow::Panel::keyboard&&!nativeKeyboardAttempted&&!nativeKeyboard.active()){
-        nativeKeyboardAttempted=true;
+    if(!showResult&&workflow.panel==botty::Workflow::Panel::keyboard&&textEntryState==TextEntryState::idle&&!nativeKeyboard.active()){
+        textEntryState=TextEntryState::editing;
         const auto op=workflow.command.operation;
         const bool password=op==botty::Operation::extract,url=op==botty::Operation::add;
-        const unsigned limit=op==botty::Operation::search?200:password?1024:16384;
+        const unsigned limit=botty::Workflow::textLimit(op);
         if(!nativeKeyboard.open(workflow.command.text.data(),password?"Archive password (optional)":url?"Add a magnet link":"Search games",limit,password,url)){
-            nativeKeyboardFallback=true;
+            textEntryState=TextEntryState::fallback;
             std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard unavailable. Use the in-app keyboard.");
-        }
+        }else workflow.notice.fill(0);
         input.reset();discardPadBatch=true;++displayRevision;
     }
     std::array<char,96> focused{};
     if(model.tab<3){const auto* old=botty::entryAt(catalog,model.tab,model.filter,model.selected);if(old)focused=old->id;}
     if(model.tab==5&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)focused=catalog.exploreResults[model.selected].id;
     const auto previousRevision=catalog.revision;
-    const auto resultRevision=actionResult.revision;
-    botty::ActionResult receivedResult=actionResult;
-    (void)network.read(connection,&catalog,&receivedResult);
+    (void)network.read(connection,&catalog);
     static botty::Processing processing;
     if(network.readProcessing(processing))++displayRevision;
     catalog.processing=processing;
-    if(receivedResult.revision!=resultRevision){
-        actionResult=receivedResult;
-        if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
-        showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;
-    }
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     const auto nextDeletion=network.deletion();
     if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}

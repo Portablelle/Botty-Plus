@@ -28,3 +28,10 @@ compression-integration:
 	$(MAKE) -C ../botty native
 	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/action_client.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/action-client
 	python3 ../botty/tests/compressor_integration.py
+
+# Exercise the actual draw loop with an IME result arriving behind an overlay.
+.PHONY: keyboard-overlay-test
+keyboard-overlay-test:
+	@mkdir -p build
+	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -DBOTTY_HOST_PREVIEW $(filter-out src/main.cpp,$(wildcard src/*.cpp)) tests/keyboard_overlay_test.cpp tests/preview_stubs.cpp -o build/keyboard-overlay-test
+	BOTTY_PREVIEW_MODE=keyboard-overlay ./build/keyboard-overlay-test

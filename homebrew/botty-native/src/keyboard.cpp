@@ -65,24 +65,28 @@ bool NativeKeyboard::open(std::string_view initial,const char* title,unsigned by
     buffer.fill(0);titleBuffer.fill(0);output.fill(0);completed=Result::idle;
     limit=byteLimit;
     const unsigned units=std::min(byteLimit,2048U);
-    if(!toUtf16(initial,buffer.data(),units+1)||!toUtf16(title,titleBuffer.data(),titleBuffer.size()))return false;
-    int user=-1;if(sceUserServiceGetInitialUser(&user)<0)return false;
+    const auto fail=[&] {buffer.fill(0);titleBuffer.fill(0);return false;};
+    if(!toUtf16(initial,buffer.data(),units+1)||!toUtf16(title,titleBuffer.data(),titleBuffer.size()))return fail();
+    int user=-1;if(sceUserServiceGetInitialUser(&user)<0)return fail();
     static_assert(sizeof(Parameters)==96&&offsetof(Parameters,buffer)==40&&offsetof(Parameters,title)==72);
     parameters=Parameters{};auto& p=parameters;p.user=user;p.type=url?2:0;p.enterLabel=url?3:password?0:2;
     // PASSWORD / NO_LEARNING for secrets. Disable auto casing/spacing for exact input.
     p.option=2|512|(password?4|32:0);p.maxLength=units;p.buffer=buffer.data();p.horizontal=p.vertical=1;p.title=titleBuffer.data();
-    if(init(&p,nullptr)<0){buffer.fill(0);return false;}
-    running=true;opened=platform::now();finishing=0;return true;
+    if(init(&p,nullptr)<0)return fail();
+    running=true;opened=platform::now();finishing=0;started=false;return true;
 }
 NativeKeyboard::Result NativeKeyboard::poll() noexcept {
     if(!running)return Result::idle;
     if(completed==Result::idle){
         const int state=status();
-        if(state==1||(state==0&&platform::now()-opened<2000000))return Result::pending;
+        if(state==1){started=true;return Result::pending;}
+        // Allow a loaded console time to start IME, without waiting indefinitely.
+        if(state==0&&!started&&platform::now()-opened<10000000)return Result::pending;
         DialogResult result{};
         if(state!=2||getResult(&result)<0)completed=Result::failed;
         else if(result.endStatus==1)completed=Result::cancelled;
-        else if(result.endStatus!=0||!toUtf8(buffer.data(),buffer.size(),output.data(),limit))completed=Result::failed;
+        else if(result.endStatus!=0||!toUtf8(buffer.data(),buffer.size(),output.data(),output.size()-1))completed=Result::failed;
+        else if(std::string_view(output.data()).size()>limit)completed=Result::tooLong;
         else completed=Result::accepted;
     }
     // A never-started/already-closed dialog may reject Term as uninitialized.
@@ -96,6 +100,13 @@ NativeKeyboard::Result NativeKeyboard::poll() noexcept {
         running=false;output.fill(0);completed=Result::idle;
         if(!retained){buffer.fill(0);titleBuffer.fill(0);}
         return Result::failed;
+    }
+    if(completed==Result::tooLong){
+        // Term succeeded: retain the edits and reopen so they can be shortened.
+        output.fill(0);completed=Result::idle;
+        (void)toUtf16("Text too long. Please shorten it.",titleBuffer.data(),titleBuffer.size());
+        if(init(&parameters,nullptr)>=0){opened=platform::now();finishing=0;started=false;return Result::tooLong;}
+        running=false;buffer.fill(0);titleBuffer.fill(0);return Result::failed;
     }
     running=false;buffer.fill(0);titleBuffer.fill(0);
     const auto result=completed;completed=Result::idle;
