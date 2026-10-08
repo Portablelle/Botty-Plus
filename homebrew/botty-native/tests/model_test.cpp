@@ -242,6 +242,17 @@ int main() {
     flow.unicodeInput=true;flow.append('e');flow.append('9');assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="é");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("1f680"))flow.append(c);assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="🚀");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("d800"))flow.append(c);assert(!flow.finishUnicode());flow.close();
+    flow.add();assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
+    assert(!flow.acceptText("magnet:?xt=urn:btih:abcdef&dn=Game",catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.close();flow.search();catalog.searchSupported=true;catalog.stale=false;catalog.valid=true;
+    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::keyboard);
+    assert(!flow.acceptText(std::string(201,'x'),catalog,false)&&flow.command.text[0]==0);
+    assert(!flow.acceptText("busy query",catalog,true)&&flow.panel==Workflow::Panel::keyboard);
+    assert(flow.acceptText("Pokémon",catalog,false)&&flow.panel==Workflow::Panel::closed);
+    assert(std::string_view(flow.command.text.data())=="Pokémon");
+    flow.close();flow.panel=Workflow::Panel::keyboard;flow.command.operation=Operation::extract;
+    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.close();
     bool printable[127]={};printable[' ']=true;
     for(unsigned page=0;page<3;++page){assert(Workflow::keys(page).size()==40);for(char c:Workflow::keys(page))printable[static_cast<unsigned char>(c)]=true;}
     for(unsigned c=32;c<127;++c)assert(printable[c]);
