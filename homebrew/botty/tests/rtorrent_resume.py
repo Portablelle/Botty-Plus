@@ -18,6 +18,11 @@ with tempfile.TemporaryDirectory(prefix='botty-installation-policy-') as directo
         commands = [call['method'] for call in rpc.calls]
         assert commands == ['pieces.hash.on_completion.set', 'system.pid',
                             'system.pid', 'system.client_version'], commands
+        rejected = subprocess.run([str(ROOT/'build/rtorrent-resume-client'), directory,
+                                   str(rpc.server_port), 'installation-rejected'],
+                                  capture_output=True, text=True, timeout=15)
+        assert rejected.returncode == 1 and 'Unexpected installation engine method' in rejected.stderr, rejected
+        assert [call['method'] for call in rpc.calls] == commands
         rpc.assert_clean()
     finally:
         rpc.shutdown()
