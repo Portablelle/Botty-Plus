@@ -103,6 +103,26 @@ pair from your backups. Never erase torrent or resume directories.
 
 ### Native title
 
+Native 1.4.2 with running manager 1.5.4 adds installation updates from
+**Connections → Update Botty+ → Install and close**. The manager checks the
+trusted HTTPS package index on Botty+ `main`, verifies staged files and registered
+metadata, and retains the previous title using the journal/backup layout below.
+It waits for compression, activation and other file operations, then hands off
+to an independent updater before retiring the manager. Versioned service packages
+are staged and verified; native files are published only after required replacement
+services are verified. Downloads pause only if the engine must restart. The
+updater journals and resumes only the hashes it paused, preserving user-paused
+torrents and saved credentials/session data. The app exits after durable queue
+acknowledgment; reopen it after completion. Permissions, process inspection,
+loader handoff and real update/reopen still need PS5 acceptance. Partial or
+ambiguous replacement remains a recovery state, not a success claim.
+Do not run the Portal installer while an in-app update is queued or active.
+
+Use Portal+ once for the initial modern stack: worker 1.3.1 and engine botty5
+expose the running identities needed for safe unattended retirement. Legacy peers
+without this evidence require a deliberately restarted idle console session.
+Portal never swaps an already running older manager merely to enable this button.
+
 The portal upgrades recognized Botty installations automatically. Close Botty+ and
 other native apps, then run **LAUNCH** from a fresh console session. It verifies the
 new manifest and all thirteen staged files before moving the old title. Both the

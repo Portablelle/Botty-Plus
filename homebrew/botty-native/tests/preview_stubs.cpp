@@ -26,6 +26,7 @@ thread_local std::size_t offset=0;
 bool videoClosed=false,padClosed=false,workerJoined=false;
 thread_local std::string socketRequest,socketResponse;
 bool deletionSent=false;
+bool nativeUpdateSent=false;
 void snapshot() {
     FILE* f=std::fopen("build/preview.ppm","wb");
     if(!f)std::exit(2);
@@ -74,6 +75,14 @@ int sceNetRecv(int,void* b,std::size_t n,int){
         if(is("search")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"Homebrew","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Homebrew demo collection - PS5","size":1073741824,"seeders":24,"leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"leechers":1,"added":true}]}})";
         if((is("explore")||is("sources"))&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Elden Ring - PS5","size":1073741824,"seeders":24,"completed":642,"published":"2026-09-30T00:00:00Z","leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"completed":91,"published":"2026-09-28T00:00:00Z","leechers":1,"added":false}]}})";
         if(is("delete-torrent")&&socketRequest.find("GET /api/state ")==0){body.insert(1,"\"torrentRemovalSupported\":true,");}
+        if(mode&&std::string_view(mode).starts_with("update-")&&socketRequest.find("GET /api/state ")==0){
+            const bool current=is("update-current"),waiting=is("update-waiting"),service=is("update-service");
+            body=std::string(R"({"freeBytes":1000000000,"transmissionReady":true,"torrents":[],"jobs":[],"nativeUpdate":{"supported":true,"scope":"installation","status":")")+(current?"current":waiting?"waiting":"available")+
+                R"(","installedVersion":"01.004.002","availableVersion":")"+(current||service?"01.004.002":"01.004.003")+
+                R"(","installedServiceVersion":"1.5.4","availableServiceVersion":")"+(current?"1.5.4":"1.5.5")+
+                R"(","installedWorkerVersion":"1.3.1","availableWorkerVersion":"1.3.1","installedEngineVersion":"0.16.24-botty5","availableEngineVersion":"0.16.24-botty5","updateAvailable":)"+(current?"false":"true")+R"(,"requested":)"+(waiting?"true":"false")+R"(,"closeRequired":)"+(waiting?"true":"false")+
+                R"(,"message":")"+(current?"App and services are up to date.":waiting?"Waiting for compression and file operations to finish.":service?"Manager update available. The app is already current.":"A compatible app and services update is available.")+R"("}})";
+        }
         // Optional synthetic state for layout checks (host preview only).
         if(socketRequest.find("GET /api/state ")==0){
             if(const char* path=std::getenv("BOTTY_PREVIEW_STATE_FILE")){
@@ -84,6 +93,7 @@ int sceNetRecv(int,void* b,std::size_t n,int){
         if(is("delete-game")&&socketRequest.find("GET /api/state ")==0){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");body.insert(1,"\"libraryDeletionSupported\":true,");}
         if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
+        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"scope":"installation","status":"queued","version":"01.004.003","serviceVersion":"1.5.5","transaction":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";}
         socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
     }
     const auto size=std::min(n,socketResponse.size()-offset);std::memcpy(b,socketResponse.data()+offset,size);offset+=size;return static_cast<int>(size);
@@ -127,6 +137,11 @@ int scePadRead(int,PS5_PadData* p,int){
     if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
     if((is("sources")||is("storage")||is("download-mode"))&&reads==3)p->buttons=PS5_PAD_BUTTON_CROSS;
     if(is("download-mode")&&reads==5)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if((is("update-confirm")||is("update-exit")||is("update-uncertain"))&&reads==7)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if((is("update-exit")||is("update-uncertain"))&&reads==9)p->buttons=PS5_PAD_BUTTON_RIGHT;
+    if((is("update-exit")||is("update-uncertain"))&&reads==11)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(is("update-uncertain")&&reads==18)assert(nativeUpdateSent&&!videoClosed);
+    if(is("update-exit")&&reads==18){std::fputs("Expected acknowledged update to exit before capture\n",stderr);std::exit(3);}
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}
     if(is("buffered-password")&&p->buttons){p[1]=p[0];p[1].buttons=0;++p[1].timestamp;return 2;}
     return 1;
@@ -135,6 +150,7 @@ int scePadClose(int){padClosed=true;return 0;}
 int sceSystemServiceLoadExec(const char* path,const char**){
     assert(std::strcmp(path,"exit")==0);
     assert(videoClosed&&padClosed&&workerJoined);
+    if(is("update-exit"))assert(nativeUpdateSent);
     std::puts("Orderly quit released video, controller and network worker");
     std::exit(0);
 }

@@ -6,6 +6,8 @@ test:
 	@mkdir -p build
 	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/model_test.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/model-test
 	./build/model-test
+	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/native_update_test.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/native-update-test
+	./build/native-update-test
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
 # macOS host preview of the actual renderer, with simulated platform APIs.
 .PHONY: preview

@@ -18,7 +18,7 @@ fetch rtorrent-0.16.24.tar.gz https://github.com/rakshasa/rtorrent/releases/down
 export CC="$PS5_PAYLOAD_SDK/bin/prospero-clang"
 export CXX="$PS5_PAYLOAD_SDK/bin/prospero-clang++"
 export AR=llvm-ar-18 RANLIB=llvm-ranlib-18 STRIP=llvm-strip-18
-export CFLAGS="-O2" CXXFLAGS="-O2 -std=c++20"
+export CFLAGS="-O2" CXXFLAGS="-O2 -std=c++20 -D__PS5__"
 export PKG_CONFIG="pkg-config --static"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$PS5_PAYLOAD_SDK/target/user/homebrew/lib/pkgconfig"
 export CPPFLAGS="-I$prefix/include -include /work/ps5-compat.hpp"
@@ -42,6 +42,8 @@ PY
         fi
         if test "$component" = rtorrent; then
             cp /work/ps5-entry.hpp src/ps5-entry.hpp
+            cp /work/runtime-identity.hpp src/runtime-identity.hpp
+            cp /work/runtime-at.hpp /work/runtime-version.hpp src/
             python3 - <<'PY'
 from pathlib import Path
 p = Path('src/main.cc')

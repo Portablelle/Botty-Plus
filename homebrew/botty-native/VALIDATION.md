@@ -328,3 +328,34 @@ Host model, renderer preview and real-service action integration checks cover
 these changes. The ShadowMount background capability must be deployed separately;
 compression activation/restoration and new-title registration still have their
 existing session requirements. No console acceptance is claimed here.
+
+## Installation updater (native 1.4.2 / service 1.5.4)
+
+The native client validates the update-state contract and durable queue response
+before requesting normal app exit. Focused host tests cover current/newer/stale
+versions, legacy services, Cancel-by-default confirmation, malformed/lost
+acknowledgments and no automatic replay. The actual renderer was built and
+driven with synthetic current, available, confirmation, queued and uncertain
+states on the VPS. An acknowledged request released the video, pad and network
+worker; an invalid acknowledgment did not invoke the normal app-exit path
+before the simulated frame capture. Update preview modes include their own
+synthetic installation-state fixture; acknowledged exit must occur before the
+capture deadline or the harness fails.
+
+Manager host tests cover bounded trusted release/file hashes, malformed process
+tables, idle worker proof, full-pipeline waits, retained backups, registered
+metadata, failed requests, restart and interrupted publication. The expanded
+installation contract includes service-only updates and minimum component/API
+versions rather than treating native currency as installation currency. The updater
+accepts only the two known historical named backups for completed journals;
+pending recovery still requires the normal 32-hex backup identity. Native and
+manager PS5 packages were cross-built remotely; this is not hardware acceptance.
+
+Before enabling real installation, validate filesystem access, actual process
+inspection, the relay handoff, loader availability, controlled service exits and
+replacement identity checks, ShadowMount, metadata and reopening. Test updates
+while downloads continue and while compression finishes, including waiting-close
+and activation. When rTorrent changes, verify that user-paused torrents remain
+paused and only updater-paused torrents resume. Power-loss and live permission
+failures remain console acceptance items. Never run Portal concurrently. No
+console deployment or diagnostic payload was performed for this change.
