@@ -35,7 +35,7 @@ def main():
     source_archive(source, out / 'botty-native-source.tar.gz',
                    ['src', 'assets', 'sce_sys', 'vendor', 'tests', 'tools', 'artwork',
                     'Dockerfile', 'Makefile', 'BUILD-ENVIRONMENT.json', 'README.md',
-                    'VALIDATION.md', 'LICENSE'])
+                    'VALIDATION.md', 'LICENSE', 'update-compatibility.json'])
     shutil.copyfile(source / 'LICENSE', out / 'LICENSE')
     shutil.copyfile(source / 'vendor/NOTICE.md', out / 'NOTICE.md')
     print('Native source and notices refreshed')

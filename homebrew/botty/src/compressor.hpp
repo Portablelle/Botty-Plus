@@ -114,6 +114,28 @@ public:
   bool enabled() const {return enabled_;}
   bool busy() const {std::lock_guard<std::mutex> g(mutex_);return enabled_&&pending(state_);}
   void requireIdle() const {if(busy())throw std::runtime_error("Compression is active or uncertain; wait before changing files");}
+  void confirmNativeUpdateIdle() const {
+    const auto safe=[](const json& record) {
+      const auto status=record.value("status","");
+      if(status!="idle"&&status!="ready"&&status!="restored"&&status!="deleted"&&status!="failed"&&status!="cancelled")return false;
+      if((status=="failed"||status=="cancelled")&&(record.contains("originalPath")||record.value("originalDeletionStarted",false)||record.value("gameDeletionStarted",false)))return false;
+      return true;
+    };
+    {
+      std::lock_guard<std::mutex> g(mutex_);
+      if(!enabled_)throw std::logic_error("Compression worker idle confirmation is unavailable. Check the worker installation before updating.");
+      if(state_.value("status","")=="uncertain"||(!safe(state_)&&!pending(state_)))throw std::logic_error("Resolve the protected compression state before updating Botty+.");
+      if(!safe(state_))throw std::runtime_error("Waiting for compression and Library activation to finish, or for uncertain state to be resolved.");
+      for(const auto& record:records_)if(!safe(record))throw std::logic_error("A protected compression operation needs recovery before updating Botty+.");
+    }
+    const auto version=request("/api/status").value("bottyWorker","");
+    if(version!="library-1.2"&&version!="library-1.3")throw std::runtime_error("Cannot confirm the installed compression worker identity.");
+    const auto worker=request("/api/gc/job");
+    if(!worker.contains("busy")||!worker.at("busy").is_boolean()||worker.at("busy").get<bool>())throw std::runtime_error("Waiting for confirmed compression worker idle state.");
+    std::lock_guard<std::mutex> g(mutex_);
+    if(state_.value("status","")=="uncertain"||(!safe(state_)&&!pending(state_)))throw std::logic_error("Resolve the protected compression state before updating Botty+.");
+    if(!safe(state_))throw std::runtime_error("Waiting for compression and Library activation to finish.");
+  }
   json state() const {std::lock_guard<std::mutex> g(mutex_);auto out=state_;if(pending(state_)&&phaseStarted_.time_since_epoch().count())out["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-phaseStarted_).count();if(std::chrono::steady_clock::now()-measuredAt_>std::chrono::seconds(5)){out["rate"]=0;out["eta"]=-1;}out["supported"]=enabled_;out["deletionSupported"]=enabled_;out["busy"]=enabled_&&pending(state_);return out;}
   json game(const std::string& id) const {std::lock_guard<std::mutex> g(mutex_);return state_.value("jobId","")==id?state_:records_.value(id,json::object());}
   bool protects(const std::string& id) const {const auto s=game(id).value("status","");return !s.empty()&&s!="restored"&&s!="failed"&&s!="cancelled";}

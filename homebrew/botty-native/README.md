@@ -36,7 +36,7 @@ confirmation with Cancel selected initially.
   and moving recognized content to the library. Moved jobs appear in Library.
 - **Library:** three-column grid, left/right moves one card, up/down one row,
   Cross opens details. This screen does not automatically launch games.
-- **Connections:** Transmission address, username and password for LAN access.
+- **Connections:** web address, username and password for LAN access, plus an installation-update button. The header shows whether the app and services are up to date. Choose **Update Botty+**, then **Install and close** to queue a compatible update. Cancellation is selected by default.
 
 In details, up/down changes pages. The controller keyboard uses L1/R1 to switch
 key sets, Square to erase and Triangle to reveal/hide an archive password.
@@ -49,6 +49,35 @@ uncertain and is not automatically repeated. Network work is bounded and runs
 outside the render loop. Input-release guards prevent one button press from both
 opening and confirming a dialog. Missing service capabilities disable related
 actions instead of pretending they succeeded.
+
+## Installation updates
+
+Installation updates require native 1.4.2, manager 1.5.4, worker revision 1.3.1
+and rTorrent botty5 or later. Use Portal+ once to install this initial stack in
+a deliberately restarted idle console session. Legacy workers and engines do
+not expose enough running-process identity for unattended retirement; the updater
+refuses to guess or stop them. Older services show a Portal notice instead of
+claiming that the entire installation is current.
+
+The header reports installation currency across the app, manager, worker and
+engine. The button checks the verified packages on this repository's `main`,
+including the native manifest's minimum service versions and API contract. It
+also offers service-only updates when the native app is already current.
+After a durably acknowledged request, the app exits normally. Compression,
+activation, verification and other file operations finish before the independent
+updater takes over. Downloads continue unless the engine must restart; only
+updater-paused downloads are resumed. Close other native apps too, and reopen
+Botty+ after the completion notification. Lost or invalid confirmations do not
+invoke normal app exit or automatically replay the request.
+
+Replacement files are hash-verified. The previous native title is backed up
+before publication; registered metadata is refreshed with retained backups
+after publication. Services use separate immutable version directories. The
+updater confirms running identities and orderly exits before starting replacements,
+then confirms the replacements before reporting success. Ambiguous retirement or
+startup is not repeated automatically and requires recovery with retained files.
+Do not run a Portal installer concurrently. Keep the journals and backups until
+the updated installation is accepted. Host tests and previews are not PS5 acceptance.
 
 ## Build and validation
 

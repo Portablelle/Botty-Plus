@@ -8,6 +8,26 @@ from rtorrent_fixture import RtorrentFixture
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+with tempfile.TemporaryDirectory(prefix='botty-installation-policy-') as directory:
+    rpc = RtorrentFixture([], lambda method, params: 42 if method == 'system.pid' else NotImplemented)
+    try:
+        result = subprocess.run([str(ROOT/'build/rtorrent-resume-client'), directory,
+                                 str(rpc.server_port), 'installation-policy'],
+                                capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0 and result.stdout.strip() == '42', result
+        commands = [call['method'] for call in rpc.calls]
+        assert commands == ['pieces.hash.on_completion.set', 'system.pid',
+                            'system.pid', 'system.client_version'], commands
+        rejected = subprocess.run([str(ROOT/'build/rtorrent-resume-client'), directory,
+                                   str(rpc.server_port), 'installation-rejected'],
+                                  capture_output=True, text=True, timeout=15)
+        assert rejected.returncode == 1 and 'Unexpected installation engine method' in rejected.stderr, rejected
+        assert [call['method'] for call in rpc.calls] == commands
+        rpc.assert_clean()
+    finally:
+        rpc.shutdown()
+        rpc.server_close()
+
 
 def check(started, status, expected_resume, method='torrent-start', incomplete=False, fail_command=None):
     with tempfile.TemporaryDirectory(prefix='botty-resume-') as directory:

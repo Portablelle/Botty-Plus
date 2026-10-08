@@ -243,6 +243,9 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
         assert not any(j['id']==job['id'] for j in request('/api/state')['jobs'])
         rpc.assert_clean()
+        assert request('/api/beta/shutdown',{'confirmed':True})['ok'] is True
+        assert process.wait(timeout=15)==0
+        assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
         print('HTTP integration passed: local access controls, rTorrent SCGI framing and RPC, download completeness, real extraction/CRC, library moves, source preservation, cleanup and crash recovery.')
     finally:
         if process and process.poll() is None:stop()

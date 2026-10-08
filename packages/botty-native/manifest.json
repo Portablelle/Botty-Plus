@@ -2,12 +2,18 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.004.000",
+  "version": "01.004.002",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
   "identityStatus": "provisional-until-console-inventory",
   "readOnly": false,
+  "requires": {
+    "manager": "1.5.4",
+    "worker": "1.3.1",
+    "rtorrent": "0.16.24-botty5",
+    "apiVersion": 1
+  },
   "files": [
     {
       "path": "assets/Manrope-OFL.txt",
@@ -17,7 +23,7 @@
     {
       "path": "assets/build.txt",
       "size": 43,
-      "sha256": "0dddbd8aefd027fa74560720985264491d58e74a55b6c30e78f6dd9b69c3a033"
+      "sha256": "3f9bf553535238bbfef7c676cce2342b5308fa827c301d8ff7a60609c57f00c7"
     },
     {
       "path": "assets/courier.rgba",
@@ -46,8 +52,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 25175580,
-      "sha256": "886e69d6ca494eeba067e0a73897a1144a54ede851c2a40ad05ae4eceaa3da98"
+      "size": 25191180,
+      "sha256": "d035918a76e7051d78ca975675dbda5582d654205a5e3c86298e98e3a3541730"
     },
     {
       "path": "sce_module/libc.prx",
@@ -62,7 +68,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "cd152f219e035665d8ad8218e22bf2812882984a860f0cb219e16d6b692aa83d"
+      "sha256": "a94e3a6fb9d93aabfa6555e6009b4540d1a6d3673a971525e376f934a36c82f9"
     },
     {
       "path": "sce_sys/pic0.dds",
