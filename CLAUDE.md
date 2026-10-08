@@ -62,3 +62,10 @@ workflows if enforcement against privileged PR authors is required.
 Autofix makes at most two rounds on the same PR branch. Configure
 `Claude review verdict` as a required branch check after activation if merge
 enforcement is wanted; the status alone does not enforce branch protection.
+
+On the initial workflow installation PR targeting the default branch, the base
+has no reviewer workflow yet.
+CI reports first-time setup without calling Claude or claiming an automatic
+verdict; local review and maintainer approval are required. Once the workflow
+exists on the base, missing policy files remain an error. This bootstrap path
+cannot be selected by changing files only on a PR branch.
