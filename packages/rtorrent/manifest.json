@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "id": "0.16.24-botty6",
+  "id": "0.16.24-botty8",
   "files": [
     {
       "path": "rtorrent.elf",
-      "size": 19434304,
-      "sha256": "26205172fe422cbb893244e63849a56751b04404909a68d4568410f070e21a01"
+      "size": 19193144,
+      "sha256": "2842587fe7b05b143b8b08db64a950d907f42796b1e4ab5c1c6883f3c8aa3ac4"
     },
     {
       "path": "rtorrent.rc",

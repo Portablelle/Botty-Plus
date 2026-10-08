@@ -32,7 +32,7 @@ against the 8 GiB memory limit; swap is disabled for the job. CPU is capped at
 4, processes at 4096. Docker logs rotate at 10 MiB, keeping two files, so PR
 output cannot grow the host's Docker graph without bound.
 
-The immutable image includes Clang, libcurl, zlib development headers,
+The immutable image includes Clang, libcurl, zlib and OpenSSL development headers,
 Python/Pillow, and Node 24. `AGENT_TOOLSDIRECTORY` and `RUNNER_TOOL_CACHE`
 point to the fresh writable copy of the preinstalled Node tool cache.
 
