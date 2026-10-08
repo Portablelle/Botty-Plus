@@ -331,7 +331,7 @@ private:
         mkdirs(dest);directories.emplace_back(dest,st.st_mode&07777);
       }
       else {
-        auto data=read(e.path(),maxFileBytes);struct stat st{};if(::lstat(e.path().c_str(),&st))fail("Cannot inspect backup mode");write(dest,*data,st.st_mode&07777);
+        auto data=read(e.path(),maxFileBytes);struct stat st{};if(::lstat(e.path().c_str(),&st))fail("Cannot inspect backup mode");write(dest,*data,st.st_mode&0777);
         auto restored=read(dest,maxFileBytes);if(!restored||restored->size()!=data->size()||nativeSha256(*restored)!=nativeSha256(*data))fail("Restored backup verification failed; backup retained");
       }
     }

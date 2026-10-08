@@ -36,9 +36,10 @@ struct Processing {
 };
 struct NativeUpdate {
     bool supported=false,requested=false,closeRequired=false,updateAvailable=false;
-    std::array<char,16> scope{},installedServiceVersion{},availableServiceVersion{};
-    std::array<char,16> installedWorkerVersion{},availableWorkerVersion{};
-    std::array<char,32> installedEngineVersion{},availableEngineVersion{};
+    std::array<char,16> scope{};
+    std::array<char,65> installedServiceVersion{},availableServiceVersion{};
+    std::array<char,65> installedWorkerVersion{},availableWorkerVersion{};
+    std::array<char,65> installedEngineVersion{},availableEngineVersion{};
     std::array<char,16> status{},installedVersion{},availableVersion{};
     std::array<char,512> message{};
 };

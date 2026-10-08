@@ -4,11 +4,17 @@
 #include "native-process.hpp"
 #include <csignal>
 #include <sys/file.h>
+#include <poll.h>
+#include <system_error>
+#include <climits>
 #ifdef __PS5__
 #include <sys/sysctl.h>
 #endif
 
 namespace botty {
+inline void installationAwaitHttpReady(const std::atomic<bool>& ready,const std::atomic<bool>& stopping) {
+  while(!ready){if(stopping)throw std::runtime_error("Manager HTTP startup was cancelled.");std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+}
 inline json installationBoot() {
 #ifdef __PS5__
   timeval boot{};size_t size=sizeof(boot);
@@ -54,11 +60,65 @@ inline json inspectInstallation(const fs::path& root,Rtorrent& engine) {
     validateRunningInstallation(result);return result;
   }catch(const std::exception&) {throw std::runtime_error("Running service identity is unverified. Bootstrap modern manager, worker and rTorrent through Portal in an idle restarted session before using in-app updates.");}
 }
-inline bool installationPortClosed(int port) {
-  const int fd=::socket(AF_INET,SOCK_STREAM,0);if(fd<0)throw std::runtime_error("Cannot inspect service port.");
+struct InstallationSocket {
+  int fd;
+  ~InstallationSocket(){if(fd>=0)::close(fd);}
+};
+using InstallationDeadline=std::chrono::steady_clock::time_point;
+inline void installationAwaitSocket(int fd,short events,InstallationDeadline deadline,const std::function<int(pollfd*,nfds_t,int)>& wait=::poll) {
+  for(;;) {
+    const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()).count();
+    if(remaining<=0)throw std::system_error(ETIMEDOUT,std::generic_category(),"Local installation socket deadline expired");
+    pollfd state{fd,events,0};const auto result=wait(&state,1,int(std::min<int64_t>(remaining,INT_MAX)));
+    if(result<0&&errno==EINTR)continue;
+    if(result==0)throw std::system_error(ETIMEDOUT,std::generic_category(),"Local installation socket timed out");
+    if(result<0)throw std::system_error(errno,std::generic_category(),"Local installation socket wait failed");
+    if(state.revents&POLLNVAL)throw std::system_error(EBADF,std::generic_category(),"Invalid installation socket");
+    if(state.revents&(events|POLLERR|POLLHUP))return;
+  }
+}
+inline int installationConnectLoopback(int port,InstallationDeadline deadline) {
+  if(std::chrono::steady_clock::now()>=deadline)throw std::system_error(ETIMEDOUT,std::generic_category(),"Local installation connection deadline expired");
+  InstallationSocket socket{::socket(AF_INET,SOCK_STREAM,0)};
+  if(socket.fd<0)throw std::system_error(errno,std::generic_category(),"Cannot create installation socket");
+  const auto flags=::fcntl(socket.fd,F_GETFL,0);
+  if(flags<0||::fcntl(socket.fd,F_SETFL,flags|O_NONBLOCK))throw std::system_error(errno,std::generic_category(),"Cannot make installation socket nonblocking");
+#ifdef SO_NOSIGPIPE
+  const int enabled=1;
+  if(::setsockopt(socket.fd,SOL_SOCKET,SO_NOSIGPIPE,&enabled,sizeof(enabled)))throw std::system_error(errno,std::generic_category(),"Cannot suppress installation socket SIGPIPE");
+#endif
   sockaddr_in address{};address.sin_family=AF_INET;address.sin_port=htons(port);address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
-  const auto result=::connect(fd,reinterpret_cast<sockaddr*>(&address),sizeof(address)),error=errno;::close(fd);
-  if(result==0)return false;if(error!=ECONNREFUSED)throw std::runtime_error("Service port exit evidence is unavailable.");return true;
+  if(::connect(socket.fd,reinterpret_cast<sockaddr*>(&address),sizeof(address))) {
+    if(errno!=EINPROGRESS)throw std::system_error(errno,std::generic_category(),"Local installation connection failed");
+    installationAwaitSocket(socket.fd,POLLOUT,deadline);
+    int error=0;socklen_t length=sizeof(error);
+    if(::getsockopt(socket.fd,SOL_SOCKET,SO_ERROR,&error,&length))throw std::system_error(errno,std::generic_category(),"Cannot confirm installation connection");
+    if(error)throw std::system_error(error,std::generic_category(),"Local installation connection failed");
+  }
+  const auto fd=socket.fd;socket.fd=-1;return fd;
+}
+inline void installationSend(int fd,const std::string& bytes,InstallationDeadline deadline) {
+  size_t sent=0;
+  while(sent<bytes.size()) {
+    installationAwaitSocket(fd,POLLOUT,deadline);
+#ifdef MSG_NOSIGNAL
+    const int flags=MSG_NOSIGNAL;
+#else
+    const int flags=0;
+#endif
+    const auto n=::send(fd,bytes.data()+sent,bytes.size()-sent,flags);
+    if(n<0&&(errno==EINTR||errno==EAGAIN||errno==EWOULDBLOCK))continue;
+    if(n<=0)throw std::system_error(n<0?errno:EPIPE,std::generic_category(),"ELF load outcome is unknown; automatic retry refused");
+    sent+=size_t(n);
+  }
+}
+inline bool installationPortClosed(int port) {
+  try {
+    InstallationSocket socket{installationConnectLoopback(port,std::chrono::steady_clock::now()+std::chrono::seconds(2))};return false;
+  }catch(const std::system_error& error) {
+    if(error.code().value()==ECONNREFUSED)return true;
+    throw std::runtime_error("Service port exit evidence is unavailable.");
+  }
 }
 inline bool installationExited(const std::string& service,int pid) {
   if(pid<=1||pid==getpid())throw std::runtime_error("Invalid service exit identity.");
@@ -69,19 +129,17 @@ inline bool installationExited(const std::string& service,int pid) {
 inline void installationLoad(const std::string& bytes) {
 #ifdef __PS5__
   if(bytes.size()<4||bytes.size()>NativeTransaction::maxFileBytes||bytes.compare(0,4,"\177ELF"))throw std::runtime_error("Invalid updater ELF payload.");
-  const int fd=::socket(AF_INET,SOCK_STREAM,0);if(fd<0)throw std::runtime_error("Cannot connect to the local ELF loader.");
-  timeval timeout{5,0};setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
-  sockaddr_in address{};address.sin_family=AF_INET;address.sin_port=htons(9021);address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
-  if(::connect(fd,reinterpret_cast<sockaddr*>(&address),sizeof(address))){::close(fd);throw std::runtime_error("Local ELF loader unavailable.");}
-  size_t sent=0;while(sent<bytes.size()){const auto n=::send(fd,bytes.data()+sent,bytes.size()-sent,0);if(n<0&&errno==EINTR)continue;if(n<=0){::close(fd);throw std::runtime_error("ELF load outcome is unknown; automatic retry refused.");}sent+=size_t(n);}::shutdown(fd,SHUT_WR);::close(fd);
+  const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+  InstallationSocket socket{installationConnectLoopback(9021,deadline)};
+  installationSend(socket.fd,bytes,deadline);::shutdown(socket.fd,SHUT_WR);
 #else
   (void)bytes;throw std::runtime_error("Production loader calls are disabled in host builds.");
 #endif
 }
-inline bool installationRetireAuthorized(const fs::path& root,const std::string& transaction,const std::string& capability) {
+inline bool installationRetireAuthorized(const fs::path& root,const std::string& transaction,const std::string& capability,const std::function<bool(const json&)>& owns={}) {
   if(!std::regex_match(transaction,std::regex("[a-f0-9]{32}"))||!std::regex_match(capability,std::regex("[a-f0-9]{64}")))return false;
   const auto handoff=installationRecord(root/"installation/handoff.json",256*1024);
   if(handoff.at("transaction")!=transaction||handoff.at("capability")!=capability||handoff.at("status")!="takeover"||handoff.at("running").at("manager").at("pid")!=getpid())return false;
-  return installationHandoffOwned(root,handoff,installationBootId());
+  return owns?owns(handoff):installationHandoffOwned(root,handoff,installationBootId());
 }
 }

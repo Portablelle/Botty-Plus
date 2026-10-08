@@ -88,12 +88,25 @@ inline void verifyServiceTree(const fs::path& root,const json& manifest,const st
 inline void stageService(const fs::path& root,const json& manifest,const std::string& package,const NativeUpdater::Fetch& fetch) {
   validateServiceManifest(manifest,package);
   if(fs::exists(fs::symlink_status(root))){verifyServiceTree(root,manifest,package);return;}
+  const auto staging=root.parent_path()/(".staging-"+root.filename().string()+"-"+nativeHash(manifest.dump()));
   for(const auto& file:manifest.at("files")) {
-    const auto path=file.at("path").get<std::string>(),bytes=fetch(package+"/"+path,file.at("size").get<size_t>());
-    if(bytes.size()!=file.at("size").get<size_t>()||nativeHash(bytes)!=file.at("sha256"))throw std::runtime_error("Service download verification failed.");
-    nativeWrite(root/path,bytes,true);
-    if(::chmod((root/path).c_str(),path.find(".elf")!=std::string::npos?0755:0644))throw std::runtime_error("Cannot set service permissions.");
+    const auto path=file.at("path").get<std::string>();
+    if(fs::exists(fs::symlink_status(staging/path))) {
+      const auto bytes=nativeRead(staging/path,NativeTransaction::maxFileBytes);
+      if(bytes.size()!=file.at("size").get<size_t>()||nativeHash(bytes)!=file.at("sha256"))throw std::runtime_error("Private service staging changed; retained files require inspection.");
+    }else {
+      const auto bytes=fetch(package+"/"+path,file.at("size").get<size_t>());
+      if(bytes.size()!=file.at("size").get<size_t>()||nativeHash(bytes)!=file.at("sha256"))throw std::runtime_error("Service download verification failed.");
+      nativeWrite(staging/path,bytes,true);
+    }
+    if(::chmod((staging/path).c_str(),path.find(".elf")!=std::string::npos?0755:0644))throw std::runtime_error("Cannot set service permissions.");
   }
+  verifyServiceTree(staging,manifest,package);
+  if(fs::exists(fs::symlink_status(root)))throw std::runtime_error("Service publication destination changed; retained files require inspection.");
+  if(::rename(staging.c_str(),root.c_str()))throw std::runtime_error("Cannot publish verified service directory; private staging retained.");
+  const int parent=::open(root.parent_path().c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+  if(parent<0)throw std::runtime_error("Cannot flush service publication directory.");
+  const int synced=::fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot flush service publication directory.");
   verifyServiceTree(root,manifest,package);
 }
 }

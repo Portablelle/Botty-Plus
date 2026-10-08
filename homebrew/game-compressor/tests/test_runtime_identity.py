@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import tarfile
@@ -12,6 +13,13 @@ PATCHES = ('botty-copy-only.patch', 'botty-library.patch', 'botty-storage.patch'
 
 
 class RuntimeIdentityPatchTests(unittest.TestCase):
+    def test_runtime_patch_declares_exact_hunk_counts(self):
+        lines = (ROOT / 'patches' / 'botty-runtime-identity.patch').read_text().splitlines()
+        header = re.fullmatch(r'@@ -\d+,(\d+) \+\d+,(\d+) @@', lines[2])
+        self.assertIsNotNone(header)
+        self.assertEqual(int(header[1]), sum(line.startswith((' ', '-')) for line in lines[3:]))
+        self.assertEqual(int(header[2]), sum(line.startswith((' ', '+')) for line in lines[3:]))
+
     def test_pinned_chain_adds_only_bounded_binary_identity(self):
         meta = json.loads((ROOT / 'provenance.json').read_text())
         archive = ROOT / 'vendor' / meta['archive']
@@ -33,6 +41,8 @@ class RuntimeIdentityPatchTests(unittest.TestCase):
             subprocess.run(['patch', '-p1', '-i', str(ROOT / 'patches' / 'botty-runtime-identity.patch')],
                            cwd=temp, check=True, capture_output=True)
             after = source.read_text()
+            self.assertEqual({str(p.relative_to(temp)) for p in Path(temp).rglob('*') if p.is_file()}, set(snapshot))
+            self.assertIn('\\"version\\":\\"' + meta['runtimeVersion'] + '\\"', after)
             old = '    const char *body = "{\\"ok\\":true,\\"bottyWorker\\":\\"library-1.3\\"}";'
             new = '''    char body[160];
     pid_t pid = getpid();

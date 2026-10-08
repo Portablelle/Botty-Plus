@@ -3,6 +3,9 @@
 #include <cstring>
 #include <cerrno>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 static const char* runtime_path;
 static int boot_query(const char* name, void* output, size_t* length, const void* input, size_t input_length) {
@@ -19,11 +22,56 @@ static int boot_query(const char* name, void* output, size_t* length, const void
 }
 #define BOTTY_RT_BOOT_QUERY boot_query
 #define BOTTY_RT_STATE_PATH runtime_path
+struct botty_rt_syscall_result;
+static botty_rt_syscall_result test_at_syscall(long, long, long, long, long);
+static void test_random_bytes(void* output, size_t size) {
+    static unsigned counter;
+    memset(output, counter++, size);
+}
+#define BOTTY_RT_AT_SYSCALL test_at_syscall
+#define BOTTY_RT_RANDOM_BYTES test_random_bytes
 #include "../ps5-entry.hpp"
+
+static botty_rt_syscall_result test_at_syscall(long number, long first, long second, long third, long fourth) {
+    const char* failure = getenv("AT_TEST_FAILURE");
+    if (failure && (!strcmp(failure, "all") || strtol(failure, nullptr, 10) == number)) return {EACCES, true};
+    long result;
+    switch (number) {
+    case 499: result = openat((int)first, (const char*)second, (int)third, (mode_t)fourth); break;
+    case 493: result = fstatat((int)first, (const char*)second, (struct stat*)third, (int)fourth); break;
+    case 501: result = renameat((int)first, (const char*)second, (int)third, (const char*)fourth); break;
+    case 503: result = unlinkat((int)first, (const char*)second, (int)third); break;
+    default: return {ENOSYS, true};
+    }
+    return {result < 0 ? errno : result, result < 0};
+}
 
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     runtime_path = argv[2];
+    if (!strcmp(argv[1], "at-errors")) {
+        setenv("AT_TEST_FAILURE", "all", 1);
+        struct stat info = {};
+        errno = 0;
+        if (botty_rt_openat(-1, "missing", O_RDONLY) != -1 || errno != EACCES) return 9;
+        errno = 0;
+        if (botty_rt_fstatat(-1, "missing", &info, AT_SYMLINK_NOFOLLOW) != -1 || errno != EACCES) return 9;
+        errno = 0;
+        if (botty_rt_renameat(-1, "missing", -1, "new") != -1 || errno != EACCES) return 9;
+        errno = 0;
+        if (botty_rt_unlinkat(-1, "missing", 0) != -1 || errno != EACCES) return 9;
+        return 0;
+    }
+    if (!strcmp(argv[1], "stale")) {
+        char legacy[1200], collision[1200];
+        snprintf(legacy, sizeof(legacy), "%s/runtime.json.tmp.%jd", runtime_path, (intmax_t)getpid());
+        snprintf(collision, sizeof(collision), "%s/runtime.json.tmp.%jd.%032d", runtime_path, (intmax_t)getpid(), 0);
+        FILE* old = fopen(legacy, "wx");
+        if (!old) return 10;
+        fputs("preserve stale file", old);
+        if (fclose(old) || symlink(legacy, collision)) return 10;
+        return botty_rtorrent_publish_runtime(runtime_path);
+    }
     if (!strcmp(argv[1], "publish")) return botty_rtorrent_publish_runtime(runtime_path);
     bool supervised = !strcmp(argv[1], "supervised");
     char name[] = "rtorrent", flag[] = "-n";

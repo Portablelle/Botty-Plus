@@ -11,6 +11,12 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <cstdlib>
+#include "runtime-at.hpp"
+#include "runtime-version.hpp"
+#ifndef BOTTY_RT_RANDOM_BYTES
+#define BOTTY_RT_RANDOM_BYTES arc4random_buf
+#endif
 
 static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorrent/state") {
     struct timeval boot = {};
@@ -29,7 +35,7 @@ static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorre
         char* slash = strchr(cursor, '/');
         if (slash) *slash = '\0';
         if (!*cursor || !strcmp(cursor, ".") || !strcmp(cursor, "..")) { close(dir); return 1; }
-        int next = openat(dir, cursor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        int next = botty_rt_openat(dir, cursor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
         close(dir);
         if (next < 0) return 1;
         dir = next;
@@ -41,18 +47,27 @@ static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorre
     if (!*directory || fstat(dir, &st) != 0 || st.st_uid != getuid() || fchmod(dir, 0700) != 0) {
         close(dir); return 1;
     }
-    if (fstatat(dir, "runtime.json", &st, AT_SYMLINK_NOFOLLOW) == 0) {
+    if (botty_rt_fstatat(dir, "runtime.json", &st, AT_SYMLINK_NOFOLLOW) == 0) {
         if (!S_ISREG(st.st_mode) || st.st_uid != getuid() || st.st_nlink != 1) { close(dir); return 1; }
     } else if (errno != ENOENT) { close(dir); return 1; }
-    char body[256], temporary[64];
+    char body[256], temporary[96];
     int length = snprintf(body, sizeof(body),
-        "{\"schema\":1,\"pid\":%jd,\"version\":\"0.16.24-botty5\",\"boot\":{\"seconds\":%jd,\"microseconds\":%jd}}\n",
+        "{\"schema\":1,\"pid\":%jd,\"version\":\"" BOTTY_RT_RUNTIME_VERSION "\",\"boot\":{\"seconds\":%jd,\"microseconds\":%jd}}\n",
         (intmax_t)pid, (intmax_t)boot.tv_sec, (intmax_t)boot.tv_usec);
-    int name_length = snprintf(temporary, sizeof(temporary), "runtime.json.tmp.%jd", (intmax_t)pid);
-    if (length <= 0 || (size_t)length >= sizeof(body) || name_length <= 0 || (size_t)name_length >= sizeof(temporary)) {
+    if (length <= 0 || (size_t)length >= sizeof(body)) {
         close(dir); return 1;
     }
-    int fd = openat(dir, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    int fd = -1;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        unsigned char random[16];
+        char suffix[33];
+        BOTTY_RT_RANDOM_BYTES(random, sizeof(random));
+        for (size_t i = 0; i < sizeof(random); ++i) snprintf(suffix + i * 2, 3, "%02x", (unsigned)random[i]);
+        int name_length = snprintf(temporary, sizeof(temporary), "runtime.json.tmp.%jd.%s", (intmax_t)pid, suffix);
+        if (name_length <= 0 || (size_t)name_length >= sizeof(temporary)) { close(dir); return 1; }
+        fd = botty_rt_openat(dir, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (fd >= 0 || errno != EEXIST) break;
+    }
     if (fd < 0) { close(dir); return 1; }
     int result = fchmod(fd, 0600) != 0;
     size_t written = 0;
@@ -64,9 +79,9 @@ static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorre
     }
     if (!result && fsync(fd) != 0) result = 1;
     if (close(fd) != 0) result = 1;
-    if (!result && renameat(dir, temporary, dir, "runtime.json") != 0) result = 1;
+    if (!result && botty_rt_renameat(dir, temporary, dir, "runtime.json") != 0) result = 1;
     if (!result && fsync(dir) != 0) result = 1;
-    if (result) unlinkat(dir, temporary, 0);
+    if (result) botty_rt_unlinkat(dir, temporary, 0);
     if (close(dir) != 0) result = 1;
     return result;
 }

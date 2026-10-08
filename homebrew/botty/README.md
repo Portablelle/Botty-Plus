@@ -30,8 +30,8 @@ The native app may then close normally. The manager waits for extraction,
 transfer, deletion, the complete compression/activation pipeline, a confirmed
 idle worker and all native app processes to exit. Existing work finishes; new
 extraction, compression, transfer and deletion operations are blocked from queue
-acceptance until completion or verified safe failure. Torrent additions remain
-allowed before retirement; new preparation is deferred. An independent embedded
+acceptance until completion or verified safe failure. Torrent additions are also
+blocked while the update is queued; new preparation is deferred. An independent embedded
 updater durably takes over before retiring the manager. Engine changes pause only
 active torrents, retain their hashes and resume only updater-paused torrents.
 Service replacements are identity-verified before native publication and success.
