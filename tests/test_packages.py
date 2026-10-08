@@ -33,10 +33,31 @@ class PackageTests(unittest.TestCase):
             files=[]
             for name in contract.REQUIRED_FILES[package]:
                 path=base/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'fixture')
-                files.append(dict(path=name,size=7,sha256=contract.digest(path)))
+                if name=='sce_sys/param.json': path.write_text(json.dumps(dict(contentVersion='01.006.000')))
+                files.append(dict(path=name,size=path.stat().st_size,sha256=contract.digest(path)))
             for name in notices: (base/name).write_bytes(b'notice')
-            (base/'manifest.json').write_text(json.dumps(dict(schema=1,id='1.0.0',version='1.0.0',files=files)))
-        (root/'botty-release.json').write_text(json.dumps(dict(schema=1,sha256=contract.inventory(root))))
+            manifest=dict(schema=1,id='1.5.4',version='01.006.000',releaseVersion='1.6.0',files=files,
+                          workerVersion='1.3.1',apiVersion=1,workerApi='library-1.3',updaterVersion='1.0.0')
+            if package=='rtorrent': manifest['id']='0.16.24-botty6'
+            (base/'manifest.json').write_text(json.dumps(manifest))
+        (root/'botty-release.json').write_text(json.dumps(contract.release_record(root)))
+
+    def test_release_component_inventory_cannot_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            path=root/'botty-release.json'; record=json.loads(path.read_text())
+            record['components']['worker']='1.3.2'; path.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'release manifest is stale'): contract.verify(root)
+
+    def test_release_rejects_mismatched_ps5_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            path=root/'botty-native/manifest.json'; manifest=json.loads(path.read_text())
+            manifest['releaseVersion']='1.6.1'; path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, 'PS5 version disagree'): contract.release_record(root)
+            manifest['releaseVersion']='1.6.0'; path.write_text(json.dumps(manifest))
+            (root/'botty-native/sce_sys/param.json').write_text(json.dumps(dict(contentVersion='01.004.002')))
+            with self.assertRaisesRegex(ValueError, 'metadata and release version disagree'): contract.release_record(root)
 
     def test_unlisted_file_is_rejected_by_index_and_check(self):
         with tempfile.TemporaryDirectory() as directory:

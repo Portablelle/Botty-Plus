@@ -1,21 +1,33 @@
 {
   "schema": 1,
+  "version": "1.6.0",
+  "components": {
+    "native": "01.006.000",
+    "manager": "1.5.4",
+    "worker": "1.3.1",
+    "rtorrent": "0.16.24-botty8"
+  },
+  "apis": {
+    "manager": 1,
+    "worker": "library-1.3",
+    "updater": "1.0.0"
+  },
   "sha256": {
     "botty-native/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "botty-native/NOTICE.md": "03599c9a66900784ed9130daab280b961371e546e36bee449e5ac930ab7f5a03",
     "botty-native/assets/Manrope-OFL.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
-    "botty-native/assets/build.txt": "3f9bf553535238bbfef7c676cce2342b5308fa827c301d8ff7a60609c57f00c7",
+    "botty-native/assets/build.txt": "087569010432b0e38c407e0dd1705e0e3a409763743d45402579259448a8cb6d",
     "botty-native/assets/courier.rgba": "52b768f8e0a8587340508b7c7c62f2f928c5aaba3ca71fc2e23bf767fbab53d1",
     "botty-native/assets/extractor.rgba": "394e22655673e381a606b2a903371437aa189aa133f759590bb55095a651536f",
     "botty-native/assets/nebula.rgb": "86e016792eb91775163b9ffea8691314ee3a96ddeb1acacfdcc2d60a210caff1",
     "botty-native/assets/ui-font.bin": "c2b6891a746f62c9ee8ed68ebd2074fbff0d40aea70e78b1c85c1cc200e56845",
     "botty-native/assets/vault.rgba": "22ce003865a105b63b886c71f81d9550e6189d4051bc8df88322fd09f984c15a",
-    "botty-native/botty-native-source.tar.gz": "5219f62ee9e912098a225d2fa97f01e9bc05a0ce18f51e886cfa99307e2890ac",
-    "botty-native/eboot.bin": "d035918a76e7051d78ca975675dbda5582d654205a5e3c86298e98e3a3541730",
-    "botty-native/manifest.json": "3a8df37ae83cf96b1882f3cdfdbf7d5e0a2917a1b153b8870137950cc7b51bb9",
+    "botty-native/botty-native-source.tar.gz": "4bc51eebc97ca90203c3c269c914bcfdc0b40fcf0bf73abae75a75101a2f3d57",
+    "botty-native/eboot.bin": "cb2106a813c0ae0f8cc6abf064fa1f4da6c2e1759d1e49da7a536a247829a677",
+    "botty-native/manifest.json": "bfd582dd6b547878df796780a4248fe04e0100cab670ee0dc48df4791394f58a",
     "botty-native/sce_module/libc.prx": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036",
     "botty-native/sce_sys/icon0.png": "b04611b29f7fbd980d6ea550379df4cc897d077bed06b69eaaa59ec58ea2987d",
-    "botty-native/sce_sys/param.json": "a94e3a6fb9d93aabfa6555e6009b4540d1a6d3673a971525e376f934a36c82f9",
+    "botty-native/sce_sys/param.json": "935116e6f91fc608909d46c3205d00089152da52b4c1473e299cfe0b5671f6dd",
     "botty-native/sce_sys/pic0.dds": "1005350b9f1feecdd6eb1006c389a6bd738d31b1090325deecaf799c8c695724",
     "botty-native/sce_sys/snd0.at9": "4284d15a2bae57739c944355c917ab11fce7b18d9b47054e2c7e3746a3c57218",
     "botty/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",

@@ -52,7 +52,12 @@ actions instead of pretending they succeeded.
 
 ## Installation updates
 
-Installation updates require native 1.4.2, manager 1.5.4, worker revision 1.3.1
+Starting with Botty+ 1.6.0, the header and footer share one public version.
+`release.json` generates the compiled identities, PS5 `contentVersion` and
+build asset through `python3 tools/release_version.py`. Connections shows
+technical component versions. See [versioning](../../docs/VERSIONING.md).
+
+Installation updates require native 1.4.2 or later, manager 1.5.4, worker revision 1.3.1
 and rTorrent botty5 or later. Use Portal+ once to install this initial stack in
 a deliberately restarted idle console session. Legacy workers and engines do
 not expose enough running-process identity for unattended retirement; the updater

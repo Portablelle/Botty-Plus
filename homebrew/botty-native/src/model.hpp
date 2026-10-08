@@ -3,9 +3,8 @@
 #include <cstdint>
 #include <array>
 #include <string_view>
+#include "version.hpp"
 namespace botty {
-inline constexpr char nativeVersion[]="01.004.002";
-inline constexpr char nativeDisplayVersion[]="1.4.2";
 // string_view::substr pulls in exception support absent from the native runtime.
 inline std::string_view slice(std::string_view s, std::size_t pos,
                              std::size_t count=std::string_view::npos) noexcept {
