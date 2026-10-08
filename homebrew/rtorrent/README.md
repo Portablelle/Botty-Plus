@@ -51,10 +51,10 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
-The package revision is `0.16.24-botty6`; upstream `system.client_version`
+The package revision is `0.16.24-botty7`; upstream `system.client_version`
 remains `0.16.24`. Each launch publishes private `state/runtime.json` before
 upstream main can start a listener, including supervised launches. Its exact
-fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty6"`, and
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty7"`, and
 `boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
 This revision originates in the running binary, never installed metadata.
 Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
@@ -122,3 +122,25 @@ sources and versions are pinned in the Dockerfile; their own licenses apply.
 The botty3 config disables the extra full rehash on download completion. Normal
 piece checks and explicit manual verification remain enabled. Botty service 1.3.6
 also applies this setting to an already-running daemon via local RPC.
+
+## Descriptor exhaustion recovery (botty7)
+
+Large multifile torrents could stop before downloading or report
+`Hash check I/O error ... Too many open files`. The process can exhaust its
+actual descriptor allowance before libtorrent reaches the advertised cache
+budget. On `EMFILE`, the storage manager now waits for queued file closes and
+retries; if still exhausted, it evicts one least-recently-used cached file,
+waits for that descriptor to close, and retries once more. Other errors remain
+errors. It never closes peer sockets, raises process/kernel limits, or deletes
+data. Exhaustion with no cached file to reclaim remains a reported failure.
+
+The Linux host regression compiles the patched pinned upstream FileManager,
+SocketFile and asynchronous FdCloseQueue sources, replacing only the file-open
+network logging seam with its POSIX open. It writes and reads 187 files with
+`RLIMIT_NOFILE=64` while the advertised file cache allows 128. The unpatched
+source must fail with `EMFILE`; the patched source must preserve all contents.
+Missing paths and exhaustion due solely to unrelated descriptors remain errors.
+Run `python3 homebrew/rtorrent/tests/test_file_manager_emfile.py` on Linux with
+Clang C++20 and OpenSSL development headers. These host checks and the rebuilt
+PS5 package do not establish console acceptance; CONTROL needs a retry after
+installation through the normal updater.

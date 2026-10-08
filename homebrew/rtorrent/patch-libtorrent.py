@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the PS5 numeric-address compatibility fix to pinned libtorrent."""
+"""Apply the PS5 compatibility fixes to pinned libtorrent."""
 from pathlib import Path
 import sys
 p=Path(sys.argv[1])/'src/torrent/net/socket_address.cc'
@@ -22,4 +22,41 @@ s=s[:start]+'''try_lookup_numeric(const std::string& hostname, int family) {
   return {nullptr, nullptr};
 }
 ''' + s[end:]
+p.write_text(s)
+
+# sysconf's advertised budget need not match the payload's descriptor limit.
+# Reclaim only this manager's file descriptors, leaving peer sockets untouched.
+p=Path(sys.argv[1])/'src/torrent/data/file_manager.cc'
+s=p.read_text()
+old='''  if (!fd.open(file->frozen_path().str(), prot, flags)) {
+    m_files_failed_counter++;
+    return false;
+  }
+'''
+new='''  bool opened = fd.open(file->frozen_path().str(), prot, flags);
+
+  if (!opened && errno == EMFILE) {
+    // Detached files may still be awaiting their asynchronous close.
+    m_fd_close_queue->wait_for(0);
+    opened = fd.open(file->frozen_path().str(), prot, flags);
+
+    if (!opened && errno == EMFILE && !empty()) {
+      // The actual process limit is below the advertised cache budget.
+      // Evict one least-recently-used file and wait for its real close.
+      evict_least_active(1);
+      m_fd_close_queue->wait_for(0);
+      opened = fd.open(file->frozen_path().str(), prot, flags);
+    }
+  }
+
+  if (!opened) {
+    m_files_failed_counter++;
+    return false;
+  }
+'''
+if old in s:
+    assert s.count(old)==1
+    s=s.replace(old,new)
+else:
+    assert new in s, 'Unexpected pinned FileManager::open implementation'
 p.write_text(s)
