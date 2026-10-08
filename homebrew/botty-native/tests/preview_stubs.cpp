@@ -41,6 +41,8 @@ void snapshot() {
 }
 }
 extern "C" {
+int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return -1;}
+int sceKernelDlsym(int,const char*,void**){return -1;}
 std::uint64_t sceKernelGetProcessTime(){return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()+(std::this_thread::get_id()==mainThread?artificialRenderTime:0);}
 int sceKernelUsleep(unsigned us){std::this_thread::sleep_for(std::chrono::microseconds(us));return 0;}
 int sceKernelOpen(const char*,int,mode_t){return is("slow-password")||is("buffered-password")?55:-1;}

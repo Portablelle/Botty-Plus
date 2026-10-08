@@ -3,6 +3,7 @@
 #include "model.hpp"
 #include "probe.hpp"
 #include "platform.hpp"
+#include "keyboard.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -34,6 +35,8 @@ botty::ArtworkPage covers;
 botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
+botty::NativeKeyboard nativeKeyboard;
+bool nativeKeyboardAttempted=false,nativeKeyboardFallback=false;
 botty::ActionResult actionResult;
 bool showResult=false;
 botty::Network::Deletion deletion=botty::Network::Deletion::idle;
@@ -354,10 +357,16 @@ void drawWorkflow(Canvas& c) noexcept {
         else {auto tail=botty::slice(text,text.size()>90?text.size()-90:0);for(unsigned i=0;i<tail.size();++i)visible[i]=tail[i];}
         c.rounded(140,382,1640,76,12,background);shortLabel(c,162,402,visible.data(),26,1580,ink);
         char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:workflow.command.operation==Op::search?200:password?1024:16384,text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
+        if(!nativeKeyboardFallback){
+            c.label(140,538,nativeKeyboard.active()?"Enter text with the PS5 system keyboard.":"Cross: Open PS5 keyboard",28,ink);
+            shortLabel(c,140,836,workflow.notice.data(),24,1640,accent);
+            c.label(140,895,"Square: In-app keyboard (long links)    Circle: Cancel",22,muted);
+            return;
+        }
         auto keys=botty::Workflow::keys(workflow.keyPage);
         for(unsigned i=0;i<40;++i){const unsigned x=140+(i%10)*164,y=508+(i/10)*60;const bool focus=workflow.selected==i;
             c.rounded(x,y,150,50,10,focus?accent:background);c.label(x+62,y+9,botty::slice(keys,i,1),28,focus?background:ink);}
-        const char* controls[]={"Space","Backspace","Clear","ABC / Symbols","Done"};
+        const char* controls[]={"Space","Backspace","Clear","Case / Symbols","Done"};
         for(unsigned i=0;i<5;++i){const bool focus=workflow.selected>=40&&(workflow.selected-40)/2==i;const unsigned x=140+i*328;
             c.rounded(x,758,314,60,12,focus?accent:background);c.label(x+24,776,controls[i],24,focus?background:ink);}
         shortLabel(c,140,836,workflow.notice[0]?workflow.notice.data():password&&!workflow.command.text[0]?"No password? Select Done to continue.":"",24,1640,accent);
@@ -414,10 +423,37 @@ bool draw(Canvas& c) noexcept {
     static bool updateSubmitting=false;
     const auto& exploreSorts=botty::Model::exploreSorts;
     const unsigned oldTab=model.tab;
-    const unsigned edge=pollPad(now);if(edge)++displayRevision;
-    if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
+    const bool keyboardWasActive=nativeKeyboard.active();
+    const auto keyboardResult=nativeKeyboard.poll();
+    unsigned edge=pollPad(now);
+    bool keyboardAccepted=false;
+    if(keyboardWasActive){
+        edge=0;input.reset();discardPadBatch=true;
+        using Result=botty::NativeKeyboard::Result;
+        if(keyboardResult==Result::accepted){
+            keyboardAccepted=true;
+        }else if(keyboardResult==Result::cancelled){
+            std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard closed. Cross: Reopen or Square: Use in-app keyboard.");
+        }
+        else if(keyboardResult==Result::failed){
+            nativeKeyboardFallback=true;
+            std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard could not accept this input. Use the in-app keyboard.");
+        }
+        if(keyboardResult!=Result::pending)++displayRevision;
+    }
+    if(workflow.panel!=botty::Workflow::Panel::keyboard){nativeKeyboardAttempted=false;nativeKeyboardFallback=false;}
+    if(edge)++displayRevision;
+    if(showResult&&workflow.panel!=botty::Workflow::Panel::keyboard){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
     else if(workflow.panel!=botty::Workflow::Panel::closed){
-        if(workflow.press(edge,catalog,network.busy())){
+        unsigned workflowEdge=edge;
+        if(workflow.panel==botty::Workflow::Panel::keyboard&&!nativeKeyboardFallback){
+            workflowEdge=edge&botty::Buttons::circle;
+            if(!nativeKeyboard.active()&&(edge&botty::Buttons::square)){nativeKeyboardFallback=true;workflow.notice.fill(0);}
+            if(!nativeKeyboard.active()&&(edge&(botty::Buttons::cross|botty::Buttons::options)))nativeKeyboardAttempted=false;
+        }
+        const bool emit=keyboardAccepted?workflow.acceptText(nativeKeyboard.text(),catalog,network.busy()):workflow.press(workflowEdge,catalog,network.busy());
+        if(keyboardAccepted)nativeKeyboard.clearText();
+        if(emit){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
             if(network.busy()){
                 using Op=botty::Operation;const auto op=workflow.command.operation;
@@ -455,6 +491,17 @@ bool draw(Canvas& c) noexcept {
         }
         if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
         if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
+    }
+    if(workflow.panel==botty::Workflow::Panel::keyboard&&!nativeKeyboardAttempted&&!nativeKeyboard.active()){
+        nativeKeyboardAttempted=true;
+        const auto op=workflow.command.operation;
+        const bool password=op==botty::Operation::extract,url=op==botty::Operation::add;
+        const unsigned limit=op==botty::Operation::search?200:password?1024:16384;
+        if(!nativeKeyboard.open(workflow.command.text.data(),password?"Archive password (optional)":url?"Add a magnet link":"Search games",limit,password,url)){
+            nativeKeyboardFallback=true;
+            std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard unavailable. Use the in-app keyboard.");
+        }
+        input.reset();discardPadBatch=true;++displayRevision;
     }
     std::array<char,96> focused{};
     if(model.tab<3){const auto* old=botty::entryAt(catalog,model.tab,model.filter,model.selected);if(old)focused=old->id;}
