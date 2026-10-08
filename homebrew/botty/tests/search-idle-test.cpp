@@ -11,6 +11,7 @@ namespace {
 std::mutex gate;
 std::condition_variable wake;
 bool writing=false,released=false;
+bool performing=false,performReleased=false;
 curl_write_callback receive=nullptr;
 void* context=nullptr;
 }
@@ -28,7 +29,7 @@ inline CURLcode fixtureGetinfo(CURL*,CURLINFO,long* value){*value=200;return CUR
 extern "C" {
 CURL* curl_easy_init(){return reinterpret_cast<CURL*>(1);}
 void curl_easy_cleanup(CURL*){}
-CURLcode curl_easy_perform(CURL*){char bytes[]="[]";assert(receive(bytes,1,2,context)==2);return CURLE_OK;}
+CURLcode curl_easy_perform(CURL*){{std::unique_lock<std::mutex> lock(gate);performing=true;wake.notify_all();wake.wait(lock,[]{return performReleased;});}char bytes[]="[]";assert(receive(bytes,1,2,context)==2);return CURLE_OK;}
 curl_slist* curl_slist_append(curl_slist*,const char*){static curl_slist header{};return &header;}
 void curl_slist_free_all(curl_slist*){}
 }
@@ -45,6 +46,9 @@ void writeJson(const fs::path&,const json&) {
 int main() {
   const auto root=botty::fs::temp_directory_path()/("botty-search-idle-"+std::to_string(getpid()));botty::fs::create_directory(root);
   botty::Search search;search.start(botty::Paths(root),"PS5","newest",true);
+  {std::unique_lock<std::mutex> lock(gate);assert(wake.wait_for(lock,std::chrono::seconds(2),[]{return performing;}));}
+  bool busyRejected=false;try{search.requireInstallationIdle();}catch(const std::runtime_error&){busyRejected=true;}assert(busyRejected);
+  {std::lock_guard<std::mutex> lock(gate);performReleased=true;}wake.notify_all();
   {std::unique_lock<std::mutex> lock(gate);assert(wake.wait_for(lock,std::chrono::seconds(2),[]{return writing;}));}
   auto idle=std::async(std::launch::async,[&]{search.requireInstallationIdle();});
   assert(idle.wait_for(std::chrono::milliseconds(100))==std::future_status::timeout);

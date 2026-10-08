@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 static const char* runtime_path;
+static unsigned random_calls;
 static int boot_query(const char* name, void* output, size_t* length, const void* input, size_t input_length) {
     if (strcmp(name, "kern.boottime") || input || input_length) return -1;
     const char* mode = getenv("BOOT_TEST_MODE");
@@ -25,8 +26,7 @@ static int boot_query(const char* name, void* output, size_t* length, const void
 struct botty_rt_syscall_result;
 static botty_rt_syscall_result test_at_syscall(long, long, long, long, long);
 static void test_random_bytes(void* output, size_t size) {
-    static unsigned counter;
-    memset(output, counter++, size);
+    memset(output, random_calls++, size);
 }
 #define BOTTY_RT_AT_SYSCALL test_at_syscall
 #define BOTTY_RT_RANDOM_BYTES test_random_bytes
@@ -70,7 +70,9 @@ int main(int argc, char** argv) {
         if (!old) return 10;
         fputs("preserve stale file", old);
         if (fclose(old) || symlink(legacy, collision)) return 10;
-        return botty_rtorrent_publish_runtime(runtime_path);
+        const int result=botty_rtorrent_publish_runtime(runtime_path);
+        if(!result&&random_calls<2)return 11;
+        return result;
     }
     if (!strcmp(argv[1], "publish")) return botty_rtorrent_publish_runtime(runtime_path);
     bool supervised = !strcmp(argv[1], "supervised");

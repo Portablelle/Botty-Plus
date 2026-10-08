@@ -54,12 +54,13 @@ std::atomic<bool> httpReady{false};
 class ServerThreads {
   httplib::Server& server_;
   std::atomic<bool> stopping_{false};
+  std::mutex stopMutex_;
   std::thread ready_,stop_;
 public:
   explicit ServerThreads(httplib::Server& server):server_(server){}
   ~ServerThreads(){join();}
   void watchReady(){ready_=std::thread([this]{while(!stopping_){if(server_.is_running()){httpReady=true;return;}std::this_thread::sleep_for(std::chrono::milliseconds(2));}});}
-  void stop(){if(stop_.joinable())throw std::runtime_error("Manager stop is already queued.");stop_=std::thread([this]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server_.stop();});}
+  void stop(){std::lock_guard<std::mutex> guard(stopMutex_);if(stop_.joinable())throw std::runtime_error("Manager stop is already queued.");stop_=std::thread([this]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server_.stop();});}
   void join(){stopping_=true;if(ready_.joinable())ready_.join();if(stop_.joinable())stop_.join();}
 };
 std::atomic<bool> cancelExtraction{false}; std::string activeJob;

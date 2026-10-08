@@ -63,7 +63,7 @@ outside 0..999999 fail startup closed. No kernel writes are performed.
 The publisher traverses the absolute state path with directory descriptors and
 `O_NOFOLLOW`, checks ownership, sets the state directory to 0700, and writes a
 bounded JSON record to an exclusive 0600 temporary file with a 128-bit random
-suffix, retrying collisions at most eight times. Stale PID-named temporary files
+suffix, trying at most eight distinct suffixed names. Stale PID-named temporary files
 and colliding files/symlinks are preserved, not deleted. It checks writes,
 fsyncs the file, atomically renames it and fsyncs the directory. Existing identity
 symlinks/nonregular files and unsafe paths are rejected. Backend consumers must

@@ -61,6 +61,11 @@ class UpdateCompatibilityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.check()
             self.manager[key] = original
+        for key in ['workerApi', 'updaterVersion']:
+            original = self.manager.pop(key)
+            with self.assertRaises(ValueError):
+                self.check()
+            self.manager[key] = original
 
     def test_version_bounds_match_updater(self):
         self.manager['id'] = '1.10000.0'

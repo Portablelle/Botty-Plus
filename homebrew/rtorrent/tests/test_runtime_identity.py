@@ -134,8 +134,9 @@ class RuntimeIdentitySourceTests(unittest.TestCase):
 
     def test_manifest_uses_compiled_revision(self):
         manifest = ROOT.parents[1] / 'packages' / 'rtorrent' / 'manifest.json'
-        if manifest.exists():
-            self.assertEqual(json.loads(manifest.read_text())['id'], VERSION)
+        if not manifest.exists():
+            self.skipTest(f'{manifest} is unavailable in this isolated source fixture')
+        self.assertEqual(json.loads(manifest.read_text())['id'], VERSION)
 
 
 if __name__ == '__main__':

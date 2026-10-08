@@ -9,6 +9,9 @@ int main(int argc,char** argv) {
       std::cout<<rpc.installationRpc("system.pid").dump()<<'\n';
       rpc.installationRpc("system.pid");rpc.request("session-get",botty::json::object());return 0;
     }
+    if(std::string(argv[3])=="installation-rejected") {
+      rpc.installationRpc("system.client_version");return 3;
+    }
     rpc.request(argv[3],{{"ids",{1}}});
     std::cout<<rpc.request("torrent-get",botty::json::object()).dump()<<'\n';
   }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
