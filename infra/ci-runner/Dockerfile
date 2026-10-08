@@ -49,8 +49,8 @@ RUN node_archive="$(mktemp)" \
   && touch "/opt/hostedtoolcache/node/${NODE_VERSION}/x64.complete" \
   && chown -R runner:runner /opt/hostedtoolcache
 
-# Native Botty tests also link zlib.
-RUN apt-get update && apt-get install -y --no-install-recommends zlib1g-dev \
+# Native Botty tests link zlib; the pinned libtorrent storage harness includes OpenSSL.
+RUN apt-get update && apt-get install -y --no-install-recommends zlib1g-dev libssl-dev \
   && rm -rf /var/lib/apt/lists/*
 
 # Keep the immutable runner separate from the size-capped job home.
