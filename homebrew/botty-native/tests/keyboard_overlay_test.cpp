@@ -4,6 +4,7 @@
 #include "../src/main.cpp"
 #undef main
 #include <cassert>
+extern "C" bool overlayImeFullMagnet;
 namespace {
 unsigned frame=0;
 bool overlayFrame(Canvas& canvas) noexcept {
@@ -19,13 +20,16 @@ bool overlayFrame(Canvas& canvas) noexcept {
     else if(frame==5){
         workflow.command.operation=botty::Operation::extract;
         std::snprintf(workflow.command.text.data(),workflow.command.text.size(),"original");
-        assert(nativeKeyboard.open("edited","Password",1024,true,false));
+        assert(nativeKeyboard.open("initial","Password",1024,true,false));
         textEntryState=TextEntryState::editing;showResult=true;edge=Buttons::circle;
     }else if(frame==6)edge=Buttons::cross;
     else if(frame==8){
         workflow.panel=Panel::keyboard;textEntryState=TextEntryState::idle;
         std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard closed.");
-    }
+    }else if(frame==10){
+        workflow.add();textEntryState=TextEntryState::editing;showResult=true;overlayImeFullMagnet=true;
+        assert(nativeKeyboard.open(workflow.command.text.data(),"Magnet link",16384,false,true));
+    }else if(frame==11)edge=Buttons::cross;
     input.head=0;input.count=edge?1:0;input.events[0]=edge;
     const auto previousDisplay=displayRevision;
     assert(draw(canvas));
@@ -36,6 +40,8 @@ bool overlayFrame(Canvas& canvas) noexcept {
     }else if(frame==5||frame==6){
         assert(showResult==(frame==5));
         assert(textEntryState==TextEntryState::accepted&&nativeKeyboard.text()=="edited");
+        const auto previousNotice=workflow.notice;
+        assert(!finishNativeInput(0,false,false)&&workflow.notice==previousNotice);
         assert(!finishNativeInput(0,true));
         assert(textEntryState==TextEntryState::accepted&&nativeKeyboard.text()=="edited");
         assert(workflow.panel==Panel::keyboard&&std::string_view(workflow.command.text.data())=="original");
@@ -44,7 +50,15 @@ bool overlayFrame(Canvas& canvas) noexcept {
         assert(textEntryState!=TextEntryState::accepted&&nativeKeyboard.text().empty());
         assert(workflow.panel==Panel::confirm&&!workflow.confirm&&std::string_view(workflow.command.text.data())=="edited");
     }else if(frame==8)assert(nativeKeyboard.active()&&!workflow.notice[0]);
-    else if(frame==9){assert(!nativeKeyboard.active());return false;}
+    else if(frame==9)assert(!nativeKeyboard.active());
+    else if(frame==10||frame==11){
+        assert(textEntryState==TextEntryState::capacity&&workflow.panel==Panel::keyboard);
+        assert(std::string_view(workflow.command.text.data())=="magnet:?xt=urn:btih:");
+    }else if(frame==12){
+        assert(textEntryState==TextEntryState::fallback&&workflow.panel==Panel::keyboard);
+        assert(std::string_view(workflow.command.text.data()).size()==2048&&workflow.notice[0]);
+        assert(nativeKeyboard.text().empty());return false;
+    }
     ++frame;return true;
 }
 }

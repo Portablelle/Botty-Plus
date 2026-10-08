@@ -50,7 +50,9 @@ byte limits (200 for searches, 1,024 for passwords and 16,384 for magnets) witho
 silently truncating input. Entries exceeding the byte limit reopen with their
 edits intact so they can be shortened; confirmation during an in-flight request
 is retained until that request and its result overlay finish. IME startup gets
-a bounded ten-second window before falling back. If the system dialog is unavailable or cannot handle
+a bounded ten-second window before falling back. Magnet input reaching the
+system's 2,048-unit cap goes to the in-app editor for explicit review, since
+IME may have trimmed a paste. It is not automatically accepted. If the system dialog is unavailable or cannot handle
 an existing long input, the QWERTY in-app keyboard remains available with a number
 row, uppercase and symbols via L1/R1. Square erases, Triangle reveals/hides a
 password, and Options accepts a hexadecimal Unicode code point. Characters

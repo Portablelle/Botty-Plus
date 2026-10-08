@@ -87,6 +87,10 @@ NativeKeyboard::Result NativeKeyboard::poll() noexcept {
         else if(result.endStatus==1)completed=Result::cancelled;
         else if(result.endStatus!=0||!toUtf8(buffer.data(),buffer.size(),output.data(),output.size()-1))completed=Result::failed;
         else if(std::string_view(output.data()).size()>limit)completed=Result::tooLong;
+        // At the system cap a URL may have been trimmed by IME. Require review
+        // in the editor that supports the larger app limit, rather than submit it.
+        else if(parameters.type==2&&limit>parameters.maxLength&&
+                std::find(buffer.begin(),buffer.end(),0)-buffer.begin()>=parameters.maxLength)completed=Result::atCapacity;
         else completed=Result::accepted;
     }
     // A never-started/already-closed dialog may reject Term as uninitialized.
@@ -110,7 +114,7 @@ NativeKeyboard::Result NativeKeyboard::poll() noexcept {
     }
     running=false;buffer.fill(0);titleBuffer.fill(0);
     const auto result=completed;completed=Result::idle;
-    if(result!=Result::accepted)output.fill(0);
+    if(result!=Result::accepted&&result!=Result::atCapacity)output.fill(0);
     return result;
 }
 }
