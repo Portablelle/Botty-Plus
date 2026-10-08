@@ -18,6 +18,12 @@
 #define BOTTY_RT_RANDOM_BYTES arc4random_buf
 #endif
 
+// Portal creates storage as root; ELF-loader payloads can have real uid 1.
+// Accept the privileged installer or this process, never an unrelated owner.
+static bool botty_rtorrent_trusted_owner(uid_t owner, uid_t process_uid = getuid()) {
+    return owner == 0 || owner == process_uid;
+}
+
 static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorrent/state") {
     struct timeval boot = {};
     size_t size = sizeof(boot);
@@ -44,11 +50,11 @@ static int botty_rtorrent_publish_runtime(const char* path = "/data/botty/rtorre
         if (!*cursor) { close(dir); return 1; }
     }
     struct stat st;
-    if (!*directory || fstat(dir, &st) != 0 || st.st_uid != getuid() || fchmod(dir, 0700) != 0) {
+    if (!*directory || fstat(dir, &st) != 0 || !botty_rtorrent_trusted_owner(st.st_uid) || fchmod(dir, 0700) != 0) {
         close(dir); return 1;
     }
     if (botty_rt_fstatat(dir, "runtime.json", &st, AT_SYMLINK_NOFOLLOW) == 0) {
-        if (!S_ISREG(st.st_mode) || st.st_uid != getuid() || st.st_nlink != 1) { close(dir); return 1; }
+        if (!S_ISREG(st.st_mode) || !botty_rtorrent_trusted_owner(st.st_uid) || st.st_nlink != 1) { close(dir); return 1; }
     } else if (errno != ENOENT) { close(dir); return 1; }
     char body[256], temporary[96];
     int length = snprintf(body, sizeof(body),

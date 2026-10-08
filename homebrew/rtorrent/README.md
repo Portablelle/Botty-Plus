@@ -51,17 +51,18 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
-The next package revision is `0.16.24-botty5`; upstream `system.client_version`
+The package revision is `0.16.24-botty6`; upstream `system.client_version`
 remains `0.16.24`. Each launch publishes private `state/runtime.json` before
 upstream main can start a listener, including supervised launches. Its exact
-fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty5"`, and
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty6"`, and
 `boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
 This revision originates in the running binary, never installed metadata.
 Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
 outside 0..999999 fail startup closed. No kernel writes are performed.
 
 The publisher traverses the absolute state path with directory descriptors and
-`O_NOFOLLOW`, checks ownership, sets the state directory to 0700, and writes a
+`O_NOFOLLOW`, accepts root-owned installer storage or storage owned by the
+payload's real UID, sets the state directory to 0700, and writes a
 bounded JSON record to an exclusive 0600 temporary file with a 128-bit random
 suffix, trying at most eight distinct suffixed names. Stale PID-named temporary files
 and colliding files/symlinks are preserved, not deleted. It checks writes,
@@ -69,6 +70,10 @@ fsyncs the file, atomically renames it and fsyncs the directory. Existing identi
 symlinks/nonregular files and unsafe paths are rejected. Backend consumers must
 compare `pid` with live `system.pid` and both boot fields with the current boot;
 the file alone is not proof that the daemon is running.
+
+On firmware 13.00 the portal creates storage with owner UID 0 while the ELF
+loader runs the payload with real UID 1. Both are trusted owners; other owners
+remain rejected. Identity-publication failures are recorded in `runtime.log`.
 
 The target uses carry-normalized descriptor-relative syscall wrappers rather
 than the SDK's positive-errno libc stubs. SDK v0.43's `sys/syscall.h` defines

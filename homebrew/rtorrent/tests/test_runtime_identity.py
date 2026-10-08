@@ -54,6 +54,16 @@ class RuntimeIdentityTests(unittest.TestCase):
                 self.assertEqual(self.run_harness(path, boot=mode), 1)
                 self.assertEqual((path / 'runtime.json').read_bytes(), original)
 
+    def test_root_installer_and_payload_owners_are_trusted_but_other_users_are_not(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertEqual(self.run_harness(Path(temp), 'owners'), 0)
+
+    def test_entry_logs_runtime_publication_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            self.assertEqual(self.run_harness(path, 'default', boot='unavailable'), 1)
+            self.assertIn('runtime identity publication failed', (path / 'runtime.log').read_text())
+
     def test_symlinks_and_unsafe_paths_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
