@@ -1,6 +1,10 @@
 #include "../runtime-at.hpp"
 #include <cassert>
 #include <cstdlib>
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int main() {
     char path[]="/tmp/botty-runtime-at-XXXXXX";
