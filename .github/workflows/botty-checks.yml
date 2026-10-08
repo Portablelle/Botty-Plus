@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,6 +20,11 @@ jobs:
         run: python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
       - name: Verify delivery contract
         run: python3 scripts/botty-packages.py --check
+      - name: Verify public release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/botty-packages.py --check --tag "$RELEASE_TAG"
       - name: Test app packaging contracts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Test service and native app

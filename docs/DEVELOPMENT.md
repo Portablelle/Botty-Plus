@@ -49,6 +49,11 @@ publishes an atomic portal release. It follows changes in either repository.
 A source-only commit does not build new PS5 binaries automatically: package the
 build before publishing a runtime change.
 
+The [versioning policy](VERSIONING.md) defines the single public Botty+
+version, generated PS5 identity, exact component inventory and GitHub tag
+checks. Use `python3 scripts/package-release.py` for the complete
+`botty-plus-<version>.tar.gz` release asset.
+
 For documentation-only changes inside packaged components, use
 `package-botty.py --source-only` and `package-native.py --source-only`; never use
 source-only packaging to represent changed executables. Credentials, console
