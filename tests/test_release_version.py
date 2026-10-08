@@ -37,13 +37,41 @@ class ReleaseVersionTests(unittest.TestCase):
             for name in ['src', 'sce_sys', 'assets']: (root / name).mkdir()
             definition = root / 'release.json'
             definition.write_text(json.dumps(dict(schema=1, version='1.6.0')))
-            (root / 'sce_sys/param.json').write_text(json.dumps(dict(contentVersion='01.004.002', titleId='PPSA99071')))
+            param=json.loads((release.ROOT / 'sce_sys/param.json').read_text())
+            param['contentVersion']='01.004.002'
+            (root / 'sce_sys/param.json').write_text(json.dumps(param))
             release.sync(root)
             definition.write_text(json.dumps(dict(schema=1, version='1.7.0')))
             with self.assertRaisesRegex(ValueError, 'Stale generated release'): release.sync(root, check=True)
             release.sync(root)
             release.sync(root, check=True)
-            self.assertEqual(json.loads((root / 'sce_sys/param.json').read_text()), dict(contentVersion='01.007.000', titleId='PPSA99071'))
+            param['contentVersion']='01.007.000'
+            self.assertEqual(json.loads((root / 'sce_sys/param.json').read_text()), param)
+
+    def test_generation_and_check_reject_changed_or_missing_native_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for name in ['src', 'sce_sys', 'assets']: (root/name).mkdir()
+            (root/'release.json').write_text(json.dumps(dict(schema=1, version='1.6.0')))
+            path=root/'sce_sys/param.json'
+            original=json.loads((release.ROOT/'sce_sys/param.json').read_text())
+            for key, expected in release.NATIVE_IDENTITY.items():
+                for value in (None, True if type(expected) is int else 'wrong-identity'):
+                    param=original.copy()
+                    if value is None: del param[key]
+                    else: param[key]=value
+                    path.write_text(json.dumps(param))
+                    for check in (False, True):
+                        with self.subTest(key=key, value=value, check=check):
+                            with self.assertRaisesRegex(ValueError, f'Invalid native identity field {key}'):
+                                release.sync(root, check=check)
+            for localized in [None, {}, {'en-US': {'titleName': 'Another app'}}]:
+                param=original.copy(); param['localizedParameters']=localized
+                path.write_text(json.dumps(param))
+                for check in (False, True):
+                    with self.subTest(localized=localized, check=check):
+                        with self.assertRaisesRegex(ValueError, 'localizedParameters.en-US.titleName'):
+                            release.sync(root, check=check)
 
 
 if __name__ == '__main__':
