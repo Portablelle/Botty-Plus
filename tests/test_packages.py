@@ -38,7 +38,7 @@ class PackageTests(unittest.TestCase):
             for name in notices: (base/name).write_bytes(b'notice')
             manifest=dict(schema=1,id='1.5.4',version='01.006.000',releaseVersion='1.6.0',files=files,
                           workerVersion='1.3.1',apiVersion=1,workerApi='library-1.3',updaterVersion='1.0.0')
-            if package=='rtorrent': manifest['id']='0.16.24-botty6'
+            if package=='rtorrent': manifest['id']='0.16.24-botty8'
             (base/'manifest.json').write_text(json.dumps(manifest))
         (root/'botty-release.json').write_text(json.dumps(contract.release_record(root)))
 
@@ -48,6 +48,31 @@ class PackageTests(unittest.TestCase):
             path=root/'botty-release.json'; record=json.loads(path.read_text())
             record['components']['worker']='1.3.2'; path.write_text(json.dumps(record))
             with self.assertRaisesRegex(ValueError, 'release manifest is stale'): contract.verify(root)
+
+    def test_missing_release_fields_name_the_key_and_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            for name, keys in [
+                ('botty-native/manifest.json', ('releaseVersion', 'version')),
+                ('botty/manifest.json', ('id', 'workerVersion', 'apiVersion', 'workerApi', 'updaterVersion')),
+                ('rtorrent/manifest.json', ('id',)),
+                ('botty-native/sce_sys/param.json', ('contentVersion',)),
+            ]:
+                path=root/name; original=json.loads(path.read_text())
+                for key in keys:
+                    for missing in (True, False):
+                        with self.subTest(file=name, key=key, missing=missing):
+                            record=original.copy()
+                            if missing: del record[key]
+                            else: record[key]=None
+                            path.write_text(json.dumps(record))
+                            with self.assertRaisesRegex(ValueError, f'Missing {key} in {name}'):
+                                contract.release_identity(root)
+                path.write_text(json.dumps(original))
+
+    def test_public_version_validation_rejects_an_older_package(self):
+        with self.assertRaisesRegex(ValueError, 'Packaged release does not match release.json; rebuild the native title'):
+            contract.verify_public_version(dict(version='1.4.2'))
 
     def test_release_rejects_mismatched_ps5_metadata(self):
         with tempfile.TemporaryDirectory() as directory:

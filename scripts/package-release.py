@@ -13,9 +13,7 @@ spec.loader.exec_module(packages)
 
 def main():
     record = packages.verify(ROOT / 'packages')
-    packages.sync(check=True)
-    if record['version'] != packages.release_version():
-        raise ValueError('Rebuild the native package for the public release version')
+    packages.verify_public_version(record)
     output = ROOT / 'dist'
     output.mkdir(exist_ok=True)
     asset = output / f"botty-plus-{record['version']}.tar.gz"
