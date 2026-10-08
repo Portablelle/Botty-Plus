@@ -59,6 +59,10 @@ int main(){
     assert(keyboard.poll()==R::pending&&keyboard.active()&&text[0]);
     termError=0;assert(keyboard.poll()==R::accepted&&!keyboard.active()&&text[0]==0);
     keyboard.clearText();
+    assert(keyboard.open("magnet:?xt=urn:btih:","Magnet link",16384,false,true));
+    finish(std::u16string(2047,u'a'));assert(keyboard.poll()==R::accepted&&keyboard.text().size()==2047);keyboard.clearText();
+    assert(keyboard.open("magnet:?xt=urn:btih:","Magnet link",16384,false,true));
+    finish(std::u16string(2048,u'a'));assert(keyboard.poll()==R::atCapacity&&!keyboard.active()&&keyboard.text().size()==2048);keyboard.clearText();
     assert(keyboard.open("old query","Search games",200,false,false));
     finish(std::u16string(101,u'é'));assert(keyboard.poll()==R::tooLong&&keyboard.active()&&keyboard.text().empty());
     assert(std::all_of(text,text+101,[](auto c){return c==u'é';})&&text[101]==0);

@@ -12,7 +12,7 @@ public:
     NativeKeyboard(const NativeKeyboard&)=delete;
     NativeKeyboard& operator=(const NativeKeyboard&)=delete;
     // tooLong is a nonterminal notice: the dialog reopens with its edits intact.
-    enum class Result { idle, pending, accepted, cancelled, failed, tooLong };
+    enum class Result { idle, pending, accepted, cancelled, failed, tooLong, atCapacity };
     bool open(std::string_view initial,const char* title,unsigned byteLimit,bool password,bool url) noexcept;
     Result poll() noexcept;
     void clearText() noexcept {output.fill(0);}

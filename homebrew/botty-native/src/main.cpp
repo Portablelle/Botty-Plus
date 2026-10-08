@@ -36,7 +36,7 @@ botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
 botty::NativeKeyboard nativeKeyboard;
-enum class TextEntryState { idle, editing, ready, accepted, fallback };
+enum class TextEntryState { idle, editing, ready, accepted, capacity, fallback };
 TextEntryState textEntryState=TextEntryState::idle;
 botty::ActionResult actionResult;
 bool showResult=false;
@@ -414,8 +414,16 @@ void drawWorkflow(Canvas& c) noexcept {
         c.label(140,892,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
     }
 }
-bool finishNativeInput(unsigned edge,bool busy) noexcept {
+bool nativeInputPending() noexcept {return textEntryState==TextEntryState::accepted||textEntryState==TextEntryState::capacity;}
+bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept {
     if(edge&botty::Buttons::circle)workflow.close();
+    else if(textEntryState==TextEntryState::capacity){
+        const auto text=nativeKeyboard.text();workflow.command.text.fill(0);
+        std::copy(text.begin(),text.end(),workflow.command.text.begin());workflow.selected=0;
+        std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard limit reached. Check the full magnet link in the in-app keyboard before continuing.");
+        nativeKeyboard.clearText();textEntryState=TextEntryState::fallback;++displayRevision;return false;
+    }
+    else if(!snapshotKnown)return false;
     else if(busy){workflow.finishInput(catalog,true);return false;}
     else {
         const bool emit=workflow.acceptText(nativeKeyboard.text(),catalog,false);
@@ -436,8 +444,8 @@ bool draw(Canvas& c) noexcept {
     // before dispatching deferred input, so its result overlay takes precedence.
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
-    bool inputNetworkBusy=true;
-    (void)network.read(connection,nullptr,&receivedResult,&inputNetworkBusy);
+    bool inputNetworkBusy=false;
+    const bool inputNetworkKnown=network.read(connection,nullptr,&receivedResult,&inputNetworkBusy);
     if(receivedResult.revision!=resultRevision){
         actionResult=receivedResult;
         if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
@@ -453,6 +461,8 @@ bool draw(Canvas& c) noexcept {
         using Result=botty::NativeKeyboard::Result;
         if(keyboardResult==Result::accepted){
             textEntryState=TextEntryState::accepted;
+        }else if(keyboardResult==Result::atCapacity){
+            textEntryState=TextEntryState::capacity;
         }else if(keyboardResult==Result::cancelled){
             textEntryState=TextEntryState::ready;
             std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard closed. Cross: Reopen or Square: Use in-app keyboard.");
@@ -474,10 +484,10 @@ bool draw(Canvas& c) noexcept {
         unsigned workflowEdge=edge;
         if(workflow.panel==botty::Workflow::Panel::keyboard&&textEntryState!=TextEntryState::fallback){
             workflowEdge=edge&botty::Buttons::circle;
-            if(!nativeKeyboard.active()&&textEntryState!=TextEntryState::accepted&&(edge&botty::Buttons::square)){textEntryState=TextEntryState::fallback;workflow.notice.fill(0);}
-            if(!nativeKeyboard.active()&&textEntryState!=TextEntryState::accepted&&(edge&(botty::Buttons::cross|botty::Buttons::options)))textEntryState=TextEntryState::idle;
+            if(!nativeKeyboard.active()&&!nativeInputPending()&&(edge&botty::Buttons::square)){textEntryState=TextEntryState::fallback;workflow.notice.fill(0);}
+            if(!nativeKeyboard.active()&&!nativeInputPending()&&(edge&(botty::Buttons::cross|botty::Buttons::options)))textEntryState=TextEntryState::idle;
         }
-        const bool emit=textEntryState==TextEntryState::accepted?finishNativeInput(edge,inputNetworkBusy):workflow.press(workflowEdge,catalog,network.busy());
+        const bool emit=nativeInputPending()?finishNativeInput(edge,inputNetworkBusy,inputNetworkKnown):workflow.press(workflowEdge,catalog,network.busy());
         if(emit){
             if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
             if(network.busy()){

@@ -10,7 +10,7 @@
 #include <string>
 #include <fstream>
 #include <iterator>
-#include <sys/event.h>
+#include "../src/host_preview_event.hpp"
 extern "C" {
 #include "../vendor/ps5-pad.h"
 }
@@ -43,9 +43,18 @@ void snapshot() {
 extern "C" {
 // IME fixture used by the real draw-loop overlay regression.
 std::uint16_t* overlayImeText=nullptr;
+bool overlayImeFullMagnet=false;
 int overlayImeInit(const void* p,const void*){std::memcpy(&overlayImeText,static_cast<const char*>(p)+40,sizeof(overlayImeText));return 0;}
 int overlayImeStatus(){return 2;}
-int overlayImeResult(void* result){*static_cast<int*>(result)=0;return 0;}
+int overlayImeResult(void* result){
+    assert(overlayImeText);*static_cast<int*>(result)=0;
+    if(overlayImeFullMagnet){
+        constexpr char16_t prefix[]=u"magnet:?xt=urn:btih:";
+        std::copy(std::begin(prefix),std::end(prefix)-1,overlayImeText);
+        std::fill(overlayImeText+std::size(prefix)-1,overlayImeText+2048,u'a');overlayImeText[2048]=0;
+    }else {constexpr char16_t edited[]=u"edited";std::copy(std::begin(edited),std::end(edited),overlayImeText);}
+    return 0;
+}
 int overlayImeTerm(){return 0;}
 int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return is("keyboard-overlay")?7:-1;}
 int sceKernelDlsym(int,const char* name,void** address){

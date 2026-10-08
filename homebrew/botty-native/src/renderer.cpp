@@ -11,7 +11,7 @@
 #include "platform.hpp"
 #include "font_data.hpp"
 #include "platform_logo.hpp"
-#include <sys/event.h>
+#include "host_preview_event.hpp"
 
 #include <array>
 #include <cstddef>
