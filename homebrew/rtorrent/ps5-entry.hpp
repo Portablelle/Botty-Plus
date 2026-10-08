@@ -29,7 +29,7 @@ static int botty_rtorrent_init(int& argc, char**& argv) {
     fprintf(pid, "%d\n", getpid());
     fclose(pid);
     if (botty_rtorrent_publish_runtime(state) != 0) {
-        fprintf(stderr, "Botty rTorrent runtime identity publication failed (pid %d, uid %d, errno %d)\n", getpid(), getuid(), errno);
+        fprintf(stderr, "Botty rTorrent runtime identity publication failed (pid %d, uid %u)\n", getpid(), static_cast<unsigned>(getuid()));
         return 1;
     }
     fprintf(stderr, "Botty rTorrent payload entered (pid %d)\n", getpid());

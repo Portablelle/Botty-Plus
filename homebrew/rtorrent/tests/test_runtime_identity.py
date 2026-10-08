@@ -15,9 +15,10 @@ VERSION = re.search(r'^#define BOTTY_RT_RUNTIME_VERSION "([^"]+)"$',
 
 @unittest.skipUnless(os.environ.get('RT_IDENTITY_HARNESS'), 'Build host harness on VPS and set RT_IDENTITY_HARNESS')
 class RuntimeIdentityTests(unittest.TestCase):
-    def run_harness(self, path, mode='publish', boot='valid', at_failure=''):
+    def run_harness(self, path, mode='publish', boot='valid', at_failure='', owner=''):
         process = subprocess.Popen([os.environ['RT_IDENTITY_HARNESS'], mode, str(path)],
-                                   env=dict(os.environ, BOOT_TEST_MODE=boot, AT_TEST_FAILURE=at_failure),
+                                   env=dict(os.environ, BOOT_TEST_MODE=boot, AT_TEST_FAILURE=at_failure,
+                                            **({'OWNER_TEST_MODE': owner} if owner else {})),
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.last_pid = process.pid
         try:
@@ -62,7 +63,32 @@ class RuntimeIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)
             self.assertEqual(self.run_harness(path, 'default', boot='unavailable'), 1)
-            self.assertIn('runtime identity publication failed', (path / 'runtime.log').read_text())
+            log = (path / 'runtime.log').read_text()
+            self.assertIn('runtime identity publication failed', log)
+            self.assertNotIn('errno', log)
+
+    def test_publish_with_uid_one_and_root_owned_directory_and_existing_record(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            (path / 'runtime.json').write_text('old identity')
+            for _ in range(2):
+                self.assertEqual(self.run_harness(path, owner='root'), 0)
+                body = json.loads((path / 'runtime.json').read_text())
+                self.assertEqual(body['pid'], self.last_pid)
+                self.assertEqual(body['version'], VERSION)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((path / 'runtime.json').stat().st_mode), 0o600)
+                self.assertEqual(list(path.glob('runtime.json.tmp.*')), [])
+
+    def test_foreign_owners_and_denied_chmod_fail_without_replacing_identity(self):
+        for owner in ('foreign-directory', 'foreign-file', 'chmod-denied'):
+            with self.subTest(owner=owner), tempfile.TemporaryDirectory() as temp:
+                path = Path(temp)
+                original = b'old identity'
+                (path / 'runtime.json').write_bytes(original)
+                self.assertEqual(self.run_harness(path, owner=owner), 1)
+                self.assertEqual((path / 'runtime.json').read_bytes(), original)
+                self.assertEqual(list(path.glob('runtime.json.tmp.*')), [])
 
     def test_symlinks_and_unsafe_paths_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
