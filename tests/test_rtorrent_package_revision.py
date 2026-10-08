@@ -34,6 +34,10 @@ class RtorrentPackageRevisionTests(unittest.TestCase):
                     (base / name).write_bytes(b'synthetic notice/source')
                 manifest = {'schema': 1, 'files': files}
                 manifest['version' if package == 'botty-native' else 'id'] = '01.004.002' if package == 'botty-native' else '1.5.4'
+                if package == 'botty-native':
+                    manifest['requires'] = {'manager': '1.5.4', 'worker': '1.3.1', 'rtorrent': '0.16.24-botty5', 'apiVersion': 1}
+                else:
+                    manifest.update(apiVersion=1, workerApi='library-1.3', workerVersion='1.3.1', updaterVersion='1.0.0')
                 (base / 'manifest.json').write_text(json.dumps(manifest))
             source = root / 'homebrew/rtorrent'
             (source / 'build/downloads').mkdir(parents=True)
