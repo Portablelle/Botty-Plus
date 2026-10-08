@@ -46,6 +46,7 @@ struct Workflow {
     bool press(unsigned,const Catalog&,bool busy) noexcept;
     bool acceptText(std::string_view,const Catalog&,bool busy) noexcept;
     bool finishInput(const Catalog&,bool busy) noexcept;
+    static unsigned textLimit(Operation) noexcept;
     static std::string_view keys(unsigned page) noexcept;
     void append(char) noexcept;
     void erase() noexcept;

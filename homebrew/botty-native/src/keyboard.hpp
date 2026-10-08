@@ -11,7 +11,8 @@ public:
     NativeKeyboard()=default;
     NativeKeyboard(const NativeKeyboard&)=delete;
     NativeKeyboard& operator=(const NativeKeyboard&)=delete;
-    enum class Result { idle, pending, accepted, cancelled, failed };
+    // tooLong is a nonterminal notice: the dialog reopens with its edits intact.
+    enum class Result { idle, pending, accepted, cancelled, failed, tooLong };
     bool open(std::string_view initial,const char* title,unsigned byteLimit,bool password,bool url) noexcept;
     Result poll() noexcept;
     void clearText() noexcept {output.fill(0);}
@@ -30,7 +31,7 @@ private:
     std::array<char,16385> output{};
     std::uint64_t opened=0,finishing=0;
     unsigned limit=0;
-    bool running=false,retained=false;
+    bool running=false,retained=false,started=false;
     Result completed=Result::idle;
 };
 }

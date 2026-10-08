@@ -21,7 +21,7 @@ int init(const Parameters* p,const void* extended){assert(!extended);param=*p;te
 int status(){return state;}
 int result(Result* r){r->endStatus=endStatus;return resultError;}
 int term(){++terms;return termError;}
-void finish(const std::u16string& value){std::copy(value.begin(),value.end(),text);text[value.size()]=0;state=2;}
+void finish(const std::u16string& value){assert(text&&value.size()<=param.maxLength);std::copy(value.begin(),value.end(),text);text[value.size()]=0;state=2;}
 }
 namespace botty::platform {std::uint64_t now() noexcept {return ::now;}}
 extern "C" {
@@ -60,8 +60,8 @@ int main(){
     termError=0;assert(keyboard.poll()==R::accepted&&!keyboard.active()&&text[0]==0);
     keyboard.clearText();
     assert(keyboard.open("old query","Search games",200,false,false));
-    finish(std::u16string(101,u'é'));assert(keyboard.poll()==R::failed&&keyboard.text().empty());
-    assert(keyboard.open("old query","Search games",200,false,false));
+    finish(std::u16string(101,u'é'));assert(keyboard.poll()==R::tooLong&&keyboard.active()&&keyboard.text().empty());
+    assert(std::all_of(text,text+101,[](auto c){return c==u'é';})&&text[101]==0);
     finish(std::u16string(100,u'é'));assert(keyboard.poll()==R::accepted&&keyboard.text().size()==200);
     keyboard.clearText();
     assert(!keyboard.open(std::string(2049,'a'),"Add a magnet link",16384,false,true));
@@ -72,13 +72,19 @@ int main(){
     assert(keyboard.open("","Search games",200,false,false));
     finish(std::u16string(1,0xd800));assert(keyboard.poll()==R::failed);
     assert(keyboard.open("","Search games",200,false,false));
-    state=0;now+=2000001;termError=-1;assert(keyboard.poll()==R::failed&&!keyboard.active());termError=0;
+    state=0;now+=3000000;assert(keyboard.poll()==R::pending&&keyboard.active());
+    state=1;assert(keyboard.poll()==R::pending);finish(u"late startup");assert(keyboard.poll()==R::accepted);keyboard.clearText();
+    assert(keyboard.open("","Search games",200,false,false));
+    state=0;now+=10000001;termError=-1;assert(keyboard.poll()==R::failed&&!keyboard.active());termError=0;
     assert(keyboard.open("","Search games",200,false,false));
     state=2;resultError=-1;assert(keyboard.poll()==R::failed);resultError=0;
     assert(keyboard.open("","Search games",200,false,false));
     state=2;endStatus=2;assert(keyboard.poll()==R::failed);endStatus=0;
-    initError=-1;assert(!keyboard.open("","Search games",200,false,false));initError=0;
-    userError=-1;assert(!keyboard.open("","Search games",200,false,false));
+    const auto wiped=[&] {assert(std::all_of(text,text+2049,[](auto c){return c==0;}));assert(std::all_of(param.title,param.title+64,[](auto c){return c==0;}));};
+    assert(!keyboard.open(std::string("secret\xc0\xaf",8),"Password",1024,true,false));wiped();
+    assert(!keyboard.open("secret",std::string(64,'t').c_str(),1024,true,false));wiped();
+    initError=-1;assert(!keyboard.open("secret","Password",1024,true,false));wiped();initError=0;
+    userError=-1;assert(!keyboard.open("secret","Password",1024,true,false));wiped();
     userError=0;assert(keyboard.open("","Search games",200,false,false));
     finish(u"secret");termError=-1;assert(keyboard.poll()==R::pending);
     now+=2000001;assert(keyboard.poll()==R::failed&&!keyboard.active());

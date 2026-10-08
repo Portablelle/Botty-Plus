@@ -41,8 +41,22 @@ void snapshot() {
 }
 }
 extern "C" {
-int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return -1;}
-int sceKernelDlsym(int,const char*,void**){return -1;}
+// IME fixture used by the real draw-loop overlay regression.
+std::uint16_t* overlayImeText=nullptr;
+int overlayImeInit(const void* p,const void*){std::memcpy(&overlayImeText,static_cast<const char*>(p)+40,sizeof(overlayImeText));return 0;}
+int overlayImeStatus(){return 2;}
+int overlayImeResult(void* result){*static_cast<int*>(result)=0;return 0;}
+int overlayImeTerm(){return 0;}
+int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return is("keyboard-overlay")?7:-1;}
+int sceKernelDlsym(int,const char* name,void** address){
+    if(!is("keyboard-overlay"))return -1;
+    if(std::strcmp(name,"sceImeDialogInit")==0)*address=reinterpret_cast<void*>(overlayImeInit);
+    else if(std::strcmp(name,"sceImeDialogGetStatus")==0)*address=reinterpret_cast<void*>(overlayImeStatus);
+    else if(std::strcmp(name,"sceImeDialogGetResult")==0)*address=reinterpret_cast<void*>(overlayImeResult);
+    else if(std::strcmp(name,"sceImeDialogTerm")==0)*address=reinterpret_cast<void*>(overlayImeTerm);
+    else return -1;
+    return 0;
+}
 std::uint64_t sceKernelGetProcessTime(){return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()+(std::this_thread::get_id()==mainThread?artificialRenderTime:0);}
 int sceKernelUsleep(unsigned us){std::this_thread::sleep_for(std::chrono::microseconds(us));return 0;}
 int sceKernelOpen(const char*,int,mode_t){return is("slow-password")||is("buffered-password")?55:-1;}
