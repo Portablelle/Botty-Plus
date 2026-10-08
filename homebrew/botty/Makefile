@@ -34,7 +34,7 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 test-progress: build/progress-test
 	./build/progress-test
-test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test
+test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test
 	./build/progress-test
 	./build/core-test
 	./build/rest-mode-test
@@ -42,6 +42,8 @@ test: build/core-test build/botty-native build/storage-test build/rest-mode-test
 	./build/native-update-test
 	./build/native-idle-test
 	./build/installation-update-test
+	./build/installation-runtime-test
+	./build/search-idle-test
 	python3 tests/integration.py
 	python3 tests/rtorrent_resume.py
 	python3 tests/search_integration.py
@@ -76,6 +78,16 @@ build/installation-update-test: tests/installation-update-test.cpp $(UPDATER_HEA
 .PHONY: test-installation-update
 test-installation-update: build/installation-update-test
 	./build/installation-update-test
+
+build/installation-runtime-test: tests/installation-runtime-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
+build/search-idle-test: tests/search-idle-test.cpp src/search.hpp src/core.hpp vendor/json.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+.PHONY: test-installation-runtime
+test-installation-runtime: build/installation-runtime-test build/search-idle-test
+	./build/installation-runtime-test
+	./build/search-idle-test
 
 build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build

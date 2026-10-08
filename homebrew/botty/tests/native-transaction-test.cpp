@@ -142,11 +142,12 @@ int main() {
     Fixture f;put(f.config.nativeRoot/"private/nested/save.dat","retained data");
     const std::vector<std::pair<fs::path,mode_t>> directories={{f.config.nativeRoot,02710},{f.config.nativeRoot/"assets",0750},{f.config.nativeRoot/"private",01700},{f.config.nativeRoot/"private/nested",0711}};
     for(const auto& entry:directories)assert(!::chmod(entry.first.c_str(),entry.second));
-    assert(!::chmod((f.config.nativeRoot/"private/nested/save.dat").c_str(),0640));
+    assert(!::chmod((f.config.nativeRoot/"private/nested/save.dat").c_str(),06740));
     f.config.checkpoint=[](const std::string& point){if(point=="backup")throw std::runtime_error("power loss");};
     NativeTransaction transaction(f.config);transaction.stage(f.manifest,f.hash,f.fetch());refuses([&]{transaction.publish(f.manifest,f.hash,[]{});});transaction.recover(f.manifest,f.hash,[]{});
     for(const auto& entry:directories){struct stat st{};assert(!::lstat(entry.first.c_str(),&st));assert((st.st_mode&07777)==entry.second);}
-    struct stat st{};assert(!::lstat((f.config.nativeRoot/"private/nested/save.dat").c_str(),&st));assert((st.st_mode&0777)==0640);
+    struct stat st{};assert(!::lstat((f.config.nativeRoot/"private/nested/save.dat").c_str(),&st));assert((st.st_mode&07777)==0740);
+    assert(!::lstat((f.backup()/"private/nested/save.dat").c_str(),&st));assert((st.st_mode&07777)==06740);
     assert(nativeRead(f.config.nativeRoot/"private/nested/save.dat",128)=="retained data");
   }
   {

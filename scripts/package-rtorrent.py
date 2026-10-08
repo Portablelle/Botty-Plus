@@ -15,7 +15,10 @@ for name,original in [('rtorrent.elf',source/'build/rtorrent.elf'),('rtorrent.rc
     shutil.copyfile(original,out/name)
     data=(out/name).read_bytes()
     files.append(dict(path=name,size=len(data),sha256=hashlib.sha256(data).hexdigest()))
-manifest=(json.dumps(dict(schema=1,id='0.16.24-botty5',files=files),indent=2)+'\n').encode()
+revision = re.search(r'^#define BOTTY_RT_RUNTIME_VERSION "([^"\r\n]+)"$', (source/'runtime-version.hpp').read_text(), re.MULTILINE)
+if not revision or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-botty[0-9]+', revision.group(1)):
+    raise ValueError('Invalid compiled rTorrent revision')
+manifest=(json.dumps(dict(schema=1,id=revision.group(1),files=files),indent=2)+'\n').encode()
 (out/'manifest.json').write_bytes(manifest)
 for name in ['README.md','LICENSE']:
     shutil.copyfile(source/name,out/name)

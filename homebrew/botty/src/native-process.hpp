@@ -23,7 +23,7 @@ inline void nativeProcessesStopped(const std::vector<unsigned char>& bytes,int s
     const std::string value(name,end);
     if(value.empty())throw std::runtime_error("Malformed native process name.");
     for(unsigned char c:value)if(c<32||c>126)throw std::runtime_error("Malformed native process name.");
-    const bool knownManager=pid==manager&&manager>1&&std::regex_match(value,std::regex("botty-manager.*",std::regex::icase));
+    const bool knownManager=pid==manager&&manager>1&&(value=="botty-manager"||value=="botty-manager.elf");
     if(pid!=self&&!knownManager&&std::regex_match(value,std::regex("(eboot(\\.bin)?|botty.*)",std::regex::icase)))throw std::runtime_error("Close Botty+ and other native apps to finish the update.");
     foundSelf=foundSelf||pid==self;
     offset+=size_t(size);

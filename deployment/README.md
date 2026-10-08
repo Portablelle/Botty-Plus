@@ -116,6 +116,7 @@ torrents and saved credentials/session data. The app exits after durable queue
 acknowledgment; reopen it after completion. Permissions, process inspection,
 loader handoff and real update/reopen still need PS5 acceptance. Partial or
 ambiguous replacement remains a recovery state, not a success claim.
+Do not run the Portal installer while an in-app update is queued or active.
 
 Use Portal+ once for the initial modern stack: worker 1.3.1 and engine botty5
 expose the running identities needed for safe unattended retirement. Legacy peers

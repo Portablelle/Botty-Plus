@@ -49,6 +49,7 @@ int main() {
     std::vector<unsigned char> table(960);
     for(int i=0;i<2;++i){const int32_t size=480,pid=41+i;std::memcpy(table.data()+480*i,&size,4);std::memcpy(table.data()+480*i+72,&pid,4);std::memcpy(table.data()+480*i+447,i?"botty-manager":"service-updater",i?14:16);}
     nativeProcessesStopped(table,41,42);reject([&]{nativeProcessesStopped(table,41,43);});
+    std::memset(table.data()+480+447,0,32);std::memcpy(table.data()+480+447,"botty-manager-fake",19);reject([&]{nativeProcessesStopped(table,41,42);});
     std::memset(table.data()+480+447,0,32);std::memcpy(table.data()+480+447,"eboot.bin",10);reject([&]{nativeProcessesStopped(table,41,42);});
     const int32_t badSize=479;std::memcpy(table.data()+480,&badSize,4);reject([&]{nativeProcessesStopped(table,41,42);});
   }
@@ -92,6 +93,21 @@ int main() {
   }
   {
     Fixture fixture;fixture.stage();fs::create_symlink(fixture.root/"private",fixture.managerRoot()/"unexpected");reject([&]{verifyServiceTree(fixture.managerRoot(),fixture.release.manager,"botty");});
+  }
+  for(const std::string package:{"botty","rtorrent"}) {
+    Fixture fixture;const auto root=package=="botty"?fixture.managerRoot():fixture.engineRoot();
+    const auto manifest=package=="botty"?fixture.release.manager:fixture.release.engine;
+    int calls=0;
+    reject([&]{stageService(root,manifest,package,[&](const std::string& path,size_t size){if(++calls==2)throw std::runtime_error("Injected interrupted download");return fixture.fetch()(path,size);});});
+    assert(calls==2&&!fs::exists(root));
+    const auto staging=root.parent_path()/(".staging-"+root.filename().string()+"-"+nativeHash(manifest.dump()));
+    const auto first=manifest.at("files")[0].at("path").get<std::string>();assert(fs::is_regular_file(staging/first));
+    int resumed=0;
+    stageService(root,manifest,package,[&](const std::string& path,size_t size){assert(path!=package+"/"+first);++resumed;return fixture.fetch()(path,size);});
+    assert(resumed==int(manifest.at("files").size())-1&&!fs::exists(staging));verifyServiceTree(root,manifest,package);
+    stageService(root,manifest,package,[](const std::string&,size_t)->std::string{throw std::runtime_error("Published immutable directory must not download");});
+    auto changed=manifest;changed["files"][0]["sha256"]=std::string(64,'a');
+    reject([&]{stageService(root,changed,package,fixture.fetch());});assert(nativeRead(root/first,NativeTransaction::maxFileBytes)==fixture.bytes.at(package+"/"+first));
   }
   for(bool exitConfirmed:{false,true}) {
     Fixture fixture;fixture.stage();auto journal=fixture.handoff();int loads=0,publications=0;

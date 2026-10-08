@@ -8,6 +8,8 @@ payload = source.read_bytes()
 if not payload.startswith(b"\x7fELF") or not 4 <= len(payload) <= 32 * 1024 * 1024:
     raise SystemExit("Invalid service updater ELF")
 compressed = gzip.compress(payload, mtime=0)
+if len(compressed) > 32 * 1024 * 1024:
+    raise SystemExit("Compressed service updater exceeds the runtime bound")
 rows = [",".join(str(value) for value in compressed[i:i + 24]) for i in range(0, len(compressed), 24)]
 destination.write_text(
     "#pragma once\nnamespace botty {\n"

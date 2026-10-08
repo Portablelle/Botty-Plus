@@ -25,7 +25,7 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(original, target)
             data = target.read_bytes()
-            if name == 'botty-manager.elf' and len(data) > 16 * 1024 * 1024:
+            if name == 'botty-manager.elf' and len(data) >= 16 * 1024 * 1024:
                 raise ValueError('Manager exceeds the Portal cached-file read bound')
             files.append(dict(path=name, size=len(data), sha256=hashlib.sha256(data).hexdigest()))
         version = re.search(r'\{"version","([0-9.]+)"\}', (source / 'src/server.cpp').read_text()).group(1)

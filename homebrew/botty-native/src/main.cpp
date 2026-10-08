@@ -641,11 +641,11 @@ bool draw(Canvas& c) noexcept {
     if(model.updateDialog){
         c.shade(170);surface(c,360,300,1200,510);
         c.label(410,342,"Update app and services?",44,ink);
-        char version[128];std::snprintf(version,sizeof(version),"App: %s  >  %s",botty::nativeVersion,catalog.nativeUpdate.availableVersion.data());
+        char version[256];std::snprintf(version,sizeof(version),"App: %s  >  %s",botty::nativeVersion,catalog.nativeUpdate.availableVersion.data());
         c.label(410,414,version,24,accent);
         std::snprintf(version,sizeof(version),"Manager: %s  >  %s",catalog.nativeUpdate.installedServiceVersion.data(),catalog.nativeUpdate.availableServiceVersion.data());
         c.label(410,452,version,24,accent);
-        char components[256];std::snprintf(components,sizeof(components),"Worker: %s > %s  /  Engine: %s > %s",catalog.nativeUpdate.installedWorkerVersion.data(),catalog.nativeUpdate.availableWorkerVersion.data(),catalog.nativeUpdate.installedEngineVersion.data(),catalog.nativeUpdate.availableEngineVersion.data());
+        char components[384];std::snprintf(components,sizeof(components),"Worker: %s > %s  /  Engine: %s > %s",catalog.nativeUpdate.installedWorkerVersion.data(),catalog.nativeUpdate.availableWorkerVersion.data(),catalog.nativeUpdate.installedEngineVersion.data(),catalog.nativeUpdate.availableEngineVersion.data());
         shortLabel(c,410,496,components,20,1100,accent);
         c.label(410,538,"File jobs finish first; reopen after the completion notification.",22,muted);
         c.label(410,580,"Downloads pause only if rTorrent restarts, then resume.",22,muted);

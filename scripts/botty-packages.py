@@ -45,13 +45,17 @@ def compatible_versions(root):
         raise ValueError('Invalid native compatibility contract')
     def version(value, engine=False):
         pattern = r'([0-9]+)\.([0-9]+)\.([0-9]+)(?:-botty([0-9]+))' if engine else r'([0-9]+)\.([0-9]+)\.([0-9]+)'
-        match = re.fullmatch(pattern, value) if isinstance(value, str) else None
+        match = re.fullmatch(pattern, value) if isinstance(value, str) and len(value) <= 64 else None
         if not match:
             raise ValueError('Invalid component version')
-        return tuple(int(part) for part in match.groups())
-    if (type(required['apiVersion']) is not int or required['apiVersion'] < 1 or
+        result = tuple(int(part) for part in match.groups())
+        if any(part > 999999 for part in result):
+            raise ValueError('Component version exceeds updater bounds')
+        return result
+    if (type(required['apiVersion']) is not int or required['apiVersion'] != 1 or
             type(manager.get('apiVersion')) is not int or
             manager.get('apiVersion') != required['apiVersion'] or
+            manager.get('workerApi') != 'library-1.3' or manager.get('updaterVersion') != '1.0.0' or
             version(manager.get('id')) < version(required['manager']) or
             version(manager.get('workerVersion')) < version(required['worker']) or
             version(engine.get('id'), True) < version(required['rtorrent'], True)):

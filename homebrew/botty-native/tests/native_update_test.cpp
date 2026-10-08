@@ -37,7 +37,7 @@ int main(){
     auto catalog=new Catalog;
     const auto parse=[&](std::string update){
         const bool available=update.find("\"status\":\"available\"")!=std::string::npos;
-        update.insert(1,std::string("\"scope\":\"installation\",\"installedServiceVersion\":\"1.5.4\",\"availableServiceVersion\":\"1.5.4\",\"updateAvailable\":")+(available?"true,":"false,"));
+        update.insert(1,std::string("\"scope\":\"installation\",\"installedServiceVersion\":\"1.5.4\",\"availableServiceVersion\":\"1.5.4\",\"installedWorkerVersion\":\"1.3.1\",\"availableWorkerVersion\":\"1.3.1\",\"installedEngineVersion\":\"0.16.24-botty5\",\"availableEngineVersion\":\"0.16.24-botty5\",\"updateAvailable\":")+(available?"true,":"false,"));
         return parseCatalog("{\"freeBytes\":0,\"transmissionReady\":true,\"torrents\":[],\"jobs\":[],\"nativeUpdate\":"+update+"}",*catalog);
     };
     assert(parse(R"({"supported":true,"status":"available","installedVersion":"01.004.002","availableVersion":"01.004.003","requested":false,"closeRequired":false,"message":"Ready to update"})"));
@@ -46,6 +46,11 @@ int main(){
     assert(std::string_view(nativeUpdateLabel(catalog->nativeUpdate,false))=="Update available");
     assert(validServiceVersion("1.5.4")&&!validServiceVersion("1.5")&&!validServiceVersion("1.5.x")&&!validServiceVersion("1..4"));
     assert(serviceVersionAtLeast("1.10.0","1.9.9")&&!serviceVersionAtLeast("1.5.3","1.5.4"));
+    assert(validServiceVersion("1.10000.0")&&validServiceVersion("999999.999999.999999"));
+    assert(!validServiceVersion("1000000.0.0")&&!validServiceVersion(std::string(65,'0')));
+    assert(parse(R"({"supported":true,"status":"available","installedVersion":"01.004.002","availableVersion":"01.004.002","requested":false,"closeRequired":false})"));
+    auto wide=catalog->nativeUpdate;std::snprintf(wide.availableServiceVersion.data(),wide.availableServiceVersion.size(),"1.10000.0");
+    assert(nativeUpdateAvailable(wide,false));
     assert(parse(R"({"supported":true,"status":"available","installedVersion":"01.004.002","availableVersion":"01.004.002","requested":false,"closeRequired":false})"));
     assert(nativeUpdateAvailable(catalog->nativeUpdate,false));
     catalog->compressionBusy=true;catalog->extracting=true;
@@ -66,6 +71,7 @@ int main(){
     assert(!catalog->nativeUpdate.supported);
     assert(std::string_view(nativeUpdateLabel(catalog->nativeUpdate,true))=="Update status unavailable");
     assert(*unavailable(Operation::checkNativeUpdate,nullptr,*catalog));
+    assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[],"jobs":[],"nativeUpdate":{"supported":true,"scope":17,"status":"available","installedVersion":"01.004.002","availableVersion":"01.004.003","installedServiceVersion":"1.5.4","availableServiceVersion":"1.5.5","installedWorkerVersion":"1.3.1","availableWorkerVersion":"1.3.1","installedEngineVersion":"0.16.24-botty5","availableEngineVersion":"0.16.24-botty5","updateAvailable":true,"requested":false,"closeRequired":false}})",*catalog)&&!catalog->nativeUpdate.supported);
     Model model;model.tab=3;
     model.press(Buttons::right);assert(model.selected==1);
     model.press(Buttons::right);assert(model.selected==2);

@@ -50,6 +50,18 @@ Operations transfers;
 std::mutex lock;
 json jobs=json::array(); bool extracting=false;
 std::atomic<bool> retiring{false};
+std::atomic<bool> httpReady{false};
+class ServerThreads {
+  httplib::Server& server_;
+  std::atomic<bool> stopping_{false};
+  std::thread ready_,stop_;
+public:
+  explicit ServerThreads(httplib::Server& server):server_(server){}
+  ~ServerThreads(){join();}
+  void watchReady(){ready_=std::thread([this]{while(!stopping_){if(server_.is_running()){httpReady=true;return;}std::this_thread::sleep_for(std::chrono::milliseconds(2));}});}
+  void stop(){if(stop_.joinable())throw std::runtime_error("Manager stop is already queued.");stop_=std::thread([this]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server_.stop();});}
+  void join(){stopping_=true;if(ready_.joinable())ready_.join();if(stop_.joinable())stop_.join();}
+};
 std::atomic<bool> cancelExtraction{false}; std::string activeJob;
 Paths paths;
 Storage storage;
@@ -412,7 +424,7 @@ int main(int argc,char** argv) {
     InstallationUpdater::Config updaterConfig;
     updaterConfig.root=paths.root;
     updaterConfig.download=[](const std::string& file,size_t limit,const std::atomic<bool>& cancelled){return nativeDownload(file,limit,fs::path(uiDir).parent_path()/"cacert.pem",&cancelled);};
-    updaterConfig.inspect=[]{static Rtorrent engine(paths,rpcPort);return inspectInstallation(paths.root,engine);};
+    updaterConfig.inspect=[]{installationAwaitHttpReady(httpReady,retiring);static Rtorrent engine(paths,rpcPort);return inspectInstallation(paths.root,engine);};
     updaterConfig.owns= [](const json& handoff){return installationHandoffOwned(paths.root,handoff,installationBootId());};
     updaterConfig.idle=[]{
         {std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring)throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");search.requireInstallationIdle();explore.requireInstallationIdle();}
@@ -426,6 +438,7 @@ int main(int argc,char** argv) {
     stage="creating HTTP server";
     RestModeKeeper restMode(currentRestModeSupported(),requestRestMode);
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
+    ServerThreads serverThreads(server);
     server.set_read_timeout(5);server.set_write_timeout(10);
     const auto origin="http://127.0.0.1:"+std::to_string(port);
     server.set_pre_routing_handler([&](const httplib::Request& req,httplib::Response& res){
@@ -468,7 +481,7 @@ int main(int argc,char** argv) {
       compressor.confirmNativeUpdateIdle();
       {std::lock_guard<std::mutex> guard(lock);if(retiring||transferring||extracting||compressor.busy())throw std::runtime_error("Existing file operations must finish before manager retirement.");search.requireInstallationIdle();explore.requireInstallationIdle();retiring=true;}
       reply(res,{{"status","retiring"},{"pid",getpid()},{"transaction",body.at("transaction")}});
-      std::thread([&server]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server.stop();}).detach();
+      serverThreads.stop();
     });
     server.Post("/api/native-update",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);if(!body.is_object()||!body.empty())throw std::runtime_error("Native update accepts an empty object only.");
@@ -642,7 +655,7 @@ int main(int argc,char** argv) {
       nativeUpdater->requireAdmission();
       if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       compressor.stopWorker();retiring=true;reply(res,{{"ok",true}});
-      std::thread([&server]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server.stop();}).detach();
+      serverThreads.stop();
     });
     server.Post("/api/compress-game",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);
@@ -712,6 +725,7 @@ int main(int argc,char** argv) {
     server.set_exception_handler([](const auto&,auto& res,std::exception_ptr error){try{std::rethrow_exception(error);}catch(const std::exception& failure){reply(res,{{"error",failure.what()}},400);}catch(...){reply(res,{{"error","Operation failed"}},500);}});
     stage="binding HTTP port";
     if(!server.bind_to_port("0.0.0.0",port))throw std::runtime_error("Botty port is already in use");
+    serverThreads.watchReady();
     restMode.start();
     std::thread automaticThread(automaticDownloads);
     std::thread libraryThread([]{while(!retiring){
@@ -725,6 +739,6 @@ int main(int argc,char** argv) {
     }});
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';
-    const bool served=server.listen_after_bind();retiring=true;nativeUpdater.reset();automaticThread.join();libraryThread.join();return served?0:1;
-  }catch(const std::exception& error){std::cerr<<"Botty failed while "<<stage<<": "<<error.what()<<'\n';return 1;}
+    const bool served=server.listen_after_bind();retiring=true;serverThreads.join();automaticThread.join();libraryThread.join();nativeUpdater.reset();return served?0:1;
+  }catch(const std::exception& error){retiring=true;std::cerr<<"Botty failed while "<<stage<<": "<<error.what()<<'\n';return 1;}
 }

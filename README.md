@@ -79,14 +79,16 @@ To manage Botty+ from a phone or computer on the same network, open
 
 With native 1.4.2 and the corresponding modern service stack, the app header
 shows installation-wide update status. Open **Connections**, select **Update
-Botty+**, and confirm **Install and close**. The app closes; the updater waits
+Botty+**, and confirm **Install and close**. Close other native apps too. The app closes; the updater waits
 for compression and file operations to finish, installs a compatible app/service
 bundle and verifies the replacements before notifying you to reopen it. Downloads
 pause only when their engine needs to restart, and updater-paused downloads are
 resumed afterward. Real PS5 acceptance remains pending; see the [installation
 update guide](homebrew/botty-native/README.md#installation-updates).
 
-Use Portal+ for the initial installation and recovery. It follows the
+Use Portal+ for the initial installation and recovery. Activating this modern
+stack requires a deliberately restarted idle console session after existing work
+has finished, not a live-session service swap. It follows the
 latest verified packages committed to Botty+ `main`. Close Botty+ before running
 **LAUNCH**. If a service update is pending, let ongoing tasks finish before
 restarting the console and launching again. See [updates and rollback](deployment/README.md#updates-and-rollback)

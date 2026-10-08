@@ -355,7 +355,7 @@ int main() {
     assert(snapshot.status==Probe::transmissionUnavailable);
     Command readonlyUpdate;readonlyUpdate.operation=Operation::checkNativeUpdate;assert(updateCheck.submit(readonlyUpdate));
     for(unsigned i=0;i<800;++i){updateCheck.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
-    assert(result.revision&&result.status==ActionResult::Status::success);updateCheck.stop();workerAllowed=false;
+    assert(result.revision&&result.status==ActionResult::Status::success);assert(request.find("POST /api/native-update/check ")!=std::string::npos);updateCheck.stop();workerAllowed=false;
     // Start in Explore and follow the browse -> prepare -> collect journey.
     Model searchModel;assert(searchModel.tab==5);
     searchModel.press(Buttons::r1);assert(searchModel.tab==4);
