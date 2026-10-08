@@ -24,6 +24,28 @@ s=s[:start]+'''try_lookup_numeric(const std::string& hostname, int family) {
 ''' + s[end:]
 p.write_text(s)
 
+# fd_open_file logs after a failed open; logging must not mask its errno.
+p=Path(sys.argv[1])/'src/torrent/net/fd.cc'
+s=p.read_text()
+old='''  if (fd == -1) {
+    LT_LOG_FLAG_ERROR("fd_open_file failed to open file");
+    return -1;
+  }
+'''
+new='''  if (fd == -1) {
+    const int open_error = errno;
+    LT_LOG_FLAG_ERROR("fd_open_file failed to open file");
+    errno = open_error;
+    return -1;
+  }
+'''
+if old in s:
+    assert s.count(old)==1
+    s=s.replace(old,new)
+else:
+    assert new in s, 'Unexpected pinned fd_open_file implementation'
+p.write_text(s)
+
 # sysconf's advertised budget need not match the payload's descriptor limit.
 # Reclaim only this manager's file descriptors, leaving peer sockets untouched.
 p=Path(sys.argv[1])/'src/torrent/data/file_manager.cc'

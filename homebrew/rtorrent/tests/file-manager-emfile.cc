@@ -9,14 +9,6 @@
 #include <unistd.h>
 #include <iostream>
 
-// Use the real file-manager, socket-file and asynchronous close-queue sources.
-// Replace only fd_open_file's networking log infrastructure with the same open.
-namespace torrent {
-int fd_open_file(const std::string& path, int flags, mode_t mode) {
-    return ::open(path.c_str(), flags | O_CLOEXEC, mode);
-}
-}
-
 class TestFile : public torrent::File {
 public:
     explicit TestFile(const std::string& path) { set_frozen_path(path); }
