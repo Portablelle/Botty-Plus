@@ -21,6 +21,8 @@ jobs:
     concurrency:
       group: claude-review-metadata-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+      # Preserve pending announcements when label verdicts join the same lock.
+      queue: max
     permissions:
       contents: read
       pull-requests: write
@@ -233,6 +235,8 @@ jobs:
     concurrency:
       group: claude-review-metadata-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+      # Preserve pending announcements when label verdicts join the same lock.
+      queue: max
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 5
     permissions:
@@ -260,18 +264,10 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           REVIEW_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          # A finished review (not one cancelled by a newer push, whose own run will speak), or an
-          # override label change. Other label events re-check silently.
-          FRESH: >-
-            ${{ needs.host-checks.result != 'cancelled' && needs.claude-review.result != 'cancelled' &&
-            (github.event.label.name == null || github.event.label.name == 'claude-review-override') }}
+          # Current runs publish a terminal result even on cancellation; stale runs exit.
+          # Other label events re-check silently.
+          FRESH: ${{ github.event.label.name == null || github.event.label.name == 'claude-review-override' }}
         run: |
-          # Cancellation may precede a new run on the same head (draft -> ready).
-          # Do not overwrite that run's check evidence or spend its autofix budget.
-          if [ "${{ needs.host-checks.result }}" = cancelled ] ||
-             [ "${{ needs.claude-review.result }}" = cancelled ]; then
-            exit 0
-          fi
           # Superseded runs must not publish a verdict or launch a fix for a newer head.
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
           # Use the host-check identity: label verdicts never replace that context.
@@ -282,6 +278,22 @@ jobs:
             latest=$(gh api "repos/$REPO/commits/$HEAD/status" \
               --jq '[.statuses[] | select(.context == "Claude host checks" and .creator.login == "github-actions[bot]")][0].target_url // ""')
             [ "$latest" = "$REVIEW_RUN" ] || exit 0
+          fi
+          # A cancelled current run is terminal, not an indefinite wait. Superseded
+          # heads/runs returned above; never overwrite their replacement's evidence.
+          if [ "${{ needs.host-checks.result }}" = cancelled ] ||
+             [ "${{ needs.claude-review.result }}" = cancelled ]; then
+            for context in 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
+              gh api -X POST "repos/$REPO/statuses/$HEAD" \
+                -f state=failure -f context="$context" \
+                -f description='Review cancelled; re-run this workflow' -f target_url="$REVIEW_RUN" >/dev/null
+            done
+            msg="👉 **Your turn: re-run the review.** The review of \`${HEAD::7}\` was cancelled. Re-run [this workflow]($REVIEW_RUN) to obtain a complete verdict; no autofix was started."
+            echo "$msg" | tee -a "$GITHUB_STEP_SUMMARY"
+            if [ "$FORK" != true ]; then
+              .github/scripts/post-verdict.sh "$PR" "$msg"
+            fi
+            exit 2
           fi
           # Only the initial introduction of this workflow has no baseline policy.
           # An installed workflow with missing/broken policy must still fail closed.
