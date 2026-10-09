@@ -111,7 +111,8 @@ Claude; this avoids the unsupported App/OIDC exchange on `pull_request_target`.
 Automatic review comments appear as `github-actions[bot]`; summaries from that bot
 and the existing `claude[bot]` are accepted, while human marker copies are ignored.
 The reviewer has no repository write permission; only the bounded autofix job can
-push. After an autofix push, trusted workflow code dispatches host CI on the branch
+push. After an autofix push, a separate trusted job with `actions: write` and no Claude
+secret dispatches host CI on the branch
 and a new review from the default branch, since Actions-token pushes do not emit
 new workflow events. A manual review can also be started with
 `gh workflow run claude-code-review.yml --ref main -f pr=<number>` for an open PR
