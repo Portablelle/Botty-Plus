@@ -59,7 +59,7 @@ published explicitly on the PR head as the `Claude review verdict` commit status
 The isolated result and model completion are persisted as `Claude host checks`
 and `Claude review completion` on that head. Each new run sets both to pending;
 label events cannot reuse old success while the new checks or review are active.
-Failed-job reruns retrieve completed test logs from the relevant prior attempt. Manual GitHub reviews
+Failed-job reruns retrieve bounded result metadata from the relevant prior attempt. Manual GitHub reviews
 reuse successful host CI on the exact head and block when that evidence is absent;
 the target workflow's own job checks refer to the base. Merge conflicts still
 need resolution before merge. GitHub event policies must allow this target
