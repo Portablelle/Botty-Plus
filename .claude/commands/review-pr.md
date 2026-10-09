@@ -61,15 +61,16 @@ under the maintainer rule below. Read relevant replies and fixed code.
 
 ## 2. Run the checks
 
-When `CLAUDE_HOST_CHECK_RESULT` is set, tests have already run against the exact
-PR head in a separate ephemeral job without the Claude secret or a write token.
-Read the bounded metadata report at `CLAUDE_HOST_CHECK_REPORT`: it contains only
-the numeric job ID, attempt number and an allowlisted conclusion. Raw job logs,
-test output, annotations and free-form names are deliberately excluded. Link to
-the run for diagnostic details; do not fetch raw logs in this isolated mode.
-`CLAUDE_HOST_CHECK_RUN` links to the enclosing run, which is still in progress
-while you review. Do not build or execute PR code, or rerun tests,
-in this reviewer job. Treat any result other than `success` as a blocking check.
+When `CLAUDE_HOST_CHECK_RESULT=pending`, host checks run concurrently against the
+exact PR head in another ephemeral job without the Claude secret or a write token.
+Review the code immediately; do not wait, poll, fetch raw test logs, build or execute
+PR code, or rerun tests here. `CLAUDE_HOST_CHECK_RUN` links to that workflow.
+The final verdict job waits for both jobs and enforces the actual test result.
+In this mode the summary marker reports the code review alone: use `pass` when
+no blocking finding remains and material review coverage is complete. Explicitly
+state "Code review complete; host checks pending" and do not claim merge readiness.
+Pending host checks alone are not a finding. Use "Code review: no findings" for
+the title and "Wait for the combined CI verdict" for the bottom line when clean.
 Assess regression strength from the actual PR source/tests and report concrete
 coverage gaps; execution of a pre-fix mutation is not available in this mode.
 
@@ -88,7 +89,7 @@ revert only the affected source files to the PR base, run the focused test,
 confirm it fails, and restore the files from `<headRefOid>` before rerunning it.
 Avoid rerunning unrelated checks.
 
-Find the `Botty+ checks` run with
+Outside the concurrent review mode, find the `Botty+ checks` run with
 `gh run list --commit <head sha> --workflow botty-checks.yml --json databaseId,status,conclusion`,
 then `gh run view <id> --json jobs`. Report pending checks without waiting.
 Never access the live console or deploy. State PS5 acceptance under "Not verified"
@@ -222,10 +223,12 @@ maintainer should actually know; drop carried-over notes that no longer matter.
 In the bottom line, write "**To fix before merge:** nothing." when nothing is
 open, and omit the Notes or Not verified section when it is empty.
 
-**The verdict reports merge readiness.** The `Claude review verdict` check reads the
+**Outside concurrent mode, the verdict reports merge readiness.**
+The `Claude review verdict` check reads the
 first line of this comment and fails unless `verdict=pass` and `sha` is the PR's
 head (or a maintainer override exists). Branch protection must require this check
-to enforce it. So:
+to enforce it. In concurrent mode, its final job also enforces the real host-check
+result; pending tests do not block the code-only marker. Outside concurrent mode:
 
 - `verdict=block` whenever any 🔴 or 🟡 finding is open, host checks fail or cannot complete,
   or material review coverage is incomplete; `open=` lists the open IDs (`none` if only a check failed).

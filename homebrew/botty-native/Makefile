@@ -1,38 +1,57 @@
-.PHONY: ps5 test
+.PHONY: host-test-build ps5 test integration preview compression-integration keyboard-overlay-test
 CXX := c++
+HOST_FLAGS := -std=c++20 -Wall -Wextra -Werror -pthread -Isrc
+MODEL_OBJ := $(addprefix build/host/,$(addsuffix .o,model probe catalog actions))
+PREVIEW_OBJ := $(addprefix build/preview-host/,$(notdir $(patsubst %.cpp,%.o,$(filter-out src/main.cpp,$(wildcard src/*.cpp)))))
+
 ps5:
 	python3 tools/build.py
-test:
-	@mkdir -p build
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/model_test.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/model-test
+
+build/host/%.o: src/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(HOST_FLAGS) -MMD -MP -c $< -o $@
+build/preview-host/%.o: src/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(HOST_FLAGS) -DBOTTY_HOST_PREVIEW -MMD -MP -c $< -o $@
+build/preview-tests/%.o: tests/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(HOST_FLAGS) -DBOTTY_HOST_PREVIEW -MMD -MP -c $< -o $@
+-include $(wildcard build/host/*.d build/preview-host/*.d build/preview-tests/*.d build/*.d)
+
+build/model-test: tests/model_test.cpp $(MODEL_OBJ)
+	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
+build/keyboard-test: tests/keyboard_test.cpp build/host/keyboard.o
+	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
+build/native-update-test: tests/native_update_test.cpp $(MODEL_OBJ)
+	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
+build/action-client: tests/action_client.cpp $(MODEL_OBJ)
+	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
+build/keyboard-overlay-test: build/preview-tests/keyboard_overlay_test.o build/preview-tests/preview_stubs.o $(PREVIEW_OBJ)
+	$(CXX) $(HOST_FLAGS) $(filter %.o,$^) -o $@
+
+host-test-build: build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test build/action-client
+
+# Prerequisite compilation is bounded by the caller's -j; tests stay sequential.
+test: build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test
 	./build/model-test
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -Isrc tests/keyboard_test.cpp src/keyboard.cpp -o build/keyboard-test
 	./build/keyboard-test
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/native_update_test.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/native-update-test
 	./build/native-update-test
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
-	$(MAKE) keyboard-overlay-test
-# macOS host preview of the actual renderer, with simulated platform APIs.
-.PHONY: preview
-preview:
-	@mkdir -p build
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -DBOTTY_HOST_PREVIEW src/*.cpp tests/preview_stubs.cpp -o build/preview
-	./build/preview
-	sips -s format png build/preview.ppm --out build/preview.png
-.PHONY: integration
-integration:
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/action_client.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/action-client
+	BOTTY_PREVIEW_MODE=keyboard-overlay ./build/keyboard-overlay-test
+
+integration: build/action-client
 	python3 tests/actions_integration.py
 
-.PHONY: compression-integration
-compression-integration:
+compression-integration: build/action-client
 	$(MAKE) -C ../botty native
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -Isrc tests/action_client.cpp src/model.cpp src/probe.cpp src/catalog.cpp src/actions.cpp -o build/action-client
 	python3 ../botty/tests/compressor_integration.py
 
-# Exercise the actual draw loop with an IME result arriving behind an overlay.
-.PHONY: keyboard-overlay-test
-keyboard-overlay-test:
-	@mkdir -p build
-	$(CXX) -std=c++20 -Wall -Wextra -Werror -pthread -DBOTTY_HOST_PREVIEW $(filter-out src/main.cpp,$(wildcard src/*.cpp)) tests/keyboard_overlay_test.cpp tests/preview_stubs.cpp -o build/keyboard-overlay-test
+keyboard-overlay-test: build/keyboard-overlay-test
 	BOTTY_PREVIEW_MODE=keyboard-overlay ./build/keyboard-overlay-test
+
+# macOS host preview of the actual renderer, with simulated platform APIs.
+preview:
+	@mkdir -p build
+	$(CXX) $(HOST_FLAGS) -DBOTTY_HOST_PREVIEW src/*.cpp tests/preview_stubs.cpp -o build/preview
+	./build/preview
+	sips -s format png build/preview.ppm --out build/preview.png
