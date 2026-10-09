@@ -11,6 +11,8 @@ on:
 
 jobs:
   announce:
+    outputs:
+      active: ${{ steps.announce.outputs.active }}
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action != 'labeled' && github.event.action != 'unlabeled'
@@ -31,6 +33,7 @@ jobs:
           sparse-checkout: .github/scripts
       # Also voids the previous verdict: no "merge" left up while the new commit is reviewed.
       - name: Announce the review
+        id: announce
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -58,6 +61,7 @@ jobs:
                 -f description='New Claude review pending on this PR head' -f target_url="$REVIEW_RUN" >/dev/null
             done
             bash "$RUNNER_TEMP/post-verdict.sh" "$PR" "⏳ **Wait: Claude is reviewing \`${HEAD::7}\`.** This message will say what to do next, usually within 10 minutes."
+            echo active=true >> "$GITHUB_OUTPUT"
           fi
 
 
@@ -65,6 +69,7 @@ jobs:
     needs: announce
     name: Claude host checks
     if: >-
+      needs.announce.outputs.active == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action != 'labeled' && github.event.action != 'unlabeled'
     concurrency:
@@ -99,11 +104,12 @@ jobs:
           BOTTY_HOST_CHECK_ROOT="$GITHUB_WORKSPACE" bash "$checks"
 
   claude-review:
-    needs: host-checks
+    needs: [announce, host-checks]
     # Fork PRs get no secrets, so the action can't run there: review them locally
     # with `/review-pr <number>` instead.
     if: >-
-      always() && needs.host-checks.result != 'cancelled' &&
+      always() && needs.announce.outputs.active == 'true' &&
+      needs.host-checks.result != 'cancelled' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action != 'labeled' && github.event.action != 'unlabeled'
     # A new push supersedes the review still running for the previous one. Job-level, so a

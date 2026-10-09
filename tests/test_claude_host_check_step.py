@@ -136,13 +136,14 @@ if '/pulls/' in sys.argv[2]:
             git.chmod(0o755)
             env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
                        GH_CALLS=str(calls), HEAD='a' * 40, REPO='Portablelle/Botty-Plus', PR='20',
-                       RUNNER_TEMP=temp, REVIEW_RUN='https://example.test/run')
+                       RUNNER_TEMP=temp, GITHUB_OUTPUT=str(root / 'output'), REVIEW_RUN='https://example.test/run')
             result = subprocess.run(['bash', '-e', '-c', body], env=env,
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
             posts = [json.loads(line) for line in calls.read_text().splitlines()
                      if '/statuses/' in line]
             self.assertEqual(len(posts), 3)
+            self.assertEqual((root / 'output').read_text().strip(), 'active=true')
             contexts = set()
             for args in posts:
                 self.assertIn('repos/Portablelle/Botty-Plus/statuses/' + 'a' * 40, args)
