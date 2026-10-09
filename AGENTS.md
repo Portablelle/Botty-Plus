@@ -68,10 +68,11 @@ console diagnostics in ignored backups/ directories.
 
 ## Claude review workflow
 
-Claude replaces Cubic for this repository at the maintainer's request. Before
-pushing, run the relevant host checks and review all changes to push using
-`.claude/commands/review-pr.md`; fix confirmed findings and repeat affected checks
-after edits. Cubic is no longer a prerequisite. All Claude review output must be in English,
+Cubic remains the local reviewer; Claude replaces only the GitHub reviewer.
+Before every local Git push outside GitHub Actions, run the relevant host checks and `cubic review` on
+all changes to push. Fix confirmed findings and rerun Cubic after further edits.
+If Cubic is unavailable or fails, do not push without explicit user approval.
+GitHub review and autofix jobs use `.claude/commands/review-pr.md` with Claude. All Claude review output must be in English,
 never French, including local findings, summaries, inline comments and replies.
 GitHub reviews use Opus, with
 at most two Sonnet autofix rounds on the same PR. A human merges the PR.
