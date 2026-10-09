@@ -416,6 +416,8 @@ jobs:
 
   # Fixes the open findings in the PR itself; its push starts a new review, then a new verdict.
   autofix:
+    outputs:
+      head: ${{ steps.pushed.outputs.head }}
     needs: [context, verdict]
     if: failure() && needs.verdict.outputs.autofix == 'true'
     concurrency:
@@ -497,7 +499,7 @@ jobs:
             Claude's review of this PR left open findings or failing checks. Fix them on this
             branch, in this PR. Do the work yourself: no sub-agents, no background tasks.
 
-            1. Read `CLAUDE.md` and `AGENTS.md` under `CLAUDE_REVIEW_POLICY`. Then read the review: the latest comment by claude[bot] starting
+            1. Read `CLAUDE.md` and `AGENTS.md` under `CLAUDE_REVIEW_POLICY`. Then read the review: the latest comment by claude[bot] or github-actions[bot] starting
                with `<!-- claude-review` (`gh api repos/<REPO>/issues/<PR>/comments --paginate`).
                Its "Bottom line" lists what to fix; the inline comments
                (`gh api repos/<REPO>/pulls/<PR>/comments --paginate`, filtered to `.user.login == "claude[bot]"` or `.user.login == "github-actions[bot]"`) give the details.
@@ -547,20 +549,44 @@ jobs:
           git show "${{ github.sha }}:.github/scripts/post-verdict.sh" > "$RUNNER_TEMP/post-verdict.sh"
           bash "$RUNNER_TEMP/post-verdict.sh" "$PR" "👉 **Your turn: fix it and push.** [Claude's fix]($RUN) pushed nothing; its comment, if any, says what it left and why. If a finding is wrong, leave a commented review whose first line is \`claude-review-override\`, then add that label."
 
-      - name: Start checks and review after an autofix push
+      - name: Record the autofix push
+        id: pushed
         if: always() && steps.attempt.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ fromJSON(needs.context.outputs.pr).number }}
-          BRANCH: ${{ fromJSON(needs.context.outputs.pr).head.ref }}
           HEAD: ${{ fromJSON(needs.context.outputs.pr).head.sha }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           current=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
-          # Only dispatch for the commit this checkout actually pushed, not another writer's head.
+          # Only dispatch for this checkout's commit, never another writer's head.
           if [ "$current" != "$HEAD" ] && [ "$(git rev-parse HEAD)" = "$current" ]; then
-            gh workflow run botty-checks.yml -R "$REPO" --ref "$BRANCH"
-            gh workflow run claude-code-review.yml -R "$REPO" --ref "$DEFAULT_BRANCH" -f pr="$PR"
+            echo "head=$current" >> "$GITHUB_OUTPUT"
           fi
+
+  follow-up:
+    needs: [context, autofix]
+    if: always() && needs.autofix.outputs.head != ''
+    runs-on: [self-hosted, linux, x64, botty-plus-ci]
+    timeout-minutes: 5
+    # Workflow dispatch rights never enter Claude's job or subprocesses.
+    permissions:
+      pull-requests: read
+      actions: write
+    steps:
+      - name: Start checks and review after an autofix push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ fromJSON(needs.context.outputs.pr).number }}
+          BRANCH: ${{ fromJSON(needs.context.outputs.pr).head.ref }}
+          HEAD: ${{ needs.autofix.outputs.head }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
+          check_code=0
+          gh workflow run botty-checks.yml -R "$REPO" --ref "$BRANCH" || check_code=$?
+          gh workflow run claude-code-review.yml -R "$REPO" --ref "$DEFAULT_BRANCH" -f pr="$PR"
+          exit "$check_code"

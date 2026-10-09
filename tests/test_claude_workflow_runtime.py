@@ -112,29 +112,47 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             (root / 'response').write_text(json.dumps(info))
             self.assertNotEqual(run().returncode, 0)
 
-    def test_autofix_dispatches_only_its_own_pushed_head(self):
-        source = WORKFLOW.read_text()
-        start = source.index('      - name: Start checks and review after an autofix push')
-        start = source.index('        run: |\n', start) + len('        run: |\n')
-        body = textwrap.dedent(source[start:])
-        for remote, local, expected in [('a', 'a', 0), ('b', 'b', 2), ('c', 'b', 0)]:
+    def test_autofix_records_only_its_own_pushed_head(self):
+        body = step('Record the autofix push', '\n  follow-up:')
+        for remote, local, expected in [('a', 'a', False), ('b', 'b', True), ('c', 'b', False)]:
             with self.subTest(remote=remote, local=local), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 gh = root / 'gh'
-                gh.write_text('#!/bin/sh\nif [ "$1" = api ]; then echo "$REMOTE"; else echo "$*" >> "$CALLS"; fi\n')
+                gh.write_text('#!/bin/sh\necho "$REMOTE"\n')
                 gh.chmod(0o755)
                 git = root / 'git'
                 git.write_text('#!/bin/sh\necho "$LOCAL"\n')
                 git.chmod(0o755)
                 env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
                            HEAD='a' * 40, REMOTE=remote * 40, LOCAL=local * 40,
+                           REPO='Portablelle/Botty-Plus', PR='17', GITHUB_OUTPUT=str(root / 'output'))
+                result = subprocess.run(['bash', '-e', '-c', body], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((root / 'output').exists(), expected)
+                if expected:
+                    self.assertEqual((root / 'output').read_text().strip(), 'head=' + 'b' * 40)
+
+    def test_follow_up_ignores_changed_head_and_still_reviews_after_ci_dispatch_failure(self):
+        source = WORKFLOW.read_text()
+        start = source.index('      - name: Start checks and review after an autofix push')
+        start = source.index('        run: |\n', start) + len('        run: |\n')
+        body = textwrap.dedent(source[start:])
+        for remote, ci_failure, count, code in [('b', False, 2, 0), ('c', False, 0, 0), ('b', True, 2, 1)]:
+            with self.subTest(remote=remote, ci_failure=ci_failure), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                gh = root / 'gh'
+                gh.write_text('#!/bin/sh\nif [ "$1" = api ]; then echo "$REMOTE"; else echo "$*" >> "$CALLS"; [ "$3" != botty-checks.yml ] || [ "$CI_FAILURE" != true ]; fi\n')
+                gh.chmod(0o755)
+                env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                           HEAD='b' * 40, REMOTE=remote * 40, CI_FAILURE='true' if ci_failure else 'false',
                            REPO='Portablelle/Botty-Plus', PR='17', BRANCH='feature', DEFAULT_BRANCH='main',
                            CALLS=str(root / 'calls'))
                 result = subprocess.run(['bash', '-e', '-c', body], env=env,
                                         capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.returncode, code, result.stderr)
                 calls = (root / 'calls').read_text().splitlines() if (root / 'calls').exists() else []
-                self.assertEqual(len(calls), expected)
+                self.assertEqual(len(calls), count)
                 if calls:
                     self.assertIn('--ref feature', calls[0])
                     self.assertIn('--ref main -f pr=17', calls[1])
