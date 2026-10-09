@@ -14,12 +14,18 @@ native: build/botty-native
 ps5: build/botty-manager.elf
 build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/native
-	$(NATIVE_CXX) $(FLAGS) $(RAR_FLAGS) -c $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $(RAR_FLAGS) -MMD -MP -c $< -o $@
+# Share host production objects across service and component test executables.
+# Generated dependencies include every transitive header (also for unrar).
+build/host/%.o: src/%.cpp
+	@mkdir -p build/host
+	$(NATIVE_CXX) $(APP_FLAGS) -MMD -MP -c $< -o $@
+-include $(wildcard build/host/*.d build/native/*.d)
 build/native/sha1.o build/ps5/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) $(UPDATER_HEADERS)
+build/botty-native: build/host/server.o build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) $(UPDATER_HEADERS)
 	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
 build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp
 	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
@@ -27,7 +33,7 @@ build/service-updater.elf: src/service-updater.cpp $(UPDATER_HEADERS) build/ps5/
 	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/service-updater-embedded.hpp: build/service-updater.elf tools/embed-service-updater.py
 	python3 tools/embed-service-updater.py $< $@
-build/core-test: tests/core-test.cpp src/core.cpp src/storage.cpp src/rar.cpp $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+build/core-test: tests/core-test.cpp build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
 build/progress-test: tests/progress-test.cpp src/progress.hpp
 	@mkdir -p build
@@ -51,8 +57,8 @@ test: build/core-test build/botty-native build/storage-test build/rest-mode-test
 	python3 tests/storage_integration.py
 	python3 tests/background_storage_integration.py
 
-build/compressor-test: tests/compressor-test.cpp src/core.cpp src/storage.cpp src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@ -lcurl
+build/compressor-test: tests/compressor-test.cpp build/host/core.o build/host/storage.o src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
 .PHONY: test-compressor
 test-compressor: build/compressor-test
 	./build/compressor-test
@@ -63,9 +69,9 @@ build/native-transaction-test: tests/native-transaction-test.cpp $(UPDATER_HEADE
 build/native-update-test: tests/native-update-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
-build/native-idle-test: tests/native-idle-test.cpp src/core.cpp src/storage.cpp $(UPDATER_HEADERS)
+build/native-idle-test: tests/native-idle-test.cpp build/host/core.o build/host/storage.o $(UPDATER_HEADERS)
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp,$^) -o $@ -lcurl
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl
 .PHONY: test-native-update
 test-native-update: build/native-transaction-test build/native-update-test build/native-idle-test
 	./build/native-transaction-test
@@ -89,7 +95,7 @@ test-installation-runtime: build/installation-runtime-test build/search-idle-tes
 	./build/installation-runtime-test
 	./build/search-idle-test
 
-build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/storage.cpp build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
+build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp build/host/core.o build/host/storage.o build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
 
@@ -97,8 +103,8 @@ build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp src/core.cpp src/
 test-rtorrent-resume: build/rtorrent-resume-client
 	python3 tests/rtorrent_resume.py
 
-build/compression-library-test: tests/compression-library-test.cpp src/core.cpp src/storage.cpp src/storage.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
+build/compression-library-test: tests/compression-library-test.cpp build/host/core.o build/host/storage.o src/storage.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
 .PHONY: test-compression-library
 test-compression-library: build/compression-library-test
 	./build/compression-library-test
@@ -109,8 +115,8 @@ build/notification-test: tests/notification-test.cpp src/notification.hpp
 test-notification: build/notification-test
 	./build/notification-test
 
-build/storage-test: tests/storage-test.cpp src/core.cpp src/storage.cpp src/storage.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
+build/storage-test: tests/storage-test.cpp build/host/core.o build/host/storage.o src/storage.hpp
+	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
 .PHONY: test-storage
 test-storage: build/storage-test build/botty-native
 	./build/storage-test

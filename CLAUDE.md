@@ -9,8 +9,8 @@ installers belong to `Portablelle/Portal-Plus`.
 
 Run `bash scripts/botty-host-checks.sh` on Linux with Node 24, Clang, Python 3.12+/Pillow,
 libcurl, OpenSSL and zlib headers (the `botty-plus-ci` image provides these).
-It mirrors `.github/workflows/botty-checks.yml`. Use focused component tests when
-investigating a change. Do not invent npm lint/typecheck commands: this is a
+It is used by `.github/workflows/botty-checks.yml` and the isolated PR checks.
+Use focused component tests when investigating a change. Do not invent npm lint/typecheck commands: this is a
 C++/Python/JavaScript repository, without a root npm project.
 
 Host validation does not establish PS5 runtime acceptance. Review jobs must not
@@ -52,11 +52,24 @@ The reviewer uses `pull_request_target`, so same-repo PRs are reviewed even when
 GitHub cannot generate a merge commit. The workflow and policy come from the
 trusted base SHA; Claude reads PR versions through `git show` without checking
 out or executing them. Host checks export the exact PR tree with `git archive`,
-without initializing legacy gitlinks or leaving checkout credentials in that tree. They run first in a separate ephemeral job, with
+without initializing legacy gitlinks or leaving checkout credentials in that tree.
+They run concurrently with review in a separate ephemeral job, with
 no Claude secret and read-only repository permission. Its entry point is always
 the trusted base script, executed against the PR workspace. This also avoids sharing
-the runner's memory budget between Claude and C++ compilation. The verdict is
-published explicitly on the PR head as the `Claude review verdict` commit status.
+the runner's memory budget between Claude and C++ compilation. Ordinary internal
+PRs run this suite only once; the final verdict publishes its result as both `verify`
+(the existing required check) and `Claude host checks`. The standalone checks
+workflow handles main/tag pushes, manual runs and fork PRs; its skipped internal
+PR job has a different name, so it cannot clear `verify`. Before skipping, a small
+routing job reads the publisher marker from the exact trusted base workflow; old
+bases and API failures keep standalone verification, including this rollout PR.
+PRs changing `scripts/botty-host-checks.sh` or `.github/workflows/botty-checks.yml`
+also keep standalone `verify`, so the head's entry point runs before merge.
+The routing job compares file hashes at the exact base and head SHAs; deleted,
+unreadable or malformed content responses fall back to standalone verification.
+The review summary in parallel mode reports code findings only, and never claims tests passed or merge
+readiness before the combined verdict. Autofix dispatches one combined run.
+The verdict is published explicitly on the PR head as the `Claude review verdict` commit status.
 The isolated result and model completion are persisted as `Claude host checks`
 and `Claude review completion` on that head. Each new run sets both to pending;
 label events cannot reuse old success while the new checks or review are active.
@@ -64,10 +77,16 @@ Metadata jobs use a shared lock with `queue: max`, so a label verdict cannot dis
 an announcement waiting for that lock. A cancelled current review publishes a
 blocked result and asks for a rerun; superseded heads or runs publish nothing and
 never spend autofix budget.
-Failed-job reruns retrieve bounded result metadata from the relevant prior attempt. Manual GitHub reviews
-reuse successful host CI on the exact head and block when that evidence is absent;
-the target workflow's own job checks refer to the base. Merge conflicts still
-need resolution before merge. GitHub event policies must allow this target
+The final verdict uses the dependency results even on failed-job reruns; the
+parallel reviewer does not download prior-attempt metadata. Manual GitHub reviews
+of internal PRs require the latest `Claude host checks` and `verify` commit
+statuses from `github-actions[bot]` on the exact head, both successful and linked
+to the same review run. Fork PRs require a completed, successful standalone
+`verify` job on the exact head. A successful workflow with skipped verification
+is not host validation; missing, pending, failed or mismatched evidence blocks
+manual review. The target workflow's own check runs refer to the base, so use
+its explicitly published head statuses. Merge conflicts need resolution before
+merge. GitHub event policies must allow this target
 workflow; the default public-repository policy is scheduled for enforcement on
 November 2, 2026 (see GitHub's pull_request_target security documentation).
 For a manual override, a maintainer leaves a commented review on the current
