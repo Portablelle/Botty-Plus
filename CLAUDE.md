@@ -1,7 +1,7 @@
 # Botty+ contributor and reviewer instructions
 
-Read and follow `AGENTS.md` for repository ownership, release contracts and console
-safety. This repository owns the native app, Botty manager, rTorrent, compression
+If a local `AGENTS.md` is present, follow its workstation-specific instructions.
+It is not tracked or required in CI. This repository owns the native app, Botty manager, rTorrent, compression
 worker and optional artwork/Prowlarr services. Portal+, jailbreak, DNS and
 installers belong to `Portablelle/Portal-Plus`.
 

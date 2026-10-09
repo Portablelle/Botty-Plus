@@ -166,7 +166,7 @@ For each finding supply a reachable trigger, the concrete failure and the
 production path that proves it. Distinguish runtime bugs, test gaps and doc
 errors. Missing tests block only for concrete risky behavior. Mention expected
 platform/firmware assumptions explicitly; host checks never prove PS5 acceptance.
-Follow the invariants in `CLAUDE.md` and `AGENTS.md`. Skip styling and hypothetical
+Follow the invariants in `CLAUDE.md`. Skip styling and hypothetical
 issues contradicted by existing guards; do not demand live console access.
 
 Rate each finding:
