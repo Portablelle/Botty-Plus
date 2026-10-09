@@ -9,7 +9,7 @@
 <p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Requires a compatible jailbreak session. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">Download 1.5.4</a> ·
+  <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">Download Botty+</a> ·
   <a href="deployment/README.md">Installation guide</a> ·
   <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
 </p>
@@ -17,6 +17,10 @@
 Botty+ lets you download, extract and manage your PS5 game library directly
 from your console, using your controller. Downloads and file operations continue
 in the background when you close the app.
+
+Starting with 1.6.0, Botty+ uses one public version in the app and GitHub
+releases. PS5 metadata is generated from it; component versions remain
+available in Connections. See the [versioning policy](docs/VERSIONING.md).
 
 ## What you can do
 

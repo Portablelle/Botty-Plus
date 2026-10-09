@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import unittest
 import tempfile
+import tarfile
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
@@ -11,6 +12,17 @@ contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
     def test_current_delivery_is_complete_and_verified(self):
         contract.verify(ROOT/'packages')
+    def test_native_source_archive_matches_current_runtime_sources(self):
+        native=ROOT/'homebrew/botty-native'
+        with tarfile.open(ROOT/'packages/botty-native/botty-native-source.tar.gz', 'r:gz') as archive:
+            actual={member.name:archive.extractfile(member).read() for member in archive.getmembers()
+                    if member.isfile() and member.name.startswith('botty-native/src/')}
+            expected={'botty-native/'+path.relative_to(native).as_posix():path.read_bytes()
+                      for path in (native/'src').rglob('*') if path.is_file()}
+            self.assertEqual(actual, expected)
+            for name in ['Makefile', 'release.json']:
+                with self.subTest(file=name):
+                    self.assertEqual(archive.extractfile('botty-native/'+name).read(), (native/name).read_bytes())
     def test_service_web_assets_belong_to_the_packaged_version(self):
         source=(ROOT/'homebrew/botty/src/server.cpp').read_text()
         version=json.loads((ROOT/'packages/botty/manifest.json').read_text())['id']
@@ -33,10 +45,56 @@ class PackageTests(unittest.TestCase):
             files=[]
             for name in contract.REQUIRED_FILES[package]:
                 path=base/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'fixture')
-                files.append(dict(path=name,size=7,sha256=contract.digest(path)))
+                if name=='sce_sys/param.json': path.write_text(json.dumps(dict(contentVersion='01.006.000')))
+                files.append(dict(path=name,size=path.stat().st_size,sha256=contract.digest(path)))
             for name in notices: (base/name).write_bytes(b'notice')
-            (base/'manifest.json').write_text(json.dumps(dict(schema=1,id='1.0.0',version='1.0.0',files=files)))
-        (root/'botty-release.json').write_text(json.dumps(dict(schema=1,sha256=contract.inventory(root))))
+            manifest=dict(schema=1,id='1.5.4',version='01.006.000',releaseVersion='1.6.0',files=files,
+                          workerVersion='1.3.1',apiVersion=1,workerApi='library-1.3',updaterVersion='1.0.0')
+            if package=='rtorrent': manifest['id']='0.16.24-botty8'
+            (base/'manifest.json').write_text(json.dumps(manifest))
+        (root/'botty-release.json').write_text(json.dumps(contract.release_record(root)))
+
+    def test_release_component_inventory_cannot_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            path=root/'botty-release.json'; record=json.loads(path.read_text())
+            record['components']['worker']='1.3.2'; path.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'release manifest is stale'): contract.verify(root)
+
+    def test_missing_release_fields_name_the_key_and_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            for name, keys in [
+                ('botty-native/manifest.json', ('releaseVersion', 'version')),
+                ('botty/manifest.json', ('id', 'workerVersion', 'apiVersion', 'workerApi', 'updaterVersion')),
+                ('rtorrent/manifest.json', ('id',)),
+                ('botty-native/sce_sys/param.json', ('contentVersion',)),
+            ]:
+                path=root/name; original=json.loads(path.read_text())
+                for key in keys:
+                    for missing in (True, False):
+                        with self.subTest(file=name, key=key, missing=missing):
+                            record=original.copy()
+                            if missing: del record[key]
+                            else: record[key]=None
+                            path.write_text(json.dumps(record))
+                            with self.assertRaisesRegex(ValueError, f'Missing {key} in {name}'):
+                                contract.release_identity(root)
+                path.write_text(json.dumps(original))
+
+    def test_public_version_validation_rejects_an_older_package(self):
+        with self.assertRaisesRegex(ValueError, 'Packaged release does not match release.json; rebuild the native title'):
+            contract.verify_public_version(dict(version='1.4.2'))
+
+    def test_release_rejects_mismatched_ps5_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve(); self.fixture(root)
+            path=root/'botty-native/manifest.json'; manifest=json.loads(path.read_text())
+            manifest['releaseVersion']='1.6.1'; path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, 'PS5 version disagree'): contract.release_record(root)
+            manifest['releaseVersion']='1.6.0'; path.write_text(json.dumps(manifest))
+            (root/'botty-native/sce_sys/param.json').write_text(json.dumps(dict(contentVersion='01.004.002')))
+            with self.assertRaisesRegex(ValueError, 'metadata and release version disagree'): contract.release_record(root)
 
     def test_unlisted_file_is_rejected_by_index_and_check(self):
         with tempfile.TemporaryDirectory() as directory:

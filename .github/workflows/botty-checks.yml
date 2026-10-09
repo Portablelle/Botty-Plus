@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,3 +18,8 @@ jobs:
           node-version: '24'
       - name: Run host checks
         run: bash scripts/botty-host-checks.sh
+      - name: Verify public release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/botty-packages.py --check --tag "$RELEASE_TAG"
