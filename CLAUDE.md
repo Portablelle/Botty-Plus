@@ -9,8 +9,8 @@ installers belong to `Portablelle/Portal-Plus`.
 
 Run `bash scripts/botty-host-checks.sh` on Linux with Node 24, Clang, Python 3.12+/Pillow,
 libcurl, OpenSSL and zlib headers (the `botty-plus-ci` image provides these).
-It mirrors `.github/workflows/botty-checks.yml`. Use focused component tests when
-investigating a change. Do not invent npm lint/typecheck commands: this is a
+It is used by `.github/workflows/botty-checks.yml` and the isolated PR checks.
+Use focused component tests when investigating a change. Do not invent npm lint/typecheck commands: this is a
 C++/Python/JavaScript repository, without a root npm project.
 
 Host validation does not establish PS5 runtime acceptance. Review jobs must not
@@ -52,11 +52,21 @@ The reviewer uses `pull_request_target`, so same-repo PRs are reviewed even when
 GitHub cannot generate a merge commit. The workflow and policy come from the
 trusted base SHA; Claude reads PR versions through `git show` without checking
 out or executing them. Host checks export the exact PR tree with `git archive`,
-without initializing legacy gitlinks or leaving checkout credentials in that tree. They run first in a separate ephemeral job, with
+without initializing legacy gitlinks or leaving checkout credentials in that tree.
+They run concurrently with review in a separate ephemeral job, with
 no Claude secret and read-only repository permission. Its entry point is always
 the trusted base script, executed against the PR workspace. This also avoids sharing
-the runner's memory budget between Claude and C++ compilation. The verdict is
-published explicitly on the PR head as the `Claude review verdict` commit status.
+the runner's memory budget between Claude and C++ compilation. Internal PRs run
+this suite only once; the final verdict publishes its result as both `verify`
+(the existing required check) and `Claude host checks`. The standalone checks
+workflow handles main/tag pushes, manual runs and fork PRs; its skipped internal
+PR job has a different name, so it cannot clear `verify`. Before skipping, a small
+routing job reads the publisher marker from the exact trusted base workflow; old
+bases and API failures keep standalone verification, including this rollout PR.
+The review summary in
+parallel mode reports code findings only, and never claims tests passed or merge
+readiness before the combined verdict. Autofix dispatches one combined run.
+The verdict is published explicitly on the PR head as the `Claude review verdict` commit status.
 The isolated result and model completion are persisted as `Claude host checks`
 and `Claude review completion` on that head. Each new run sets both to pending;
 label events cannot reuse old success while the new checks or review are active.
