@@ -242,6 +242,35 @@ int main() {
     flow.unicodeInput=true;flow.append('e');flow.append('9');assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="é");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("1f680"))flow.append(c);assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="🚀");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("d800"))flow.append(c);assert(!flow.finishUnicode());flow.close();
+    flow.add();assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
+    assert(!flow.acceptText("magnet:?xt=urn:btih:abcdef&dn=Game",catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.close();flow.search();catalog.searchSupported=true;catalog.stale=false;catalog.valid=true;
+    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::keyboard);
+    assert(!flow.acceptText(std::string(201,'x'),catalog,false)&&flow.command.text[0]==0);
+    flow.append('a');flow.unicodeInput=true;flow.append('e');
+    assert(!flow.acceptText("busy query",catalog,true)&&flow.panel==Workflow::Panel::keyboard);
+    assert(std::string_view(flow.command.text.data())=="a"&&flow.unicodeInput&&std::string_view(flow.codepoint.data())=="e");
+    assert(flow.acceptText("Pokémon",catalog,false)&&flow.panel==Workflow::Panel::closed);
+    assert(std::string_view(flow.command.text.data())=="Pokémon");
+    flow.close();flow.panel=Workflow::Panel::keyboard;flow.command.operation=Operation::extract;
+    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.close();
+    for(const auto op:{Operation::search,Operation::extract,Operation::add}){
+        flow.close();flow.panel=Workflow::Panel::keyboard;flow.command.operation=op;
+        const unsigned limit=Workflow::textLimit(op);
+        assert(limit==(op==Operation::search?200U:op==Operation::extract?1024U:16384U));
+        const std::string original=op==Operation::add?"magnet:?xt=urn:btih:original":"original";
+        std::copy(original.begin(),original.end(),flow.command.text.begin());
+        assert(!flow.acceptText(std::string(limit+1,'x'),catalog,false));
+        assert(std::string_view(flow.command.text.data())==original&&flow.panel==Workflow::Panel::keyboard);
+        assert(!flow.acceptText(std::string_view("a\0b",3),catalog,false));
+        assert(std::string_view(flow.command.text.data())==original&&flow.panel==Workflow::Panel::keyboard);
+        std::string boundary=op==Operation::add?"magnet:?xt=urn:btih:":"";boundary.resize(limit,'x');
+        const bool emitted=flow.acceptText(boundary,catalog,false);
+        assert(emitted==(op==Operation::search)&&std::string_view(flow.command.text.data())==boundary);
+        assert(flow.panel==(op==Operation::search?Workflow::Panel::closed:Workflow::Panel::confirm));
+    }
+    flow.close();
     bool printable[127]={};printable[' ']=true;
     for(unsigned page=0;page<3;++page){assert(Workflow::keys(page).size()==40);for(char c:Workflow::keys(page))printable[static_cast<unsigned char>(c)]=true;}
     for(unsigned c=32;c<127;++c)assert(printable[c]);
@@ -296,7 +325,12 @@ int main() {
     assert(live.count==1&&live.tasks[0].items&&live.tasks[0].eta==8);
     assert(snapshot.status==Probe::ready);command.operation=Operation::pause;
     assert(queued.submit(command));assert(!queued.submit(command));
-    for(unsigned i=0;i<500;++i){queued.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    bool snapshotBusy=true;
+    for(unsigned i=0;i<500;++i){
+        if(queued.read(snapshot,&catalog,&result,&snapshotBusy))assert(snapshotBusy||result.revision);
+        if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    assert(!snapshotBusy);
     assert(result.revision==1&&result.status==ActionResult::Status::success);queued.stop();workerAllowed=false;
     const auto post=request.find("POST /api/torrent ");assert(post!=std::string::npos&&request.find("POST /api/torrent ",post+1)==std::string::npos);
     // A deletion outlives its HTTP response: retain progress and reject duplicate

@@ -48,9 +48,9 @@ public:
     void retry() noexcept { retry_.store(true); }
     Probe state() const noexcept { return state_.load(); }
     // Rendering never waits on the worker. Keep the previous snapshot if busy.
-    bool read(Connection& out,Catalog* catalog=nullptr,ActionResult* result=nullptr) noexcept {
+    bool read(Connection& out,Catalog* catalog=nullptr,ActionResult* result=nullptr,bool* busy=nullptr) noexcept {
         if(gate_.test_and_set(std::memory_order_acquire))return false;
-        out=connection_;if(result)*result=result_;if(catalog&&catalog->revision!=catalog_.revision)*catalog=catalog_;gate_.clear(std::memory_order_release);return true;
+        out=connection_;if(result)*result=result_;if(busy)*busy=busy_.load();if(catalog&&catalog->revision!=catalog_.revision)*catalog=catalog_;gate_.clear(std::memory_order_release);return true;
     }
 };
 using CoverIds=std::array<std::array<char,96>,6>;
