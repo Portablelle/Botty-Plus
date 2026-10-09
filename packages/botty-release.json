@@ -5,7 +5,7 @@
     "native": "01.006.000",
     "manager": "1.5.4",
     "worker": "1.3.1",
-    "rtorrent": "0.16.24-botty8"
+    "rtorrent": "0.16.24-botty9"
   },
   "apis": {
     "manager": 1,
@@ -44,11 +44,11 @@
     "botty/ui/index.html": "5f96ba033062a41f89e5e7e340c8fd667fc6da8a3296bf84ba1cf11bd9cfdef2",
     "botty/ui/style.css": "9ecb5da30d595865d1cc28d8192616b48b3ac1aee80c3bc952276c8141f7e8b5",
     "rtorrent/LICENSE": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
-    "rtorrent/README.md": "a072c7670aa37bfc761e679b90b0059be50733e6329f6748c2caeafd708572ec",
+    "rtorrent/README.md": "a806b4be818dc467983ded89c4f5a0862089224c167a74a2f5d9c1479b69398d",
     "rtorrent/cacert.pem": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b",
-    "rtorrent/manifest.json": "5903ed3668b7a277224a1c94dcb761315b7f4682355a7c01c222b7452171539e",
-    "rtorrent/rtorrent-source.tar.gz": "61921754d65e1f519c40d4a1a12b2ac751f65bc73844b030f12266325d0ab732",
-    "rtorrent/rtorrent.elf": "2842587fe7b05b143b8b08db64a950d907f42796b1e4ab5c1c6883f3c8aa3ac4",
+    "rtorrent/manifest.json": "83b04b9a5a74e9675200420c158ec3f00617e09f3b782f861aa9359f9209ea73",
+    "rtorrent/rtorrent-source.tar.gz": "13442385df9beb31b1bf73bdc4a6e00dd2cc1b1dc64d1d6970322d74f73cacc3",
+    "rtorrent/rtorrent.elf": "b0a10e857a994907e45dca59cf14ee14f8046a10b3c60af00584b4d0b720dd90",
     "rtorrent/rtorrent.rc": "99f4a1c6ebd07c69d460494cb8d5d069cdaad57a74e89954fb1c544a0cc0d25e"
   }
 }

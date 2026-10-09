@@ -29,7 +29,7 @@ class FileManagerEmfileTests(unittest.TestCase):
             source = root / 'libtorrent-0.16.24'
             (source / 'config.h').write_text('#define LT_SMP_CACHE_BYTES 64\n')
             units = ['torrent/data/file_manager.cc', 'utils/fd_close_queue.cc',
-                     'data/socket_file.cc', 'torrent/data/file.cc',
+                     'data/socket_file.cc', 'data/memory_chunk.cc', 'torrent/data/file.cc',
                      'torrent/types/string_utf8.cc', 'torrent/utils/string_manip.cc',
                      'torrent/exceptions.cc']
             binary = root / 'test'
@@ -70,6 +70,8 @@ class FileManagerEmfileTests(unittest.TestCase):
             baseline = subprocess.run([str(binary), str(target)], capture_output=True, text=True, timeout=20)
             self.assertEqual(baseline.returncode, 42, baseline.stderr)
             self.assertIn('file open failed: errno=24', baseline.stderr)
+            for item in target.iterdir():
+                item.unlink() # The patched run must start with empty files.
             for _ in range(2): # Patching is safe on a reused build tree.
                 subprocess.run(['python3', str(SOURCE / 'patch-libtorrent.py'), str(source)], check=True)
             compile_storage(clobber_errno=True)
