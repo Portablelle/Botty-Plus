@@ -92,7 +92,11 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
 printf '%s\\n' "$*" >> "$GH_CALLS"
 case "$2" in
   */pulls/*) echo "$HEAD" ;;
-  */commits/*/status) echo 'https://example.test/runs/200' ;;
+  */commits/*/status)
+    case "$*" in
+      *'Claude host checks'*) echo 'https://example.test/runs/200' ;;
+      *) echo 'Wrong run-identity context' >&2; exit 42 ;;
+    esac ;;
   *) exit 42 ;;
 esac
 """)
@@ -103,6 +107,7 @@ esac
             result = subprocess.run(['bash', '-e', '-c', body], env=env,
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, '')
             self.assertEqual(len(calls.read_text().splitlines()), 2)
             self.assertNotIn('-X POST', calls.read_text())
 
