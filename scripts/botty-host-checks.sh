@@ -8,7 +8,9 @@ python3 scripts/botty-packages.py --check
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 homebrew/botty/tests/make_fixtures.py
 node homebrew/botty/tests/ui-test.js
-make -C homebrew/botty NATIVE_CXX=clang++ test
+# Bound compilation rather than using the host CPU count from nproc.
+# Build prerequisites can run in parallel; the test recipe stays sequential.
+make -C homebrew/botty -j4 NATIVE_CXX=clang++ test
 make -C homebrew/botty-native CXX=clang++ test integration
 python3 -m unittest discover -s homebrew/game-compressor/tests -p 'test_*.py' -v
 clang++ -std=c++20 -Wall -Wextra -Werror homebrew/rtorrent/tests/runtime-identity-harness.cc -o /tmp/rtorrent-runtime-identity-test
