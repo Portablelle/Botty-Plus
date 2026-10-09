@@ -63,8 +63,7 @@ workflow handles main/tag pushes, manual runs and fork PRs; its skipped internal
 PR job has a different name, so it cannot clear `verify`. Before skipping, a small
 routing job reads the publisher marker from the exact trusted base workflow; old
 bases and API failures keep standalone verification, including this rollout PR.
-The review summary in
-parallel mode reports code findings only, and never claims tests passed or merge
+The review summary in parallel mode reports code findings only, and never claims tests passed or merge
 readiness before the combined verdict. Autofix dispatches one combined run.
 The verdict is published explicitly on the PR head as the `Claude review verdict` commit status.
 The isolated result and model completion are persisted as `Claude host checks`
@@ -74,10 +73,16 @@ Metadata jobs use a shared lock with `queue: max`, so a label verdict cannot dis
 an announcement waiting for that lock. A cancelled current review publishes a
 blocked result and asks for a rerun; superseded heads or runs publish nothing and
 never spend autofix budget.
-Failed-job reruns retrieve bounded result metadata from the relevant prior attempt. Manual GitHub reviews
-reuse successful host CI on the exact head and block when that evidence is absent;
-the target workflow's own job checks refer to the base. Merge conflicts still
-need resolution before merge. GitHub event policies must allow this target
+The final verdict uses the dependency results even on failed-job reruns; the
+parallel reviewer does not download prior-attempt metadata. Manual GitHub reviews
+of internal PRs require the latest `Claude host checks` and `verify` commit
+statuses from `github-actions[bot]` on the exact head, both successful and linked
+to the same review run. Fork PRs require a completed, successful standalone
+`verify` job on the exact head. A successful workflow with skipped verification
+is not host validation; missing, pending, failed or mismatched evidence blocks
+manual review. The target workflow's own check runs refer to the base, so use
+its explicitly published head statuses. Merge conflicts need resolution before
+merge. GitHub event policies must allow this target
 workflow; the default public-repository policy is scheduled for enforcement on
 November 2, 2026 (see GitHub's pull_request_target security documentation).
 For a manual override, a maintainer leaves a commented review on the current

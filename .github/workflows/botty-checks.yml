@@ -6,7 +6,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 concurrency:
-  group: botty-checks-${{ github.event.pull_request.number || github.ref }}
+  # PR pushes supersede old checks. Other events have independent groups so
+  # another main/tag/manual run cannot discard a pending commit.
+  group: botty-checks-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
