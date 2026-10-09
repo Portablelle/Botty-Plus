@@ -17,3 +17,4 @@ api-key
 *.key
 *.p12
 *.pfx
+/AGENTS.md
