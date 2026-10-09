@@ -56,13 +56,17 @@ without initializing legacy gitlinks or leaving checkout credentials in that tre
 They run concurrently with review in a separate ephemeral job, with
 no Claude secret and read-only repository permission. Its entry point is always
 the trusted base script, executed against the PR workspace. This also avoids sharing
-the runner's memory budget between Claude and C++ compilation. Internal PRs run
-this suite only once; the final verdict publishes its result as both `verify`
+the runner's memory budget between Claude and C++ compilation. Ordinary internal
+PRs run this suite only once; the final verdict publishes its result as both `verify`
 (the existing required check) and `Claude host checks`. The standalone checks
 workflow handles main/tag pushes, manual runs and fork PRs; its skipped internal
 PR job has a different name, so it cannot clear `verify`. Before skipping, a small
 routing job reads the publisher marker from the exact trusted base workflow; old
 bases and API failures keep standalone verification, including this rollout PR.
+PRs changing `scripts/botty-host-checks.sh` or `.github/workflows/botty-checks.yml`
+also keep standalone `verify`, so the head's entry point runs before merge.
+The routing job compares file hashes at the exact base and head SHAs; deleted,
+unreadable or malformed content responses fall back to standalone verification.
 The review summary in parallel mode reports code findings only, and never claims tests passed or merge
 readiness before the combined verdict. Autofix dispatches one combined run.
 The verdict is published explicitly on the PR head as the `Claude review verdict` commit status.

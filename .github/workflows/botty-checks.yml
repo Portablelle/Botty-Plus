@@ -28,6 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # Missing policy or API failures fall back to the standalone suite.
@@ -37,6 +38,19 @@ jobs:
                [[ "$decoded" == *'# BOTTY_REQUIRED_VERIFY_PUBLISHER=1'* ]]; then
               trusted=true
             fi
+          fi
+          if [ "$trusted" = true ]; then
+            # The trusted job executes the base entry point. Validate changed
+            # head entry points/workflows with standalone verify before merge.
+            for file in scripts/botty-host-checks.sh .github/workflows/botty-checks.yml; do
+              if ! base_hash=$(gh api "repos/$REPO/contents/$file?ref=$BASE" --jq .sha) ||
+                 ! head_hash=$(gh api "repos/$REPO/contents/$file?ref=$HEAD" --jq .sha) ||
+                 [[ ! "$base_hash" =~ ^[0-9a-f]{40}$ ]] ||
+                 [[ "$head_hash" != "$base_hash" ]]; then
+                trusted=false
+                break
+              fi
+            done
           fi
           echo "trusted-verify=$trusted" >> "$GITHUB_OUTPUT"
   verify:
