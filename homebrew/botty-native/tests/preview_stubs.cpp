@@ -10,7 +10,7 @@
 #include <string>
 #include <fstream>
 #include <iterator>
-#include <sys/event.h>
+#include "../src/host_preview_event.hpp"
 extern "C" {
 #include "../vendor/ps5-pad.h"
 }
@@ -41,6 +41,31 @@ void snapshot() {
 }
 }
 extern "C" {
+// IME fixture used by the real draw-loop overlay regression.
+std::uint16_t* overlayImeText=nullptr;
+bool overlayImeFullMagnet=false;
+int overlayImeInit(const void* p,const void*){std::memcpy(&overlayImeText,static_cast<const char*>(p)+40,sizeof(overlayImeText));return 0;}
+int overlayImeStatus(){return 2;}
+int overlayImeResult(void* result){
+    assert(overlayImeText);*static_cast<int*>(result)=0;
+    if(overlayImeFullMagnet){
+        constexpr char16_t prefix[]=u"magnet:?xt=urn:btih:";
+        std::copy(std::begin(prefix),std::end(prefix)-1,overlayImeText);
+        std::fill(overlayImeText+std::size(prefix)-1,overlayImeText+2048,u'a');overlayImeText[2048]=0;
+    }else {constexpr char16_t edited[]=u"edited";std::copy(std::begin(edited),std::end(edited),overlayImeText);}
+    return 0;
+}
+int overlayImeTerm(){return 0;}
+int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return is("keyboard-overlay")?7:-1;}
+int sceKernelDlsym(int,const char* name,void** address){
+    if(!is("keyboard-overlay"))return -1;
+    if(std::strcmp(name,"sceImeDialogInit")==0)*address=reinterpret_cast<void*>(overlayImeInit);
+    else if(std::strcmp(name,"sceImeDialogGetStatus")==0)*address=reinterpret_cast<void*>(overlayImeStatus);
+    else if(std::strcmp(name,"sceImeDialogGetResult")==0)*address=reinterpret_cast<void*>(overlayImeResult);
+    else if(std::strcmp(name,"sceImeDialogTerm")==0)*address=reinterpret_cast<void*>(overlayImeTerm);
+    else return -1;
+    return 0;
+}
 std::uint64_t sceKernelGetProcessTime(){return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()+(std::this_thread::get_id()==mainThread?artificialRenderTime:0);}
 int sceKernelUsleep(unsigned us){std::this_thread::sleep_for(std::chrono::microseconds(us));return 0;}
 int sceKernelOpen(const char*,int,mode_t){return is("slow-password")||is("buffered-password")?55:-1;}
