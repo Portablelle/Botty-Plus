@@ -54,27 +54,63 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
         result = self.run_step('exit 1\n', 'exit 0\n')
         self.assertNotEqual(result.returncode, 0)
 
-    def test_cancelled_jobs_publish_nothing_or_spend_budget(self):
+    def test_cancelled_current_run_fails_closed_but_replacements_are_untouched(self):
         source = WORKFLOW.read_text()
         start = source.index("      - name: Check the review's verdict")
         start = source.index('        run: |\n', start) + len('        run: |\n')
         end = source.index('\n  autofix:', start)
         template = textwrap.dedent(source[start:end])
         for host, review in [('cancelled', 'skipped'), ('success', 'cancelled')]:
-            with self.subTest(host=host, review=review), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                calls = root / 'calls'
-                gh = root / 'gh'
-                gh.write_text('#!/bin/sh\necho called >> "$GH_CALLS"\n')
-                gh.chmod(0o755)
-                values = {'needs.host-checks.result': host, 'needs.claude-review.result': review}
-                body = re.sub(r'\$\{\{(.*?)\}\}',
-                              lambda m: values.get(m.group(1).strip(), 'synchronize'), template)
-                env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'], GH_CALLS=str(calls))
-                result = subprocess.run(['bash', '-e', '-c', body], env=env,
-                                        capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertFalse(calls.exists(), 'A superseded run must not touch GitHub or reserve autofix')
+            for replacement in [None, 'head', 'run']:
+                with self.subTest(host=host, review=review, replacement=replacement), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    calls = root / 'calls'
+                    gh = root / 'gh'
+                    gh.write_text("""#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['GH_CALLS'], 'a') as f:
+    f.write(json.dumps(sys.argv[1:]) + '\\n')
+endpoint = sys.argv[2]
+if '/pulls/' in endpoint:
+    print(os.environ['REMOTE_HEAD'])
+elif '/commits/' in endpoint:
+    print(os.environ['LATEST_RUN'])
+elif '-X' not in sys.argv or 'POST' not in sys.argv:
+    sys.exit(42)
+""")
+                    gh.chmod(0o755)
+                    scripts = root / '.github/scripts'
+                    scripts.mkdir(parents=True)
+                    post = scripts / 'post-verdict.sh'
+                    post.write_text('#!/bin/sh\nprintf "%s\\n" "$2" > "$COMMENT"\n')
+                    post.chmod(0o755)
+                    values = {'needs.host-checks.result': host, 'needs.claude-review.result': review}
+                    body = re.sub(r'\$\{\{(.*?)\}\}',
+                                  lambda m: values.get(m.group(1).strip(), 'reopened'), template)
+                    env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                               GH_CALLS=str(calls), COMMENT=str(root / 'comment'), HEAD='a' * 40,
+                               REMOTE_HEAD=('b' if replacement == 'head' else 'a') * 40,
+                               LATEST_RUN='https://example.test/runs/' + ('200' if replacement == 'run' else '100'),
+                               REVIEW_RUN='https://example.test/runs/100', FORK='false',
+                               REPO='Portablelle/Botty-Plus', PR='22',
+                               GITHUB_STEP_SUMMARY=str(root / 'summary'), GITHUB_OUTPUT=str(root / 'output'))
+                    result = subprocess.run(['bash', '-e', '-c', body], cwd=temp, env=env,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 0 if replacement else 2, result.stderr)
+                    self.assertEqual(result.stderr, '')
+                    posts = [json.loads(line) for line in calls.read_text().splitlines()
+                             if '/statuses/' in line]
+                    if replacement:
+                        self.assertEqual(posts, [])
+                        self.assertFalse((root / 'comment').exists())
+                    else:
+                        self.assertEqual(len(posts), 3)
+                        for args in posts:
+                            self.assertIn('state=failure', args)
+                            self.assertIn('repos/Portablelle/Botty-Plus/statuses/' + 'a' * 40, args)
+                        self.assertIn('re-run the review', (root / 'comment').read_text())
+                        self.assertNotIn('Wait:', (root / 'comment').read_text())
+                    self.assertFalse((root / 'output').exists(), 'Cancellation must never start autofix')
 
     def test_older_same_head_verdict_cannot_replace_newer_announcement(self):
         source = WORKFLOW.read_text()

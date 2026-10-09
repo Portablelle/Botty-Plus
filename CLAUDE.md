@@ -59,6 +59,10 @@ published explicitly on the PR head as the `Claude review verdict` commit status
 The isolated result and model completion are persisted as `Claude host checks`
 and `Claude review completion` on that head. Each new run sets both to pending;
 label events cannot reuse old success while the new checks or review are active.
+Metadata jobs use a shared lock with `queue: max`, so a label verdict cannot discard
+an announcement waiting for that lock. A cancelled current review publishes a
+blocked result and asks for a rerun; superseded heads or runs publish nothing and
+never spend autofix budget.
 Failed-job reruns retrieve bounded result metadata from the relevant prior attempt. Manual GitHub reviews
 reuse successful host CI on the exact head and block when that evidence is absent;
 the target workflow's own job checks refer to the base. Merge conflicts still
