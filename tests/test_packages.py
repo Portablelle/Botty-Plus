@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import unittest
 import tempfile
+import tarfile
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
@@ -11,6 +12,17 @@ contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
     def test_current_delivery_is_complete_and_verified(self):
         contract.verify(ROOT/'packages')
+    def test_native_source_archive_matches_current_runtime_sources(self):
+        native=ROOT/'homebrew/botty-native'
+        with tarfile.open(ROOT/'packages/botty-native/botty-native-source.tar.gz', 'r:gz') as archive:
+            actual={member.name:archive.extractfile(member).read() for member in archive.getmembers()
+                    if member.isfile() and member.name.startswith('botty-native/src/')}
+            expected={'botty-native/'+path.relative_to(native).as_posix():path.read_bytes()
+                      for path in (native/'src').rglob('*') if path.is_file()}
+            self.assertEqual(actual, expected)
+            for name in ['Makefile', 'release.json']:
+                with self.subTest(file=name):
+                    self.assertEqual(archive.extractfile('botty-native/'+name).read(), (native/name).read_bytes())
     def test_service_web_assets_belong_to_the_packaged_version(self):
         source=(ROOT/'homebrew/botty/src/server.cpp').read_text()
         version=json.loads((ROOT/'packages/botty/manifest.json').read_text())['id']
