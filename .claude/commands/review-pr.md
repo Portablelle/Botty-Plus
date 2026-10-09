@@ -66,8 +66,9 @@ PR head in a separate ephemeral job without the Claude secret or a write token.
 Read the bounded metadata report at `CLAUDE_HOST_CHECK_REPORT`: it contains only
 the numeric job ID, attempt number and an allowlisted conclusion. Raw job logs,
 test output, annotations and free-form names are deliberately excluded. Link to
-the run for diagnostic details; do not fetch raw logs in this isolated mode. `CLAUDE_HOST_CHECK_RUN` links to the enclosing run, which is
-still in progress while you review. Do not build or execute PR code, or rerun tests,
+the run for diagnostic details; do not fetch raw logs in this isolated mode.
+`CLAUDE_HOST_CHECK_RUN` links to the enclosing run, which is still in progress
+while you review. Do not build or execute PR code, or rerun tests,
 in this reviewer job. Treat any result other than `success` as a blocking check.
 Assess regression strength from the actual PR source/tests and report concrete
 coverage gaps; execution of a pre-fix mutation is not available in this mode.
