@@ -16,6 +16,8 @@ on:
         required: true
         type: string
 
+# BOTTY_REQUIRED_VERIFY_PUBLISHER=1
+# Standalone PR checks probe this marker at the trusted base SHA before skipping.
 jobs:
   context:
     if: >-
@@ -95,7 +97,7 @@ jobs:
           fi
           # Status scripts are trusted policy, not supplied by the PR being reviewed.
           if git show "${{ github.sha }}:.github/scripts/post-verdict.sh" > "$RUNNER_TEMP/post-verdict.sh"; then
-            for context in 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
+            for context in 'verify' 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
               gh api -X POST "repos/$REPO/statuses/$HEAD" \
                 -f state=pending -f context="$context" \
                 -f description='New Claude review pending on this PR head' -f target_url="$REVIEW_RUN" >/dev/null
@@ -154,12 +156,11 @@ jobs:
           BOTTY_HOST_CHECK_ROOT="$CLAUDE_HOST_CHECK_ROOT" bash "$checks"
 
   claude-review:
-    needs: [context, announce, host-checks]
+    needs: [context, announce]
     # Fork PRs get no secrets, so the action can't run there: review them locally
     # with `/review-pr <number>` instead.
     if: >-
       always() && needs.announce.outputs.active == 'true' &&
-      needs.host-checks.result != 'cancelled' &&
       fromJSON(needs.context.outputs.pr).head.repo.full_name == github.repository &&
       github.event.action != 'labeled' && github.event.action != 'unlabeled'
     # A new push supersedes the review still running for the previous one. Job-level, so a
@@ -217,30 +218,13 @@ jobs:
           done
           echo "CLAUDE_REVIEW_POLICY=$RUNNER_TEMP/claude-policy" >> "$GITHUB_ENV"
 
-      - name: Load completed host-check result
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # A failed-jobs rerun reuses successful dependencies from an earlier attempt.
-          report="$RUNNER_TEMP/claude-host-check-result.txt"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" --paginate \
-            --jq '.jobs[] | select(.name == "Claude host checks" and .status == "completed")' \
-            | jq -sr --argjson attempt "$GITHUB_RUN_ATTEMPT" \
-              'def result: if . == "success" or . == "failure" or . == "cancelled" or . == "skipped" or . == "timed_out" or . == "neutral" or . == "action_required" or . == "stale" then . else "unknown" end;
-               [.[] | select((.run_attempt // 1) <= $attempt)] | max_by([(.run_attempt // 1), .id]) |
-               if . == null or (.id | type) != "number" or ((.run_attempt // 1) | type) != "number" then error("No isolated host-check job found")
-               else "Host-check job: \(.id | floor)\nRun attempt: \((.run_attempt // 1) | floor)\nConclusion: \(.conclusion | result)" end' > "$report"
-          # No test output, annotations or free-form names reach the secret-bearing model.
-          echo "CLAUDE_HOST_CHECK_REPORT=$report" >> "$GITHUB_ENV"
-
       - name: Run Claude Code Review
         if: steps.setup.outputs.bootstrap != 'true'
         id: claude-review
         env:
           CLAUDE_REVIEW_HEAD: ${{ fromJSON(needs.context.outputs.pr).head.sha }}
           CLAUDE_REVIEW_BASE: ${{ github.sha }}
-          CLAUDE_HOST_CHECK_RESULT: ${{ needs.host-checks.result }}
+          CLAUDE_HOST_CHECK_RESULT: pending
           CLAUDE_HOST_CHECK_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1
         with:
@@ -261,12 +245,12 @@ jobs:
             GITHUB_EVENT_NAME=${{ github.event_name }}
             CLAUDE_REVIEW_HEAD=${{ fromJSON(needs.context.outputs.pr).head.sha }}
             CLAUDE_REVIEW_BASE=${{ github.sha }}
-            CLAUDE_HOST_CHECK_RESULT=${{ needs.host-checks.result }}
-            CLAUDE_HOST_CHECK_REPORT=${{ runner.temp }}/claude-host-check-result.txt
+            CLAUDE_HOST_CHECK_RESULT=pending
             CLAUDE_REVIEW_POLICY=${{ runner.temp }}/claude-policy
             The checkout is the trusted base. Read reviewed files at CLAUDE_REVIEW_HEAD
             using git show/diff; never check out, execute or build PR code here.
-            Host checks ran separately: ${{ needs.host-checks.result }}.
+            Host checks run concurrently in an isolated job. Review the code now;
+            the verdict job waits for both checks and review before allowing merge.
 
             Read `${{ runner.temp }}/claude-policy/.claude/commands/review-pr.md` and follow it exactly, with
             $ARGUMENTS = ${{ fromJSON(needs.context.outputs.pr).number }}.
@@ -331,7 +315,7 @@ jobs:
           # heads/runs returned above; never overwrite their replacement's evidence.
           if [ "${{ needs.host-checks.result }}" = cancelled ] ||
              [ "${{ needs.claude-review.result }}" = cancelled ]; then
-            for context in 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
+            for context in 'verify' 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
               gh api -X POST "repos/$REPO/statuses/$HEAD" \
                 -f state=failure -f context="$context" \
                 -f description='Review cancelled; re-run this workflow' -f target_url="$REVIEW_RUN" >/dev/null
@@ -365,9 +349,13 @@ jobs:
             export HOST_CHECK_RESULT="${{ needs.host-checks.result }}"
             state=failure
             [ "$HOST_CHECK_RESULT" = success ] && state=success
-            gh api -X POST "repos/$REPO/statuses/$HEAD" \
-              -f state="$state" -f context='Claude host checks' \
-              -f description='Isolated host checks for this PR head' -f target_url="$REVIEW_RUN" >/dev/null
+            # Preserve the required `verify` context without a second full test run.
+            for context in 'verify' 'Claude host checks'; do
+              [ "$context" != verify ] || [ "$FORK" != true ] || continue
+              gh api -X POST "repos/$REPO/statuses/$HEAD" \
+                -f state="$state" -f context="$context" \
+                -f description='Isolated host checks for this PR head' -f target_url="$REVIEW_RUN" >/dev/null
+            done
             export REVIEW_CHECK_RESULT="${{ needs.claude-review.result }}"
             state=failure
             [ "$REVIEW_CHECK_RESULT" = success ] && state=success
@@ -581,13 +569,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ fromJSON(needs.context.outputs.pr).number }}
-          BRANCH: ${{ fromJSON(needs.context.outputs.pr).head.ref }}
           HEAD: ${{ needs.autofix.outputs.head }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
-          check_code=0
-          gh workflow run botty-checks.yml -R "$REPO" --ref "$BRANCH" || check_code=$?
+          # This dispatch starts both isolated checks and the parallel review.
           gh workflow run claude-code-review.yml -R "$REPO" --ref "$DEFAULT_BRANCH" -f pr="$PR"
-          exit "$check_code"

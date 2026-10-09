@@ -5,10 +5,59 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+concurrency:
+  # PR pushes supersede old checks. Other events have independent groups so
+  # another main/tag/manual run cannot discard a pending commit.
+  group: botty-checks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
+  route:
+    # PR workflows come from the head; the reviewer comes from the trusted base.
+    # Keep legacy verification during rollout and on bases without the publisher.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, botty-plus-ci]
+    timeout-minutes: 5
+    outputs:
+      trusted-verify: ${{ steps.route.outputs.trusted-verify }}
+    steps:
+      - name: Detect trusted verify publisher
+        id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Missing policy or API failures fall back to the standalone suite.
+          trusted=false
+          if policy=$(gh api "repos/$REPO/contents/.github/workflows/claude-code-review.yml?ref=$BASE" --jq .content); then
+            if decoded=$(printf '%s' "$policy" | base64 --decode) &&
+               [[ "$decoded" == *'# BOTTY_REQUIRED_VERIFY_PUBLISHER=1'* ]]; then
+              trusted=true
+            fi
+          fi
+          if [ "$trusted" = true ]; then
+            # The trusted job executes the base entry point. Validate changed
+            # head entry points/workflows with standalone verify before merge.
+            for file in scripts/botty-host-checks.sh .github/workflows/botty-checks.yml; do
+              if ! base_hash=$(gh api "repos/$REPO/contents/$file?ref=$BASE" --jq .sha) ||
+                 ! head_hash=$(gh api "repos/$REPO/contents/$file?ref=$HEAD" --jq .sha) ||
+                 [[ ! "$base_hash" =~ ^[0-9a-f]{40}$ ]] ||
+                 [[ "$head_hash" != "$base_hash" ]]; then
+                trusted=false
+                break
+              fi
+            done
+          fi
+          echo "trusted-verify=$trusted" >> "$GITHUB_OUTPUT"
   verify:
+    needs: route
+    # A differently named skipped check cannot replace the required status.
+    name: ${{ needs.route.outputs.trusted-verify == 'true' && 'Checks handled by review workflow' || 'verify' }}
+    if: always() && !cancelled() && needs.route.outputs.trusted-verify != 'true'
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 20
     steps:

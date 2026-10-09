@@ -133,20 +133,20 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
                 if expected:
                     self.assertEqual((root / 'output').read_text().strip(), 'head=' + 'b' * 40)
 
-    def test_follow_up_ignores_changed_head_and_still_reviews_after_ci_dispatch_failure(self):
+    def test_follow_up_dispatches_one_combined_run_only_for_its_own_head(self):
         source = WORKFLOW.read_text()
         start = source.index('      - name: Start checks and review after an autofix push')
         start = source.index('        run: |\n', start) + len('        run: |\n')
         body = textwrap.dedent(source[start:])
-        for remote, ci_failure, count, code in [('b', False, 2, 0), ('c', False, 0, 0), ('b', True, 2, 1)]:
-            with self.subTest(remote=remote, ci_failure=ci_failure), tempfile.TemporaryDirectory() as temp:
+        for remote, failure, count, code in [('b', False, 1, 0), ('c', False, 0, 0), ('b', True, 1, 1)]:
+            with self.subTest(remote=remote, failure=failure), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 gh = root / 'gh'
-                gh.write_text('#!/bin/sh\nif [ "$1" = api ]; then echo "$REMOTE"; else echo "$*" >> "$CALLS"; [ "$3" != botty-checks.yml ] || [ "$CI_FAILURE" != true ]; fi\n')
+                gh.write_text('#!/bin/sh\nif [ "$1" = api ]; then echo "$REMOTE"; else echo "$*" >> "$CALLS"; [ "$FAILURE" != true ]; fi\n')
                 gh.chmod(0o755)
                 env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
-                           HEAD='b' * 40, REMOTE=remote * 40, CI_FAILURE='true' if ci_failure else 'false',
-                           REPO='Portablelle/Botty-Plus', PR='17', BRANCH='feature', DEFAULT_BRANCH='main',
+                           HEAD='b' * 40, REMOTE=remote * 40, FAILURE='true' if failure else 'false',
+                           REPO='Portablelle/Botty-Plus', PR='17', DEFAULT_BRANCH='main',
                            CALLS=str(root / 'calls'))
                 result = subprocess.run(['bash', '-e', '-c', body], env=env,
                                         capture_output=True, text=True, timeout=5)
@@ -154,5 +154,5 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
                 calls = (root / 'calls').read_text().splitlines() if (root / 'calls').exists() else []
                 self.assertEqual(len(calls), count)
                 if calls:
-                    self.assertIn('--ref feature', calls[0])
-                    self.assertIn('--ref main -f pr=17', calls[1])
+                    self.assertIn('claude-code-review.yml', calls[0])
+                    self.assertIn('--ref main -f pr=17', calls[0])

@@ -34,6 +34,7 @@ class FileManagerEmfileTests(unittest.TestCase):
                      'torrent/exceptions.cc']
             binary = root / 'test'
             file_open = root / 'file-open.cc'
+            compiled_sources = {}
             def compile_storage(clobber_errno=False):
                 # Compile the real fd_open_file body, replacing only its logger.
                 # A failing logger deliberately overwrites errno in the regression.
@@ -45,13 +46,24 @@ class FileManagerEmfileTests(unittest.TestCase):
                                      ('(errno = EIO)' if clobber_errno else '((void)0)') + '\n'
                                      '#define LT_LOG_FD_FLAG(...) ((void)0)\n'
                                      'namespace torrent {\n' + text[start:end] + '\n}\n')
-                subprocess.run([*shlex.split(os.environ.get('CXX', 'clang++')), '-std=c++20', '-pthread',
-                                '-ffunction-sections', '-fdata-sections', '-Wl,--gc-sections',
-                                '-I' + str(source), '-I' + str(source / 'src'), '-I' + str(source / 'src/torrent'),
-                                str(SOURCE / 'tests/file-manager-emfile.cc'),
-                                str(file_open),
-                                *[str(source / 'src' / unit) for unit in units],
-                                '-o', str(binary)], check=True)
+                compiler = shlex.split(os.environ.get('CXX', 'clang++'))
+                flags = ['-std=c++20', '-pthread', '-ffunction-sections', '-fdata-sections',
+                         '-I' + str(source), '-I' + str(source / 'src'),
+                         '-I' + str(source / 'src/torrent')]
+                objects = []
+                sources = [SOURCE / 'tests/file-manager-emfile.cc', file_open,
+                           *[source / 'src' / unit for unit in units]]
+                # Each patch changes only file_manager.cc and the extracted fd body.
+                # Keep baseline and patched executions, reusing unchanged object files.
+                for index, unit in enumerate(sources):
+                    obj = root / f'unit-{index}.o'
+                    content = unit.read_bytes()
+                    if compiled_sources.get(unit) != content:
+                        subprocess.run([*compiler, *flags, '-c', str(unit), '-o', str(obj)], check=True)
+                        compiled_sources[unit] = content
+                    objects.append(str(obj))
+                subprocess.run([*compiler, '-pthread', '-Wl,--gc-sections',
+                                *objects, '-o', str(binary)], check=True)
             target = root / 'files'
             target.mkdir()
             compile_storage()
