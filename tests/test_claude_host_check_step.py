@@ -251,12 +251,13 @@ elif '/commits/' in sys.argv[2]:
                 root = Path(temp)
                 gh = root / 'gh'
                 encoded = base64.b64encode(policy.encode()).decode()
-                gh.write_text('#!/bin/sh\nprintf "%s" "$2" > "$CALL"\n' +
-                              ('exit 1\n' if failure else f"echo '{encoded}'\n"))
+                gh.write_text('#!/bin/sh\nprintf "%s\\n" "$2" >> "$CALL"\n' +
+                              ('exit 1\n' if failure else
+                               f"case \"$2\" in *claude-code-review.yml*) echo '{encoded}' ;; *) echo '{'a' * 40}' ;; esac\n"))
                 gh.chmod(0o755)
                 # A publisher introduced by the PR itself is not trusted yet.
                 (root / 'claude-code-review.yml').write_text('# BOTTY_REQUIRED_VERIFY_PUBLISHER=1')
-                env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'], BASE='b' * 40,
+                env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'], BASE='b' * 40, HEAD='c' * 40,
                            REPO='Portablelle/Botty-Plus', GH_TOKEN='fixture-token',
                            CALL=str(root / 'call'), GITHUB_OUTPUT=str(root / 'output'))
                 result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
@@ -266,6 +267,36 @@ elif '/commits/' in sys.argv[2]:
                                  'trusted-verify=' + ('true' if trusted else 'false'))
                 self.assertIn('?ref=' + 'b' * 40, (root / 'call').read_text())
         self.assertIn("'Checks handled by review workflow' || 'verify'", source)
+
+    def test_changed_or_unreadable_host_check_policy_keeps_standalone_verify(self):
+        source = (WORKFLOW.parent / 'botty-checks.yml').read_text()
+        start = source.index('        run: |\n') + len('        run: |\n')
+        body = textwrap.dedent(source[start:source.index('\n  verify:', start)])
+        for path in ('scripts/botty-host-checks.sh', '.github/workflows/botty-checks.yml'):
+            for failure in ('changed', 'missing', 'malformed'):
+                with self.subTest(path=path, failure=failure), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    gh = root / 'gh'
+                    gh.write_text("""#!/usr/bin/env python3
+import base64, os, sys
+endpoint = sys.argv[2]
+if 'claude-code-review.yml?' in endpoint:
+    print(base64.b64encode(b'# BOTTY_REQUIRED_VERIFY_PUBLISHER=1').decode())
+elif '/contents/' + os.environ['CHANGED_PATH'] + '?ref=' + os.environ['HEAD'] in endpoint:
+    failure = os.environ['FAILURE']
+    if failure == 'missing': sys.exit(1)
+    print('invalid' if failure == 'malformed' else 'd' * 40)
+else:
+    print('a' * 40)
+""")
+                    gh.chmod(0o755)
+                    env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                               BASE='b' * 40, HEAD='c' * 40, REPO='Portablelle/Botty-Plus',
+                               CHANGED_PATH=path, FAILURE=failure, GITHUB_OUTPUT=str(root / 'output'))
+                    result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual((root / 'output').read_text().strip(), 'trusted-verify=false')
 
     def test_review_starts_without_waiting_for_checks_but_verdict_waits_for_both(self):
         source = WORKFLOW.read_text()

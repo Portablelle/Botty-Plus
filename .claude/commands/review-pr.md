@@ -99,6 +99,10 @@ Use `jq -s` to apply the filter to the paginated JSON. Only the latest authentic
 status for each context counts; both must be successful and point to the same
 review run. Missing, pending, failed or mismatched evidence blocks the verdict.
 Report the run link or the limitation; do not wait or poll for completion.
+If an internal PR changes `scripts/botty-host-checks.sh` or
+`.github/workflows/botty-checks.yml`, standalone verification is deliberately
+retained: also require that executed `verify` job to succeed, as described below.
+The trusted base statuses do not validate the changed head entry point.
 For fork PRs, use `gh run list` / `gh run view` to inspect the latest `Botty+ checks`
 run on the exact head, and require an actual `verify` job with completed status
 and `success` conclusion. A skipped `verify` job, a renamed skipped job, or an
