@@ -16,6 +16,9 @@ jobs:
       github.event.action != 'labeled' && github.event.action != 'unlabeled'
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 5
+    concurrency:
+      group: claude-review-metadata-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
@@ -36,6 +39,13 @@ jobs:
           REVIEW_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
+          # Metadata writes share a lock with verdicts; ignore a queued older announcement.
+          latest=$(gh api "repos/$REPO/commits/$HEAD/status" \
+            --jq '[.statuses[] | select(.context == "Claude review verdict" and .creator.login == "github-actions[bot]")][0].target_url // ""')
+          latest_id=${latest##*/}
+          if [[ "$latest_id" =~ ^[0-9]+$ ]] && [ "$latest_id" -gt "$GITHUB_RUN_ID" ]; then
+            exit 0
+          fi
           if [ "${{ github.event.action }}" = synchronize ] &&
              [ "$(gh api "repos/$REPO/pulls/$PR" --jq 'any(.labels[]; .name == "claude-review-override")')" = true ]; then
             gh pr edit "$PR" -R "$REPO" --remove-label claude-review-override
@@ -211,6 +221,9 @@ jobs:
     name: Evaluate Claude review
     needs: [host-checks, claude-review]
     if: always()
+    concurrency:
+      group: claude-review-metadata-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 5
     permissions:
@@ -252,6 +265,14 @@ jobs:
           fi
           # Superseded runs must not publish a verdict or launch a fix for a newer head.
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
+          # A newer announcement on the same SHA also supersedes this run.
+          # The metadata lock prevents an announcement racing these verdict writes.
+          if [ "$FORK" != true ] && [ "${{ github.event.action }}" != labeled ] &&
+             [ "${{ github.event.action }}" != unlabeled ]; then
+            latest=$(gh api "repos/$REPO/commits/$HEAD/status" \
+              --jq '[.statuses[] | select(.context == "Claude review verdict" and .creator.login == "github-actions[bot]")][0].target_url // ""')
+            [ "$latest" = "$REVIEW_RUN" ] || exit 0
+          fi
           # Only the initial introduction of this workflow has no baseline policy.
           # An installed workflow with missing/broken policy must still fail closed.
           git cat-file -e "$BASE^{commit}"
