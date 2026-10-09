@@ -8,12 +8,14 @@ import shutil
 import subprocess
 import tarfile
 import zipfile
+from release_version import sync
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / 'vendor/boilerplate-dd44bbd.tar.gz'
 SHA = '133b4ec9d21d1f49148c823131d7fb73f93fe653d35407f71702546a88a12831'
 
 def main():
+    sync()
     if hashlib.sha256(ARCHIVE.read_bytes()).hexdigest() != SHA:
         raise SystemExit('Native boilerplate source digest mismatch')
     cache = ROOT / '.deps/boilerplate-dd44bbd'

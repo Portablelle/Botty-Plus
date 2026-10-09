@@ -5,9 +5,11 @@ import json
 from pathlib import Path
 import tarfile
 from verify_package import verify
+from release_version import release_version, sync
 ROOT = Path(__file__).resolve().parents[1]
 
 def main():
+    sync(check=True)
     param = json.loads((ROOT / 'sce_sys/param.json').read_text())
     title = param['titleId']
     dist = ROOT / 'dist'
@@ -20,7 +22,7 @@ def main():
                   sha256=hashlib.sha256(p.read_bytes()).hexdigest())
              for p in sorted(app.rglob('*')) if p.is_file()]
     manifest = dict(schema=1, app='Botty+', titleId=title,
-                    version=param['contentVersion'], milestone=4,
+                    version=param['contentVersion'], releaseVersion=release_version(), milestone=4,
                     hardwareValidated=False, registrationVerified=False,
                     identityStatus='provisional-until-console-inventory',
                     readOnly=False, requires=json.loads((ROOT / 'update-compatibility.json').read_text()), files=files)

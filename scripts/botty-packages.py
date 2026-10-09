@@ -4,7 +4,11 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'homebrew/botty-native/tools'))
+from release_version import ps5_version, release_version, sync
 
 PACKAGES = {
     'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz', 'game-compressor-source.tar.gz', 'game-compressor-NOTICE.md'),
@@ -94,22 +98,65 @@ def inventory(root):
     return dict(sorted(result.items()))
 
 
+def release_identity(root):
+    native = json.loads(regular_file(root / 'botty-native/manifest.json').read_text())
+    manager = json.loads(regular_file(root / 'botty/manifest.json').read_text())
+    engine = json.loads(regular_file(root / 'rtorrent/manifest.json').read_text())
+    for name, manifest, keys in [
+        ('botty-native/manifest.json', native, ('releaseVersion', 'version')),
+        ('botty/manifest.json', manager, ('id', 'workerVersion', 'apiVersion', 'workerApi', 'updaterVersion')),
+        ('rtorrent/manifest.json', engine, ('id',)),
+    ]:
+        for key in keys:
+            if manifest.get(key) is None:
+                raise ValueError(f'Missing {key} in {name}')
+    version = native.get('releaseVersion')
+    if ps5_version(version) != native['version']:
+        raise ValueError('Public release and native PS5 version disagree')
+    param = json.loads(regular_file(root / 'botty-native/sce_sys/param.json').read_text())
+    if param.get('contentVersion') is None:
+        raise ValueError('Missing contentVersion in botty-native/sce_sys/param.json')
+    if param.get('contentVersion') != native['version']:
+        raise ValueError('Native metadata and release version disagree')
+    return dict(version=version,
+                components=dict(native=native['version'], manager=manager['id'],
+                                worker=manager['workerVersion'], rtorrent=engine['id']),
+                apis=dict(manager=manager['apiVersion'], worker=manager['workerApi'],
+                          updater=manager['updaterVersion']))
+
+
+def release_record(root):
+    return dict(schema=1, **release_identity(root), sha256=inventory(root))
+
+
 def verify(root):
     record = json.loads(regular_file(root / 'botty-release.json').read_text())
-    if record.get('schema') != 1 or record.get('sha256') != inventory(root):
+    if record != release_record(root):
         raise ValueError('Botty release manifest is stale')
     return record
+
+
+def verify_public_version(record):
+    sync(check=True)
+    if record['version'] != release_version():
+        raise ValueError('Packaged release does not match release.json; rebuild the native title')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1] / 'packages')
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--tag', help='Require the GitHub release tag to be v<public version>')
     args = parser.parse_args()
     if args.check:
-        verify(args.root)
+        record = verify(args.root)
     else:
-        record = dict(schema=1, sha256=inventory(args.root))
+        record = release_record(args.root)
+    if args.check or args.tag is not None:
+        verify_public_version(record)
+    if args.tag is not None and args.tag != 'v' + record['version']:
+        raise ValueError('GitHub release tag does not match the public Botty+ version')
+    if not args.check:
         (args.root / 'botty-release.json').write_text(json.dumps(record, indent=2) + '\n')
     print('Botty+ packages verified' if args.check else 'Botty+ packages indexed')
 
