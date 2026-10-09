@@ -148,9 +148,23 @@ Rate each finding:
 
 ## 4. Post inline comments
 
-Post each 🔴 and 🟡 finding as an inline comment on the exact line, with
-`mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. Start
-each comment with its severity and an ID (`R1`, `R2`, …, continuing the numbering of
+Post each 🔴 and 🟡 finding as an inline comment on the exact diff line. For native
+PR events, use `mcp__github_inline_comment__create_inline_comment` with
+`confirmed: true`. On `workflow_dispatch` the action does not install that MCP
+server; use the GitHub review-comment API through the allowed `gh api` tool:
+
+```sh
+gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments \
+  -f commit_id=<headRefOid> -f path=<diff-path> -F line=<line-number> \
+  -f side=RIGHT -F body=@<temporary-body-file>
+```
+
+Use `LEFT` for a deleted line. Verify the line against the current PR diff and
+recheck the PR head before publishing. The finding must be confirmed against
+production code regardless of the publication tool. If publication fails, report
+that limitation and keep the finding open; never claim an inline comment exists
+unless its API call succeeded. Start each comment with its severity and an ID
+(`R1`, `R2`, …, continuing the numbering of
 earlier reviews). Then state the problem, a concrete failure scenario and a suggested
 fix. ⚪ notes go only in the summary.
 

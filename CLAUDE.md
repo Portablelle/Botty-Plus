@@ -117,6 +117,8 @@ and a new review from the default branch, since Actions-token pushes do not emit
 new workflow events. A manual review can also be started with
 `gh workflow run claude-code-review.yml --ref main -f pr=<number>` for an open PR
 based on the default branch. The dispatch resolves its current head via the API;
-native PR events retain their event head snapshot and stale-run guards.
+native PR events retain their event head snapshot and stale-run guards. Dispatched
+reviews post inline findings through the GitHub review-comment API, since the
+action installs the inline MCP server only for native PR entity events.
 Status ownership is read from the paginated `/statuses` API, which includes the
 creator, rather than `/status`, whose combined response omits that field.

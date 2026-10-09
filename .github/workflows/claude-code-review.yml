@@ -258,6 +258,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ fromJSON(needs.context.outputs.pr).number }}
             GITHUB_ACTIONS=true
+            GITHUB_EVENT_NAME=${{ github.event_name }}
             CLAUDE_REVIEW_HEAD=${{ fromJSON(needs.context.outputs.pr).head.sha }}
             CLAUDE_REVIEW_BASE=${{ github.sha }}
             CLAUDE_HOST_CHECK_RESULT=${{ needs.host-checks.result }}
