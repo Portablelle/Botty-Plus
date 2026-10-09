@@ -30,9 +30,11 @@ archives or saves. Keep diagnostics and credentials out of public files.
   relevant. Never infer console compatibility from successful host tests.
 - Match surrounding code and keep UI text, code, commits and docs in English.
 
-Before pushing, run the host checks and review all changes using
-`.claude/commands/review-pr.md`. Claude replaces Cubic for this repository;
-Cubic is not required. Never force-push, merge, approve a PR or enable auto-merge
+Before a local Git push outside GitHub Actions, run the relevant host checks and `cubic review` on all
+changes to push. Fix confirmed findings and rerun Cubic after edits. If Cubic is
+unavailable or fails, do not push without explicit user approval. Cubic remains
+the local reviewer. On GitHub, Claude reviews and fixes using the trusted
+`.claude/commands/review-pr.md`; Cubic is not a prerequisite for those jobs. Never force-push, merge, approve a PR or enable auto-merge
 as part of a review or automatic fix.
 
 All Claude reviews, local or on GitHub, must be written in English, including
@@ -46,6 +48,21 @@ from `claude setup-token` as the Actions secret `CLAUDE_CODE_OAUTH_TOKEN`.
 Automatic PR reviews use Opus 5.5 with high effort; `@claude` and optional autofix
 use Sonnet 5.5 with high effort, matching ciaobella. Reviews publish inline
 findings and a verdict for the current PR head; forks require a local review.
+The reviewer uses `pull_request_target`, so same-repo PRs are reviewed even when
+GitHub cannot generate a merge commit. The workflow and policy come from the
+trusted base SHA; Claude reads PR versions through `git show` without checking
+out or executing them. Host checks run first in a separate ephemeral job, with
+no Claude secret and read-only repository permission. Its entry point is always
+the trusted base script, executed against the PR workspace. This also avoids sharing
+the runner's memory budget between Claude and C++ compilation. The verdict is
+published explicitly on the PR head as the `Claude review verdict` commit status.
+The isolated result is also persisted as `Claude host checks` on that head, so
+label events cannot bypass a failed or missing result. Manual GitHub reviews
+reuse successful host CI on the exact head and block when that evidence is absent;
+the target workflow's own job checks refer to the base. Merge conflicts still
+need resolution before merge. GitHub event policies must allow this target
+workflow; the default public-repository policy is scheduled for enforcement on
+November 2, 2026 (see GitHub's pull_request_target security documentation).
 For a manual override, a maintainer leaves a commented review on the current
 head whose first line is `claude-review-override`, then adds that label. The
 verdict verifies write permission and the review's exact `commit_id`, so a later
@@ -62,7 +79,10 @@ workflows if enforcement against privileged PR authors is required.
 Autofix makes at most two attempts on the same PR. Each attempt is reserved
 before Sonnet runs in a persistent `github-actions[bot]` PR comment keyed by
 workflow run/attempt. Squashing or rebasing commits does not reset the budget;
-failed/cancelled attempts remain counted. Reservations are serialized. Stale
+failed/cancelled attempts remain counted. Reservations are serialized. Only
+concrete open findings start autofix; failed checks without a finding require
+maintainer intervention instead of spending attempts on infrastructure or
+base/head policy mismatches. Stale
 checkouts stop before invoking Claude; a head change during editing makes Claude
 stop before pushing. The action never asks Claude to pull or rebase. Configure
 `Claude review verdict` as a required branch check after activation if merge

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Host validation matching .github/workflows/botty-checks.yml; no console access.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${BOTTY_HOST_CHECK_ROOT:-$(dirname "$0")/..}"
 
 python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
 python3 scripts/botty-packages.py --check

@@ -14,7 +14,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / '.github/scripts/claude-verdict.s
 @unittest.skipUnless(shutil.which('jq'), 'jq is required by the verdict script')
 class ClaudeVerdictTests(unittest.TestCase):
     def verdict(self, summaries=(), labels=(), fork=False, override_sha=None, permission="write", override_state="COMMENTED",
-                override_body="claude-review-override"):
+                override_body="claude-review-override", host_result="", ci=False):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             fixture = root / 'responses.json'
@@ -48,7 +48,7 @@ print(json.dumps(response))
 ''')
             gh.chmod(0o755)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       REPO='Portablelle/Botty-Plus', GH_FIXTURE=str(fixture))
+                       REPO='Portablelle/Botty-Plus', GH_FIXTURE=str(fixture), HOST_CHECK_RESULT=host_result, GITHUB_ACTIONS='true' if ci else '')
             return subprocess.run(['bash', str(SCRIPT), '19'], env=env,
                                   capture_output=True, text=True, timeout=5)
 
@@ -59,6 +59,29 @@ print(json.dumps(response))
     def test_current_clean_review_passes(self):
         self.assertEqual(self.verdict([self.summary()]).returncode, 0)
 
+    def test_clean_summary_cannot_override_failed_isolated_checks(self):
+        for state in ('failure', 'cancelled', 'skipped'):
+            with self.subTest(state=state):
+                result = self.verdict([self.summary()], host_result=state)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('isolated host checks did not pass', result.stdout)
+        self.assertEqual(self.verdict([self.summary()], host_result='success').returncode, 0)
+
+    def test_authorized_override_still_clears_failed_isolated_checks(self):
+        result = self.verdict([self.summary()], labels=['claude-review-override'],
+                              override_sha='a' * 40, host_result='failure')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('maintainer authorized', result.stdout)
+
+    def test_ci_without_recorded_checks_cannot_clear_clean_summary(self):
+        self.assertEqual(self.verdict([self.summary()], ci=True).returncode, 2)
+
+    def test_label_readback_retains_failure_and_requires_real_success(self):
+        for state in ('failure', 'pending', 'missing'):
+            with self.subTest(state=state):
+                self.assertEqual(self.verdict([self.summary()], ci=True, host_result=state).returncode, 2)
+        self.assertEqual(self.verdict([self.summary()], ci=True, host_result='success').returncode, 0)
+
     def test_current_findings_block_with_ids(self):
         result = self.verdict([self.summary(verdict='block', open_ids='R1,R3')])
         self.assertEqual(result.returncode, 1)
@@ -66,7 +89,7 @@ print(json.dumps(response))
 
     def test_failed_checks_block_without_finding_ids(self):
         result = self.verdict([self.summary(verdict='block')])
-        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.returncode, 2)
         self.assertIn('failing host checks', result.stdout)
 
     def test_previous_head_cannot_clear_new_commit(self):
