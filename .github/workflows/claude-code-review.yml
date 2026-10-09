@@ -42,9 +42,11 @@ jobs:
           fi
           # Status scripts are trusted policy, not supplied by the PR being reviewed.
           if git show "${{ github.sha }}:.github/scripts/post-verdict.sh" > "$RUNNER_TEMP/post-verdict.sh"; then
-            gh api -X POST "repos/$REPO/statuses/$HEAD" \
-              -f state=pending -f context='Claude review verdict' \
-              -f description='Claude is reviewing this PR head' -f target_url="$REVIEW_RUN" >/dev/null
+            for context in 'Claude review verdict' 'Claude host checks' 'Claude review completion'; do
+              gh api -X POST "repos/$REPO/statuses/$HEAD" \
+                -f state=pending -f context="$context" \
+                -f description='New Claude review pending on this PR head' -f target_url="$REVIEW_RUN" >/dev/null
+            done
             bash "$RUNNER_TEMP/post-verdict.sh" "$PR" "⏳ **Wait: Claude is reviewing \`${HEAD::7}\`.** This message will say what to do next, usually within 10 minutes."
           fi
 
@@ -154,8 +156,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
-            --jq '.jobs[] | select(.name == "Claude host checks") | .id')
+          set -euo pipefail
+          # A failed-jobs rerun reuses successful dependencies from an earlier attempt.
+          job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" --paginate \
+            --jq '.jobs[] | select(.name == "Claude host checks" and .status == "completed")' \
+            | jq -sr --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+              '[.[] | select((.run_attempt // 1) <= $attempt)] | max_by([(.run_attempt // 1), .id]) | .id // empty')
           [ -n "$job" ] || { echo "::error::No isolated host-check job found."; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" > "$RUNNER_TEMP/claude-host-checks.log"
           echo "CLAUDE_HOST_CHECK_LOG=$RUNNER_TEMP/claude-host-checks.log" >> "$GITHUB_ENV"
@@ -263,6 +269,8 @@ jobs:
             # Labels must not erase failed check evidence from this exact head.
             export HOST_CHECK_RESULT=$(gh api "repos/$REPO/commits/$HEAD/status" \
               --jq '[.statuses[] | select(.context == "Claude host checks" and .creator.login == "github-actions[bot]")][0].state // "missing"')
+            export REVIEW_CHECK_RESULT=$(gh api "repos/$REPO/commits/$HEAD/status" \
+              --jq '[.statuses[] | select(.context == "Claude review completion" and .creator.login == "github-actions[bot]")][0].state // "missing"')
           else
             export HOST_CHECK_RESULT="${{ needs.host-checks.result }}"
             state=failure
@@ -270,6 +278,12 @@ jobs:
             gh api -X POST "repos/$REPO/statuses/$HEAD" \
               -f state="$state" -f context='Claude host checks' \
               -f description='Isolated host checks for this PR head' -f target_url="$REVIEW_RUN" >/dev/null
+            export REVIEW_CHECK_RESULT="${{ needs.claude-review.result }}"
+            state=failure
+            [ "$REVIEW_CHECK_RESULT" = success ] && state=success
+            gh api -X POST "repos/$REPO/statuses/$HEAD" \
+              -f state="$state" -f context='Claude review completion' \
+              -f description='Claude action completion on this PR head' -f target_url="$REVIEW_RUN" >/dev/null
           fi
           code=0
           reason=$(.github/scripts/claude-verdict.sh "$PR") || code=$?

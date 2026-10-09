@@ -1,5 +1,6 @@
 """Execute the workflow's actual check step against API failure fixtures."""
 import base64
+import json
 import os
 import re
 from pathlib import Path
@@ -74,6 +75,80 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertFalse(calls.exists(), 'A superseded run must not touch GitHub or reserve autofix')
+
+    def test_new_run_invalidates_all_evidence_on_the_same_head(self):
+        source = WORKFLOW.read_text()
+        start = source.index('      - name: Announce the review')
+        start = source.index('        run: |\n', start) + len('        run: |\n')
+        end = source.index('\n  host-checks:', start)
+        body = re.sub(r'\$\{\{(.*?)\}\}',
+                      lambda m: 'b' * 40 if m.group(1).strip() == 'github.sha' else 'reopened',
+                      textwrap.dedent(source[start:end]))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            calls = root / 'calls'
+            gh = root / 'gh'
+            gh.write_text("""#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['GH_CALLS'], 'a') as f:
+    f.write(json.dumps(sys.argv[1:]) + '\\n')
+if '/pulls/' in sys.argv[2]:
+    print(os.environ['HEAD'])
+""")
+            gh.chmod(0o755)
+            git = root / 'git'
+            git.write_text('#!/bin/sh\nprintf "#!/bin/sh\\nexit 0\\n"\n')
+            git.chmod(0o755)
+            env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                       GH_CALLS=str(calls), HEAD='a' * 40, REPO='Portablelle/Botty-Plus', PR='20',
+                       RUNNER_TEMP=temp, REVIEW_RUN='https://example.test/run')
+            result = subprocess.run(['bash', '-e', '-c', body], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            posts = [json.loads(line) for line in calls.read_text().splitlines()
+                     if '/statuses/' in line]
+            self.assertEqual(len(posts), 3)
+            contexts = set()
+            for args in posts:
+                self.assertIn('repos/Portablelle/Botty-Plus/statuses/' + 'a' * 40, args)
+                self.assertIn('state=pending', args)
+                contexts.update(arg for arg in args if arg.startswith('context='))
+            self.assertEqual(contexts, {'context=Claude review verdict', 'context=Claude host checks',
+                                        'context=Claude review completion'})
+
+    def test_failed_job_rerun_reads_completed_logs_from_prior_attempt(self):
+        source = WORKFLOW.read_text()
+        start = source.index('      - name: Load completed host-check logs')
+        start = source.index('        run: |\n', start) + len('        run: |\n')
+        end = source.index('\n      - name: Run Claude Code Review', start)
+        body = textwrap.dedent(source[start:end])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            gh = root / 'gh'
+            gh.write_text("""#!/usr/bin/env python3
+import json, subprocess, sys
+endpoint = sys.argv[2]
+if '/actions/runs/' in endpoint:
+    jobs = [{'id': 202, 'name': 'claude-review', 'status': 'completed', 'run_attempt': 2}]
+    if 'filter=all' in endpoint:
+        jobs += [{'id': 101, 'name': 'Claude host checks', 'status': 'completed', 'run_attempt': 1},
+                 {'id': 303, 'name': 'Claude host checks', 'status': 'completed', 'run_attempt': 3}]
+    query = sys.argv[sys.argv.index('--jq') + 1]
+    result = subprocess.run(['jq', '-r', query], input=json.dumps({'jobs': jobs}), text=True)
+    sys.exit(result.returncode)
+if endpoint.endswith('/jobs/101/logs'):
+    print('completed host checks from attempt 1')
+else:
+    sys.exit(42)
+""")
+            gh.chmod(0o755)
+            env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'], RUNNER_TEMP=temp,
+                       GITHUB_REPOSITORY='Portablelle/Botty-Plus', GITHUB_RUN_ID='1000',
+                       GITHUB_RUN_ATTEMPT='2', GITHUB_ENV=str(root / 'env'))
+            result = subprocess.run(['bash', '-e', '-c', body], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('attempt 1', (root / 'claude-host-checks.log').read_text())
 
 
 if __name__ == '__main__':

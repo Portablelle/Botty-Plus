@@ -42,13 +42,18 @@ fi
 
 # In CI, absent check evidence must never be interpreted as success.
 host_result=${HOST_CHECK_RESULT:-${GITHUB_ACTIONS:+unknown}}
+review_result=${REVIEW_CHECK_RESULT:-${GITHUB_ACTIONS:+unknown}}
 if [ "$sha" = "$head" ] && [ "$verdict" = pass ] &&
-   { [ -z "$host_result" ] || [ "$host_result" = success ]; }; then
+   { [ -z "$host_result" ] || [ "$host_result" = success ]; } &&
+   { [ -z "$review_result" ] || [ "$review_result" = success ]; }; then
   echo "$review of \`${head::7}\` found nothing to fix."
 elif [ "$cleared_override" = true ]; then
   echo "A maintainer authorized \`claude-review-override\` on this exact head."
 elif [ "$fork" = true ]; then
   echo "Fork PRs get no automatic review."
+  exit 2
+elif [ -n "$review_result" ] && [ "$review_result" != success ]; then
+  echo "The Claude action has not completed successfully ($review_result)."
   exit 2
 elif [ "$sha" = "$head" ] && [ "$verdict" = pass ]; then
   echo "The isolated host checks did not pass ($host_result)."

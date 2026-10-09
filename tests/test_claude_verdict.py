@@ -14,7 +14,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / '.github/scripts/claude-verdict.s
 @unittest.skipUnless(shutil.which('jq'), 'jq is required by the verdict script')
 class ClaudeVerdictTests(unittest.TestCase):
     def verdict(self, summaries=(), labels=(), fork=False, override_sha=None, permission="write", override_state="COMMENTED",
-                override_body="claude-review-override", host_result="", ci=False):
+                override_body="claude-review-override", host_result="", ci=False, review_result="success"):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             fixture = root / 'responses.json'
@@ -48,7 +48,7 @@ print(json.dumps(response))
 ''')
             gh.chmod(0o755)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       REPO='Portablelle/Botty-Plus', GH_FIXTURE=str(fixture), HOST_CHECK_RESULT=host_result, GITHUB_ACTIONS='true' if ci else '')
+                       REPO='Portablelle/Botty-Plus', GH_FIXTURE=str(fixture), HOST_CHECK_RESULT=host_result, REVIEW_CHECK_RESULT=review_result, GITHUB_ACTIONS='true' if ci else '')
             return subprocess.run(['bash', str(SCRIPT), '19'], env=env,
                                   capture_output=True, text=True, timeout=5)
 
@@ -69,7 +69,7 @@ print(json.dumps(response))
 
     def test_authorized_override_still_clears_failed_isolated_checks(self):
         result = self.verdict([self.summary()], labels=['claude-review-override'],
-                              override_sha='a' * 40, host_result='failure')
+                              override_sha='a' * 40, host_result='failure', review_result='failure')
         self.assertEqual(result.returncode, 0)
         self.assertIn('maintainer authorized', result.stdout)
 
@@ -81,6 +81,13 @@ print(json.dumps(response))
             with self.subTest(state=state):
                 self.assertEqual(self.verdict([self.summary()], ci=True, host_result=state).returncode, 2)
         self.assertEqual(self.verdict([self.summary()], ci=True, host_result='success').returncode, 0)
+
+    def test_label_cannot_restore_success_before_review_completion(self):
+        for state in ('pending', 'failure', 'skipped', 'missing', ''):
+            with self.subTest(state=state):
+                result = self.verdict([self.summary()], ci=True, host_result='success', review_result=state)
+                self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.verdict([self.summary()], ci=True, host_result='success', review_result='success').returncode, 0)
 
     def test_current_findings_block_with_ids(self):
         result = self.verdict([self.summary(verdict='block', open_ids='R1,R3')])
