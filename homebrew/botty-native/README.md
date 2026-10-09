@@ -38,11 +38,27 @@ confirmation with Cancel selected initially.
   Cross opens details. This screen does not automatically launch games.
 - **Connections:** web address, username and password for LAN access, plus an installation-update button. The header shows whether the app and services are up to date. Choose **Update Botty+**, then **Install and close** to queue a compatible update. Cancellation is selected by default.
 
-In details, up/down changes pages. The controller keyboard uses L1/R1 to switch
-key sets, Square to erase and Triangle to reveal/hide an archive password.
-Options accepts a hexadecimal Unicode code point. Characters outside the font
-atlas are sent as UTF-8 but displayed as `?`. Magnets allow up to 16,384 bytes,
-archive passwords up to 1,024. Empty archive passwords can be submitted with Done.
+In details, up/down changes pages. Text entry opens the PS5 system keyboard for
+searches, magnet links and optional archive passwords. Passwords use the system's
+masked, no-learning mode. Cancelling the system dialog returns to the entry
+screen without sending a request; Cross reopens it, Square selects the in-app
+keyboard for longer links, and Circle cancels the workflow. Confirmation keeps the
+existing search validation and storage/download confirmation steps.
+
+The system dialog accepts up to 2,048 UTF-16 code units; Botty also enforces its
+byte limits (200 for searches, 1,024 for passwords and 16,384 for magnets) without
+silently truncating input. Entries exceeding the byte limit reopen with their
+edits intact so they can be shortened; confirmation during an in-flight request
+is retained until that request and its result overlay finish. IME startup gets
+a bounded ten-second window before falling back. Magnet input reaching the
+system's 2,048-unit cap goes to the in-app editor for explicit review, since
+IME may have trimmed a paste. It is not automatically accepted. If the system dialog is unavailable or cannot handle
+an existing long input, the QWERTY in-app keyboard remains available with a number
+row, uppercase and symbols via L1/R1. Square erases, Triangle reveals/hides a
+password, and Options accepts a hexadecimal Unicode code point. Characters
+outside the font atlas are sent as UTF-8 but displayed as `?`. Empty archive
+passwords can be submitted. Native keyboard acceptance must be tested on PS5;
+host tests simulate its ABI and lifecycle.
 
 One action request can be in flight at a time. A lost response is reported as
 uncertain and is not automatically repeated. Network work is bounded and runs
