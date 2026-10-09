@@ -55,7 +55,7 @@ old='''  if (!fd.open(file->frozen_path().str(), prot, flags)) {
     return false;
   }
 '''
-new='''  bool opened = fd.open(file->frozen_path().str(), prot, flags);
+previous='''  bool opened = fd.open(file->frozen_path().str(), prot, flags);
 
   if (!opened && errno == EMFILE) {
     // Detached files may still be awaiting their asynchronous close.
@@ -76,9 +76,20 @@ new='''  bool opened = fd.open(file->frozen_path().str(), prot, flags);
     return false;
   }
 '''
+new = '  const int previous_errno = errno;\n' + previous
+new += '''
+  // A successful retry must not turn an empty-file mapping into an I/O error.
+  // ChunkList clears errno before hashing and treats a missing extent as a skip.
+  errno = previous_errno;
+'''
 if old in s:
     assert s.count(old)==1
     s=s.replace(old,new)
+elif new in s:
+    pass
+elif previous in s:
+    assert s.count(previous)==1
+    s=s.replace(previous,new)
 else:
-    assert new in s, 'Unexpected pinned FileManager::open implementation'
+    raise AssertionError('Unexpected pinned FileManager::open implementation')
 p.write_text(s)

@@ -32,12 +32,21 @@ static int test_multifile(int argc, char** argv) {
     for (unsigned pass = 0; pass < 2; ++pass) {
         for (unsigned i = 0; i < files.size(); ++i) {
             auto* file = files[i].get();
+            errno = 0; // ChunkList resets errno before mapping a hash-check chunk.
             if (!manager.open(file, true, prot, O_CREAT)) {
                 std::cerr << "file open failed: errno=" << errno << " at part " << i << "\n";
                 for (auto& opened : files)
                     if (opened->is_open()) manager.close(opened.get());
                 return 42;
             }
+            // CONTROL starts with empty files: an invalid mapping has no I/O error.
+            // A recovered EMFILE must not leak into that later hash-check result.
+            if (pass == 0) {
+                auto chunk = torrent::SocketFile(file->file_descriptor()).create_chunk(
+                    0, sizeof(i), torrent::MemoryChunk::prot_read, torrent::MemoryChunk::map_shared);
+                assert(!chunk.is_valid() && errno == 0);
+            }
+            assert(errno == 0);
             file->set_last_touched(pass * files.size() + i + 1);
             assert(lseek(file->file_descriptor(), 0, SEEK_SET) == 0);
             if (pass == 0) {
