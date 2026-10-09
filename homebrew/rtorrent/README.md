@@ -51,10 +51,10 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
-The package revision is `0.16.24-botty8`; upstream `system.client_version`
+The package revision is `0.16.24-botty9`; upstream `system.client_version`
 remains `0.16.24`. Each launch publishes private `state/runtime.json` before
 upstream main can start a listener, including supervised launches. Its exact
-fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty8"`, and
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty9"`, and
 `boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
 This revision originates in the running binary, never installed metadata.
 Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
@@ -144,5 +144,24 @@ Missing paths and exhaustion due solely to unrelated descriptors remain errors.
 Run `python3 homebrew/rtorrent/tests/test_file_manager_emfile.py` on Linux with
 Python 3.12+, Clang C++20 and OpenSSL development headers. The compiler
 command in `CXX` supports wrappers and flags (for example `ccache clang++ -O2`). These host checks and the rebuilt
-PS5 package do not establish console acceptance; CONTROL needs a retry after
-installation through the normal updater.
+PS5 package alone do not establish console acceptance. See the botty9
+empty-file regression and console validation below.
+
+
+## Empty-file hash checks after recovery (botty9)
+
+A successful descriptor-exhaustion retry previously left `errno=EMFILE` behind.
+Initial hash checking of an empty or undersized file returns an invalid chunk
+without setting an error, so ChunkList could mistake that stale errno for a new
+I/O failure. The storage manager now restores the incoming errno after a
+successful open; genuine failed opens retain their error. The focused regression
+maps empty files after recovery under `RLIMIT_NOFILE=64`, then writes and reads
+all 187 files. The previous recovery patch fails this empty-file regression;
+botty9 passes it on the VPS Linux host.
+
+The rebuilt botty9 daemon was staged and hash-verified on the PS5, then started
+after a saved session and normal shutdown of botty8. Its runtime revision and
+PID matched live RPC on the same boot; previously active torrents were restored.
+CONTROL passed its initial hash check and began downloading without the I/O
+error, confirmed by live service state and the user. Full download completion
+and complete-data integrity remain unverified.
