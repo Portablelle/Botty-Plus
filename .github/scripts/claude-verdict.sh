@@ -2,8 +2,9 @@
 # Whether Claude's review clears pull request $1 at its head. Prints the reason (one markdown sentence, no
 # call to action: the callers add it) and exits:
 #   0  cleared: the review's verdict=pass is on the head, or a current-head maintainer review authorizes the claude-review-override label;
-#   1  blocked by open findings or failing checks, which a fix clears;
-#   2  blocked without a verdict on the head: review running or failed, fork PR, a PR that changes the
+#   1  blocked by concrete open findings that autofix may address;
+#   2  blocked by checks without a concrete finding, or without a verdict on the head:
+#      review running or failed, fork PR, a PR that changes the
 #      review workflow (the action skips those), or a review from before verdicts existed.
 # Used by the review workflow's verdict. Needs GH_TOKEN and REPO.
 set -euo pipefail
@@ -39,12 +40,23 @@ if [ "$override" = true ]; then
   done
 fi
 
-if [ "$sha" = "$head" ] && [ "$verdict" = pass ]; then
+# In CI, absent check evidence must never be interpreted as success.
+host_result=${HOST_CHECK_RESULT:-${GITHUB_ACTIONS:+unknown}}
+review_result=${REVIEW_CHECK_RESULT:-${GITHUB_ACTIONS:+unknown}}
+if [ "$sha" = "$head" ] && [ "$verdict" = pass ] &&
+   { [ -z "$host_result" ] || [ "$host_result" = success ]; } &&
+   { [ -z "$review_result" ] || [ "$review_result" = success ]; }; then
   echo "$review of \`${head::7}\` found nothing to fix."
 elif [ "$cleared_override" = true ]; then
   echo "A maintainer authorized \`claude-review-override\` on this exact head."
 elif [ "$fork" = true ]; then
   echo "Fork PRs get no automatic review."
+  exit 2
+elif [ -n "$review_result" ] && [ "$review_result" != success ]; then
+  echo "The Claude action has not completed successfully ($review_result)."
+  exit 2
+elif [ "$sha" = "$head" ] && [ "$verdict" = pass ]; then
+  echo "The isolated host checks did not pass ($host_result)."
   exit 2
 elif [ "$sha" != "$head" ] || [ "$verdict" != block ]; then
   echo "There is no verdict from Claude's review on \`${head::7}\`."
@@ -53,6 +65,6 @@ elif [ -n "$open" ]; then
   echo "$review of \`${head::7}\` left ${open//,/, } to fix."
   exit 1
 else
-  echo "$review of \`${head::7}\` found failing host checks."
-  exit 1
+  echo "$review of \`${head::7}\` found failing host checks without a concrete finding."
+  exit 2
 fi
