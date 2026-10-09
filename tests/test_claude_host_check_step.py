@@ -29,7 +29,7 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
                 (root / 'scripts').mkdir()
                 (root / 'scripts/botty-host-checks.sh').write_text(head_script)
             env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
-                       RUNNER_TEMP=temp, GITHUB_WORKSPACE=str(root.resolve()),
+                       RUNNER_TEMP=temp, GITHUB_WORKSPACE=str(root.resolve()), CLAUDE_HOST_CHECK_ROOT=str(root.resolve()),
                        GITHUB_REPOSITORY='Portablelle/Botty-Plus', BASE='a' * 40,
                        GH_TOKEN='fixture-token')
             # Model GitHub's implicit bash -e without relying on external pipefail.
@@ -74,13 +74,14 @@ endpoint = sys.argv[2]
 if '/pulls/' in endpoint:
     print(os.environ['REMOTE_HEAD'])
 elif '/commits/' in endpoint:
-    print(os.environ['LATEST_RUN'])
+    print(json.dumps([{'context': 'Claude host checks', 'creator': {'login': 'github-actions[bot]'}, 'target_url': os.environ['LATEST_RUN']}]))
 elif '-X' not in sys.argv or 'POST' not in sys.argv:
     sys.exit(42)
 """)
                     gh.chmod(0o755)
                     scripts = root / '.github/scripts'
                     scripts.mkdir(parents=True)
+                    (scripts / 'claude-status.sh').write_text((WORKFLOW.parent.parent / 'scripts/claude-status.sh').read_text())
                     post = scripts / 'post-verdict.sh'
                     post.write_text('#!/bin/sh\nprintf "%s\\n" "$2" > "$COMMENT"\n')
                     post.chmod(0o755)
@@ -124,17 +125,18 @@ elif '-X' not in sys.argv or 'POST' not in sys.argv:
             root = Path(temp)
             calls = root / 'calls'
             gh = root / 'gh'
-            gh.write_text("""#!/bin/sh
-printf '%s\\n' "$*" >> "$GH_CALLS"
-case "$2" in
-  */pulls/*) echo "$HEAD" ;;
-  */commits/*/status)
-    case "$*" in
-      *'Claude host checks'*) echo 'https://example.test/runs/200' ;;
-      *) echo 'Wrong run-identity context' >&2; exit 42 ;;
-    esac ;;
-  *) exit 42 ;;
-esac
+            gh.write_text("""#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['GH_CALLS'], 'a') as f:
+    f.write(json.dumps(sys.argv[1:]) + '\\n')
+endpoint = sys.argv[2]
+if '/pulls/' in endpoint:
+    print(os.environ['HEAD'])
+elif '/statuses?' in endpoint:
+    print(json.dumps([{'context': 'Claude host checks', 'creator': {'login': 'github-actions[bot]'},
+                       'target_url': 'https://example.test/runs/200'}]))
+else:
+    sys.exit(42)
 """)
             gh.chmod(0o755)
             env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],

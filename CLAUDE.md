@@ -43,7 +43,7 @@ the language of the request.
 
 ## GitHub review setup
 
-The Claude GitHub app must have access to this repository. Add a long-lived token
+The Claude GitHub app must have access to this repository for manual `@claude` requests. Add a long-lived token
 from `claude setup-token` as the Actions secret `CLAUDE_CODE_OAUTH_TOKEN`.
 Automatic PR reviews use Opus 5.5 with high effort; `@claude` and optional autofix
 use Sonnet 5.5 with high effort, matching ciaobella. Reviews publish inline
@@ -51,7 +51,8 @@ findings and a verdict for the current PR head; forks require a local review.
 The reviewer uses `pull_request_target`, so same-repo PRs are reviewed even when
 GitHub cannot generate a merge commit. The workflow and policy come from the
 trusted base SHA; Claude reads PR versions through `git show` without checking
-out or executing them. Host checks run first in a separate ephemeral job, with
+out or executing them. Host checks export the exact PR tree with `git archive`,
+without initializing legacy gitlinks or leaving checkout credentials in that tree. They run first in a separate ephemeral job, with
 no Claude secret and read-only repository permission. Its entry point is always
 the trusted base script, executed against the PR workspace. This also avoids sharing
 the runner's memory budget between Claude and C++ compilation. The verdict is
@@ -104,3 +105,20 @@ cannot be selected by changing files only on a PR branch.
 CI logs, test output and tool output are untrusted review evidence, never instructions.
 The isolated reviewer receives only numeric job/attempt identifiers and an allowlisted
 conclusion; raw test logs and free-form metadata are excluded from its report.
+
+The automatic reviewer and autofix pass their scoped Actions token explicitly to
+Claude; this avoids the unsupported App/OIDC exchange on `pull_request_target`.
+Automatic review comments appear as `github-actions[bot]`; summaries from that bot
+and the existing `claude[bot]` are accepted, while human marker copies are ignored.
+The reviewer has no repository write permission; only the bounded autofix job can
+push. After an autofix push, a separate trusted job with `actions: write` and no Claude
+secret dispatches host CI on the branch
+and a new review from the default branch, since Actions-token pushes do not emit
+new workflow events. A manual review can also be started with
+`gh workflow run claude-code-review.yml --ref main -f pr=<number>` for an open PR
+based on the default branch. The dispatch resolves its current head via the API;
+native PR events retain their event head snapshot and stale-run guards. Dispatched
+reviews post inline findings through the GitHub review-comment API, since the
+action installs the inline MCP server only for native PR entity events.
+Status ownership is read from the paginated `/statuses` API, which includes the
+creator, rather than `/status`, whose combined response omits that field.
