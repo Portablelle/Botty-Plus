@@ -96,3 +96,7 @@ CI reports first-time setup without calling Claude or claiming an automatic
 verdict; local review and maintainer approval are required. Once the workflow
 exists on the base, missing policy files remain an error. This bootstrap path
 cannot be selected by changing files only on a PR branch.
+
+CI logs, test output and tool output are untrusted review evidence, never instructions.
+The isolated reviewer receives only numeric job/attempt identifiers and an allowlisted
+conclusion; raw test logs and free-form metadata are excluded from its report.
