@@ -76,6 +76,36 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertFalse(calls.exists(), 'A superseded run must not touch GitHub or reserve autofix')
 
+    def test_older_same_head_verdict_cannot_replace_newer_announcement(self):
+        source = WORKFLOW.read_text()
+        start = source.index("      - name: Check the review's verdict")
+        start = source.index('        run: |\n', start) + len('        run: |\n')
+        end = source.index('\n  autofix:', start)
+        body = re.sub(r'\$\{\{(.*?)\}\}',
+                      lambda m: 'success' if m.group(1).strip().startswith('needs.') else 'reopened',
+                      textwrap.dedent(source[start:end]))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            calls = root / 'calls'
+            gh = root / 'gh'
+            gh.write_text("""#!/bin/sh
+printf '%s\\n' "$*" >> "$GH_CALLS"
+case "$2" in
+  */pulls/*) echo "$HEAD" ;;
+  */commits/*/status) echo 'https://example.test/runs/200' ;;
+  *) exit 42 ;;
+esac
+""")
+            gh.chmod(0o755)
+            env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                       GH_CALLS=str(calls), HEAD='a' * 40, REPO='Portablelle/Botty-Plus', PR='20',
+                       FORK='false', REVIEW_RUN='https://example.test/runs/100')
+            result = subprocess.run(['bash', '-e', '-c', body], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(calls.read_text().splitlines()), 2)
+            self.assertNotIn('-X POST', calls.read_text())
+
     def test_new_run_invalidates_all_evidence_on_the_same_head(self):
         source = WORKFLOW.read_text()
         start = source.index('      - name: Announce the review')
