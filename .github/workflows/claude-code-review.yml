@@ -41,7 +41,7 @@ jobs:
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
           # Metadata writes share a lock with verdicts; ignore a queued older announcement.
           latest=$(gh api "repos/$REPO/commits/$HEAD/status" \
-            --jq '[.statuses[] | select(.context == "Claude review verdict" and .creator.login == "github-actions[bot]")][0].target_url // ""')
+            --jq '[.statuses[] | select(.context == "Claude host checks" and .creator.login == "github-actions[bot]")][0].target_url // ""')
           latest_id=${latest##*/}
           if [[ "$latest_id" =~ ^[0-9]+$ ]] && [ "$latest_id" -gt "$GITHUB_RUN_ID" ]; then
             exit 0
@@ -265,12 +265,13 @@ jobs:
           fi
           # Superseded runs must not publish a verdict or launch a fix for a newer head.
           [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$HEAD" ] || exit 0
+          # Use the host-check identity: label verdicts never replace that context.
           # A newer announcement on the same SHA also supersedes this run.
           # The metadata lock prevents an announcement racing these verdict writes.
           if [ "$FORK" != true ] && [ "${{ github.event.action }}" != labeled ] &&
              [ "${{ github.event.action }}" != unlabeled ]; then
             latest=$(gh api "repos/$REPO/commits/$HEAD/status" \
-              --jq '[.statuses[] | select(.context == "Claude review verdict" and .creator.login == "github-actions[bot]")][0].target_url // ""')
+              --jq '[.statuses[] | select(.context == "Claude host checks" and .creator.login == "github-actions[bot]")][0].target_url // ""')
             [ "$latest" = "$REVIEW_RUN" ] || exit 0
           fi
           # Only the initial introduction of this workflow has no baseline policy.
