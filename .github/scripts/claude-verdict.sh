@@ -17,7 +17,7 @@ override=$(jq -r 'any(.labels[]; .name == "claude-review-override")' <<<"$info")
 
 # Only the review bot's summary counts: anyone can paste the marker into a comment.
 summary=$(gh api "repos/$REPO/issues/$pr/comments" --paginate \
-  --jq '.[] | select(.user.login == "claude[bot]" and (.body | startswith("<!-- claude-review ")))' | jq -s 'last // {}')
+  --jq '.[] | select((.user.login == "claude[bot]" or .user.login == "github-actions[bot]") and (.body | startswith("<!-- claude-review ")))' | jq -s 'last // {}')
 marker=$(jq -r '.body // "" | split("\n")[0]' <<<"$summary")
 field() { sed -nE "s/.* $1=([^ ]+).*/\\1/p" <<<"$marker"; }
 sha=$(field sha) verdict=$(field verdict) open=$(field open)

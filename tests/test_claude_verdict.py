@@ -59,6 +59,10 @@ print(json.dumps(response))
     def test_current_clean_review_passes(self):
         self.assertEqual(self.verdict([self.summary()]).returncode, 0)
 
+    def test_actions_bot_review_passes_but_human_spoof_does_not(self):
+        self.assertEqual(self.verdict([self.summary(user='github-actions[bot]')]).returncode, 0)
+        self.assertEqual(self.verdict([self.summary(user='github-actions')]).returncode, 2)
+
     def test_clean_summary_cannot_override_failed_isolated_checks(self):
         for state in ('failure', 'cancelled', 'skipped'):
             with self.subTest(state=state):
