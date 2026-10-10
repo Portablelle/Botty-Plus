@@ -11,6 +11,7 @@ or assign a blanket license to all files.
 | rTorrent / Rakshasa libtorrent | [GPL-2.0-or-later license text](packages/rtorrent/LICENSE), [pinned upstream provenance](homebrew/rtorrent/README.md#source-and-licenses) |
 | Native runtime / boilerplate | Pinned source archive `homebrew/botty-native/vendor/boilerplate-dd44bbd.tar.gz`, including upstream notices |
 | UnRAR | [UnRAR license](homebrew/botty/vendor/unrar/license.txt), including its additional restrictions |
+| Experimental rest-mode companion | [PS5Tailscale and pinned ps5debug-NG provenance](homebrew/rest-mode-companion/README.md#provenance) |
 | cpp-httplib | [MIT notice](homebrew/botty/vendor/HTTPLIB-LICENSE) |
 | nlohmann/json | [MIT notice](homebrew/botty/vendor/JSON-LICENSE) |
 | PS5 controller ABI | [SDL-derived header and zlib notice](homebrew/botty-native/vendor/NOTICE.md) |

@@ -122,8 +122,8 @@ Compression keeps the original until you explicitly delete it. Full content
 verification is optional; a skipped check is shown as **Not verified**. If
 compression is interrupted, retrying on the same disk cleans its tracked
 temporary files and starts from zero. Interrupted RAR extraction can reuse and verify partial output
-on the same disk. Botty 1.5.1 maintains background services during rest mode on
-firmware 7.00–13.60 while its service is running. Check the rest-mode status in the
+on the same disk. Botty 1.5.1 requests experimental background-service retention during rest mode on
+firmware 7.00–13.60 while its service is running. Long sessions can still be interrupted. Check the rest-mode status in the
 web interface. FTP and a generated torrent download were tested in rest on 13.00;
 upload, extraction, compression and other firmwares still need hardware validation.
 
