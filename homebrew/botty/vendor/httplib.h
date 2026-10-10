@@ -1002,12 +1002,17 @@ public:
   Server &set_payload_max_length(size_t length);
 
   bool bind_to_port(const std::string &host, int port, int socket_flags = 0);
+  bool rebind_after_error(const std::string &host, int port);
+  bool listen_stop_requested() const { return listen_stop_requested_; }
   int bind_to_any_port(const std::string &host, int socket_flags = 0);
   bool listen_after_bind();
 
   bool listen(const std::string &host, int port, int socket_flags = 0);
 
   bool is_running() const;
+  bool is_accepting() const;
+  int last_listen_error() const { return last_listen_error_; }
+  void set_listen_error_handler(std::function<bool(int)> handler) { listen_error_handler_ = std::move(handler); }
   void wait_until_ready() const;
   void stop();
   void decommission();
@@ -1022,6 +1027,8 @@ protected:
                        const std::function<void(Request &)> &setup_request);
 
   std::atomic<socket_t> svr_sock_{INVALID_SOCKET};
+  std::atomic<bool> listen_stop_requested_{false};
+  std::function<bool(int)> listen_error_handler_;
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
   time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
   time_t read_timeout_sec_ = CPPHTTPLIB_SERVER_READ_TIMEOUT_SECOND;
@@ -1087,6 +1094,7 @@ private:
   virtual bool process_and_close_socket(socket_t sock);
 
   std::atomic<bool> is_running_{false};
+  std::atomic<int> last_listen_error_{0};
   std::atomic<bool> is_decommisioned{false};
 
   struct MountPointEntry {
@@ -6313,6 +6321,13 @@ inline bool Server::bind_to_port(const std::string &host, int port,
   if (ret == -1) { is_decommisioned = true; }
   return ret >= 0;
 }
+inline bool Server::rebind_after_error(const std::string &host, int port) {
+  if (!is_running_ || listen_stop_requested_ || svr_sock_ != INVALID_SOCKET) return false;
+  // bind_internal does not decommission on a transient failure. Preserve the
+  // stop flag; stop() must still cancel recovery while no socket is owned.
+  is_decommisioned = false;
+  return bind_internal(host, port, 0) >= 0;
+}
 inline int Server::bind_to_any_port(const std::string &host, int socket_flags) {
   auto ret = bind_internal(host, 0, socket_flags);
   if (ret == -1) { is_decommisioned = true; }
@@ -6327,6 +6342,7 @@ inline bool Server::listen(const std::string &host, int port,
 }
 
 inline bool Server::is_running() const { return is_running_; }
+inline bool Server::is_accepting() const { return is_running_ && !listen_stop_requested_ && svr_sock_ != INVALID_SOCKET; }
 
 inline void Server::wait_until_ready() const {
   while (!is_running_ && !is_decommisioned) {
@@ -6335,11 +6351,13 @@ inline void Server::wait_until_ready() const {
 }
 
 inline void Server::stop() {
+  listen_stop_requested_ = true;
   if (is_running_) {
-    assert(svr_sock_ != INVALID_SOCKET);
-    std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
-    detail::shutdown_socket(sock);
-    detail::close_socket(sock);
+    const auto sock = svr_sock_.exchange(INVALID_SOCKET);
+    if (sock != INVALID_SOCKET) {
+      detail::shutdown_socket(sock);
+      detail::close_socket(sock);
+    }
   }
   is_decommisioned = false;
 }
@@ -6733,6 +6751,8 @@ inline bool Server::listen_internal() {
   if (is_decommisioned) { return false; }
 
   auto ret = true;
+  last_listen_error_ = 0;
+  listen_stop_requested_ = false;
   is_running_ = true;
   auto se = detail::scope_exit([&]() { is_running_ = false; });
 
@@ -6772,8 +6792,19 @@ inline bool Server::listen_internal() {
         } else if (errno == EINTR || errno == EAGAIN) {
           continue;
         }
-        if (svr_sock_ != INVALID_SOCKET) {
-          detail::close_socket(svr_sock_);
+        last_listen_error_ = errno;
+        // Release ownership once; stop/destruction must not close a reused fd.
+        auto listener = svr_sock_.exchange(INVALID_SOCKET);
+        if (listener != INVALID_SOCKET) {
+          detail::close_socket(listener);
+          // Recover before joining request workers; a stalled handler must not
+          // prevent the accepting listener from returning after suspend.
+          if (!listen_stop_requested_ && listen_error_handler_ &&
+              listen_error_handler_(last_listen_error_)) {
+            if (!listen_stop_requested_) { last_listen_error_ = 0; continue; }
+            auto rebound = svr_sock_.exchange(INVALID_SOCKET);
+            if (rebound != INVALID_SOCKET) detail::close_socket(rebound);
+          }
           ret = false;
         } else {
           ; // The server socket was closed by user.

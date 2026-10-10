@@ -19,6 +19,7 @@ run_check "Runner infrastructure" python3 -m unittest discover -s infra/ci-runne
 run_check "Release packages" python3 scripts/botty-packages.py --check
 run_check "Repository contracts" python3 -m unittest discover -s tests -p 'test_*.py' -v
 run_check "Archive fixtures" python3 homebrew/botty/tests/make_fixtures.py
+run_check "Rest companion protocol" make -C homebrew/rest-mode-companion test
 run_check "Service UI" node homebrew/botty/tests/ui-test.js
 # Bound compilation rather than using the host CPU count from nproc.
 # Build prerequisites can run in parallel; the test recipe stays sequential.
