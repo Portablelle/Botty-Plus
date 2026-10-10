@@ -165,3 +165,16 @@ PID matched live RPC on the same boot; previously active torrents were restored.
 CONTROL passed its initial hash check and began downloading without the I/O
 error, confirmed by live service state and the user. Full download completion
 and complete-data integrity remain unverified.
+
+## Console descriptor headroom
+
+The PS5 default file-cache allocation can retain enough descriptors for a large
+multifile torrent to prevent other services from opening files. Live firmware
+13.00 reproduced `EMFILE` in the browser and ShadowMount's `/dev/lvdctl` open;
+ShadowMount then shut down and native titles could not launch.
+
+The shipped configuration caps the torrent file cache at 64 and applies socket
+allocation before opening SCGI or restoring session torrents. The cache rotates
+files as needed; the EMFILE recovery and errno fixes remain in place. This caps
+cached torrent files, not the number of files a torrent may contain. It does not
+claim a separate PS5-wide descriptor reservation or a cap on all peer sockets.
