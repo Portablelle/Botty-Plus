@@ -5,6 +5,8 @@
 #include "search.hpp"
 #include "rtorrent.hpp"
 #include "rest-mode.hpp"
+#include "rest-companion.hpp"
+#include "rest-network.hpp"
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
 #include "compressor.hpp"
@@ -59,7 +61,7 @@ class ServerThreads {
 public:
   explicit ServerThreads(httplib::Server& server):server_(server){}
   ~ServerThreads(){join();}
-  void watchReady(){ready_=std::thread([this]{while(!stopping_){if(server_.is_running()){httpReady=true;return;}std::this_thread::sleep_for(std::chrono::milliseconds(2));}});}
+  void watchReady(){ready_=std::thread([this]{while(!stopping_){httpReady=server_.is_accepting();std::this_thread::sleep_for(std::chrono::milliseconds(20));}});}
   void stop(){std::lock_guard<std::mutex> guard(stopMutex_);if(stop_.joinable())throw std::runtime_error("Manager stop is already queued.");stop_=std::thread([this]{std::this_thread::sleep_for(std::chrono::milliseconds(250));server_.stop();});}
   void join(){stopping_=true;if(ready_.joinable())ready_.join();if(stop_.joinable())stop_.join();}
 };
@@ -437,7 +439,10 @@ int main(int argc,char** argv) {
     nativeUpdater=std::make_unique<InstallationUpdater>(*nativeTransaction,std::move(updaterConfig));
     nativeUpdater->start();
     stage="creating HTTP server";
-    RestModeKeeper restMode(currentRestModeSupported(),requestRestMode);
+    RestCompanionAuthorization restAuthorization(paths.root);
+    auto restDiagnostics=std::make_shared<RestModeDiagnostics>(paths.root);
+    RestModeKeeper restMode(currentRestModeSupported(),requestRestMode,[restDiagnostics](const json& state){restDiagnostics->observe(state);});
+    auto restState=[&]{auto state=restMode.state();state["companion"]=restDiagnostics->companion();return state;};
     httplib::Server server;server.set_payload_max_length(2*1024*1024);
     ServerThreads serverThreads(server);
     server.set_read_timeout(5);server.set_write_timeout(10);
@@ -492,7 +497,7 @@ int main(int argc,char** argv) {
       const auto body=json::parse(req.body);if(!body.is_object()||!body.empty())throw std::runtime_error("Native update check accepts an empty object only.");
       nativeUpdater->recheck();reply(res,json::object(),202);
     });
-    server.Get("/api/rest-mode",[&restMode](const auto&,auto& res){reply(res,restMode.state());});
+    server.Get("/api/rest-mode",[&restState](const auto&,auto& res){reply(res,restState());});
     server.Get("/api/bootstrap",[](const auto&,auto& res){reply(res,{{"token",token},{"apiVersion",1}});});
     // Explicit local, token-authenticated disclosure for the console UI only.
     server.Get("/api/connections",[](const auto&,auto& res){
@@ -515,12 +520,12 @@ int main(int argc,char** argv) {
       }
       reply(res,{{"tasks",tasks}});
     });
-    server.Get("/api/state",[&restMode](const auto&,auto& res){
+    server.Get("/api/state",[&restState](const auto&,auto& res){
       json result={{"storage",storage.list()},{"storageSupported",true},{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"libraryDeletionSupported",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
       try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]="rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting||transferring;result["transfer"]=transferState;}
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
-      result["restMode"]=restMode.state();
+      result["restMode"]=restState();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["compression"]=compressor.state();
       result["nativeUpdate"]=nativeUpdater->state();
@@ -740,6 +745,10 @@ int main(int argc,char** argv) {
     }});
     std::cerr<<"Botty startup complete\n";
     std::cout<<"Botty listening on "<<origin<<'\n';
-    const bool served=server.listen_after_bind();retiring=true;serverThreads.join();automaticThread.join();libraryThread.join();nativeUpdater.reset();return served?0:1;
+    const bool served=serveWithRestRecovery(server,"0.0.0.0",port,[]{return retiring.load();},[&server](int seconds){
+      for(int n=0;n<seconds*10&&!retiring&&!server.listen_stop_requested();++n)std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      return !retiring&&!server.listen_stop_requested();
+    },[](int error){httpReady=false;std::fprintf(stderr,"Botty HTTP listener interrupted (%d); rebinding while preserving background jobs\n",error);});
+    retiring=true;serverThreads.join();automaticThread.join();libraryThread.join();nativeUpdater.reset();return served?0:1;
   }catch(const std::exception& error){retiring=true;std::cerr<<"Botty failed while "<<stage<<": "<<error.what()<<'\n';return 1;}
 }
