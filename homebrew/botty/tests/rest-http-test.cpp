@@ -21,9 +21,14 @@ int main(){
   std::atomic<bool> busy{false},unblock{false};
   server.Get("/blocked",[&](const auto&,auto& res){busy=true;while(!unblock)std::this_thread::sleep_for(std::chrono::milliseconds(1));res.set_content("finished","text/plain");});
   server.Get("/health",[](const auto&,auto& res){res.set_content("same manager","text/plain");});
+  // httplib defaults to SO_REUSEPORT on Linux, which cannot collide with a
+  // SO_REUSEADDR socket. Use SO_REUSEADDR on both so the occupied port makes the
+  // first rebind fail with EADDRINUSE on Linux and BSD alike.
+  server.set_socket_options([](socket_t sock){int reuse=1;setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));});
   int port=server.bind_to_any_port("127.0.0.1");assert(port>0);
   int occupied=-1;std::atomic<int> waits{0};
   std::thread worker([&]{assert(botty::serveWithRestRecovery(server,"127.0.0.1",port,[&]{return stopping.load();},[&](int){
+    // The second wait only happens after the first rebind failed on the occupied port.
     if(++waits==2){::close(occupied);occupied=-1;}
     std::this_thread::sleep_for(std::chrono::milliseconds(10));return true;
   },[&](int error){
