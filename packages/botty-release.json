@@ -44,11 +44,11 @@
     "botty/ui/index.html": "5f96ba033062a41f89e5e7e340c8fd667fc6da8a3296bf84ba1cf11bd9cfdef2",
     "botty/ui/style.css": "9ecb5da30d595865d1cc28d8192616b48b3ac1aee80c3bc952276c8141f7e8b5",
     "rtorrent/LICENSE": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
-    "rtorrent/README.md": "3a052392588d13cb15266360d5cddb0e943a7a7b8d675fc287cfdc3920ee3d7c",
+    "rtorrent/README.md": "ce34b54639816a00703ea8dc135ad37a182a11112438ca6394791c4a7497469e",
     "rtorrent/cacert.pem": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b",
-    "rtorrent/manifest.json": "933356d595e619ffeb1d0be9a864bae37077c0ad9aca33d1c51e15ec41b627c1",
-    "rtorrent/rtorrent-source.tar.gz": "45304583736626de9b58eb44d19dcd16a752cda620417e558f0d1bf5018255ad",
-    "rtorrent/rtorrent.elf": "2908e069b78e6a5ff8dc4b13ba8f52be64c2242d91ac6051b9cd0957469bdca0",
+    "rtorrent/manifest.json": "87e0dd00294ad9905f5fe0e3e5087eb0096a229fc7a90221a4ebca039ebf657d",
+    "rtorrent/rtorrent-source.tar.gz": "81205cdeaa568417e0d148580251858d96b91c85ddbbda5cee817f79e21597f3",
+    "rtorrent/rtorrent.elf": "4013cc357b277f9080916465ab05714a238caf6c4f8a6a9b59dd904c544c7f62",
     "rtorrent/rtorrent.rc": "2a917adfc2826aa263fe6535598f618cad4b5c1c94e4e53c54c4e60bc79b951b"
   }
 }

@@ -41,8 +41,12 @@ static int botty_rtorrent_init(int& argc, char**& argv) {
     static char ignore[] = "-n";
     static char option[] = "-o";
     static char config[] = "import=/data/botty/rtorrent/state/rtorrent.rc";
-    static char* arguments[] = {name, ignore, option, config, nullptr};
-    argc = 4;
+    // Older managers preserve state/rtorrent.rc during an in-app update. Apply
+    // the revision's allocation before importing it (and opening SCGI), then
+    // reapply it before upstream restores sessions even if the config overrides it.
+    static char allocation[] = "system.sockets.files.max_alloc.set=64,system.sockets.adjust_alloc=";
+    static char* arguments[] = {name, ignore, option, allocation, option, config, option, allocation, nullptr};
+    argc = 8;
     argv = arguments;
     return 0;
 }
