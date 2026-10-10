@@ -84,9 +84,39 @@ static void test_without_victim(const std::string& directory) {
     assert(manager.open_files() == 0);
 }
 
+static void test_headroom(const std::string& directory) {
+    rlimit limit{};
+    assert(getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_max >= 128);
+    limit.rlim_cur = 128;
+    assert(setrlimit(RLIMIT_NOFILE, &limit) == 0);
+    torrent::FileManager manager;
+    manager.set_max_open_files(64);
+    std::vector<std::unique_ptr<TestFile>> files;
+    for (unsigned i = 0; i < 187; ++i)
+        files.push_back(std::make_unique<TestFile>(directory + "/part-" + std::to_string(i)));
+    for (unsigned pass = 0; pass < 2; ++pass) {
+        for (auto& file : files) {
+            errno = 0;
+            assert(manager.open(file.get(), false, torrent::MemoryChunk::prot_read, 0));
+            assert(manager.open_files() <= 64 && manager.files_failed_counter() == 0);
+            // Other services must still be able to acquire descriptors during I/O.
+            std::vector<int> background;
+            for (unsigned i = 0; i < 16; ++i) {
+                int fd = open("/dev/null", O_RDONLY);
+                assert(fd >= 0);
+                background.push_back(fd);
+            }
+            for (int fd : background) close(fd);
+        }
+    }
+    assert(manager.files_closed_counter() > 0);
+    for (auto& file : files) if (file->is_open()) manager.close(file.get());
+}
+
 int main(int argc, char** argv) {
     int result = test_multifile(argc, argv);
     if (result) return result;
     test_without_victim(argv[1]);
+    test_headroom(argv[1]);
     std::cout << "187-file write/read under RLIMIT_NOFILE=64 passed\n";
 }

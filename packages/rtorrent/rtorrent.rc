@@ -6,6 +6,10 @@ directory.default.set = /data/botty/downloads/complete
 # Upstream's PID lock can remain after reboot and mistake a reused PID for a peer.
 session.use_lock.set = false
 session.path.set = /data/botty/rtorrent/state/session
+# Console services share a descriptor budget. A large torrent must rotate its
+# file cache rather than retain thousands of files and starve image mounts.
+system.sockets.files.max_alloc.set = 64
+system.sockets.adjust_alloc =
 network.scgi.open_port = 127.0.0.1:5001
 network.rpc.use_jsonrpc.set = true
 network.rpc.use_xmlrpc.set = false

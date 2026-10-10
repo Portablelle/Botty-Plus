@@ -82,7 +82,9 @@ int main() {
     io.retire=[&](const std::string& service,const json&){assert(journal["attempts"]["retire-"+service]=="uncertain");calls.push_back("retire-"+service);};io.exited=[](const std::string&,int){return true;};
     io.load=[&](const std::string& service,const fs::path&) {assert(journal["attempts"]["load-"+service]=="uncertain");fixture.running[service]["pid"]=fixture.running[service]["pid"].get<int>()+100;if(service=="manager")fixture.running[service]["version"]="1.5.5";if(service=="engine"){fixture.running[service]["version"]="0.16.24-botty6";fixture.running[service]["rpcPid"]=fixture.running[service]["pid"];}calls.push_back("load-"+service);};
     io.publish=[&]{assert(fixture.running["manager"]["version"]=="1.5.5");published=true;};io.scan=[]{};
+    io.publishConfig=[&](const fs::path& staged){assert(staged==fixture.engineRoot()/"rtorrent.rc");assert(std::count(calls.begin(),calls.end(),"retire-engine")==1);assert(std::count(calls.begin(),calls.end(),"load-engine")==0);calls.push_back("config");};
     ServiceUpdater updater(journal,fixture.release,io,fixture.managerRoot(),fixture.engineRoot());updater.run();assert(journal["status"]=="complete");assert(published);
+    assert(std::count(calls.begin(),calls.end(),"config")==int(restart));
     assert(std::count(calls.begin(),calls.end(),"pause")==int(restart));assert(std::count(calls.begin(),calls.end(),"resume")==int(restart));assert(std::count(calls.begin(),calls.end(),"retire-engine")==int(restart));
   }
   {
@@ -90,6 +92,19 @@ int main() {
     ServiceUpdaterTransport io;io.inspect=[&]{return fixture.running;};io.gate=[]{};io.tick=[]{};io.persist=[&](const json& record){journal=record;};io.retire=[&](const std::string&,const json&){++stops;throw std::runtime_error("Ambiguous retirement response");};io.load=[&](const std::string&,const fs::path&){++loads;};
     ServiceUpdater updater(journal,fixture.release,io,fixture.managerRoot(),fixture.engineRoot());reject([&]{updater.run();});assert(journal["status"]=="recovery-required");assert(stops==1&&loads==0);
     ServiceUpdater retry(journal,fixture.release,io,fixture.managerRoot(),fixture.engineRoot());reject([&]{retry.run();});assert(stops==1&&loads==0);
+  }
+  {
+    Fixture fixture(true);fixture.stage();const auto state=fixture.root/"rtorrent/state";fs::create_directories(state);assert(!::chmod(state.c_str(),0700));
+    const auto active=state/"rtorrent.rc",previous=state/"rtorrent.rc.previous",staged=fixture.engineRoot()/"rtorrent.rc";
+    nativeWrite(active,"old uncapped config");
+    installationPublishEngineConfig(staged,state,fixture.release.engine);
+    assert(nativeRead(active,NativeTransaction::maxFileBytes)==fixture.bytes.at("rtorrent/rtorrent.rc"));assert(nativeRead(previous,NativeTransaction::maxFileBytes)=="old uncapped config");
+    installationPublishEngineConfig(staged,state,fixture.release.engine);assert(nativeRead(previous,NativeTransaction::maxFileBytes)=="old uncapped config");
+    fs::remove(active);fs::remove(previous);installationPublishEngineConfig(staged,state,fixture.release.engine);
+    assert(nativeRead(active,NativeTransaction::maxFileBytes)==fixture.bytes.at("rtorrent/rtorrent.rc")&&!fs::exists(previous));
+    nativeWrite(active,"old uncapped config");
+    auto changed=fixture.release.engine;for(auto& entry:changed["files"])if(entry["path"]=="rtorrent.rc")entry["sha256"]=std::string(64,'a');
+    reject([&]{installationPublishEngineConfig(staged,state,changed);});assert(nativeRead(active,NativeTransaction::maxFileBytes)=="old uncapped config");
   }
   {
     Fixture fixture;fixture.stage();fs::create_symlink(fixture.root/"private",fixture.managerRoot()/"unexpected");reject([&]{verifyServiceTree(fixture.managerRoot(),fixture.release.manager,"botty");});
