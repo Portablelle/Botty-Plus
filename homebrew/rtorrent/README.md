@@ -51,10 +51,10 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
-The package revision is `0.16.24-botty9`; upstream `system.client_version`
+The package revision is `0.16.24-botty10`; upstream `system.client_version`
 remains `0.16.24`. Each launch publishes private `state/runtime.json` before
 upstream main can start a listener, including supervised launches. Its exact
-fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty9"`, and
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty10"`, and
 `boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
 This revision originates in the running binary, never installed metadata.
 Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
