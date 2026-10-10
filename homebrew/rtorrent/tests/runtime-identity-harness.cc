@@ -108,9 +108,14 @@ int main(int argc, char** argv) {
     if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, runtime_path)) return 3;
     if (supervised) {
         if (entry_argc != 2 || entry_argv != arguments) return 4;
-    } else if (entry_argc != 4 || strcmp(entry_argv[0], "rtorrent") || strcmp(entry_argv[1], "-n") ||
-               strcmp(entry_argv[2], "-o") || strcmp(entry_argv[3], "import=/data/botty/rtorrent/state/rtorrent.rc") ||
-               entry_argv[4] || !getenv("HOME") || strcmp(getenv("HOME"), runtime_path)) return 5;
+    } else {
+        if (entry_argc != 8 || strcmp(entry_argv[0], "rtorrent") || strcmp(entry_argv[1], "-n") ||
+            entry_argv[8] || !getenv("HOME") || strcmp(getenv("HOME"), runtime_path)) return 5;
+        FILE* options = fopen("entry-arguments", "w");
+        if (!options) return 5;
+        for (int i = 0; i < entry_argc; ++i) fprintf(options, "%s\n", entry_argv[i]);
+        if (fclose(options)) return 5;
+    }
     pid_t child = fork();
     if (child < 0) return 6;
     if (!child) _exit(botty_rtorrent_init(entry_argc, entry_argv) == 1 ? 0 : 7);

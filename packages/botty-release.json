@@ -5,7 +5,7 @@
     "native": "01.006.000",
     "manager": "1.5.4",
     "worker": "1.3.1",
-    "rtorrent": "0.16.24-botty9"
+    "rtorrent": "0.16.24-botty10"
   },
   "apis": {
     "manager": 1,
@@ -31,9 +31,9 @@
     "botty-native/sce_sys/pic0.dds": "1005350b9f1feecdd6eb1006c389a6bd738d31b1090325deecaf799c8c695724",
     "botty-native/sce_sys/snd0.at9": "4284d15a2bae57739c944355c917ab11fce7b18d9b47054e2c7e3746a3c57218",
     "botty/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-    "botty/NOTICE.md": "82a643ee5797b1f07299f1fa6d6c1eddcf3ced816189dd25e6cdc72d14769a72",
+    "botty/NOTICE.md": "4b418c25f494f9c3481521fd23a94ba21dd04000e260284d8680dfd43723ead3",
     "botty/botty-manager.elf": "949c16bf4f1f3367bef19a95b14752ce8dfb591d551eedf636d6997ddc4c3983",
-    "botty/botty-source.tar.gz": "4e8874968acce437065e0c0289f5711f874b90972d78eb9214deac86995222f8",
+    "botty/botty-source.tar.gz": "ba7f01920443ed574b3d6f55b031a10809027ae11e30ac1e3cc949d8b291d520",
     "botty/cacert.pem": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b",
     "botty/game-compressor-NOTICE.md": "20a9a00d6e88b2aab616c96b910aab4846363b744e2782d9617c81ba6e270ccc",
     "botty/game-compressor-source.tar.gz": "3c3fb3a5dd18fd117583151108ceca23b6e65e1c6decb473cdc1af1b5ac14629",
@@ -44,11 +44,11 @@
     "botty/ui/index.html": "5f96ba033062a41f89e5e7e340c8fd667fc6da8a3296bf84ba1cf11bd9cfdef2",
     "botty/ui/style.css": "9ecb5da30d595865d1cc28d8192616b48b3ac1aee80c3bc952276c8141f7e8b5",
     "rtorrent/LICENSE": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
-    "rtorrent/README.md": "a806b4be818dc467983ded89c4f5a0862089224c167a74a2f5d9c1479b69398d",
+    "rtorrent/README.md": "ce34b54639816a00703ea8dc135ad37a182a11112438ca6394791c4a7497469e",
     "rtorrent/cacert.pem": "d5945f3f21330ef0cd1dad15ccbf010b33088026539cd424add4c2a1e8205e0b",
-    "rtorrent/manifest.json": "83b04b9a5a74e9675200420c158ec3f00617e09f3b782f861aa9359f9209ea73",
-    "rtorrent/rtorrent-source.tar.gz": "13442385df9beb31b1bf73bdc4a6e00dd2cc1b1dc64d1d6970322d74f73cacc3",
-    "rtorrent/rtorrent.elf": "b0a10e857a994907e45dca59cf14ee14f8046a10b3c60af00584b4d0b720dd90",
-    "rtorrent/rtorrent.rc": "99f4a1c6ebd07c69d460494cb8d5d069cdaad57a74e89954fb1c544a0cc0d25e"
+    "rtorrent/manifest.json": "87e0dd00294ad9905f5fe0e3e5087eb0096a229fc7a90221a4ebca039ebf657d",
+    "rtorrent/rtorrent-source.tar.gz": "81205cdeaa568417e0d148580251858d96b91c85ddbbda5cee817f79e21597f3",
+    "rtorrent/rtorrent.elf": "4013cc357b277f9080916465ab05714a238caf6c4f8a6a9b59dd904c544c7f62",
+    "rtorrent/rtorrent.rc": "2a917adfc2826aa263fe6535598f618cad4b5c1c94e4e53c54c4e60bc79b951b"
   }
 }

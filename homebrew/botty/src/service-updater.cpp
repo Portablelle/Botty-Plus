@@ -91,6 +91,7 @@ int main() {
       if(bytes.size()!=file->at("size").get<size_t>()||nativeHash(bytes)!=file->at("sha256"))throw std::runtime_error("Replacement payload changed after staging.");
       installationLoad(bytes);
     };
+    io.publishConfig=[&](const fs::path& staged){installationPublishEngineConfig(staged,root/"rtorrent/state",release.engine);};
     io.persist=[&](const json& record){nativeWrite(handoffPath,record.dump()+"\n");};
     io.publish=[&] {
       native.publish(release.native.manifest,release.native.hash,[&]{idle();CompressionLibrary(Paths(root),10101).api("games/unmount",{{"title_id","PPSA99071"}});idle();});

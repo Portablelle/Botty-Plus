@@ -32,6 +32,19 @@ inline void installationNoDowngrade(const InstallationRelease& release,const jso
   validateRunningInstallation(identity);
   if(release.native.manifest.at("version").get<std::string>()<nativeVersion||serviceVersion(release.manager.at("id"))<serviceVersion(identity.at("manager").at("version"))||serviceVersion(release.manager.at("workerVersion"))<serviceVersion(identity.at("worker").at("version"))||serviceVersion(release.engine.at("id"),true)<serviceVersion(identity.at("engine").at("version"),true))throw std::runtime_error("Installation downgrade refused.");
 }
+// The engine imports state/rtorrent.rc, not the staged copy. Publish the verified
+// bytes atomically and keep the previous config so recovery can roll back.
+inline void installationPublishEngineConfig(const fs::path& staged,const fs::path& state,const json& engineManifest) {
+  const auto file=std::find_if(engineManifest.at("files").begin(),engineManifest.at("files").end(),[](const json& entry){return entry.at("path")=="rtorrent.rc";});
+  if(file==engineManifest.at("files").end())throw std::runtime_error("Engine manifest has no rtorrent.rc.");
+  const auto bytes=nativeRead(staged,NativeTransaction::maxFileBytes);
+  if(bytes.size()!=file->at("size").get<size_t>()||nativeHash(bytes)!=file->at("sha256"))throw std::runtime_error("Engine configuration changed after staging.");
+  const auto active=state/"rtorrent.rc";std::string previous;bool existing=true;
+  try{previous=nativeRead(active,NativeTransaction::maxFileBytes);}catch(const std::exception&){if(fs::exists(fs::symlink_status(active)))throw;existing=false;}
+  if(existing&&previous==bytes)return;
+  if(existing)nativeWrite(state/"rtorrent.rc.previous",previous);
+  nativeWrite(active,bytes);
+}
 struct ServiceUpdaterTransport {
   std::function<json()> inspect;
   std::function<json()> activeTorrents;
@@ -40,6 +53,7 @@ struct ServiceUpdaterTransport {
   std::function<void(const std::string&,const json&)> retire;
   std::function<bool(const std::string&,int)> exited;
   std::function<void(const std::string&,const fs::path&)> load;
+  std::function<void(const fs::path&)> publishConfig;
   std::function<void()> gate,publish,scan;
   std::function<void(const json&)> persist;
   std::function<void(const std::string&)> notify;
@@ -92,7 +106,10 @@ public:
       io_.gate();retire("manager",before.at("manager"));retire("worker",before.at("worker"));
       if(restartEngine)retire("engine",before.at("engine"));
       save("starting");
-      if(restartEngine)load("engine",engineRoot_/"rtorrent.elf");
+      if(restartEngine) {
+        if(io_.publishConfig)io_.publishConfig(engineRoot_/"rtorrent.rc");
+        load("engine",engineRoot_/"rtorrent.elf");
+      }
       load("worker",managerRoot_/"game-compressor.elf");load("manager",managerRoot_/"botty-manager.elf");
       json running;
       for(int i=0;i<120;++i) {

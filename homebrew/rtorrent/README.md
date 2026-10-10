@@ -51,10 +51,10 @@ rollback. Test torrent data may be removed by its exact known identity and paths
 
 ## Validation status
 
-The package revision is `0.16.24-botty9`; upstream `system.client_version`
+The package revision is `0.16.24-botty10`; upstream `system.client_version`
 remains `0.16.24`. Each launch publishes private `state/runtime.json` before
 upstream main can start a listener, including supervised launches. Its exact
-fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty9"`, and
+fields are `schema: 1`, positive `pid`, `version: "0.16.24-botty10"`, and
 `boot: {seconds, microseconds}` containing the exact `kern.boottime` timeval.
 This revision originates in the running binary, never installed metadata.
 Missing sysctl support, a wrong response size, nonpositive seconds or microseconds
@@ -165,3 +165,21 @@ PID matched live RPC on the same boot; previously active torrents were restored.
 CONTROL passed its initial hash check and began downloading without the I/O
 error, confirmed by live service state and the user. Full download completion
 and complete-data integrity remain unverified.
+
+## Console descriptor headroom
+
+The PS5 default file-cache allocation can retain enough descriptors for a large
+multifile torrent to prevent other services from opening files. Live firmware
+13.00 reproduced `EMFILE` in the browser and ShadowMount's `/dev/lvdctl` open;
+ShadowMount then shut down and native titles could not launch.
+
+The default engine entry point caps the torrent file cache at 64 and applies
+socket allocation before importing the state configuration and opening SCGI.
+It reapplies the allocation after import, before restoring session torrents.
+This also protects in-app updates launched by older managers that retain an
+uncapped `state/rtorrent.rc`; no manager upgrade or Portal+ re-bootstrap is
+required. Explicit supervised launch arguments remain the launcher's responsibility.
+The shipped configuration applies the same cap. The cache rotates
+files as needed; the EMFILE recovery and errno fixes remain in place. This caps
+cached torrent files, not the number of files a torrent may contain. It does not
+claim a separate PS5-wide descriptor reservation or a cap on all peer sockets.
