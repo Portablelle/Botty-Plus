@@ -1,9 +1,12 @@
 import json
+from io import BytesIO
 import os
 import re
 from pathlib import Path
 import stat
 import subprocess
+import shlex
+import tarfile
 import tempfile
 import unittest
 from unittest import mock
@@ -127,6 +130,35 @@ class RuntimeIdentityTests(unittest.TestCase):
                 self.assertEqual((path / 'runtime.json').read_text(), 'previous identity')
                 self.assertEqual(list(path.glob('runtime.json.tmp.*')), [])
 
+    def test_default_entry_caps_cache_around_legacy_config_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            legacy = 'network.scgi.open_port = 127.0.0.1:5001\n'
+            (path / 'rtorrent.rc').write_text(legacy)
+            self.assertEqual(self.run_harness(path, 'default'), 0)
+            arguments = (path / 'entry-arguments').read_text().splitlines()
+            allocation = 'system.sockets.files.max_alloc.set=64,system.sockets.adjust_alloc='
+            self.assertEqual(arguments, ['rtorrent', '-n', '-o', allocation, '-o',
+                                        'import=/data/botty/rtorrent/state/rtorrent.rc', '-o', allocation])
+            self.assertEqual((path / 'rtorrent.rc').read_text(), legacy)
+            # Compile the actual upstream option parser, rather than infer how
+            # it handles comma-separated commands, empty values and repeated -o.
+            upstream = ROOT / 'build/downloads/rtorrent-0.16.24.tar.gz'
+            if upstream.exists():
+                data = upstream.read_bytes()
+            else:
+                with tarfile.open(ROOT.parents[1] / 'packages/rtorrent/rtorrent-source.tar.gz') as archive:
+                    data = archive.extractfile('upstream/rtorrent-0.16.24.tar.gz').read()
+            with tarfile.open(fileobj=BytesIO(data)) as archive:
+                for name in ('option_parser.h', 'option_parser.cc'):
+                    (path / name).write_bytes(archive.extractfile('rtorrent-0.16.24/src/' + name).read())
+            (path / 'config.h').write_text('')
+            binary = path / 'options-test'
+            subprocess.run([*shlex.split(os.environ.get('CXX', 'clang++')), '-std=c++20',
+                            '-I' + str(path), str(path / 'option_parser.cc'),
+                            str(ROOT / 'tests/entry-options-host-test.cc'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary), *arguments[1:]], check=True, timeout=10)
+
     def test_stale_pid_temp_and_random_collision_are_preserved(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)
@@ -141,6 +173,13 @@ class RuntimeIdentityTests(unittest.TestCase):
 
 
 class RuntimeIdentitySourceTests(unittest.TestCase):
+    def test_shipped_config_caps_cache_before_scgi(self):
+        config = (ROOT / 'rtorrent.rc').read_text()
+        self.assertLess(config.index('system.sockets.files.max_alloc.set = 64'),
+                        config.index('system.sockets.adjust_alloc ='))
+        self.assertLess(config.index('system.sockets.adjust_alloc ='),
+                        config.index('network.scgi.open_port'))
+
     def test_timeout_kills_and_reaps_before_returning(self):
         process = mock.Mock(pid=123)
         process.communicate.side_effect = [subprocess.TimeoutExpired('harness', 10), (b'', b'')]

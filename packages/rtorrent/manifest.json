@@ -4,8 +4,8 @@
   "files": [
     {
       "path": "rtorrent.elf",
-      "size": 19193144,
-      "sha256": "2908e069b78e6a5ff8dc4b13ba8f52be64c2242d91ac6051b9cd0957469bdca0"
+      "size": 15524656,
+      "sha256": "4013cc357b277f9080916465ab05714a238caf6c4f8a6a9b59dd904c544c7f62"
     },
     {
       "path": "rtorrent.rc",
