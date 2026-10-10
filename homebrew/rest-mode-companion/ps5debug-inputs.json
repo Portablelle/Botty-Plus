@@ -1,0 +1,21 @@
+{
+  "commit": "d32d2d001dbbfd4cd2c0b7d6335b9a49d8a1cb86",
+  "files": {
+    "common/include/debug_state.h": "176333cf185dcd29034603d4ad71b939fc1e594dd8e3863d5afe5fc99f976451",
+    "common/include/kern_rw_fast.h": "b191e4958a4f428c75b441f9bc31f0a1dbaedd91031c5d3efbb15950c45971a1",
+    "common/include/net.h": "3608caf687fc220cf36ea1b672429967151004f9245cf2efa74531fa6e19abbe",
+    "common/include/proc.h": "f2f91b8f684424047df0a92d07ccea867cf216c1311f8e6ddcfad848793f7e29",
+    "common/include/proc_field_offsets.h": "fc8bfbf433916d75183e5daea6aa5f4b6798c299e26c0f7c00526d46ec3e2a26",
+    "common/include/protocol.h": "66535ad53f54aa24e32f19351294040c75322cbe8bc4dfdecaac94d016c09405",
+    "common/include/sdk_shim.h": "2fe002598deae240cdacf520d2e252dab4d5e60f0c2d99b212dbee8f1d923088",
+    "common/include/version.h": "0650bd29e3119fc39da992e24f108cd928b130f3037037a9ff4f69b9cae7a6ee",
+    "common/source/proc_field_offsets.c": "c15b74bb8b1033ed6cdea89c207959dcc4164351120f3b9d65dfd5e943ce43cf",
+    "common/source/sys_proc_rw.c": "c104ebf031f626a43d52c39a652967537c603d7c2d19dbd30afacf118d74b613",
+    "installer/source/find_pid.c": "525aac65e47c101ed3ffa8e3fed227d9c62e50299fb66238d5e7cb0851c5232c",
+    "installer/source/kern_rw_fast.c": "f65cb2fedcdcf63cff349e69b2587ef9dab650bd34783663b6bf20009bf4ae35",
+    "installer/source/main.c": "3565b20eb36ea116c6fc0ccffca965d0e9a1eac362c196472e84ac99dd09e90e",
+    "installer/source/proc_elf.c": "27212ce920a9b010f4aefee4bae33cd26a98ad24120be5406f9b2aa507914d62",
+    "installer/source/proc_remote.c": "041d3b5814cbdba3346b94db180f80a9961929b98607952045ca89d5e5eb1663",
+    "installer/source/stubs.c": "13762bd603a2867249ab9dd186f7992ae0e0eacd6e64b5a0fafdefe4ccc64472"
+  }
+}

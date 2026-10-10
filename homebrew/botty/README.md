@@ -383,8 +383,10 @@ reason `BottyBackgroundServices` at startup, then renews it every ten seconds fo
 the manager's whole lifetime. Unlike the diagnostic prototype, there is no
 ten-minute limit. Closing the native Botty+ app leaves this manager running.
 The feature is enabled for the portal's firmware range, 7.00–13.60. The module
-and API are resolved at runtime; missing support or a nonzero response stops
-renewals and exposes `failed` without disabling Botty's other features.
+and API are resolved at runtime. In the updated source, a nonzero response exposes
+`failed` and retries every five seconds; a missing module/API (`-ENOSYS`) stops
+renewals without disabling Botty's other features. Released packages still use
+the previous stop-on-first-error behavior until rebuilt and installed.
 
 `GET /api/rest-mode` and `/api/state.restMode` report
 `supported`, `active`, `status`, `lastResult`, `renewalSeconds`, and `leaseSeconds`.
@@ -392,11 +394,33 @@ renewals and exposes `failed` without disabling Botty's other features.
 API routes retain normal authentication. `supported` means the configured
 firmware range, and `active` means a successful request less than sixty seconds
 old, not an independent power-meter reading or a guarantee of every workload.
-Delayed renewals report `expired`; failed requests disable future renewals for
-that process. Stopping the manager stops and joins the renewal thread; its last
+Delayed renewals report `expired`. The updated source additionally exposes
+`retrying`, `retrySeconds`, attempt/failure counts, `lastSuccessAgeMs`,
+`lastAttemptUnixMs`, `maxRenewalGapMs`, `renewalGaps`, `strategy` and `experimental`.
+Gap measurements compare monotonic and wall clocks; wall-clock adjustments can
+also create a gap, so these are diagnostic observations, not proof of suspension.
+A private `rest-mode.json` snapshot beside the manager state is replaced about
+once a minute and on error/recovery/gap transitions. Collect it before restarting
+the service; its PID and timestamp identify historical evidence, not live health.
+Snapshot errors are logged without disabling renewals. A separate observer thread
+coalesces pending snapshots, so slow storage cannot delay the request thread.
+Shutdown waits for in-flight IPC/observer calls; it cannot forcibly cancel blocked
+system calls. The API reads cached companion status without diagnostic disk I/O.
+The optional [FW 13.00 system companion](../rest-mode-companion/README.md) uses
+an expiring manager control record; it is excluded from production bootstrap and
+requires a deliberate hardware trial. `restMode.companion` reports a recent
+resident heartbeat, not proof of every workload running in standby.
+
+The HTTP listener now rebinds after recognized network-interruption errors,
+including the PS5 E163 error, with one-to-ten-second backoff. The same manager,
+authentication and background jobs remain in memory. This does not repeat client
+commands or relaunch rTorrent. Other fatal listener errors keep the existing
+shutdown behavior.
+Stopping the manager stops and joins the renewal thread; its last
 request expires through the system's observed roughly sixty-second lease.
-No global rest settings, kernel patches, syscall-table toggles or extra network
-listeners are introduced.
+The default manager path introduces no global rest settings, kernel patches,
+syscall-table toggles or extra network listeners. The experimental companion
+performs separate, explicitly gated process/kernel mutations as documented above.
 
 The user-confirmed rest trials on firmware 13.00 kept FTP, rTorrent SCGI and
 Botty HTTP responsive. A private generated 8 MiB torrent downloaded during rest,
@@ -407,7 +431,8 @@ rest sessions and power consumption still need hardware validation. Holding the
 main processor in standby may use more power than the deepest rest mode.
 
 Host regressions cover the firmware boundaries, initial rejection, expired
-requests, renewal over a simulated day, shutdown, and API status. PS5
+requests, renewal over a simulated day, retry recovery, missing API, wall-clock
+gaps, snapshot write failures, shutdown, and API status. PS5
 cross-compilation uses the pinned SDK on the VPS.
 
 The final 1.5.0 manager was installed on firmware 13.00 after live API checks
@@ -418,3 +443,6 @@ Botty and both original torrents remained available, and rest maintenance was
 still active 130 seconds after the activation receipt, beyond one sixty-second
 lease. This establishes production startup and ongoing renewals while awake;
 the standby download/readback evidence above comes from the prototype trials.
+
+For the PS5Tailscale comparison and the limits of manager-hosted renewal, see
+[the rest-mode investigation](../../docs/REST-MODE.md).

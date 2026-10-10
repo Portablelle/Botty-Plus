@@ -6,7 +6,7 @@ NATIVE_OBJ := $(addprefix build/native/,$(addsuffix .o,$(COMMON)))
 PS5_OBJ := $(addprefix build/ps5/,$(addsuffix .o,$(COMMON)))
 FLAGS := -O2 -std=c++17 -pthread -Ivendor -Isrc -I$(UNRAR) -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 APP_FLAGS := $(FLAGS) -Wall -Wextra -Werror
-UPDATER_HEADERS := $(wildcard src/*.hpp) vendor/json.hpp vendor/httplib.h $(UNRAR)/sha256.hpp $(UNRAR)/rartypes.hpp
+UPDATER_HEADERS := $(wildcard src/*.hpp src/*.h) vendor/json.hpp vendor/httplib.h $(UNRAR)/sha256.hpp $(UNRAR)/rartypes.hpp
 RAR_FLAGS := -DRARDLL -DRAR_SMP -DSILENT -D_UNIX
 PS5_CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
 .PHONY: native ps5 test test-progress
@@ -40,10 +40,13 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 test-progress: build/progress-test
 	./build/progress-test
-test: build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test
+test: build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test
 	./build/progress-test
 	./build/core-test
 	./build/rest-mode-test
+	./build/rest-companion-test
+	./build/rest-network-test
+	./build/rest-http-test
 	./build/native-transaction-test
 	./build/native-update-test
 	./build/native-idle-test
@@ -129,3 +132,17 @@ build/rest-mode-test: tests/rest-mode-test.cpp src/rest-mode.hpp
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 test-rest-mode: build/rest-mode-test
 	./build/rest-mode-test
+
+build/rest-network-test: tests/rest-network-test.cpp src/rest-network.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+.PHONY: test-rest-network
+build/rest-http-test: tests/rest-http-test.cpp src/rest-network.hpp vendor/httplib.h
+	@mkdir -p build
+	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+test-rest-network: build/rest-network-test build/rest-http-test
+	./build/rest-network-test
+	./build/rest-http-test
+
+build/rest-companion-test: tests/rest-companion-test.cpp src/rest-companion.hpp src/rest-companion-protocol.h build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ)
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
