@@ -105,7 +105,7 @@ int sceNetRecv(int,void* b,std::size_t n,int){
         if(mode&&std::string_view(mode).starts_with("update-")&&socketRequest.find("GET /api/state ")==0){
             const bool current=is("update-current"),waiting=is("update-waiting"),service=is("update-service");
             body=std::string(R"({"freeBytes":1000000000,"transmissionReady":true,"torrents":[],"jobs":[],"nativeUpdate":{"supported":true,"scope":"installation","status":")")+(current?"current":waiting?"waiting":"available")+
-                R"(","installedVersion":"01.006.000","availableVersion":")"+(current||service?"01.006.000":"01.006.001")+
+                R"(","installedVersion":"01.007.000","availableVersion":")"+(current||service?"01.007.000":"01.007.001")+
                 R"(","installedServiceVersion":"1.5.4","availableServiceVersion":")"+(current?"1.5.4":"1.5.5")+
                 R"(","installedWorkerVersion":"1.3.1","availableWorkerVersion":"1.3.1","installedEngineVersion":"0.16.24-botty8","availableEngineVersion":"0.16.24-botty8","updateAvailable":)"+(current?"false":"true")+R"(,"requested":)"+(waiting?"true":"false")+R"(,"closeRequired":)"+(waiting?"true":"false")+
                 R"(,"message":")"+(current?"App and services are up to date.":waiting?"Waiting for compression and file operations to finish.":service?"Manager update available. The app is already current.":"A compatible app and services update is available.")+R"("}})";
@@ -126,7 +126,7 @@ int sceNetRecv(int,void* b,std::size_t n,int){
             body=R"({"error":"rTorrent rejected the request. Check the download in Activity."})";
             socketResponse="HTTP/1.1 400 Bad Request\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
         }
-        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"scope":"installation","status":"queued","version":"01.006.001","serviceVersion":"1.5.5","transaction":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";}
+        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"scope":"installation","status":"queued","version":"01.007.001","serviceVersion":"1.5.5","transaction":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";}
         if(socketResponse.empty())socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
     }
     const auto size=std::min(n,socketResponse.size()-offset);std::memcpy(b,socketResponse.data()+offset,size);offset+=size;return static_cast<int>(size);
