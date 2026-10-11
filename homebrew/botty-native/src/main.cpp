@@ -39,8 +39,6 @@ botty::ArtworkPage covers;
 botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
-// Lists the Details buttons with the same rules as Quick actions; never submits.
-botty::Workflow detailActions;
 botty::NativeKeyboard nativeKeyboard;
 enum class TextEntryState { idle, editing, ready, accepted, capacity, fallback };
 TextEntryState textEntryState=TextEntryState::idle;
@@ -443,11 +441,13 @@ void consume(const botty::ActionResult& received) noexcept {
     quietRequest=false;
 }
 // A finished request is reported before the next one replaces its description.
+// Submitting needs an idle worker in the same snapshot: a request that was still
+// running could otherwise finish just before submit and be reported as the new one.
 bool collectResult() noexcept {
-    botty::ActionResult latest=actionResult;
-    if(!network.read(connection,nullptr,&latest))return false;
+    botty::ActionResult latest=actionResult;bool busy=true;
+    if(!network.read(connection,nullptr,&latest,&busy))return false;
     if(latest.revision!=actionResult.revision)consume(latest);
-    return !exitRequested;
+    return !exitRequested&&!busy;
 }
 bool send(const botty::Command& command,std::string_view name,const std::array<char,96>& cover,bool quiet=false) noexcept {
     if(!collectResult()||!network.submit(command)){
@@ -812,10 +812,10 @@ void drawDetails(Canvas& c,const Focus& f) noexcept {
         stat(c,x,left[0]?left:"\xe2\x80\x94","Left (current phase)");
     }
     // Buttons mirror Quick actions. Pause, Resume and Verify run immediately.
-    detailActions.open(&e,workflowTab(f),catalog);
+    std::array<Op,8> actions{};const unsigned actionCount=botty::quickActions(&e,workflowTab(f),catalog,actions);
     unsigned bx=96,shown=0;
-    for(unsigned i=0;i<detailActions.optionCount;++i){
-        const auto op=detailActions.options[i];const char* label=buttonLabel(op);const bool risky=botty::Workflow::destructive(op);
+    for(unsigned i=0;i<actionCount;++i){
+        const auto op=actions[i];const char* label=buttonLabel(op);const bool risky=botty::Workflow::destructive(op);
         const bool pauseIcon=op==Op::pause;const unsigned w=56+width(c,label,24,bold)+(pauseIcon?32:0);
         if(bx+w>1824)break;
         const bool focus=model.detailButton==shown;const bool enabled=!*botty::unavailable(op,&e,catalog);
@@ -827,7 +827,7 @@ void drawDetails(Canvas& c,const Focus& f) noexcept {
         bx+=w+14;++shown;
     }
     model.buttonCount=shown;if(model.detailButton>=shown&&shown)model.detailButton=shown-1;
-    const auto op=shown?detailActions.options[model.detailButton]:Op::none;const char* reason=op!=Op::none?botty::unavailable(op,&e,catalog):"";
+    const auto op=shown?actions[model.detailButton]:Op::none;const char* reason=op!=Op::none?botty::unavailable(op,&e,catalog):"";
     const char* note=detailNotice[0]?detailNotice.data():*reason?reason:op!=Op::none?explain(op,&e):e.task?"This task is followed here until it finishes.":"";
     wrap(c,96,656,note,20,24,1180,2,detailNotice[0]||*reason?warning:muted);
     // Files, destination and errors; up/down pages through them.
@@ -1322,9 +1322,9 @@ bool draw(Canvas& c) noexcept {
         if(action==Action::run){
             const auto f=focused();
             // Resolve the button from the current entry, not from the last painted frame.
-            if(f.entry)detailActions.open(f.entry,workflowTab(f),catalog);
-            if(f.entry&&model.detailButton<detailActions.optionCount&&model.detailButton<model.buttonCount){
-                const auto op=detailActions.options[model.detailButton];
+            std::array<Op,8> actions{};const unsigned actionCount=f.entry?botty::quickActions(f.entry,workflowTab(f),catalog,actions):0;
+            if(model.detailButton<actionCount&&model.detailButton<model.buttonCount){
+                const auto op=actions[model.detailButton];
                 workflow.open(f.entry,workflowTab(f),catalog);
                 if(workflow.choose(op,catalog,network.busy()))submitWorkflow();
                 else if(workflow.panel==Panel::menu&&!workflow.confirming){detailNotice.fill(0);std::copy_n(workflow.notice.begin(),detailNotice.size()-1,detailNotice.begin());workflow.close();}

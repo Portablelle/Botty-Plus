@@ -192,6 +192,12 @@ int main() {
         // Queued downloads wait; only transferring or verifying work counts as running.
         std::snprintf(a.torrents[0].status.data(),a.torrents[0].status.size(),"Queued");
         assert(activityState(a.torrents[0],true)==ActivityState::waiting&&activityCount(a,1)==0);
+        // Cancellation is terminal: extraction leftovers need the user; tasks are done.
+        Entry cancelled=a.jobs[2];std::snprintf(cancelled.status.data(),cancelled.status.size(),"cancelled");cancelled.error.fill(0);
+        assert(activityState(cancelled,false)==ActivityState::attention);
+        cancelled.task=true;cancelled.active=false;assert(activityState(cancelled,false)==ActivityState::done);
+        std::array<Operation,8> actions{};
+        assert(quickActions(&a.torrents[1],0,a,actions)==4&&actions[3]==Operation::removeTorrent&&!quickActions(&a.processing.tasks[0],1,a,actions));
     }
     char formatted[64];formatETA(catalog.torrents[0],formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA ~17 min");
     formatETA(catalog.torrents[1],formatted,sizeof(formatted));assert(std::string_view(formatted)=="Completed");
