@@ -1,0 +1,20 @@
+[Unit]
+Description=Botty dedicated torrent HTTPS bridge
+After=network-online.target qbittorrent-nox@ubuntu.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/botty-remote/server.py --config /etc/botty-remote/config.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/botty-remote /home/ubuntu/Downloads/botty-ps5
+
+[Install]
+WantedBy=multi-user.target

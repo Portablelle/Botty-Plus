@@ -131,7 +131,7 @@ int main() {
   }
   {
     Fixture fixture;NativeTransaction native(fixture.nativeConfig);std::atomic<bool> idle{false},closed{false},owned{true};std::atomic<int> launches{0};
-    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.inspect=[&]{return fixture.running;};cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&){return fixture.fetch()(path,limit);};
+    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.inspect=[&]{return fixture.running;};cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&){return fixture.fetch()(path,limit);};
     cfg.idle=[&]{if(!idle)throw std::runtime_error("Existing work must finish");};cfg.stopped=[&]{if(!closed)throw std::runtime_error("Close Botty+");};cfg.owns=[&](const json&){return owned.load();};cfg.launch=[&](const json& handoff){++launches;auto taken=handoff;taken["status"]="takeover";nativeWrite(fixture.root/"installation/handoff.json",taken.dump());};
     InstallationUpdater updater(native,cfg);updater.start();until([&]{return updater.state()["status"]=="available";});assert(updater.state()["installedVersion"]==updater.state()["availableVersion"]);assert(updater.state()["updateAvailable"]==true);
     const auto ack=updater.request();assert(ack["scope"]=="installation"&&ack["serviceVersion"]=="1.5.5"&&ack["version"]=="01.004.002");assert(std::regex_match(ack["transaction"].get<std::string>(),std::regex("[a-f0-9]{32}")));reject([&]{updater.requireAdmission();});assert(updater.request()==ack);assert(launches==0);
@@ -139,7 +139,7 @@ int main() {
     owned=false;assert(updater.state()["status"]=="blocked");reject([&]{updater.requireAdmission();});assert(launches==1);
   }
   {
-    Fixture fixture;NativeTransaction native(fixture.nativeConfig);std::atomic<bool> entered{false};InstallationUpdater::Config cfg;cfg.root=fixture.root;
+    Fixture fixture;NativeTransaction native(fixture.nativeConfig);std::atomic<bool> entered{false};InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();
     cfg.download=[&](const std::string&,size_t,const std::atomic<bool>& cancelled){entered=true;while(!cancelled)std::this_thread::sleep_for(std::chrono::milliseconds(1));throw std::runtime_error("cancelled");return std::string{};};
     auto updater=std::make_unique<InstallationUpdater>(native,cfg);updater->start();until([&]{return entered.load();});const auto begin=std::chrono::steady_clock::now();updater.reset();assert(std::chrono::steady_clock::now()-begin<std::chrono::milliseconds(250));
   }
@@ -148,18 +148,18 @@ int main() {
     auto handoff=fixture.handoff();handoff["status"]="complete";nativeWrite(fixture.root/"installation/handoff.json",handoff.dump());
     nativeWrite(fixture.root/"installation/request.json",json({{"schema",1},{"status","handoff"},{"transaction",handoff["transaction"]},{"hash",fixture.release.hash},{"version","01.004.002"},{"serviceVersion","1.5.5"},{"workerVersion","1.3.1"},{"engineVersion","0.16.24-botty5"}}).dump());
     fixture.running["manager"]["version"]="1.5.5";fixture.running["manager"]["pid"]=141;fixture.running["worker"]["pid"]=142;if(!workerMatches)fixture.running["worker"]["version"]="1.3.0";
-    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion="1.5.5";cfg.inspect=[&]{return fixture.running;};cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&){return fixture.fetch()(path,limit);};cfg.launch=[](const json&){assert(false);};
+    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.managerVersion="1.5.5";cfg.inspect=[&]{return fixture.running;};cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&){return fixture.fetch()(path,limit);};cfg.launch=[](const json&){assert(false);};
     InstallationUpdater updater(native,cfg);updater.start();until([&]{return workerMatches?!updater.requested():updater.state()["status"]=="blocked";});
     if(workerMatches){updater.requireAdmission();assert(updater.state()["installedWorkerVersion"]=="1.3.1");}else reject([&]{updater.requireAdmission();});
   }
   {
     Fixture fixture;NativeTransaction native(fixture.nativeConfig);nativeWrite(fixture.root/"native/request.json",json({{"schema",1},{"status","queued"}}).dump());
-    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.download=[](const std::string&,size_t,const std::atomic<bool>&){assert(false);return std::string{};};
+    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.download=[](const std::string&,size_t,const std::atomic<bool>&){assert(false);return std::string{};};
     InstallationUpdater updater(native,cfg);updater.start();until([&]{return updater.finished();});assert(updater.requested());reject([&]{updater.requireAdmission();});
   }
   for(bool compressionFailure:{false,true}) {
     Fixture fixture;NativeTransaction native(fixture.nativeConfig);const auto original=native.installedFingerprint();std::atomic<bool> fail{true},closed{true};std::atomic<int> downloads{0},launches{0};
-    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.inspect=[&]{return fixture.running;};
+    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.inspect=[&]{return fixture.running;};
     cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&) {
       if(path.rfind("botty-native/",0)==0&&path!="botty-native/manifest.json"){++downloads;if(fail&&!compressionFailure)throw std::runtime_error("Injected pre-handoff download failure");}
       return fixture.fetch()(path,limit);
@@ -178,7 +178,7 @@ int main() {
     assert(installationRecord(fixture.root/"installation/request.json",65536)["status"]=="failed");const auto next=restarted.request();assert(next["transaction"]!=transaction);assert(restarted.requested());assert(launches==0);
   }
   for(bool changedRuntime:{false,true}) {
-    Fixture fixture;NativeTransaction native(fixture.nativeConfig);InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.inspect=[&]{return fixture.running;};cfg.idle=[]{};cfg.stopped=[]{};cfg.launch=[](const json&){assert(false);};
+    Fixture fixture;NativeTransaction native(fixture.nativeConfig);InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.inspect=[&]{return fixture.running;};cfg.idle=[]{};cfg.stopped=[]{};cfg.launch=[](const json&){assert(false);};
     cfg.download=[&](const std::string& path,size_t limit,const std::atomic<bool>&) {
       if(path.rfind("botty-native/",0)==0&&path!="botty-native/manifest.json") {
         if(changedRuntime)fixture.running["manager"]["pid"]=141;else nativeWrite(fixture.nativeConfig.nativeRoot/"eboot.bin","changed original");
@@ -196,7 +196,7 @@ int main() {
     assert(!::flock(fd,LOCK_UN));assert(!installationHandoffOwned(fixture.root,handoff,"123:456"));::close(fd);
     NativeTransaction native(fixture.nativeConfig);nativeWrite(fixture.root/"installation/handoff.json",handoff.dump());
     nativeWrite(fixture.root/"installation/request.json",json({{"schema",1},{"status","handoff"},{"transaction",handoff["transaction"]},{"hash",fixture.release.hash},{"version","01.004.002"},{"serviceVersion","1.5.5"},{"workerVersion","1.3.1"},{"engineVersion","0.16.24-botty5"}}).dump());
-    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.owns=[&](const json& record){return installationHandoffOwned(fixture.root,record,"123:456");};cfg.launch=[](const json&){assert(false);};
+    InstallationUpdater::Config cfg;cfg.root=fixture.root;cfg.managerVersion=fixture.running.at("manager").at("version").get<std::string>();cfg.owns=[&](const json& record){return installationHandoffOwned(fixture.root,record,"123:456");};cfg.launch=[](const json&){assert(false);};
     InstallationUpdater updater(native,cfg);updater.start();until([&]{return updater.state()["status"]=="blocked";});assert(updater.requested());assert(installationRecord(fixture.root/"installation/request.json",65536)["status"]=="handoff");reject([&]{updater.requireAdmission();});
   }
   std::cout<<"Installation compatibility, handoff, lifecycle, admission and cancellation tests passed\n";

@@ -16,12 +16,12 @@ void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
 const char* operationLabel(Operation op) noexcept {
  if(op==Operation::nativeUpdate)return "Update Botty+";
  if(op==Operation::checkNativeUpdate)return "Check for updates";
- switch(op){case Operation::transfer:return "Move to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to Library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Activity";default:return "Actions";}
+ switch(op){case Operation::importRemote:return "Import to PS5";case Operation::transfer:return "Move to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to Library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Activity";default:return "Actions";}
 }
 const char* actionPath(Operation op) noexcept {
  if(op==Operation::nativeUpdate)return "/api/native-update";
  if(op==Operation::checkNativeUpdate)return "/api/native-update/check";
- switch(op){case Operation::transfer:return "/api/transfer";case Operation::restoreOriginal:return "/api/restore-uncompressed";case Operation::removeOriginal:return "/api/delete-uncompressed";case Operation::compress:return "/api/compress-game";case Operation::cancelCompression:return "/api/cancel-compression";case Operation::removeLibrary:return "/api/delete-library-game";case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
+ switch(op){case Operation::importRemote:return "/api/remote/import";case Operation::transfer:return "/api/transfer";case Operation::restoreOriginal:return "/api/restore-uncompressed";case Operation::removeOriginal:return "/api/delete-uncompressed";case Operation::compress:return "/api/compress-game";case Operation::cancelCompression:return "/api/cancel-compression";case Operation::removeLibrary:return "/api/delete-library-game";case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
 }
 bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t& length) noexcept {
  length=0;bool ok=true;
@@ -39,12 +39,12 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
   if((cmd.operation==Operation::transfer&&!cmd.torrent)||cmd.operation==Operation::restoreOriginal||cmd.operation==Operation::removeOriginal||cmd.operation==Operation::compress||cmd.operation==Operation::cancelCompression||cmd.operation==Operation::removeLibrary||cmd.operation==Operation::move||cmd.operation==Operation::remove||cmd.operation==Operation::cancel||cmd.operation==Operation::dismiss){if(!cmd.id[0])return false;quote(cmd.id.data());}
   else {std::string_view id=cmd.id.data();if(id.empty()||id.size()>10||(id.size()>1&&id.front()=='0'))return false;unsigned long long value=0;for(char c:id){if(c<'0'||c>'9')return false;value=value*10+c-'0';}if(value>2147483647)return false;append(id);}
   if(cmd.operation==Operation::restoreOriginal||cmd.operation==Operation::removeOriginal||cmd.operation==Operation::compress||cmd.operation==Operation::removeLibrary)append(",\"confirmed\":true");
-  else if(cmd.operation==Operation::extract){if(!cmd.archive[0]||std::string_view(cmd.text.data()).size()>1024)return false;append(",\"archive\":");quote(cmd.archive.data());append(",\"password\":");quote(cmd.text.data());}
-  else if(cmd.operation!=Operation::transfer&&cmd.operation!=Operation::cancelCompression&&cmd.operation!=Operation::move&&cmd.operation!=Operation::remove&&cmd.operation!=Operation::cancel&&cmd.operation!=Operation::dismiss){append(",\"action\":");if(cmd.operation==Operation::removeTorrent){quote("remove-data");append(",\"confirmed\":true");}else quote(cmd.operation==Operation::pause?"pause":cmd.operation==Operation::resume?"resume":"verify");}
+  else if(cmd.operation==Operation::extract){if(std::string_view(cmd.text.data()).size()>1024)return false;append(",\"archive\":");quote(cmd.archive.data());append(",\"password\":");quote(cmd.text.data());}
+  else if(cmd.operation!=Operation::importRemote&&cmd.operation!=Operation::transfer&&cmd.operation!=Operation::cancelCompression&&cmd.operation!=Operation::move&&cmd.operation!=Operation::remove&&cmd.operation!=Operation::cancel&&cmd.operation!=Operation::dismiss){append(",\"action\":");if(cmd.operation==Operation::removeTorrent){quote("remove-data");append(",\"confirmed\":true");}else quote(cmd.operation==Operation::pause?"pause":cmd.operation==Operation::resume?"resume":"verify");}
  }
  if(cmd.storage[0]&&cmd.operation!=Operation::nativeUpdate&&cmd.operation!=Operation::checkNativeUpdate){append(",\"storage\":");quote(cmd.storage.data());}
  if(cmd.operation==Operation::transfer){append(",\"kind\":");quote(cmd.torrent?"torrent":"job");}
- if(cmd.storage[0]&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
+ if(cmd.storage[0]&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab||cmd.operation==Operation::importRemote))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
  append("}");if(length<capacity)out[length]=0;return ok;
 }
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
@@ -57,6 +57,9 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::add)return c.transmissionReady?"":"Wait for rTorrent to reconnect.";
  if(e&&e->task)return "This task is followed in Activity. Use Library for game actions.";
  if(!e)return "This item is no longer available. Close this menu and refresh.";
+ if(e->remoteCandidate)return op==Operation::importRemote?"":"Import this server candidate first.";
+ if(e->remote&&op==Operation::verify)return "Verify torrent pieces in qBittorrent on the dedicated server.";
+ if(e->remote&&!e->complete&&op==Operation::transfer)return "Finish importing all files before moving the download.";
  if(op==Operation::transfer){if(!c.storageSupported)return "Update Botty to enable external storage.";if(c.extracting||c.compressionBusy)return "Wait for the current file operation.";if(!e)return "Item unavailable.";return e->status[0]&&std::string_view(e->status.data())!="extracting"?"":"Wait for extraction to finish.";}
  if(op==Operation::compress){
   if(!c.compressionSupported)return "Update Botty to enable Library compression.";
@@ -72,7 +75,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
  if(op==Operation::pause||op==Operation::resume||op==Operation::verify||op==Operation::extract){
   if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";
-  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount)return e->archivesOmitted?"Archive names exceed the display limit.":"No first RAR volume found in this torrent.";}
+  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount&&!e->remote)return e->archivesOmitted?"Archive names exceed the display limit.":"No first RAR volume found in this torrent.";}
   return "";
  }
  if((op==Operation::cancel||op==Operation::dismiss)&&!c.extractionControls)return "Start the updated Botty service next session to use this action.";
@@ -110,7 +113,8 @@ const Entry* Workflow::target(const Catalog& c) const noexcept {const auto& list
 bool Workflow::hasRow(Row row) const noexcept {for(unsigned i=0;i<rowCount;++i)if(rows[i]==row)return true;return false;}
 unsigned quickActions(const Entry* e,unsigned tab,const Catalog& c,std::array<Operation,8>& options) noexcept {
  unsigned optionCount=0;if(!e||e->task||tab>2)return 0;
- if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;}
+ if(tab==0&&e->remoteCandidate){options[optionCount++]=Operation::importRemote;return optionCount;}
+ if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;if(!e->remote)options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;}
  else if(tab==2){
   if(std::string_view(e->status.data())=="ready")options[optionCount++]=Operation::move;
   else if(c.compressionSupported){
@@ -152,9 +156,9 @@ void Workflow::openSheet(const Catalog& c) noexcept {
  if(op==Operation::extract){archiveIndex=0;command.archive.fill(0);if(e&&e->archiveCount)command.archive=c.archives[e->archiveStart];}
  if(op==Operation::exploreGrab||op==Operation::grab)rows[rowCount++]=Row::source;
  if(op==Operation::add)rows[rowCount++]=Row::magnet;
- if(op==Operation::extract){rows[rowCount++]=Row::archive;rows[rowCount++]=Row::password;}
+ if(op==Operation::extract&&(!e||e->archiveCount)){rows[rowCount++]=Row::archive;rows[rowCount++]=Row::password;}
  if(c.storageSupported||op==Operation::transfer)rows[rowCount++]=Row::storage;
- const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab;
+ const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab||op==Operation::importRemote;
  if(download&&c.storageSupported){rows[rowCount++]=Row::mode;command.automatic=lastAutomatic;}
  if(hasRow(Row::storage)){
   if(download)pickStorage(c,command.storage,lastStorage.data(),{});
@@ -190,11 +194,11 @@ void Workflow::editPassword() noexcept {
 bool Workflow::submit(const Catalog& c,bool busy) noexcept {
  if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
  const auto op=command.operation;const Entry* e=target(c);
- const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab;
- const char* reason=unavailable(op,download?nullptr:e,c);
+ const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab||op==Operation::importRemote;
+ const char* reason=unavailable(op,download&&op!=Operation::importRemote?nullptr:e,c);
  if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
  if(op==Operation::exploreGrab||op==Operation::grab){if(sourceIndex>=sourceCount)return false;command.id=sources[sourceIndex].id;}
- if(op==Operation::extract){
+ if(op==Operation::extract&&(!e||!e->remote||e->archiveCount)){
   const int at=e&&command.archive[0]?archivePosition(c,*e,command.archive):-1;
   if(at<0){
    std::snprintf(notice.data(),notice.size(),"The archive list changed. Check the archive, then extract again.");

@@ -91,7 +91,7 @@ public:
 };
 // Copy to private staging, flush and compare every byte before publication.
 // Callers journal before copying and commit metadata before removing the source.
-void copyChecked(const fs::path& source,const fs::path& destination,const std::function<void()>& check={},const DeleteProgress& progress={});
-void publishExclusive(const fs::path& source,const fs::path& destination);
+void copyChecked(const fs::path& source,const fs::path& destination,const std::function<void()>& check={},const DeleteProgress& progress={},const fs::path& staging={});
+void publishExclusive(const fs::path& source,const fs::path& destination,const std::function<void(uint64_t,uint64_t)>& reserved={});
 void removeTransferred(const fs::path& source);
 }

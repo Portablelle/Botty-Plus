@@ -23,7 +23,7 @@ void copyFile(const fs::path& a,const fs::path& b,const std::function<void()>& c
   }catch(...){if(in>=0)close(in);if(out>=0)close(out);throw;}
 }
 }
-void copyChecked(const fs::path& source,const fs::path& destination,const std::function<void()>& check,const DeleteProgress& progress) {
+void copyChecked(const fs::path& source,const fs::path& destination,const std::function<void()>& check,const DeleteProgress& progress,const fs::path& staging) {
   if(check)check();
   const auto files=inventory(source);uint64_t total=0;
   for(const auto& e:files)if(e.second!=UINT64_MAX){if(e.second>UINT64_MAX-total)throw std::runtime_error("Transfer is too large");total+=e.second;}
@@ -31,14 +31,15 @@ void copyChecked(const fs::path& source,const fs::path& destination,const std::f
   if(fs::exists(fs::symlink_status(destination)))throw std::runtime_error("Destination exists; nothing was overwritten");
   uint64_t done=0;const auto report=[&](uint64_t bytes,uint64_t,const std::string& file){if(progress)progress(done+bytes,total,file);};
   if(progress)progress(0,total,"");
-  auto stage=destination.parent_path()/(".botty-transfer-"+randomId());
+  auto stage=staging.empty()?destination.parent_path()/(".botty-transfer-"+randomId()):staging;
+  if(stage.parent_path()!=destination.parent_path()||stage==destination||fs::exists(fs::symlink_status(stage)))throw std::runtime_error("Copy staging exists or is invalid; retained files need inspection");
   if(files.at(".")==UINT64_MAX){fs::create_directory(stage);for(const auto& e:files){if(e.first==".")continue;if(check)check();if(e.second==UINT64_MAX)fs::create_directory(stage/e.first);else {copyFile(source/e.first,stage/e.first,check,report);done+=e.second;}}}
   else copyFile(source,stage,check,report);
   if(inventory(source)!=files||inventory(stage)!=files)throw std::runtime_error("Transfer source changed; both copies kept for inspection");
   if(check)check();if(fs::exists(fs::symlink_status(destination)))throw std::runtime_error("Transfer destination appeared; source kept");
   publishExclusive(stage,destination);
 }
-void publishExclusive(const fs::path& source,const fs::path& destination) {
+void publishExclusive(const fs::path& source,const fs::path& destination,const std::function<void(uint64_t,uint64_t)>& onReserved) {
   // Reserve the name atomically, including on exFAT (which has no hard links).
   // Rename replaces only our empty reservation, never a preexisting item.
   struct stat reserved{};
@@ -50,6 +51,7 @@ void publishExclusive(const fs::path& source,const fs::path& destination) {
     if(fd<0)throw std::runtime_error("Destination exists or cannot be reserved");
     const int rc=fstat(fd,&reserved);close(fd);if(rc)throw std::runtime_error("Cannot inspect destination reservation");
   }
+  if(onReserved)onReserved(uint64_t(reserved.st_dev),uint64_t(reserved.st_ino));
   struct stat current{};
   if(lstat(destination.c_str(),&current)||current.st_dev!=reserved.st_dev||current.st_ino!=reserved.st_ino)throw std::runtime_error("Destination changed; source kept");
   fs::rename(source,destination);

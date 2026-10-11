@@ -343,6 +343,8 @@ void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexce
     const auto status=std::string_view(e.status.data());const auto state=botty::activityState(e,torrent);
     if(state==botty::ActivityState::attention&&e.error[0]){std::snprintf(out,size,"%s",e.error.data());return;}
     if(torrent){
+        if(e.remoteCandidate){std::snprintf(out,size,"Available on server. Choose Import to PS5.");return;}
+        if(e.remote&&!e.complete){std::snprintf(out,size,"%s: %s of %s at %s/s",e.phase.data(),done,total,rate);return;}
         if(e.complete){if(e.upload>0){botty::formatBytes(e.upload,rate,sizeof(rate));std::snprintf(out,size,"Downloaded \xc2\xb7 %s \xc2\xb7 seeding at %s/s",total,rate);}else std::snprintf(out,size,"Downloaded \xc2\xb7 %s",total);return;}
         if(status=="Paused"){std::snprintf(out,size,"Paused \xc2\xb7 %s of %s",done,total);return;}
         if(e.download>0)std::snprintf(out,size,"%s of %s \xc2\xb7 %s/s%s%s%s",done,total,rate,left[0]?" \xc2\xb7 ":"",left,left[0]?" left":"");
@@ -391,6 +393,7 @@ const char* explain(Op op,const botty::Entry* e) noexcept {
     case Op::removeOriginal:return "Deletes the retained original without verification. The compressed copy, saves and archives are kept.";
     case Op::cancelCompression:return "Requests cancellation and keeps the original game. Wait until the compression worker stops.";
     case Op::removeLibrary:return e&&e->compressed?"Deletes the compressed game and its retained original. Saves, torrents and archives are kept.":"Deletes installed game files. Saves, torrents and archives are kept. Close the game first.";
+    case Op::importRemote:return "Copies this server candidate to the selected PS5 disk. Server originals are kept.";
     case Op::removeTorrent:return "Permanently deletes this torrent and its downloaded files, including archives. Library games are kept.";
     case Op::cancel:return "Stops extraction at the next safe point. Partial files and original archives are kept.";
     case Op::dismiss:{const auto status=e?std::string_view(e->status.data()):std::string_view{};return status=="failed"||status=="cancelled"||status=="interrupted"?"Removes this row and deletes its partial files. Original downloads and archives are kept.":"Hides this row from Activity. Files are kept; ready and moved content stays in Library.";}
@@ -1025,12 +1028,12 @@ void sheetFooter(Canvas& c,const char* primary,Glyph change,const char* back) no
     hint(c,x,Glyph::circle,back,false,1008);
 }
 const char* ctaLabel(Op op) noexcept {
-    switch(op){case Op::grab:case Op::exploreGrab:return "Get game";case Op::add:return "Start download";case Op::extract:return "Extract";case Op::transfer:return "Move";case Op::move:return "Move to Library";case Op::compress:return "Compress game";default:return "Continue";}
+    switch(op){case Op::importRemote:return "Import to PS5";case Op::grab:case Op::exploreGrab:return "Get game";case Op::add:return "Start download";case Op::extract:return "Extract";case Op::transfer:return "Move";case Op::move:return "Move to Library";case Op::compress:return "Compress game";default:return "Continue";}
 }
 void drawSheet(Canvas& c) noexcept {
     sheetFrame(c);
     const auto op=workflow.command.operation;const auto* target=workflow.target(catalog);
-    const bool download=op==Op::add||op==Op::grab||op==Op::exploreGrab;
+    const bool download=op==Op::add||op==Op::grab||op==Op::exploreGrab||op==Op::importRemote;
     char line1[192]{},size[48];
     std::array<char,96> cover{};
     const char* kicker=op==Op::add?"Add a magnet link":op==Op::extract?"Extract":op==Op::transfer?"Move to another disk":op==Op::move?"Move to Library":op==Op::compress?"Compress game":"Get game";
