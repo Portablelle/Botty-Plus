@@ -38,8 +38,9 @@ build/core-test: tests/core-test.cpp build/host/core.o build/host/storage.o buil
 build/progress-test: tests/progress-test.cpp src/progress.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
+REMOTE_BRIDGE := $(if $(wildcard deployment/botty-remote/server.py),deployment/botty-remote,../../deployment/botty-remote)
 test-remote: build/botty-native
-	python3 ../../deployment/botty-remote/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 tests/remote_integration.py
 
 test-progress: build/progress-test
@@ -59,7 +60,7 @@ test: build/rest-companion-test build/rest-network-test build/rest-http-test bui
 	./build/search-idle-test
 	python3 tests/integration.py
 	python3 tests/rtorrent_resume.py
-	python3 ../../deployment/botty-remote/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 tests/remote_integration.py
 	python3 tests/search_integration.py
 	./build/storage-test

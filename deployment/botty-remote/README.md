@@ -36,6 +36,14 @@ files** removes Botty's PS5 copy and tracking only, keeping the server torrent,
 seeding and originals. Candidate discovery allows a later explicit reimport.
 Piece verification remains available in the server's qBittorrent UI.
 
+Each PS5 import directory contains a private `.botty-remote-owner` marker. Its
+random identity survives disk remounts and directory renames; saved device/inode
+numbers are not used for new staged or published imports. File inventory and
+storage confinement checks still apply. The marker is excluded from prepared
+games, regenerated on disk moves, and removed only with the owned import.
+Empty publication reservations retain an inode guard: an unrecognized reservation
+is left intact rather than adopted after a reconnect.
+
 ## Private provisioning
 
 1. Install `server.py` in `/opt/botty-remote` and the systemd unit in

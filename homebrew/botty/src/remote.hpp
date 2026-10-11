@@ -15,16 +15,19 @@
 #include <unistd.h>
 
 namespace botty {
+inline constexpr const char* remoteOwnerFile=".botty-remote-owner";
 inline void removeEmptyRemoteRoot(const fs::path& directory,const fs::path& folder) {
   if(!fs::exists(fs::symlink_status(folder)))return;
   containedExisting(directory,folder);
   std::vector<fs::path> dirs;
   for(const auto& e:fs::recursive_directory_iterator(folder)){
+    if(e.path()==folder/remoteOwnerFile&&e.is_regular_file()&&!e.is_symlink())continue;
     if(e.is_symlink()||!e.is_directory())throw std::runtime_error("Unexpected retained files; empty-folder cleanup stopped");
     dirs.push_back(e.path());
   }
   std::sort(dirs.begin(),dirs.end(),[](const fs::path& a,const fs::path& b){return std::distance(a.begin(),a.end())>std::distance(b.begin(),b.end());});
   for(const auto& d:dirs)if(::rmdir(d.c_str()))throw std::runtime_error("Cannot remove empty imported folder");
+  if(fs::exists(fs::symlink_status(folder/remoteOwnerFile))&&!fs::remove(folder/remoteOwnerFile))throw std::runtime_error("Cannot remove import ownership marker");
   if(::rmdir(folder.c_str()))throw std::runtime_error("Cannot remove empty import root");
 }
 // A single joined worker owns remote HTTP transfers. HTTP handlers read snapshots.
@@ -91,8 +94,9 @@ class RemoteDownloads {
     json files=json::array();for(const auto& f:r.value("inventory",snapshot.value("files",json::array())))files.push_back({{"name",hash+"/"+f.at("name").get<std::string>()},{"length",f.at("size")},{"bytesCompleted",ready?f.at("size"):json(0)}});
     const auto error=r.value("error",std::string{});
     const bool paused=r.value("paused",false)||(phase=="remote"&&snapshot.value("paused",false));
+    bool archive=false,loose=false;for(const auto& f:r.value("inventory",json::array())){const fs::path name=asciiLower(f.at("name").get<std::string>());archive=archive||name.extension()==".rar";loose=loose||name.extension()==".exfat"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
     return {{"id",r.at("id")},{"hashString",hash},{"name",snapshot.value("name",r.value("name",std::string("Remote torrent")))},{"status",paused?0:ready?6:4},
-      {"remote",true},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
+      {"remote",true},{"remoteLoose",ready&&loose&&!archive},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
       {"rateDownload",phase=="transfer"?r.value("rate",uint64_t(0)):ready?uint64_t(0):snapshot.value("rate",uint64_t(0))},{"rateUpload",phase=="remote"?snapshot.value("upload",uint64_t(0)):uint64_t(0)},{"eta",r.value("eta",-1.0)},
       {"downloadDir",r.at("directory")},{"storage",r.at("storage")},{"files",files},{"error",error.empty()?0:1},{"errorString",error},{"peersConnected",snapshot.value("peers",0)},{"peersSendingToUs",0},{"peersGettingFromUs",0}};
   }
@@ -106,7 +110,7 @@ class RemoteDownloads {
   }
   struct Sink {
     RemoteDownloads* owner;std::string hash,storage;fs::path directory;int fd;
-    uint64_t bytes,limit,base,total,offset;ExtractionEstimate estimate;
+    uint64_t bytes,limit,base,total,offset;CURL* curl;long expectedStatus;ExtractionEstimate estimate;
     std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now(),last=start;
     std::string error;
   };
@@ -115,6 +119,7 @@ class RemoteDownloads {
     auto& s=*static_cast<Sink*>(opaque);const size_t bytes=size*count;
     try{
       if(s.owner->stop_||s.owner->cancel_||bytes>s.limit-s.bytes)return 0;
+      long status=0;curl_easy_getinfo(s.curl,CURLINFO_RESPONSE_CODE,&status);if(status!=s.expectedStatus)throw std::runtime_error("Unexpected HTTPS response; partial bytes kept unchanged");
       const auto now=std::chrono::steady_clock::now();
       if(now-s.last>=std::chrono::milliseconds(250)){
         s.owner->checkStorage_(s.storage,s.directory);
@@ -142,7 +147,20 @@ class RemoteDownloads {
   static fs::path stagingPath(const fs::path& directory,const std::string& hash){return directory/(".remote-"+hash+".partial");}
   static json directoryIdentity(const fs::path& path) {
     struct stat st{};if(lstat(path.c_str(),&st)||!S_ISDIR(st.st_mode))throw std::runtime_error("Import directory is unavailable or unsafe");
+    const auto marker=path/remoteOwnerFile;
+    if(fs::exists(fs::symlink_status(marker))){
+      int fd=::open(marker.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK);if(fd<0)throw std::runtime_error("Import ownership marker unavailable");
+      struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat owner{};char token[33]{};
+      if(fstat(fd,&owner)||!S_ISREG(owner.st_mode)||owner.st_nlink!=1||owner.st_size!=32||::read(fd,token,32)!=32||!std::regex_match(token,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Invalid import ownership marker");
+      return {{"marker",std::string(token)}};
+    }
     return {{"device",uint64_t(st.st_dev)},{"inode",uint64_t(st.st_ino)}};
+  }
+  static json markDirectory(const fs::path& path){
+    const auto token=randomId();int fd=::open((path/remoteOwnerFile).c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+    if(fd<0)throw std::runtime_error("Cannot create import ownership marker");struct Close{int fd;~Close(){::close(fd);}} close{fd};
+    if(::write(fd,token.data(),token.size())!=static_cast<ssize_t>(token.size())||fsync(fd))throw std::runtime_error("Cannot flush import ownership marker");
+    return directoryIdentity(path);
   }
   enum class PublicationState { none, reservation, renamed };
   static PublicationState publicationState(const std::string& hash,const json& r) {
@@ -167,6 +185,7 @@ class RemoteDownloads {
     json inventory=json::array();std::set<fs::path> seen;uint64_t total=0;
     for(const auto& f:snapshot.at("files")){
       const auto name=safeRelative(f.at("name").get<std::string>());if(!seen.insert(name).second)throw std::runtime_error("Duplicate remote member");
+      if(asciiLower(name.begin()->string())==remoteOwnerFile)throw std::runtime_error("Remote member conflicts with import ownership metadata");
       uint64_t size=f.at("size");if(size>INT64_MAX||size>UINT64_MAX-total)throw std::runtime_error("Remote size overflow");total+=size;inventory.push_back(f);
     }
     // Pin the manifest for resumptions. Never reuse partial bytes from a changed inventory.
@@ -181,7 +200,7 @@ class RemoteDownloads {
     }
     if(!fs::exists(fs::symlink_status(stage))){
       if(!fs::create_directory(stage))throw std::runtime_error("Partial import directory appeared; files kept");
-      r["stageIdentity"]=directoryIdentity(stage);update(hash,{{"stageIdentity",r.at("stageIdentity")}},true);
+      r["stageIdentity"]=markDirectory(stage);update(hash,{{"stageIdentity",r.at("stageIdentity")}},true);
     }else if(!r.contains("stageIdentity")||directoryIdentity(stage)!=r.at("stageIdentity"))throw std::runtime_error("Partial directory is not owned by this import");
     containedExisting(directory,stage);
     checkMembers_(stage,target,inventory);uint64_t done=0;Handle h;
@@ -195,7 +214,7 @@ class RemoteDownloads {
       if(available<=reserve||size-offset>available-reserve)throw std::runtime_error("Not enough space to import remote torrent");
       if(offset<size){
         if(lseek(fd,st.st_size,SEEK_SET)<0)throw std::runtime_error("Cannot resume local file");
-        Sink sink{this,hash,storage,directory,fd,offset,size,done,total,offset,ExtractionEstimate{},std::chrono::steady_clock::now(),std::chrono::steady_clock::now(),""};sink.start=sink.last=std::chrono::steady_clock::now();
+        Sink sink{this,hash,storage,directory,fd,offset,size,done,total,offset,h.curl,offset?206L:200L,ExtractionEstimate{},std::chrono::steady_clock::now(),std::chrono::steady_clock::now(),""};sink.start=sink.last=std::chrono::steady_clock::now();
         setup(h,"/file/"+hash+"/"+std::to_string(file.at("index").get<unsigned>()));
         auto* escaped=curl_easy_escape(h.curl,name.string().c_str(),static_cast<int>(name.string().size()));if(!escaped)throw std::runtime_error("Cannot encode pinned remote member");
         const std::string nameHeader=std::string("X-Botty-File-Name: ")+escaped;curl_free(escaped);
@@ -213,11 +232,12 @@ class RemoteDownloads {
     validateTree(stage,inventory);checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
     checkMembers_(stage,target,inventory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");update(hash,{{"publishing",true}},true);
     publishExclusive(stage,target,[&](uint64_t device,uint64_t inode){update(hash,{{"reservationIdentity",{{"device",device},{"inode",inode}}}},true);});
-    update(hash,{{"phase","ready"},{"publishedIdentity",r.at("stageIdentity")},{"bytes",total},{"rate",0},{"eta",-1.0},{"error",""}},true);
+    update(hash,{{"phase","ready"},{"publishedIdentity",directoryIdentity(target)},{"bytes",total},{"rate",0},{"eta",-1.0},{"error",""}},true);
   }
   static void validateTree(const fs::path& root,const json& inventory) {
     std::map<fs::path,uint64_t> expected;for(const auto& f:inventory)expected[safeRelative(f.at("name"))]=f.at("size");
     for(const auto& entry:fs::recursive_directory_iterator(root)){
+      if(entry.path()==root/remoteOwnerFile){if(!directoryIdentity(root).contains("marker"))throw std::runtime_error("Missing import ownership marker");continue;}
       if(entry.is_symlink()||(!entry.is_directory()&&!entry.is_regular_file()))throw std::runtime_error("Unsafe imported content");
       if(entry.is_regular_file()){auto key=entry.path().lexically_relative(root);auto it=expected.find(key);if(it==expected.end()||entry.file_size()!=it->second)throw std::runtime_error("Imported inventory mismatch");expected.erase(it);}
     }
@@ -229,9 +249,20 @@ class RemoteDownloads {
     for(const auto& f:snapshot.at("files")){safeRelative(f.at("name").get<std::string>());f.at("size").get<uint64_t>();f.at("index").get<unsigned>();}
     return snapshot;
   }
+  void discover(){
+    try{auto values=http("/candidates");std::lock_guard<std::mutex> g(mutex_);candidates_=values;discoveryError_.clear();
+        std::set<std::string> live;for(const auto& c:values)live.insert(c.at("hash").get<std::string>());
+        for(auto it=records_.begin();it!=records_.end();)if(it.value().value("phase","")=="available"&&!live.count(it.key()))it=records_.erase(it);else ++it;
+        for(const auto& c:values){const auto hash=c.at("hash").get<std::string>();if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))continue;
+          if(!records_.contains(hash)&&records_.size()<4096){records_[hash]={{"id",allocateId()},{"directory",paths_.complete.string()},{"storage","internal"},{"paused",true},{"phase","available"}};}
+          if(records_.contains(hash)&&records_[hash].value("phase","")=="available"){records_[hash]["snapshot"]={{"name",c.at("name")},{"total",c.at("size")},{"done",0}};records_[hash]["compatibility"]=c.at("compatibility");}
+        }save();}catch(const std::exception& e){std::lock_guard<std::mutex> g(mutex_);discoveryError_=e.what();}
+  }
   void monitor() {
+    unsigned polls=0;
     // A long console copy must not freeze the server progress of other torrents.
     while(!stop_){
+      if((polls++%6)==0)discover();
       json pending=json::object();
       {std::lock_guard<std::mutex> g(mutex_);if(!active_.empty()&&records_.contains(active_)&&records_[active_].value("phase","")=="transfer")
         for(auto it=records_.begin();it!=records_.end();++it)if(it.key()!=active_&&it.value().value("phase","")=="remote")pending[it.key()]=it.value().at("id");}
@@ -246,15 +277,8 @@ class RemoteDownloads {
     }
   }
   void run() {
-    unsigned polls=0;
     while(!stop_){
-      if((polls++%6)==0)try{auto values=http("/candidates");std::lock_guard<std::mutex> g(mutex_);candidates_=values;discoveryError_.clear();
-        std::set<std::string> live;for(const auto& c:values)live.insert(c.at("hash").get<std::string>());
-        for(auto it=records_.begin();it!=records_.end();)if(it.value().value("phase","")=="available"&&!live.count(it.key()))it=records_.erase(it);else ++it;
-        for(const auto& c:values){const auto hash=c.at("hash").get<std::string>();if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))continue;
-          if(!records_.contains(hash)&&records_.size()<4096){records_[hash]={{"id",allocateId()},{"directory",paths_.complete.string()},{"storage","internal"},{"paused",true},{"phase","available"}};}
-          if(records_.contains(hash)&&records_[hash].value("phase","")=="available"){records_[hash]["snapshot"]={{"name",c.at("name")},{"total",c.at("size")},{"done",0}};records_[hash]["compatibility"]=c.at("compatibility");}
-        }save();}catch(const std::exception& e){std::lock_guard<std::mutex> g(mutex_);discoveryError_=e.what();}
+
       json records;{std::lock_guard<std::mutex> g(mutex_);records=records_;}
       for(auto it=records.begin();it!=records.end()&&!stop_;++it){
         const auto hash=it.key();auto r=it.value();if(r.value("paused",false)||r.value("phase","")=="ready"||r.value("phase","")=="available")continue;
@@ -362,7 +386,7 @@ public:
         const bool control=r.value("phase","")=="remote";g.unlock();try{if(control){json body={{"hash",hash},{"action","resume"}};http("/action",&body);}}catch(...){g.lock();throw;}g.lock();records_[hash]["paused"]=false;records_[hash]["error"]="";save();
       }
       else if(method=="torrent-remove"){if(!r.value("paused",false)||active_==hash)throw std::runtime_error("Pause transfer before removing it");records_.erase(hash);save();}
-      else if(method=="torrent-set-location"){if(r.value("phase","")!="ready"||active_==hash)throw std::runtime_error("Finish import before moving it");const fs::path moved=args.at("location").get<std::string>();validateTree(moved/hash,r.at("inventory"));r["publishedIdentity"]=directoryIdentity(moved/hash);r["directory"]=args.at("location");r["storage"]=args.value("storage",std::string("internal"));save();}
+      else if(method=="torrent-set-location"){if(r.value("phase","")!="ready"||active_==hash)throw std::runtime_error("Finish import before moving it");const fs::path moved=args.at("location").get<std::string>();validateTree(moved/hash,r.at("inventory"));r["publishedIdentity"]=markDirectory(moved/hash);r["directory"]=args.at("location");r["storage"]=args.value("storage",std::string("internal"));save();}
       else throw std::runtime_error("Remote transfers support pause/resume; piece verification belongs to qBittorrent on the server");
     }
     return json::object();

@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import socket
 import ssl
@@ -14,7 +15,9 @@ from http.server import ThreadingHTTPServer
 from rtorrent_fixture import RtorrentFixture
 
 HERE = Path(__file__).resolve().parent
-spec = importlib.util.spec_from_file_location('remote_bridge', HERE.parents[2] / 'deployment/botty-remote/server.py')
+bridge_path = HERE.parent / 'deployment/botty-remote/server.py'
+if not bridge_path.is_file(): bridge_path = HERE.parents[2] / 'deployment/botty-remote/server.py'
+spec = importlib.util.spec_from_file_location('remote_bridge', bridge_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
@@ -60,20 +63,26 @@ with tempfile.TemporaryDirectory() as tmp:
             return b'Ok.'
         return json.dumps([dict(t, hash=h) for h, (t, f) in rows.items()]).encode()
     bridge.qb = qb
-    ranges = []; interrupted = []; blocked_copy = threading.Event(); release_copy = threading.Event(); blocked_folder = threading.Event(); release_folder = threading.Event()
+    ranges = []; rejected = []; interrupted = []; blocked_copy = threading.Event(); release_copy = threading.Event(); blocked_folder = threading.Event(); release_folder = threading.Event()
     class Handler(module.Handler):
         def do_GET(self):
             if self.path == '/file/' + folder + '/0' and not release_folder.is_set():
                 blocked_folder.set(); release_folder.wait(20)
             if self.path == '/file/' + game + '/0':
                 ranges.append(self.headers.get('Range'))
+                if not rejected:
+                    rejected.append(True)
+                    body = b'<html>redirect response</html>'
+                    self.send_response(302); self.send_header('Location', '/untrusted'); self.send_header('Content-Length', str(len(body))); self.end_headers()
+                    self.wfile.write(body); self.close_connection = True
+                    return
                 if not interrupted:
                     interrupted.append(True)
                     self.send_response(200); self.send_header('Content-Length', str(len(payload))); self.end_headers()
                     self.wfile.write(payload[:16384]); self.wfile.flush(); self.close_connection = True
                     return
                 if not release_copy.is_set():
-                    blocked_copy.set(); release_copy.wait(20)
+                    blocked_copy.set(); release_copy.wait(60)
             self.handle_request()
     remote = ThreadingHTTPServer(('127.0.0.1', 0), Handler); remote.bridge = bridge
     cert = root / 'cert.pem'; key = root / 'key.pem'
@@ -185,10 +194,20 @@ with tempfile.TemporaryDirectory() as tmp:
         assert 'shared with another torrent' in api('/api/state')['transfer']['error']
         paused[other] = False
         wait(lambda: any(t['id'] == other_id and t['remotePhase'] == 'remote' and t['percentDone'] > .99 for t in api('/api/state')['torrents']), 16)
+        newcomer = 'f' * 40; rows[newcomer] = rows[game]; paused[newcomer] = True
+        wait(lambda: any(t['hashString'] == newcomer and t.get('remoteCandidate') for t in api('/api/state')['torrents']), 40)
+        assert newcomer not in bridge.owned and not release_copy.is_set()
         release_copy.set()
         wait(lambda: any(t['id'] == id and 'shared with a local torrent' in t.get('errorString', '') for t in api('/api/state')['torrents']))
         assert not (data / 'downloads/complete' / game).exists()
         assert (data / 'downloads/complete' / ('.remote-' + game + '.partial') / 'Game PS5/a space.RAR').read_bytes() == payload
+        proc.terminate(); proc.wait(timeout=10)
+        partial = data / 'downloads/complete' / ('.remote-' + game + '.partial')
+        old_inode = partial.stat().st_ino
+        replacement = partial.with_name(partial.name + '.reconnected')
+        shutil.copytree(partial, replacement); shutil.rmtree(partial); replacement.rename(partial)
+        assert partial.stat().st_ino != old_inode
+        proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
         paused[game] = True  # The server lost/rechecked content after console transfer began.
         wait(lambda: any(t['id'] == id and t['remotePhase'] == 'remote' for t in api('/api/state')['torrents']))
         api('/api/torrent', {'id': id, 'action': 'pause'})
@@ -199,8 +218,35 @@ with tempfile.TemporaryDirectory() as tmp:
         assert (data / 'downloads/complete' / game / 'Game PS5/a space.RAR').read_bytes() == payload
         assert (data / 'downloads/complete' / game / 'Game PS5/ü.r00').read_bytes() == b'volume'
         assert 'bytes=16384-' in ranges, ranges
+        assert not next(t for t in api('/api/state')['torrents'] if t['id'] == id)['remoteLoose']
+        proc.terminate(); proc.wait(timeout=10)
+        published = data / 'downloads/complete' / game
+        old_inode = published.stat().st_ino
+        replacement = published.with_name(published.name + '.reconnected')
+        shutil.copytree(published, replacement); shutil.rmtree(published); replacement.rename(published)
+        assert published.stat().st_ino != old_inode
+        proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
         assert (sources / 'Game PS5/a space.RAR').read_bytes() == payload
+        saved = json.loads((data / 'remote-downloads.json').read_text())
+        assert set(saved[game]['publishedIdentity']) == {'marker'}
+        marker = published / '.botty-remote-owner'; ownership = marker.read_bytes(); marker.unlink()
+        try:
+            api('/api/torrent', {'id': id, 'action': 'remove-data', 'confirmed': True})
+            raise RuntimeError('Import without its ownership marker was deleted')
+        except AssertionError as e:
+            assert 'was replaced' in str(e)
+        assert (published / 'Game PS5/a space.RAR').read_bytes() == payload
+        marker.write_bytes(ownership)
         assert not list((data / 'jobs').glob('*.json'))
+        proc.terminate(); proc.wait(timeout=10)
+        previous_job = {'id': '0123456789abcdef' * 2, 'hash': game, 'name': 'Game PS5', 'archive': game + '/Game PS5/a space.RAR', 'automatic': True, 'torrentId': id - 1, 'status': 'ready', 'storage': 'internal'}
+        (data / 'jobs' / (previous_job['id'] + '.json')).write_text(json.dumps(previous_job))
+        automatic_game = data / 'automatic' / ('remote-' + str(id) + '.json')
+        automatic_game.write_text(json.dumps({'hash': game, 'torrentId': id, 'remote': True, 'status': 'waiting', 'storage': 'internal'}))
+        proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+        wait(lambda: json.loads(automatic_game.read_text())['status'] == 'attention')
+        assert any(j.get('torrentId') == id and j.get('error') == 'This archive was already extracted' for j in api('/api/state')['jobs'])
+        assert (published / 'Game PS5/a space.RAR').read_bytes() == payload
         local_movie = data / 'downloads/complete/local-movie.mkv'; local_movie.write_bytes(b'movie')
         local_entries.append({'id': 1, 'hashString': folder, 'name': 'Local hash match', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': 5, 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': 'local-movie.mkv', 'length': 5, 'bytesCompleted': 5}]})
         folder_id = api('/api/remote/import', {'hash': folder, 'automatic': True})['torrent-added']['id']
@@ -211,6 +257,8 @@ with tempfile.TemporaryDirectory() as tmp:
         release_folder.set(); local_entries.clear()
         wait(lambda: (data / 'test-library/PPSA12345-app/eboot.bin').exists())
         wait(lambda: not api('/api/state')['extracting'])
+        assert next(t for t in api('/api/state')['torrents'] if t['id'] == folder_id)['remoteLoose']
+        assert not list((data / 'test-library').rglob('.botty-remote-owner'))
         assert (sources / 'app/eboot.bin').read_bytes() == b'fixture app'
         member = {'name': game + '/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': len(payload)}
         local_entries.append({'id': 1, 'hashString': game, 'name': 'Shared local torrent', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [member]})

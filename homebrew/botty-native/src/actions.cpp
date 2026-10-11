@@ -75,7 +75,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
  if(op==Operation::pause||op==Operation::resume||op==Operation::verify||op==Operation::extract){
   if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";
-  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount&&!e->remote)return e->archivesOmitted?"Archive names exceed the display limit.":"No first RAR volume found in this torrent.";}
+  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount&&(e->archivesOmitted||!e->remoteLoose))return e->archivesOmitted?"Archive names exceed the display limit.":"No first RAR volume found in this torrent.";}
   return "";
  }
  if((op==Operation::cancel||op==Operation::dismiss)&&!c.extractionControls)return "Start the updated Botty service next session to use this action.";
@@ -198,7 +198,7 @@ bool Workflow::submit(const Catalog& c,bool busy) noexcept {
  const char* reason=unavailable(op,download&&op!=Operation::importRemote?nullptr:e,c);
  if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
  if(op==Operation::exploreGrab||op==Operation::grab){if(sourceIndex>=sourceCount)return false;command.id=sources[sourceIndex].id;}
- if(op==Operation::extract&&(!e||!e->remote||e->archiveCount)){
+ if(op==Operation::extract&&(!e||!e->remoteLoose||e->archiveCount)){
   const int at=e&&command.archive[0]?archivePosition(c,*e,command.archive):-1;
   if(at<0){
    std::snprintf(notice.data(),notice.size(),"The archive list changed. Check the archive, then extract again.");

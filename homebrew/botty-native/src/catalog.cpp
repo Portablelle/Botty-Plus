@@ -167,7 +167,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
                 e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
-            }else{e.remote=field(obj,"remote")=="true";e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
+            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=e.remote&&field(obj,"remoteLoose")=="true";e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
                 const char* label=status==0?"Paused":status==1||status==2?"Verifying":e.complete?"Completed":status==3?"Queued":"Downloading";
                 std::snprintf(e.status.data(),e.status.size(),"%s",label);decode(field(obj,"errorString"),e.error);e.total=number(field(obj,"totalSize"));e.download=number(field(obj,"rateDownload"));e.upload=number(field(obj,"rateUpload"));e.progress=number(field(obj,"percentDone"));
                 const auto count=[&](std::string_view key){const auto value=field(obj,key);const double n=value.empty()?-1:number(value);return n>=0&&n<=2147483647?static_cast<int>(n):-1;};
