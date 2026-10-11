@@ -1163,7 +1163,8 @@ void drawToast(Canvas& c,bool sheet) noexcept {
 
 bool nativeInputPending() noexcept {return textEntryState==TextEntryState::accepted||textEntryState==TextEntryState::capacity;}
 bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept {
-    if(edge&botty::Buttons::circle)workflow.close();
+    // Circle backs out like the keyboard panel does: a password edit returns to Extract.
+    if(edge&botty::Buttons::circle)(void)workflow.press(botty::Buttons::circle,catalog,busy);
     else if(textEntryState==TextEntryState::capacity){
         const auto text=nativeKeyboard.text();workflow.command.text.fill(0);
         std::copy(text.begin(),text.end(),workflow.command.text.begin());workflow.selected=0;
@@ -1303,7 +1304,9 @@ bool draw(Canvas& c) noexcept {
         }
         if(action==Action::run){
             const auto f=focused();
-            if(f.entry&&model.detailButton<detailActions.optionCount){
+            // Resolve the button from the current entry, not from the last painted frame.
+            if(f.entry)detailActions.open(f.entry,workflowTab(f),catalog);
+            if(f.entry&&model.detailButton<detailActions.optionCount&&model.detailButton<model.buttonCount){
                 const auto op=detailActions.options[model.detailButton];
                 workflow.open(f.entry,workflowTab(f),catalog);
                 if(workflow.choose(op,catalog,network.busy()))submitWorkflow(quietRequest);
@@ -1332,13 +1335,15 @@ bool draw(Canvas& c) noexcept {
     const auto previousRevision=catalog.revision;
     (void)network.read(connection,&catalog);
     static botty::Processing processing;
-    if(network.readProcessing(processing))++displayRevision;
+    const bool processingChanged=network.readProcessing(processing);
+    if(processingChanged)++displayRevision;
     catalog.processing=processing;
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     const auto nextDeletion=network.deletion();
     if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}
-    const bool changed=previousRevision!=catalog.revision;
-    if(changed)++displayRevision;
+    // Processing refreshes reorder Activity independently of the catalog.
+    const bool changed=previousRevision!=catalog.revision||processingChanged;
+    if(previousRevision!=catalog.revision)++displayRevision;
     if(model.tab==Model::activity){
         model.count=(catalog.valid||catalog.processing.count)?botty::activityCount(catalog,model.filter):0;
         if(changed&&focusedId[0]){

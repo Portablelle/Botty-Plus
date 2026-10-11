@@ -247,7 +247,7 @@ ActivityState activityState(const Entry& e,bool torrent) noexcept {
         if(e.error[0])return ActivityState::attention;
         if(status=="Verifying")return ActivityState::running;
         if(e.complete)return ActivityState::done;
-        return e.active?ActivityState::running:ActivityState::waiting;
+        return e.active&&status!="Queued"?ActivityState::running:ActivityState::waiting;
     }
     if(e.task){
         if(status=="waiting-close"||status=="failed"||status=="uncertain")return ActivityState::attention;
@@ -284,10 +284,12 @@ template<class Visit> bool visitActivity(const Catalog& s,unsigned filter,Visit 
 }
 bool inLibraryFilter(const Entry& e,unsigned filter) noexcept {
     if(!visible(e,2,0))return false;
-    if(filter==3)return e.compressed;
     if(!filter)return true;
+    // A restored game keeps its compressed image as a second copy.
     std::array<LibraryCopy,2> copies{};const unsigned count=libraryCopies(e,copies);
-    for(unsigned i=0;i<count;++i)if((std::string_view(copies[i].storage)=="internal")==(filter==1))return true;
+    for(unsigned i=0;i<count;++i){
+        if(filter==3?std::string_view(copies[i].format)=="Compressed":(std::string_view(copies[i].storage)=="internal")==(filter==1))return true;
+    }
     return false;
 }
 }
