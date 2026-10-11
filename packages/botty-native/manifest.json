@@ -53,8 +53,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 25268764,
-      "sha256": "ac11fa763f07d612f1d315540ba276489c214100e55f388b3172a71b9d00fc75"
+      "size": 25269564,
+      "sha256": "ac86944040813ecd8ad05600378e73103fb0c87e6a794f15b1cd066c663d7ca5"
     },
     {
       "path": "sce_module/libc.prx",

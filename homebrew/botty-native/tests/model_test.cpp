@@ -230,9 +230,9 @@ int main() {
         Model tabs;assert(tabs.tab==Model::discover);tabs.press(Buttons::l1);assert(tabs.tab==Model::system);
         tabs.press(Buttons::r1);tabs.press(Buttons::r1);tabs.press(Buttons::r1);assert(tabs.tab==Model::library);
         // Details buttons move left/right; files page up/down; Cross runs the focused button.
-        tabs.count=4;tabs.press(Buttons::cross);assert(tabs.details&&tabs.detailButton==0);tabs.buttonCount=3;
+        tabs.count=4;tabs.press(Buttons::cross);assert(tabs.details&&tabs.detailButton==0);tabs.buttonCount=3;tabs.pageCount=2;
         tabs.press(Buttons::right);tabs.press(Buttons::right);tabs.press(Buttons::right);assert(tabs.detailButton==2);
-        tabs.press(Buttons::down);assert(tabs.detailPage==1);assert(tabs.press(Buttons::cross)==Model::Action::run);
+        tabs.press(Buttons::down);tabs.press(Buttons::down);assert(tabs.detailPage==1);assert(tabs.press(Buttons::cross)==Model::Action::run);
         assert(tabs.press(Buttons::options)==Model::Action::menu);tabs.press(Buttons::circle);assert(!tabs.details);
     }
     // Native commands encode exact paths/passwords and never auto-replay a POST.
@@ -478,7 +478,7 @@ int main() {
     library.press(Buttons::up);assert(library.selected==8);
     library.press(Buttons::left);assert(library.selected==7);
     library.press(Buttons::triangle);assert(library.filter==1&&library.selected==0);library.selected=7;
-    library.press(Buttons::cross);assert(library.details);
+    library.press(Buttons::cross);assert(library.details);library.pageCount=2;
     library.press(Buttons::down);assert(library.detailPage==1&&library.selected==7);
     library.press(Buttons::circle);assert(!library.details&&library.selected==7);
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"demo","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Demo","size":100,"seeders":9,"leechers":2,"added":false}]}})",catalog));
