@@ -186,6 +186,12 @@ int main() {
         assert(libraryCount(a,0)==3&&libraryCount(a,1)==3&&libraryCount(a,2)==0&&libraryCount(a,3)==0);
         std::snprintf(a.jobs[3].storage.data(),a.jobs[3].storage.size(),"external-x");
         assert(libraryCount(a,2)==1&&std::string_view(libraryAt(a,2,0)->id.data())=="j4"&&libraryCount(a,1)==2&&!libraryAt(a,2,1));
+        // A restored original keeps its compressed image, so Compressed still lists it.
+        std::snprintf(a.jobs[3].kind.data(),a.jobs[3].kind.size(),"folder");std::snprintf(a.jobs[3].compressionState.data(),a.jobs[3].compressionState.size(),"restored");
+        assert(!a.jobs[3].compressed&&libraryCount(a,3)==1&&std::string_view(libraryAt(a,3,0)->id.data())=="j4");
+        // Queued downloads wait; only transferring or verifying work counts as running.
+        std::snprintf(a.torrents[0].status.data(),a.torrents[0].status.size(),"Queued");
+        assert(activityState(a.torrents[0],true)==ActivityState::waiting&&activityCount(a,1)==0);
     }
     char formatted[64];formatETA(catalog.torrents[0],formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA ~17 min");
     formatETA(catalog.torrents[1],formatted,sizeof(formatted));assert(std::string_view(formatted)=="Completed");
