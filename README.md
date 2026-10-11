@@ -116,8 +116,12 @@ running extractions, compressions and moves to finish, installs the update and
 lets you know when you can reopen it. Downloads pause only if needed and resume
 afterward.
 
-In-app updates are new and still being tested on consoles. Selecting **LAUNCH**
-in Portal+ also installs the latest version.
+In-app updates are new and still being tested on consoles.
+
+You can also update through Portal+: let running extractions, compressions
+and moves finish, close Botty+, restart the console, then select **LAUNCH**.
+Do not run **LAUNCH** while an in-app update is waiting or installing. See
+[updates and rollback](deployment/README.md#updates-and-rollback) for details.
 
 ## Good to know
 
