@@ -32,8 +32,8 @@ narrow reverse proxy and a console client, not a Prowlarr installation.
    Botty prefers the source with more seeders and keeps the highest grabs count
    rather than adding counts. Separate editions/releases remain separate.
    Special ranking indexers and `exploreIndexers` mappings are no longer required;
-   legacy mappings are ignored. Refresh Explore after changing providers to bypass
-   its ten-minute cache.
+   legacy mappings are ignored. Refresh Discover (R3 on saved results) after changing
+   providers to bypass its ten-minute cache.
 4. Copy `botty-prowlarr.nginx` to `/etc/nginx/snippets/botty-prowlarr.conf`, enable
    its include in the portal's TLS block and run `nginx -t` before reloading.
    The proxy accepts positive numeric indexer download routes without exposing
@@ -104,7 +104,8 @@ pair from your backups. Never erase torrent or resume directories.
 ### Native title
 
 Native 1.4.2 with running manager 1.5.4 adds installation updates from
-**Connections → Update Botty+ → Install and close**. The manager checks the
+**System → Update and close → Install and close** (earlier releases: **Connections →
+Update Botty+**). The manager checks the
 trusted HTTPS package index on Botty+ `main`, verifies staged files and registered
 metadata, and retains the previous title using the journal/backup layout below.
 It waits for compression, activation and other file operations, then hands off

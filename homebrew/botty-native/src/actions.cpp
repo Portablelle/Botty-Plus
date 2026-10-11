@@ -2,6 +2,7 @@
 #include "actions.hpp"
 #include <cstdio>
 #include <cmath>
+#include <algorithm>
 namespace botty {
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
  // Coarse extrapolation from the ~250 GB Ace Combat deletion on the test PS5.
@@ -15,7 +16,7 @@ void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
 const char* operationLabel(Operation op) noexcept {
  if(op==Operation::nativeUpdate)return "Update Botty+";
  if(op==Operation::checkNativeUpdate)return "Check for updates";
- switch(op){case Operation::transfer:return "Transfer to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Processing";default:return "Actions";}
+ switch(op){case Operation::transfer:return "Move to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Extract";case Operation::move:return "Move to Library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel extraction";case Operation::dismiss:return "Remove from Activity";default:return "Actions";}
 }
 const char* actionPath(Operation op) noexcept {
  if(op==Operation::nativeUpdate)return "/api/native-update";
@@ -54,7 +55,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::explore||op==Operation::exploreGrab){if(!c.exploreSupported)return "Update the Botty service to enable Explore.";if(c.exploreBusy)return "Explore is refreshing. Browse sources now; download when it finishes.";if(c.exploreAdding)return "Wait for the current download request.";return op==Operation::explore||c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
  if(op==Operation::search||op==Operation::grab){if(!c.searchSupported)return "Update the Botty service to enable search.";if(c.searchBusy||c.searchAdding)return "Wait for the current search or download request.";if(op==Operation::search)return "";return c.transmissionReady?"":"Wait for rTorrent to reconnect.";}
  if(op==Operation::add)return c.transmissionReady?"":"Wait for rTorrent to reconnect.";
- if(e&&e->task)return "This task is monitored in Processing. Use Library for game actions.";
+ if(e&&e->task)return "This task is followed in Activity. Use Library for game actions.";
  if(!e)return "This item is no longer available. Close this menu and refresh.";
  if(op==Operation::transfer){if(!c.storageSupported)return "Update Botty to enable external storage.";if(c.extracting||c.compressionBusy)return "Wait for the current file operation.";if(!e)return "Item unavailable.";return e->status[0]&&std::string_view(e->status.data())!="extracting"?"":"Wait for extraction to finish.";}
  if(op==Operation::compress){
@@ -84,29 +85,153 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::remove&&status!="ready"&&status!="failed"&&status!="interrupted"&&status!="cancelled")return "Moved or active extractions cannot be deleted here.";
  return "";
 }
-void Workflow::close() noexcept {panel=Panel::closed;unicodeInput=false;codepoint.fill(0);command.text.fill(0);notice.fill(0);++revision;}
+namespace {
+int storageIndex(const Catalog& c,std::string_view id) noexcept {for(unsigned i=0;i<c.storageCount;++i)if(id==c.storage[i].id.data())return static_cast<int>(i);return -1;}
+bool storageReady(const Catalog& c,std::string_view id) noexcept {const int i=storageIndex(c,id);return !id.empty()&&i>=0&&c.storage[static_cast<unsigned>(i)].available;}
+// Keep the preferred disk when connected, else the first connected disk other than avoid.
+// Position of an exact archive path in an entry's current list, or -1.
+int archivePosition(const Catalog& c,const Entry& e,const std::array<char,4096>& path) noexcept {
+ for(unsigned i=0;i<e.archiveCount&&e.archiveStart+i<c.archiveCount;++i)if(c.archives[e.archiveStart+i]==path)return static_cast<int>(i);
+ return -1;
+}
+void pickStorage(const Catalog& c,std::array<char,64>& out,std::string_view preferred,std::string_view avoid) noexcept {
+ out.fill(0);
+ if(preferred!=avoid&&storageReady(c,preferred)){const int i=storageIndex(c,preferred);out=c.storage[static_cast<unsigned>(i)].id;return;}
+ for(unsigned i=0;i<c.storageCount;++i)if(c.storage[i].available&&avoid!=c.storage[i].id.data()){out=c.storage[i].id;return;}
+}
+}
+bool Workflow::immediate(Operation op) noexcept {return op==Operation::pause||op==Operation::resume||op==Operation::verify;}
+bool Workflow::destructive(Operation op) noexcept {
+ return op==Operation::removeTorrent||op==Operation::removeLibrary||op==Operation::removeOriginal||op==Operation::restoreOriginal||
+  op==Operation::remove||op==Operation::dismiss||op==Operation::cancel||op==Operation::cancelCompression;
+}
+void Workflow::close() noexcept {panel=Panel::closed;rowCount=focus=0;confirming=confirm=false;unicodeInput=false;codepoint.fill(0);command.text.fill(0);savedPassword.fill(0);notice.fill(0);++revision;}
 const Entry* Workflow::target(const Catalog& c) const noexcept {const auto& list=targetTab==0?c.torrents:c.jobs;const auto count=targetTab==0?c.torrentCount:c.jobCount;for(unsigned i=0;i<count;++i)if(std::string_view(list[i].id.data())==targetId.data())return &list[i];return nullptr;}
-void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
- close();if(e&&e->task)return;panel=Panel::menu;selected=0;targetTab=tab;targetId.fill(0);targetName.fill(0);optionCount=0;
- if(e&&tab<3){targetId=e->id;targetName=e->name;if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;options[optionCount++]=Operation::removeTorrent;}else if(tab==2){if(std::string_view(e->status.data())=="ready"){options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;}else {if(c.compressionSupported){
+bool Workflow::hasRow(Row row) const noexcept {for(unsigned i=0;i<rowCount;++i)if(rows[i]==row)return true;return false;}
+unsigned quickActions(const Entry* e,unsigned tab,const Catalog& c,std::array<Operation,8>& options) noexcept {
+ unsigned optionCount=0;if(!e||e->task||tab>2)return 0;
+ if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;}
+ else if(tab==2){
+  if(std::string_view(e->status.data())=="ready")options[optionCount++]=Operation::move;
+  else if(c.compressionSupported){
    const bool current=c.compressionBusy&&std::string_view(c.compressionJob.data())==e->id.data();
    if(current&&(std::string_view(c.compressionStatus.data())=="running"||std::string_view(c.compressionStatus.data())=="starting"))options[optionCount++]=Operation::cancelCompression;
    else if(e->compressed&&e->originalKept&&(std::string_view(e->compressionState.data())=="ready"||std::string_view(e->compressionState.data())=="uncertain"))options[optionCount++]=Operation::removeOriginal;
    else if(!e->compressed&&std::string_view(e->kind.data())=="folder"&&std::string_view(e->titleId.data()).starts_with("PPSA")&&std::string_view(e->titleId.data())!="PPSA99071")options[optionCount++]=Operation::compress;
-  }if(e->originalKept&&(std::string_view(e->compressionState.data())=="ready"||std::string_view(e->compressionState.data())=="uncertain"))options[optionCount++]=Operation::restoreOriginal;options[optionCount++]=Operation::removeLibrary;}}else{if(e->active)options[optionCount++]=Operation::cancel;options[optionCount++]=Operation::move;options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}}
- if(e&&tab<3&&c.storageSupported&&(tab==0||std::string_view(e->status.data())=="ready"||std::string_view(e->status.data())=="moved"))options[optionCount++]=Operation::transfer;
- if(tab!=2)options[optionCount++]=Operation::add;
+  }
+  if(std::string_view(e->status.data())!="ready"&&e->originalKept&&(std::string_view(e->compressionState.data())=="ready"||std::string_view(e->compressionState.data())=="uncertain"))options[optionCount++]=Operation::restoreOriginal;
+ }else {if(e->active)options[optionCount++]=Operation::cancel;options[optionCount++]=Operation::move;}
+ if(c.storageSupported&&(tab==0||std::string_view(e->status.data())=="ready"||std::string_view(e->status.data())=="moved"))options[optionCount++]=Operation::transfer;
+ // Destructive choices stay last, each behind an inline confirmation.
+ if(tab==0)options[optionCount++]=Operation::removeTorrent;
+ else if(tab==2){if(std::string_view(e->status.data())=="ready")options[optionCount++]=Operation::remove;else options[optionCount++]=Operation::removeLibrary;}
+ else {options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}
+ return optionCount;
 }
-void Workflow::search() noexcept {close();command=Command{};command.operation=Operation::search;panel=Panel::keyboard;selected=0;keyPage=0;}
-void Workflow::grab(const Entry& e,bool exploration,bool storageSupported) noexcept {close();command=Command{};command.operation=exploration?Operation::exploreGrab:Operation::grab;command.id=e.id;targetName=e.name;panel=storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
-void Workflow::chooseSources(const Entry& e,const Catalog& c) noexcept {
- grab(e,true,c.storageSupported);sourceCount=0;
+void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
+ close();optionCount=quickActions(e,tab,c,options);if(!optionCount)return;
+ panel=Panel::menu;selected=0;targetTab=tab;targetId=e->id;targetName=e->name;
+}
+bool Workflow::choose(Operation op,const Catalog& c,bool busy) noexcept {
+ const Entry* e=target(c);++revision;
+ unsigned index=0;while(index<optionCount&&options[index]!=op)++index;
+ if(index==optionCount)return false;
+ selected=index;confirming=confirm=false;
+ const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
+ command=Command{};command.operation=op;command.id=targetId;command.torrent=targetTab==0;notice.fill(0);
+ if(immediate(op)){
+  if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
+  panel=Panel::closed;return true;
+ }
+ if(destructive(op)){panel=Panel::menu;confirming=true;confirm=false;return false;}
+ openSheet(c);return false;
+}
+void Workflow::openSheet(const Catalog& c) noexcept {
+ const auto op=command.operation;const Entry* e=target(c);rowCount=0;passwordVisible=false;
+ // The archive is kept by path: refreshes may reorder the list while a password is typed.
+ if(op==Operation::extract){archiveIndex=0;command.archive.fill(0);if(e&&e->archiveCount)command.archive=c.archives[e->archiveStart];}
+ if(op==Operation::exploreGrab||op==Operation::grab)rows[rowCount++]=Row::source;
+ if(op==Operation::add)rows[rowCount++]=Row::magnet;
+ if(op==Operation::extract){rows[rowCount++]=Row::archive;rows[rowCount++]=Row::password;}
+ if(c.storageSupported||op==Operation::transfer)rows[rowCount++]=Row::storage;
+ const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab;
+ if(download&&c.storageSupported){rows[rowCount++]=Row::mode;command.automatic=lastAutomatic;}
+ if(hasRow(Row::storage)){
+  if(download)pickStorage(c,command.storage,lastStorage.data(),{});
+  else if(op==Operation::transfer)pickStorage(c,command.storage,{},e?std::string_view(e->storage.data()):std::string_view{});
+  else pickStorage(c,command.storage,e?std::string_view(e->storage.data()):std::string_view{},{});
+ }
+ panel=Panel::sheet;focus=rowCount;confirming=confirm=false;notice.fill(0);
+}
+void Workflow::change(Row row,bool forward,const Catalog& c) noexcept {
+ const Entry* e=target(c);
+ if(row==Row::source&&sourceCount){
+  if(forward&&sourceIndex+1<sourceCount)++sourceIndex;else if(!forward&&sourceIndex)--sourceIndex;
+  command.id=sources[sourceIndex].id;targetName=sources[sourceIndex].name;
+ }else if(row==Row::mode)command.automatic=!forward;
+ else if(row==Row::archive&&e&&e->archiveCount){
+  const int at=archivePosition(c,*e,command.archive);if(at>=0)archiveIndex=static_cast<unsigned>(at);else archiveIndex=0;
+  if(at>=0&&forward&&archiveIndex+1<e->archiveCount)++archiveIndex;else if(at>=0&&!forward&&archiveIndex)--archiveIndex;
+  command.archive=c.archives[e->archiveStart+archiveIndex];
+ }
+ else if(row==Row::storage){
+  const std::string_view avoid=command.operation==Operation::transfer&&e?std::string_view(e->storage.data()):std::string_view{};
+  int current=storageIndex(c,command.storage.data()),next=-1;
+  for(int i=forward?current+1:current-1;i>=0&&i<static_cast<int>(c.storageCount);i+=forward?1:-1)
+   if(c.storage[static_cast<unsigned>(i)].available&&avoid!=c.storage[static_cast<unsigned>(i)].id.data()){next=i;break;}
+  if(next>=0)command.storage=c.storage[static_cast<unsigned>(next)].id;
+ }
+ notice.fill(0);
+}
+void Workflow::editPassword() noexcept {
+ std::copy_n(command.text.begin(),savedPassword.size()-1,savedPassword.begin());savedPassword.back()=0;
+ panel=Panel::keyboard;selected=48;keyPage=0;passwordVisible=false;unicodeInput=false;codepoint.fill(0);notice.fill(0);
+}
+bool Workflow::submit(const Catalog& c,bool busy) noexcept {
+ if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
+ const auto op=command.operation;const Entry* e=target(c);
+ const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab;
+ const char* reason=unavailable(op,download?nullptr:e,c);
+ if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
+ if(op==Operation::exploreGrab||op==Operation::grab){if(sourceIndex>=sourceCount)return false;command.id=sources[sourceIndex].id;}
+ if(op==Operation::extract){
+  const int at=e&&command.archive[0]?archivePosition(c,*e,command.archive):-1;
+  if(at<0){
+   std::snprintf(notice.data(),notice.size(),"The archive list changed. Check the archive, then extract again.");
+   archiveIndex=0;command.archive.fill(0);if(e&&e->archiveCount)command.archive=c.archives[e->archiveStart];
+   return false;
+  }
+  archiveIndex=static_cast<unsigned>(at);
+ }
+ if(hasRow(Row::storage)){
+  if(!storageReady(c,command.storage.data())){std::snprintf(notice.data(),notice.size(),"Connect the selected disk, or choose another one.");return false;}
+  if(op==Operation::transfer&&e&&command.storage==e->storage){std::snprintf(notice.data(),notice.size(),"Choose a different disk.");return false;}
+ }
+ if(download){lastStorage=command.storage;lastAutomatic=command.automatic;}
+ savedPassword.fill(0);panel=Panel::closed;return true;
+}
+void Workflow::search(std::string_view previous) noexcept {
+ close();command=Command{};command.operation=Operation::search;
+ for(unsigned i=0;i<previous.size()&&i<textLimit(Operation::search);++i)command.text[i]=previous[i];
+ panel=Panel::keyboard;selected=0;keyPage=0;
+}
+void Workflow::grab(const Entry& e,const Catalog& c) noexcept {
+ close();command=Command{};command.operation=Operation::grab;command.id=e.id;targetName=e.name;targetId.fill(0);gameName=e.name;gameId=e.id;
+ sourceCount=1;sourceIndex=0;auto& source=sources[0];source=DownloadSource{};source.id=e.id;source.name=e.name;
+ std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;
+ openSheet(c);
+}
+void Workflow::chooseSources(const Entry& e,const Catalog& c,bool compare) noexcept {
+ close();command=Command{};command.operation=Operation::exploreGrab;targetName=e.name;targetId.fill(0);sourceCount=0;gameName=e.name;gameId=e.id;
  for(unsigned i=0;i<e.sourceCount&&i<sources.size()&&e.sourceStart+i<c.sourceCount;++i)sources[sourceCount++]=c.sources[e.sourceStart+i];
- // Older services provide a single source; still require an explicit choice.
+ // Older services provide a single source.
  if(!sourceCount){auto& source=sources[sourceCount++];source=DownloadSource{};source.id=e.id;source.name=e.name;std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;source.grabs=e.completedCount;source.published=e.published;}
- panel=Panel::sources;selected=0;
+ // The best-seeded source is preselected; every other source stays one press away.
+ sourceIndex=0;for(unsigned i=1;i<sourceCount;++i)if(sources[i].seeders>sources[sourceIndex].seeders)sourceIndex=i;
+ command.id=sources[sourceIndex].id;
+ openSheet(c);if(compare)focus=0;
 }
-void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
+void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;sourceCount=sourceIndex=0;targetId.fill(0);targetName.fill(0);gameName.fill(0);gameId.fill(0);std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
 std::string_view Workflow::keys(unsigned page) noexcept {
  switch(page%3){case 0:return "1234567890qwertyuiopasdfghjkl;zxcvbnm,./";case 1:return "1234567890QWERTYUIOPASDFGHJKL:ZXCVBNM<>?";default:return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~01234567";}
 }
@@ -139,30 +264,50 @@ bool Workflow::acceptText(std::string_view text,const Catalog& c,bool busy) noex
 }
 bool Workflow::finishInput(const Catalog& c,bool busy) noexcept {
  if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
- const Entry* e=target(c);
-    if(command.operation==Operation::add&&(std::string_view(command.text.data())=="magnet:?xt=urn:btih:"||std::string_view(command.text.data()).size()<=8||!std::string_view(command.text.data()).starts_with("magnet:?"))){std::snprintf(notice.data(),notice.size(),"Enter a complete magnet link.");return false;}
-    if(command.operation==Operation::search){if(!command.text[0]){std::snprintf(notice.data(),notice.size(),"Enter a game name.");return false;}const auto reason=unavailable(Operation::search,nullptr,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}panel=Panel::closed;return true;}
-    panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;if(command.operation==Operation::extract&&e)for(unsigned i=0;i<c.storageCount;++i)if(c.storage[i].id==e->storage)selected=i;confirm=false;notice.fill(0);
- return false;
+ if(command.operation==Operation::add&&(std::string_view(command.text.data())=="magnet:?xt=urn:btih:"||std::string_view(command.text.data()).size()<=8||!std::string_view(command.text.data()).starts_with("magnet:?"))){std::snprintf(notice.data(),notice.size(),"Enter a complete magnet link.");return false;}
+ if(command.operation==Operation::search){if(!command.text[0]){std::snprintf(notice.data(),notice.size(),"Enter a game name.");return false;}const auto reason=unavailable(Operation::search,nullptr,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}panel=Panel::closed;return true;}
+ // Extraction returns to its sheet; a magnet opens the Get game sheet.
+ if(command.operation==Operation::extract){savedPassword.fill(0);panel=Panel::sheet;focus=rowCount;notice.fill(0);return false;}
+ if(hasRow(Row::magnet)&&panel==Panel::keyboard){panel=Panel::sheet;focus=rowCount;notice.fill(0);return false;}
+ openSheet(c);return false;
 }
 bool Workflow::press(unsigned edge,const Catalog& c,bool busy) noexcept {
  if(panel==Panel::closed||!edge)return false;++revision;
- if(edge&Buttons::circle){close();return false;}
- if(busy&&panel!=Panel::sources){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
- const Entry* e=target(c);
- if(panel==Panel::sources){
-  if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<sourceCount)++selected;
-  if(edge&Buttons::cross){notice.fill(0);if(busy)return false;const char* reason=unavailable(command.operation,nullptr,c);if(*reason){if(!c.exploreBusy)std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(selected>=sourceCount)return false;command.id=sources[selected].id;targetName=sources[selected].name;panel=c.storageSupported?Panel::storage:Panel::confirm;selected=0;confirm=false;}
- }else if(panel==Panel::menu){
-  if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<optionCount)++selected;
-  if(edge&Buttons::cross){auto op=options[selected];const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
-   if(op==Operation::add){add();return false;}command=Command{};command.operation=op;command.id=targetId;command.torrent=targetTab==0;confirm=false;notice.fill(0);
-   if(op==Operation::extract){panel=Panel::archives;archiveIndex=selected=0;}else if(c.storageSupported&&(op==Operation::move||op==Operation::compress||op==Operation::transfer)){panel=Panel::storage;selected=0;for(unsigned i=0;e&&i<c.storageCount;++i)if(c.storage[i].id==e->storage)selected=i;}else panel=Panel::confirm;
+ if(edge&Buttons::circle){
+  // Circle backs out one level: a confirmation, then a password edit, then the panel.
+  if(panel==Panel::menu&&confirming){confirming=confirm=false;notice.fill(0);return false;}
+  if(panel==Panel::keyboard&&command.operation==Operation::extract&&rowCount){command.text.fill(0);std::copy(savedPassword.begin(),savedPassword.end(),command.text.begin());savedPassword.fill(0);unicodeInput=false;codepoint.fill(0);panel=Panel::sheet;focus=rowCount;notice.fill(0);return false;}
+  close();return false;
+ }
+ if(panel==Panel::menu){
+  const Entry* e=target(c);
+  if(confirming){
+   if(edge&(Buttons::left|Buttons::right))confirm=!confirm;
+   if(edge&Buttons::cross){
+    if(!confirm){confirming=false;notice.fill(0);return false;}
+    if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
+    const char* reason=unavailable(command.operation,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
+    panel=Panel::closed;confirming=false;return true;
+   }
+   return false;
   }
- }else if(panel==Panel::archives){
-  const char* reason=unavailable(Operation::extract,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
-  if((edge&Buttons::up)&&archiveIndex)--archiveIndex;if((edge&Buttons::down)&&archiveIndex+1<e->archiveCount)++archiveIndex;
-  if(edge&Buttons::cross){command.archive=c.archives[e->archiveStart+archiveIndex];command.text.fill(0);panel=Panel::keyboard;selected=48;keyPage=0;passwordVisible=false;}
+  if((edge&Buttons::up)&&selected){--selected;notice.fill(0);}
+  if((edge&Buttons::down)&&selected+1<optionCount){++selected;notice.fill(0);}
+  if((edge&Buttons::cross)&&selected<optionCount)return choose(options[selected],c,busy);
+ }else if(panel==Panel::sheet){
+  if((edge&Buttons::up)&&focus)--focus;
+  if((edge&Buttons::down)&&focus<rowCount)++focus;
+  if((edge&(Buttons::left|Buttons::right))&&focus<rowCount)change(rows[focus],edge&Buttons::right,c);
+  if(hasRow(Row::password)){
+   if(edge&Buttons::triangle)passwordVisible=!passwordVisible;
+   if(edge&Buttons::square){editPassword();return false;}
+  }
+  if(edge&Buttons::cross){
+   if(focus>=rowCount)return submit(c,busy);
+   if(rows[focus]==Row::password){editPassword();return false;}
+   if(rows[focus]==Row::magnet){panel=Panel::keyboard;selected=0;keyPage=0;notice.fill(0);return false;}
+   focus=rowCount; // Cross on a value row returns to the primary button.
+  }
  }else if(panel==Panel::keyboard){
   if(edge&Buttons::options){unicodeInput=!unicodeInput;codepoint.fill(0);notice.fill(0);return false;}
   if(edge&Buttons::l1)keyPage=(keyPage+2)%3;if(edge&Buttons::r1)keyPage=(keyPage+1)%3;
@@ -175,20 +320,6 @@ bool Workflow::press(unsigned edge,const Catalog& c,bool busy) noexcept {
     if(unicodeInput){finishUnicode();return false;}
     return finishInput(c,busy);
    }}
- }else if(panel==Panel::storage){
-  if((edge&Buttons::up)&&selected)--selected;if((edge&Buttons::down)&&selected+1<c.storageCount)++selected;
-  if(edge&Buttons::cross){
-   if(selected>=c.storageCount||!c.storage[selected].available){std::snprintf(notice.data(),notice.size(),"Reconnect the selected disk.");return false;}
-   if(command.operation==Operation::transfer&&e&&c.storage[selected].id==e->storage){std::snprintf(notice.data(),notice.size(),"Choose a different disk.");return false;}
-   command.storage=c.storage[selected].id;notice.fill(0);confirm=false;
-   panel=command.operation==Operation::add||command.operation==Operation::grab||command.operation==Operation::exploreGrab?Panel::mode:Panel::confirm;selected=0;
-  }
- }else if(panel==Panel::mode){
-  if(edge&(Buttons::up|Buttons::down))command.automatic=!command.automatic;
-  if(edge&Buttons::cross){panel=Panel::confirm;confirm=false;}
- }else if(panel==Panel::confirm){
-  if(edge&(Buttons::left|Buttons::right))confirm=!confirm;
-  if(edge&Buttons::cross){if(!confirm){close();return false;}const char* reason=unavailable(command.operation,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}if(command.storage[0]){bool available=false;for(unsigned i=0;i<c.storageCount;++i)if(c.storage[i].id==command.storage&&c.storage[i].available)available=true;if(!available){std::snprintf(notice.data(),notice.size(),"Selected disk disconnected. Choose storage again.");return false;}}panel=Panel::closed;return true;}
  }
  return false;
 }

@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <new>
@@ -302,6 +303,39 @@ void fill_rect(std::uint32_t *pixels, unsigned x, unsigned y, unsigned width, un
     }
 }
 
+void blend_rect(std::uint32_t *pixels,unsigned x,unsigned y,unsigned width,unsigned height,Color color,unsigned alpha) noexcept {
+    if(alpha>=255){fill_rect(pixels,x,y,width,height,color);return;}
+    if(x>=frame_width||y>=frame_height||!alpha)return;
+    const unsigned right=width>frame_width-x?frame_width:x+width,bottom=height>frame_height-y?frame_height:y+height;
+    for(unsigned row=y;row<bottom;++row)for(unsigned column=x;column<right;++column)blend_pixel(pixels,column,row,color,alpha);
+}
+// Coverage of an antialiased edge, from the signed distance inside it.
+unsigned coverage(float inside) noexcept {return inside<=0?0:inside>=1?255:static_cast<unsigned>(inside*255+.5f);}
+// Next UTF-8 code point as a glyph index. Malformed or missing characters show '?'.
+unsigned next_glyph(std::string_view value,std::size_t& at) noexcept {
+    constexpr unsigned unknown='?'-32;
+    const unsigned lead=static_cast<unsigned char>(value[at++]);
+    if(lead<128)return lead>=32&&lead<127?lead-32:unknown;
+    const unsigned count=lead>=0xf8?0:lead>=0xf0?3:lead>=0xe0?2:lead>=0xc0?1:0;
+    if(!count)return unknown;
+    char32_t code=lead&(0x3fU>>count);
+    for(unsigned i=0;i<count;++i){
+        if(at>=value.size()||(static_cast<unsigned char>(value[at])&0xc0)!=0x80)return unknown;
+        code=(code<<6)|(static_cast<unsigned char>(value[at++])&63);
+    }
+    for(unsigned i=0;i<botty::font::extras.size();++i)if(botty::font::extras[i]==code)return 95+i;
+    return unknown;
+}
+const botty::font::Face& face_for(unsigned size,unsigned weight) noexcept {
+    const unsigned wanted=weight>=700?800:600;
+    const botty::font::Face* face=&botty::font::faces[0];bool found=false;
+    for(const auto& candidate:botty::font::faces){
+        if(candidate.weight!=wanted)continue;
+        if(!found||candidate.size<=size){face=&candidate;found=true;}
+    }
+    return *face;
+}
+
 void fill_circle(std::uint32_t *pixels, unsigned center_x, unsigned center_y, unsigned radius,
                  Color color) noexcept
 {
@@ -430,6 +464,13 @@ void Canvas::backdrop(bool subdued) noexcept {
         put_pixel_unchecked(pixels_,x,y,static_cast<Color>(0xff000000U|(r>255?255:r)|((g>255?255:g)<<8)|((b>255?255:b)<<16)));
     }
 }
+void Canvas::fade(unsigned x,unsigned y,unsigned width,unsigned height,Color color,unsigned from,unsigned to,bool horizontal) noexcept {
+    const unsigned steps=horizontal?width:height;if(!steps)return;
+    for(unsigned i=0;i<steps;++i){
+        const unsigned alpha=steps>1?(from*(steps-1-i)+to*i)/(steps-1):from;
+        if(horizontal)blend_rect(pixels_,x+i,y,1,height,color,alpha);else blend_rect(pixels_,x,y+i,width,1,color,alpha);
+    }
+}
 void Canvas::gradient(unsigned x,unsigned y,unsigned width,unsigned height,Color top,Color bottom) noexcept {
     if(!height)return;
     const auto a=static_cast<std::uint32_t>(top),b=static_cast<std::uint32_t>(bottom);
@@ -470,12 +511,13 @@ bool Canvas::illustration(unsigned asset,unsigned x,unsigned y,unsigned width,un
     }
     return true;
 }
-void Canvas::rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept {
+void Canvas::rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color,unsigned alpha) noexcept {
     if(radius>width/2)radius=width/2;
     if(radius>height/2)radius=height/2;
-    fill_rect(pixels_,x+radius,y,width-radius*2,height,color);
-    fill_rect(pixels_,x,y+radius,radius,height-radius*2,color);
-    fill_rect(pixels_,x+width-radius,y+radius,radius,height-radius*2,color);
+    if(alpha>255)alpha=255;
+    blend_rect(pixels_,x+radius,y,width-radius*2,height,color,alpha);
+    blend_rect(pixels_,x,y+radius,radius,height-radius*2,color,alpha);
+    blend_rect(pixels_,x+width-radius,y+radius,radius,height-radius*2,color,alpha);
     for(unsigned py=0;py<radius;++py)for(unsigned px=0;px<radius;++px) {
         unsigned inside=0;
         for(int sy=0;sy<4;++sy)for(int sx=0;sx<4;++sx) {
@@ -483,35 +525,65 @@ void Canvas::rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsign
             const int dy=static_cast<int>((radius-py)*8)-sy*2-1;
             if(dx*dx+dy*dy<=static_cast<int>(radius*radius*64))++inside;
         }
-        const auto alpha=(inside*255+8)/16;
-        blend_pixel(pixels_,x+px,y+py,color,alpha);
-        blend_pixel(pixels_,x+width-1-px,y+py,color,alpha);
-        blend_pixel(pixels_,x+px,y+height-1-py,color,alpha);
-        blend_pixel(pixels_,x+width-1-px,y+height-1-py,color,alpha);
+        const auto corner=(inside*255+8)/16*alpha/255;
+        blend_pixel(pixels_,x+px,y+py,color,corner);
+        blend_pixel(pixels_,x+width-1-px,y+py,color,corner);
+        blend_pixel(pixels_,x+px,y+height-1-py,color,corner);
+        blend_pixel(pixels_,x+width-1-px,y+height-1-py,color,corner);
     }
 }
-unsigned Canvas::text_width(std::string_view value,unsigned size) const noexcept {
+unsigned Canvas::text_width(std::string_view value,unsigned size,unsigned weight,int tracking) const noexcept {
     if(!font_ready)return static_cast<unsigned>(value.size())*6*(size/8?size/8:1);
-    const botty::font::Face* face=&botty::font::faces[0];
-    for(const auto& candidate:botty::font::faces)if(candidate.size<=size)face=&candidate;
-    unsigned width=0;for(unsigned char ch:value){if(ch<32||ch>126)ch='?';width+=face->glyphs[ch-32].advance;}return width;
+    const auto& face=face_for(size,weight);
+    int width=0;bool first=true;
+    for(std::size_t at=0;at<value.size();){width+=face.glyphs[next_glyph(value,at)].advance+(first?0:tracking);first=false;}
+    return width>0?static_cast<unsigned>(width):0;
 }
-void Canvas::label(unsigned x,unsigned y,std::string_view value,unsigned size,Color color) noexcept {
+void Canvas::label(unsigned x,unsigned y,std::string_view value,unsigned size,Color color,unsigned weight,int tracking) noexcept {
     if(!font_ready){text(x,y,value,size/8?size/8:1,color);return;}
-    const botty::font::Face* face=&botty::font::faces[0];
-    for(const auto& candidate:botty::font::faces)if(candidate.size<=size)face=&candidate;
+    const auto& face=face_for(size,weight);
     int pen=static_cast<int>(x);
-    for(unsigned char ch:value) {
-        if(ch<32||ch>126)ch='?';
-        const auto& glyph=face->glyphs[ch-32];
+    for(std::size_t at=0;at<value.size();) {
+        const auto& glyph=face.glyphs[next_glyph(value,at)];
         for(unsigned gy=0;gy<glyph.height;++gy)for(unsigned gx=0;gx<glyph.width;++gx) {
             const int dx=pen+glyph.left+static_cast<int>(gx);
             const int dy=static_cast<int>(y)+glyph.top+static_cast<int>(gy);
             if(dx>=0&&dy>=0)blend_pixel(pixels_,static_cast<unsigned>(dx),static_cast<unsigned>(dy),color,font_pixels[glyph.offset+gy*glyph.width+gx]);
         }
-        pen+=glyph.advance;
+        pen+=glyph.advance+tracking;
         if(pen>=static_cast<int>(frame_width))break;
     }
+}
+void Canvas::stroke(float x0,float y0,float x1,float y1,float width,Color color) noexcept {
+    const float radius=width/2,dx=x1-x0,dy=y1-y0,length=dx*dx+dy*dy;
+    const float left=std::fmin(x0,x1)-radius-1,top=std::fmin(y0,y1)-radius-1,right=std::fmax(x0,x1)+radius+1,bottom=std::fmax(y0,y1)+radius+1;
+    for(int py=static_cast<int>(top>0?top:0);py<=static_cast<int>(bottom)&&py<static_cast<int>(frame_height);++py)
+        for(int px=static_cast<int>(left>0?left:0);px<=static_cast<int>(right)&&px<static_cast<int>(frame_width);++px){
+            const float cx=px+.5f,cy=py+.5f;
+            float t=length>0?((cx-x0)*dx+(cy-y0)*dy)/length:0;t=t<0?0:t>1?1:t;
+            const float ex=cx-(x0+t*dx),ey=cy-(y0+t*dy);
+            blend_pixel(pixels_,static_cast<unsigned>(px),static_cast<unsigned>(py),color,coverage(radius+.5f-std::sqrt(ex*ex+ey*ey)));
+        }
+}
+void Canvas::clip_corners(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color behind) noexcept {
+    if(radius>width/2)radius=width/2;
+    if(radius>height/2)radius=height/2;
+    for(unsigned py=0;py<radius;++py)for(unsigned px=0;px<radius;++px){
+        const float dx=radius-px-.5f,dy=radius-py-.5f;
+        const unsigned outside=255-coverage(radius+.5f-std::sqrt(dx*dx+dy*dy));
+        blend_pixel(pixels_,x+px,y+py,behind,outside);
+        blend_pixel(pixels_,x+width-1-px,y+py,behind,outside);
+        blend_pixel(pixels_,x+px,y+height-1-py,behind,outside);
+        blend_pixel(pixels_,x+width-1-px,y+height-1-py,behind,outside);
+    }
+}
+void Canvas::ring(float center_x,float center_y,float radius,float width,Color color) noexcept {
+    const float reach=radius+width/2+1;
+    for(int py=static_cast<int>(center_y-reach>0?center_y-reach:0);py<=static_cast<int>(center_y+reach)&&py<static_cast<int>(frame_height);++py)
+        for(int px=static_cast<int>(center_x-reach>0?center_x-reach:0);px<=static_cast<int>(center_x+reach)&&px<static_cast<int>(frame_width);++px){
+            const float ex=px+.5f-center_x,ey=py+.5f-center_y;
+            blend_pixel(pixels_,static_cast<unsigned>(px),static_cast<unsigned>(py),color,coverage(width/2+.5f-std::fabs(std::sqrt(ex*ex+ey*ey)-radius)));
+        }
 }
 
 void Canvas::shade(unsigned alpha) noexcept {
@@ -524,11 +596,25 @@ void Canvas::clear(Color color) noexcept
     fill_rect(pixels_, 0, 0, frame_width, frame_height, color);
 }
 
-void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept {
-    if(rgb.size()!=160*240*3||!width||!height)return;
+void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,unsigned radius,unsigned alpha,bool crop) noexcept {
+    if(rgb.size()!=160*240*3||!width||!height||!alpha)return;
+    if(radius>width/2)radius=width/2;
+    if(radius>height/2)radius=height/2;
+    // Source window in 1/256 pixels. Cover crops the long axis around its center.
+    std::uint64_t windowX=0,windowY=0,windowWidth=159*256,windowHeight=239*256;
+    if(crop&&std::uint64_t{width}*240>std::uint64_t{height}*160){windowHeight=std::uint64_t{159}*256*height/width;windowY=(239*256-windowHeight)/2;}
+    else if(crop){windowWidth=std::uint64_t{239}*256*width/height;windowX=(159*256-windowWidth)/2;}
     for(unsigned row=0;row<height&&y+row<frame_height;++row)for(unsigned col=0;col<width&&x+col<frame_width;++col){
-        // Bilinear enlargement keeps the spotlight smooth at TV viewing sizes.
-        const unsigned sx=width>1?col*159*256/(width-1):0,sy=height>1?row*239*256/(height-1):0;
+        unsigned mask=alpha>255?255:alpha;
+        if(radius){
+            const float dx=col<radius?radius-col-.5f:col>=width-radius?col+.5f-(width-radius):0;
+            const float dy=row<radius?radius-row-.5f:row>=height-radius?row+.5f-(height-radius):0;
+            if(dx>0&&dy>0)mask=mask*coverage(radius+.5f-std::sqrt(dx*dx+dy*dy))/255;
+            if(!mask)continue;
+        }
+        // Bilinear enlargement keeps covers smooth at TV viewing sizes.
+        const unsigned sx=static_cast<unsigned>(windowX+(width>1?windowWidth*col/(width-1):0));
+        const unsigned sy=static_cast<unsigned>(windowY+(height>1?windowHeight*row/(height-1):0));
         const unsigned x0=sx/256,y0=sy/256,x1=x0<159?x0+1:x0,y1=y0<239?y0+1:y0;
         const unsigned fx=sx%256,fy=sy%256;std::uint32_t color=0xff000000U;
         for(unsigned channel=0;channel<3;++channel){
@@ -536,7 +622,7 @@ void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::sp
             const unsigned bottom=rgb[(y1*160+x0)*3+channel]*(256-fx)+rgb[(y1*160+x1)*3+channel]*fx;
             color|=((top*(256-fy)+bottom*fy)/65536)<<(channel*8);
         }
-        put_pixel_unchecked(pixels_,x+col,y+row,static_cast<Color>(color));
+        blend_pixel(pixels_,x+col,y+row,static_cast<Color>(color),mask);
     }
 }
 void Canvas::gameCase(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept {

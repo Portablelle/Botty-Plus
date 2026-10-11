@@ -241,6 +241,71 @@ const Entry* entryAt(const Catalog& s,unsigned tab,unsigned filter,unsigned inde
     return nullptr;
 }
 unsigned entryCount(const Catalog& s,unsigned tab,unsigned filter) noexcept {unsigned n=0;while(entryAt(s,tab,filter,n))++n;return n;}
+ActivityState activityState(const Entry& e,bool torrent) noexcept {
+    const auto status=std::string_view(e.status.data());
+    if(torrent){
+        if(e.error[0])return ActivityState::attention;
+        if(status=="Verifying")return ActivityState::running;
+        if(e.complete)return ActivityState::done;
+        return e.active&&status!="Queued"?ActivityState::running:ActivityState::waiting;
+    }
+    if(e.task){
+        if(status=="waiting-close"||status=="failed"||status=="uncertain")return ActivityState::attention;
+        // A cancelled task is finished: its worker keeps or cleans its own files.
+        if(e.complete||status=="cancelled")return ActivityState::done;
+        if(e.active)return ActivityState::running;
+        return e.error[0]?ActivityState::attention:ActivityState::waiting;
+    }
+    if(status=="extracting"||status=="moving")return ActivityState::running;
+    // Cancelled extractions keep partial files until removed or retried.
+    if(status=="failed"||status=="interrupted"||status=="move-error"||status=="cancelled"||e.error[0])return ActivityState::attention;
+    return status=="ready"?ActivityState::done:ActivityState::waiting;
+}
+namespace {
+bool replacedJob(const Catalog& s,const Entry& e) noexcept {for(unsigned t=0;t<s.processing.count;++t)if(s.processing.tasks[t].id==e.id)return true;return false;}
+// Visits Activity rows in display order: running, attention, waiting, then done.
+template<class Visit> bool visitActivity(const Catalog& s,unsigned filter,Visit visit) noexcept {
+    constexpr ActivityState groups[]={ActivityState::running,ActivityState::attention,ActivityState::waiting,ActivityState::done};
+    for(unsigned group=0;group<4;++group){
+        if(filter==1&&group!=0)continue;
+        if(filter==2&&group!=1)continue;
+        if(filter==3&&group!=3)continue;
+        const auto state=groups[group];
+        for(bool downloading:{true,false})for(unsigned i=0;i<s.torrentCount;++i){
+            const auto& e=s.torrents[i];
+            if(e.downloading==downloading&&activityState(e,true)==state&&visit(ActivityItem{&e,true}))return true;
+        }
+        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;}
+        for(unsigned i=0;i<s.jobCount;++i){
+            const auto& e=s.jobs[i];
+            if(e.dismissed||std::string_view(e.status.data())=="moved"||replacedJob(s,e))continue;
+            if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;
+        }
+    }
+    return false;
+}
+bool inLibraryFilter(const Entry& e,unsigned filter) noexcept {
+    if(!visible(e,2,0))return false;
+    if(!filter)return true;
+    // A restored game keeps its compressed image as a second copy.
+    std::array<LibraryCopy,2> copies{};const unsigned count=libraryCopies(e,copies);
+    for(unsigned i=0;i<count;++i){
+        if(filter==3?std::string_view(copies[i].format)=="Compressed":(std::string_view(copies[i].storage)=="internal")==(filter==1))return true;
+    }
+    return false;
+}
+}
+ActivityItem activityAt(const Catalog& s,unsigned filter,unsigned index) noexcept {
+    ActivityItem found;
+    visitActivity(s,filter,[&](ActivityItem item){if(index--)return false;found=item;return true;});
+    return found;
+}
+unsigned activityCount(const Catalog& s,unsigned filter) noexcept {unsigned n=0;visitActivity(s,filter,[&](ActivityItem){++n;return false;});return n;}
+const Entry* libraryAt(const Catalog& s,unsigned filter,unsigned index) noexcept {
+    for(unsigned i=0;i<s.jobCount;++i)if(inLibraryFilter(s.jobs[i],filter)&&index--==0)return &s.jobs[i];
+    return nullptr;
+}
+unsigned libraryCount(const Catalog& s,unsigned filter) noexcept {unsigned n=0;for(unsigned i=0;i<s.jobCount;++i)if(inLibraryFilter(s.jobs[i],filter))++n;return n;}
 void formatBytes(double n,char* out,unsigned length) noexcept {const char* units[]={"B","KiB","MiB","GiB","TiB"};unsigned u=0;while(n>=1024&&u<4){n/=1024;++u;}std::snprintf(out,length,u?"%.1f %s":"%.0f %s",n,units[u]);}
 unsigned libraryCopies(const Entry& e,std::array<LibraryCopy,2>& copies) noexcept {
     const auto kind=std::string_view(e.kind.data());

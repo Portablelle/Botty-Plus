@@ -86,6 +86,17 @@ bool firstArchive(std::string_view) noexcept;
 bool parseCatalog(std::string_view,Catalog&) noexcept;
 unsigned entryCount(const Catalog&,unsigned tab,unsigned filter) noexcept;
 const Entry* entryAt(const Catalog&,unsigned tab,unsigned filter,unsigned index) noexcept;
+// Activity lists downloads and Processing rows together. Rows are never merged by
+// name: each keeps the actions of its own source.
+enum class ActivityState { running, attention, waiting, done };
+ActivityState activityState(const Entry&,bool torrent) noexcept;
+struct ActivityItem { const Entry* entry=nullptr; bool torrent=false; };
+// Filters: 0 all, 1 running, 2 needs attention, 3 done.
+ActivityItem activityAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+unsigned activityCount(const Catalog&,unsigned filter) noexcept;
+// Filters: 0 all, 1 PS5 SSD, 2 external storage, 3 compressed.
+const Entry* libraryAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+unsigned libraryCount(const Catalog&,unsigned filter) noexcept;
 struct LibraryCopy { const char* format; const char* storage; bool retained=false; };
 unsigned libraryCopies(const Entry&,std::array<LibraryCopy,2>&) noexcept;
 void storageLabel(const Catalog&,std::string_view,char*,unsigned) noexcept;

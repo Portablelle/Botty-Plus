@@ -20,19 +20,19 @@ in the background when you close the app.
 
 Starting with 1.6.0, Botty+ uses one public version in the app and GitHub
 releases. PS5 metadata is generated from it; component versions remain
-available in Connections. See the [versioning policy](docs/VERSIONING.md).
+available in System. See the [versioning policy](docs/VERSIONING.md).
 
 ## What you can do
 
-- **Browse and download:** find content through Search and Explore, or add a magnet link or upload a `.torrent` file through the web interface. Pause, resume and check your downloads.
-- **Follow every task:** Processing brings extraction, compression, moves and deletion together, with progress and estimated time remaining.
+- **Browse and download:** find content in Discover, by ranking or by searching every tracker, or add a magnet link or upload a `.torrent` file through the web interface. One sheet picks the source, disk and mode, then starts the download.
+- **Follow every task:** Activity brings downloads, extraction, compression, moves and deletion together, with a Download → Extract → Library pipeline, progress and estimated time remaining.
 - **Manage your Library:** view covers, compress supported games and see where each copy is stored. When both formats exist, their locations appear separately.
 - **Use external storage:** choose the PS5 SSD or an external exFAT disk, check free space and transfer content between them.
-- **Connect from another device:** open Connections to find the web address and login details for your phone or computer.
+- **Connect from another device:** open System to find the web address and login details for your phone or computer.
 
-Search and Explore merge all enabled Prowlarr torrent indexers. In Explore,
-choose a game, then compare its tracker sources by size, seeders, leechers, grabs
-and date before downloading. Search and Explore require optional Prowlarr setup. Manual magnet and torrent-file downloads work
+Discover merges all enabled Prowlarr torrent indexers. Choose a game, then
+compare its tracker sources by size, seeders, grabs and date in the Get game
+sheet before downloading. Discover requires optional Prowlarr setup. Manual magnet and torrent-file downloads work
 without it. Extraction supports RAR archives; ZIP/7z extraction, PKG installation
 and automatic game launching are not supported.
 
@@ -69,21 +69,22 @@ shortcuts, see the [native app guide](homebrew/botty-native/README.md#screens-an
 
 ### 4. Add your first download
 
-In **Downloads**, press **Square** to add a magnet link. Choose the PS5 SSD or an
-external exFAT disk, then select **Full auto** to download, extract and add the
-result to your Library, or **Download only** to handle those steps yourself.
-Follow the download in **Downloads** and the extraction in **Processing**.
+In **Activity**, press **Square** to add a magnet link. In the Get game sheet,
+choose the PS5 SSD or an external exFAT disk, then **Extract and add to Library**
+(Full auto) or **Keep the download only**, and press Cross. Botty+ remembers
+both choices for the session. Follow the download and its extraction in
+**Activity**.
 
-To browse content through **Search** and **Explore**, your host must first
-configure [Prowlarr and the optional services](deployment/README.md#optional-search-and-explore).
+To browse content in **Discover**, your host must first configure
+[Prowlarr and the optional services](deployment/README.md#optional-search-and-explore).
 To manage Botty+ from a phone or computer on the same network, open
-**Connections** and use the displayed web address and login details.
+**System** and use the displayed web address and login details.
 
 ### 5. Keep your installation up to date
 
 With native 1.4.2 and the corresponding modern service stack, the app header
-shows installation-wide update status. Open **Connections**, select **Update
-Botty+**, and confirm **Install and close**. Close other native apps too. The app closes; the updater waits
+shows installation-wide update status. Open **System**, select **Update and
+close**, and confirm **Install and close**. Close other native apps too. The app closes; the updater waits
 for compression and file operations to finish, installs a compatible app/service
 bundle and verifies the replacements before notifying you to reopen it. Downloads
 pause only when their engine needs to restart, and updater-paused downloads are
@@ -101,20 +102,23 @@ for recovery options.
 ## Everyday use
 
 Choose **Full auto** to download, extract and add content to your Library, or
-**Download only** to handle the next steps yourself. Select an item and press
-**Options** for its available actions.
+**Download only** to handle the next steps yourself. Pause, resume and verify
+run at once from an item's details; select an item and press **Options** for
+all its actions. Deleting always asks once more, with Cancel focused.
 
 | Control | Action |
 | --- | --- |
-| L1 / R1 | Switch tabs |
-| D-pad / stick | Navigate |
-| Cross / Circle | Open or confirm / go back |
-| Options | Item actions |
-| Square | Search, add a magnet or another screen-specific action |
-| Triangle | Refresh or change the Explore ranking |
+| L1 / R1 | Switch tabs: Discover, Activity, Library, System |
+| D-pad / stick | Navigate; left/right changes a sheet row or filter |
+| Cross / Circle | Select or confirm / go back or dismiss an error |
+| Options | Quick actions, or compare sources in Discover |
+| Square | Search all trackers in Discover, add a magnet in Activity |
+| Triangle | Change the Discover ranking, filter Library or refresh Activity |
+
+Close Botty+ from **System**; Circle never quits the app.
 
 With the bundled ShadowMount, supported Library moves and deletions can run
-while Botty+ stays open. Follow their progress in **Processing**; failures remain
+while Botty+ stays open. Follow their progress in **Activity**; failures remain
 visible. Compression activation/restoration and registration of new titles can
 still require closing Botty+.
 
@@ -129,20 +133,22 @@ upload, extraction, compression and other firmwares still need hardware validati
 
 ## Preview
 
-Library shows **Compressed**, **Uncompressed** or **Both formats**, plus the
-location of each copy. Missing disks are marked **Offline**.
+Discover leads with the focused game and its cover art. One **Get game** sheet
+picks the source, disk and after-download step, with the button focused first.
 
-![Library copy and storage labels](docs/screenshots/library-copies-1.3.2.png)
+![Discover](docs/screenshots/redesign-discover.png)
 
-*Preview rendered by the native UI with sample data.*
+![Get game sheet](docs/screenshots/redesign-get-game-sheet.png)
 
-![Explore tracker chooser](docs/screenshots/explore-trackers-1.3.6.png)
+Activity follows downloads, extractions and moves in one list. Destructive
+actions confirm inline, with Cancel focused.
 
-*Tracker chooser rendered by the native UI with sample data.*
+![Activity](docs/screenshots/redesign-activity.png)
 
-![Background file operations](docs/screenshots/background-processing-1.4.0.png)
+![Quick actions with a delete confirmation](docs/screenshots/redesign-quick-actions-confirm.png)
 
-*Processing rendered by the native UI with sample data.*
+*Rendered by the native UI on the host with sample PS5 titles, using covers from
+an earlier console capture; not a console capture of this version.*
 
 ## Guides
 
