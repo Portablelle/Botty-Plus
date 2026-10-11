@@ -144,10 +144,10 @@ Do not run **LAUNCH** while an in-app update is waiting or installing. See
 | Problem | What to try |
 | --- | --- |
 | The Botty+ icon does not appear | Wait a moment after **READY**, then check the home screen again. If it is still missing, select **LAUNCH** again. |
-| Botty+ cannot reach its service after a restart | Open Portal+, select **LAUNCH**, then use **System → Reconnect to the service**. |
+| Botty+ cannot reach its service after a restart | Close Botty+ with **System → Close Botty+**, open Portal+, select **LAUNCH** and wait for **READY**, then reopen Botty+. |
 | Discover is empty | Game search is optional and must be set up by your portal provider. Magnet links and `.torrent` uploads work without it. |
 | An extraction needs your attention | Open the item in **Activity**: it may need a password, a missing part of the archive or more free space. |
-| An update is waiting | Let running extractions and compressions finish, then use **System → Update and close**. |
+| **Update queued** appears in System | Select **Close for update**. Botty+ finishes running extractions, compressions and moves, then installs the update. Do not run **LAUNCH** meanwhile. |
 
 ## Screenshots
 
