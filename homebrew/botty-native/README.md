@@ -1,4 +1,4 @@
-# Botty+ native application — 01.006.000
+# Botty+ native application — 01.007.000
 
 Botty+ is a C++20 native PS5 title with a 1920×1080 software renderer, bundled
 Manrope font and DualSense navigation. Its title ID is `PPSA99071`. It connects to
@@ -14,42 +14,59 @@ guide for recovery and manual rollback.
 
 ## Screens and controls
 
-L1/R1 switches **Explore → Search → Downloads → Processing → Library → Connections**.
-D-pad/stick moves selection; Cross opens details and Circle goes back. Options
-opens actions for the selected item. Each destructive action uses a separate
-confirmation with Cancel selected initially.
+L1/R1 switches **Discover → Activity → Library → System**. D-pad/stick moves the
+focus, shown as a white ring. Cross selects and Circle goes back; Circle on a
+tab never opens a quit dialog: **Close Botty+** lives in System. Safe actions
+(pause, resume, verify) run immediately. Every destructive action keeps a
+separate confirmation, shown inline with Cancel focused.
 
-- **Explore:** six-cover pages, starting with Newest. Triangle cycles Newest /
-  Most grabbed / Most seeded; Square explicitly refreshes saved results. Cached
-  results are labeled and remain selectable during refresh; the focused game is
-  retained when it is still available. Cross opens the tracker chooser, where
-  sources remain browsable while refreshing; downloads wait until it finishes.
-  Recognized
-  owned/downloaded titles are hidden. Matching is conservative and artwork may
-  remain unavailable for some titles.
-- **Search:** Square enters a query. Results show size, seeders and leechers.
-  Prowlarr configuration is optional and provisioned privately on the console.
-- **Downloads:** progress, ETA, speeds, peers and file details; pause, resume,
-  verify, extract and confirmed removal of original download files. Square adds
-  a magnet. Left/right changes filters.
-- **Processing:** job status, errors, throughput and ETA; cancellation, cleanup
-  and moving recognized content to the library. Moved jobs appear in Library.
-- **Library:** three-column grid, left/right moves one card, up/down one row,
-  Cross opens details. This screen does not automatically launch games.
-- **Connections:** web address, username and password for LAN access, plus an installation-update button. The header shows whether the app and services are up to date. Choose **Update Botty+**, then **Install and close** to queue a compatible update. Cancellation is selected by default.
+- **Discover:** the focused game leads a cover shelf with its art, size,
+  seeders and grabs. Triangle cycles Newest / Most seeded / Most grabbed; R3
+  refreshes saved results when they are labeled. Cross opens the **Get game**
+  sheet and Options (Compare sources) opens it on the source row. Square opens
+  the PS5 keyboard to **search all trackers**; results replace the shelf, Square
+  edits the query and Circle returns to the shelf. Recognized owned or
+  downloaded titles are hidden; artwork may remain unavailable for some titles.
+- **Get game sheet:** one sheet for Discover, search results and magnet links,
+  with source, install-on disk and after-download rows. Up/down moves between
+  rows and the **Get game** button, which is focused first; left/right changes
+  the focused row. The best-seeded source, the last disk and the last mode
+  (Full auto or Download only) are preselected for the session. Cross starts the
+  download; a short toast confirms it without another screen.
+- **Activity:** downloads, extractions, moves, compression and deletion in one
+  list, with a Download → Extract → Library pipeline on the focused row. Rows are
+  grouped running, needs you, waiting and done; left/right filters them. Rows
+  from different sources are never merged by name. Cross opens details with
+  action buttons and files; Options opens **Quick actions**; Square adds a
+  magnet link; Triangle refreshes.
+- **Extract sheet:** the first archive set is picked automatically when there
+  is only one; left/right chooses another. The optional password is entered with
+  the PS5 keyboard only when needed (Square), Triangle reveals it, and the
+  destination row defaults to the download's disk. Original archives are kept.
+- **Library:** a seven-column cover grid; left/right moves one card, up/down
+  one row and Triangle filters All / PS5 SSD / External / Compressed. Cross
+  opens details and Options opens Quick actions (compress, move, delete). This
+  screen does not launch games.
+- **System:** web address, username and password for LAN access, installation
+  updates, **Reconnect to the service** and **Close Botty+**. When an update is
+  available, **Update and close** shows its versions and asks once more, with
+  Cancel focused, before queueing it.
 
-In details, up/down changes pages. Text entry opens the PS5 system keyboard for
-searches, magnet links and optional archive passwords. Passwords use the system's
-masked, no-learning mode. Cancelling the system dialog returns to the entry
-screen without sending a request; Cross reopens it, Square selects the in-app
-keyboard for longer links, and Circle cancels the workflow. Confirmation keeps the
-existing search validation and storage/download confirmation steps.
+Success toasts disappear after four seconds and never block input. Failures and
+uncertain results stay on screen until Circle dismisses them; that press does
+nothing else. Searches and Explore refreshes report only failures.
+
+Text entry opens the PS5 system keyboard for searches, magnet links and
+optional archive passwords. Passwords use the system's masked, no-learning mode.
+Cancelling the system dialog keeps the entry screen without sending a request;
+Cross reopens it, Square selects the in-app keyboard for longer links, and
+Circle cancels (a password edit returns to the Extract sheet unchanged).
 
 The system dialog accepts up to 2,048 UTF-16 code units; Botty also enforces its
 byte limits (200 for searches, 1,024 for passwords and 16,384 for magnets) without
 silently truncating input. Entries exceeding the byte limit reopen with their
 edits intact so they can be shortened; confirmation during an in-flight request
-is retained until that request and its result overlay finish. IME startup gets
+is retained until that request finishes. IME startup gets
 a bounded ten-second window before falling back. Magnet input reaching the
 system's 2,048-unit cap goes to the in-app editor for explicit review, since
 IME may have trimmed a paste. It is not automatically accepted. If the system dialog is unavailable or cannot handle
@@ -70,7 +87,7 @@ actions instead of pretending they succeeded.
 
 Starting with Botty+ 1.6.0, the header and footer share one public version.
 `release.json` generates the compiled identities, PS5 `contentVersion` and
-build asset through `python3 tools/release_version.py`. Connections shows
+build asset through `python3 tools/release_version.py`. System shows
 technical component versions. See [versioning](../../docs/VERSIONING.md).
 
 Installation updates require native 1.4.2 or later, manager 1.5.4, worker revision 1.3.1
@@ -114,13 +131,22 @@ Preview uses the actual renderer with simulated network/controller APIs. It is
 not a console screenshot. To select another state:
 
 ```sh
-BOTTY_PREVIEW_MODE=connections ./build/preview
+BOTTY_PREVIEW_MODE=system ./build/preview
 ```
 
-Other scenarios include `explore`, `extracted`, `library`, `details`, `offline`,
-`quit` and `exit`. `BOTTY_PREVIEW_STATE_FILE` can provide synthetic state for
-long-name and full-list layout checks. Font and illustration tools use Pillow;
-the recorded asset-generation version is 12.0.0. Assets are already bundled.
+Each redesigned screen has a scenario: `discover`, `get-game`, `compare`,
+`search-typing`, `search`, `keyboard` (in-app magnet editor), `activity`
+(default), `details`, `extract`, `password`, `library`, `library-details`,
+`quick-actions`, `delete-game`, `system`, `update-confirm`, `result` (success
+toast) and `error-toast`. Others include `offline`, `reconnecting`, `quit`,
+`exit`, `deleting` and `checking-deletion`. `BOTTY_PREVIEW_STATE_FILE` can
+provide synthetic state for long-name and full-list layout checks, and
+`BOTTY_PREVIEW_COVERS` can name a directory of 160×240 RGB covers matched by
+title (`Astro Bot` loads `astro-bot.rgb`); titles without a file keep the
+generated fallback. Font and illustration tools use Pillow; the recorded asset-generation
+version is 12.0.0. Assets are already bundled. The font atlas holds Manrope at
+600 (text) and 800 (titles) for sizes 20–76, plus the separators and arrows the
+interface uses.
 
 Cross-build the native title with its own pinned runtime:
 
@@ -176,7 +202,7 @@ During a slow local refresh, the app keeps its last catalog with a Reconnecting 
 
 ### Library deletion
 
-For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Processing** only hides an extraction row and is no longer offered in Library.
+For a moved game folder, Library → Options offers **Delete game**, with Cancel selected by default. This deletes the installed game files while keeping the torrent and original archives. Close the game and remove its home-screen entry first; mounted games are refused. The action requires a service advertising `libraryDeletionSupported`. Image-based games require manual unmounting/removal. **Remove from Activity** only hides an extraction row and is no longer offered in Library.
 
 ## Home-screen music
 
@@ -186,6 +212,13 @@ loop. It is stereo ATRAC9 at 48 kHz / 192 kbit/s. The installer preserves its
 metadata backup indices and appends the sound to registered metadata updates.
 This asset-only update keeps the native executable version unchanged. The
 console Home Screen Music option must be enabled for playback.
+
+## Earlier screen names
+
+The release notes below keep the names used when each feature shipped. Explore
+and Search are now **Discover**, Downloads and Processing are **Activity**, and
+Connections is **System**. Storage, download-mode and confirmation steps are now
+rows of one sheet; per-item actions are **Quick actions**.
 
 ## Library compression (1.2)
 

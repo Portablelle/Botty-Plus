@@ -18,7 +18,7 @@ stale checked-in identities or a package built for another public version.
 
 The public version identifies a complete delivery bundle. Components retain
 independent technical versions; a new public release does not rename an
-unchanged manager, worker or upstream dependency. Connections shows the
+unchanged manager, worker or upstream dependency. System shows the
 compiled PS5 native version and the manager's reported installed service
 versions when current state is available. Unavailable evidence is labelled
 as unavailable rather than replaced with bundled versions.

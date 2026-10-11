@@ -1,4 +1,5 @@
 // Host-only ABI simulation for rendering the actual PS5 scene; not a hardware test.
+#include <array>
 #include <chrono>
 #include <cassert>
 #include <cstddef>
@@ -45,7 +46,7 @@ extern "C" {
 std::uint16_t* overlayImeText=nullptr;
 bool overlayImeFullMagnet=false;
 int overlayImeInit(const void* p,const void*){std::memcpy(&overlayImeText,static_cast<const char*>(p)+40,sizeof(overlayImeText));return 0;}
-int overlayImeStatus(){return 2;}
+int overlayImeStatus(){return is("search-typing")?1:2;}
 int overlayImeResult(void* result){
     assert(overlayImeText);*static_cast<int*>(result)=0;
     if(overlayImeFullMagnet){
@@ -56,9 +57,9 @@ int overlayImeResult(void* result){
     return 0;
 }
 int overlayImeTerm(){return 0;}
-int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return is("keyboard-overlay")?7:-1;}
+int sceKernelLoadStartModule(const char*,std::size_t,const void*,unsigned,const void*,int*){return is("keyboard-overlay")||is("search-typing")?7:-1;}
 int sceKernelDlsym(int,const char* name,void** address){
-    if(!is("keyboard-overlay"))return -1;
+    if(!is("keyboard-overlay")&&!is("search-typing"))return -1;
     if(std::strcmp(name,"sceImeDialogInit")==0)*address=reinterpret_cast<void*>(overlayImeInit);
     else if(std::strcmp(name,"sceImeDialogGetStatus")==0)*address=reinterpret_cast<void*>(overlayImeStatus);
     else if(std::strcmp(name,"sceImeDialogGetResult")==0)*address=reinterpret_cast<void*>(overlayImeResult);
@@ -96,18 +97,21 @@ int sceNetRecv(int,void* b,std::size_t n,int){
             assert(socketRequest.find("X-Botty-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")!=std::string::npos);
             body=R"({"apiVersion":1,"url":"http://192.168.1.50:8088","username":"botty","password":"B7mQ2x"})";
         }
-        if(socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"library":"/data/shadowmount","transmissionReady":true,"extracting":true,"extractionControls":true,"torrents":[{"id":1,"name":"Open source game collection - Volume 1","status":4,"peersConnected":42,"peersSendingToUs":8,"peersGettingFromUs":3,"percentDone":0.64,"leftUntilDone":4638564679,"totalSize":12884901888,"rateDownload":8388608,"rateUpload":262144,"errorString":""},{"id":2,"name":"Homebrew showcase archive","status":0,"percentDone":0.22,"leftUntilDone":4187593114,"totalSize":5368709120,"rateDownload":0,"rateUpload":0},{"id":3,"name":"Community demo assets","files":[{"name":"Community Demo.part1.rar"},{"name":"Community Demo.part2.rar"}],"status":6,"percentDone":1,"leftUntilDone":0,"totalSize":1073741824,"rateDownload":0,"rateUpload":65536}],"jobs":[{"id":"job-1","name":"Homebrew showcase archive","status":"extracting","phase":"Extracting and checking CRC","bytes":2147483648,"total":5368709120,"extractionRate":25165824,"eta":128},{"id":"job-2","name":"Community demo assets","status":"ready","bytes":1073741824,"total":1073741824,"content":{"kind":"folder","destination":"DEMO00001-app"}},{"id":"job-3","name":"Open source sample","status":"moved","destination":"/data/shadowmount/SAMPLE001-app","content":{"kind":"folder"}}]})";
-        if(is("search")&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"Homebrew","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Homebrew demo collection - PS5","size":1073741824,"seeders":24,"leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"leechers":1,"added":true}]}})";
-        if((is("explore")||is("sources"))&&socketRequest.find("GET /api/state ")==0)body=R"({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Elden Ring - PS5","size":1073741824,"seeders":24,"completed":642,"published":"2026-09-30T00:00:00Z","leechers":3,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Community sample game - PS5","size":536870912,"seeders":12,"completed":91,"published":"2026-09-28T00:00:00Z","leechers":1,"added":false}]}})";
-        if(is("delete-torrent")&&socketRequest.find("GET /api/state ")==0){body.insert(1,"\"torrentRemovalSupported\":true,");}
+        if(socketRequest.find("GET /api/state ")==0)body=R"json({"freeBytes":879609302220,"library":"/data/shadowmount","transmissionReady":true,"extracting":true,"extractionControls":true,"torrents":[{"id":1,"name":"Marvel's Wolverine","status":4,"peersConnected":42,"peersSendingToUs":8,"peersGettingFromUs":3,"percentDone":0.64,"leftUntilDone":38654705664,"totalSize":107374182400,"rateDownload":8388608,"rateUpload":262144,"errorString":""},{"id":2,"name":"007 First Light","status":0,"percentDone":0.22,"leftUntilDone":58411456102,"totalSize":75161927680,"rateDownload":0,"rateUpload":0},{"id":3,"name":"Astro Bot","files":[{"name":"Astro.Bot.PS5.part1.rar"},{"name":"Astro.Bot.PS5.part2.rar"}],"status":6,"percentDone":1,"leftUntilDone":0,"totalSize":48318382080,"rateDownload":0,"rateUpload":65536}],"jobs":[{"id":"job-1","name":"Onimusha: Way of the Sword","status":"extracting","phase":"Extracting and checking CRC","bytes":23622320128,"total":59055800320,"extractionRate":25165824,"eta":1406},{"id":"job-2","name":"Astro Bot","status":"ready","bytes":48318382080,"total":48318382080,"content":{"kind":"folder","destination":"Astro Bot-app"}},{"id":"job-3","name":"Ghost of Yotei","status":"moved","total":91268055040,"destination":"/data/shadowmount/Ghost of Yotei-app","content":{"kind":"folder"}},{"id":"job-4","name":"Assassin's Creed Black Flag Resynced","status":"moved","total":64424509440,"destination":"/data/shadowmount/Black Flag Resynced-app","content":{"kind":"folder"}}]})json";
+        if((is("search")||is("search-typing"))&&socketRequest.find("GET /api/state ")==0)body=R"json({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"Astro Bot","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Astro Bot","size":48318382080,"seeders":96,"leechers":14,"added":false},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Astro Bot Digital Deluxe Edition","size":49392123904,"seeders":31,"leechers":4,"added":true}]}})json";
+        if((is("explore")||is("sources")||is("discover")||is("get-game")||is("compare")||is("storage")||is("download-mode"))&&socketRequest.find("GET /api/state ")==0)body=R"json({"freeBytes":879609302220,"transmissionReady":true,"torrents":[],"jobs":[],"storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":163208757248},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD (usb0)","available":true,"freeBytes":999653638144}],"exploreSupported":true,"explore":{"sort":"newest","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Marvel's Wolverine","size":107374182400,"seeders":112,"completed":246,"published":"2026-09-30T00:00:00Z","leechers":14,"added":false,"sources":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tracker":"Indexer A","name":"Marvel's Wolverine","size":107374182400,"seeders":112,"leechers":14,"completed":246,"published":"2026-09-30T00:00:00Z"},{"id":"gggggggggggggggggggggggggggggggg","tracker":"Indexer B","name":"Marvel's Wolverine Digital Deluxe Edition","size":107374182400,"seeders":48,"leechers":6,"completed":120,"published":"2026-09-29T00:00:00Z"},{"id":"hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh","tracker":"Indexer C","name":"Marvel's Wolverine v1.002","size":105226698752,"seeders":9,"leechers":2,"completed":31,"published":"2026-09-28T00:00:00Z"}]},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Astro Bot","size":48318382080,"seeders":96,"completed":1820,"published":"2026-09-27T00:00:00Z","leechers":12,"added":false},{"id":"cccccccccccccccccccccccccccccccc","name":"007 First Light","size":75161927680,"seeders":64,"completed":410,"published":"2026-09-25T00:00:00Z","leechers":8,"added":false},{"id":"dddddddddddddddddddddddddddddddd","name":"Onimusha: Way of the Sword","size":59055800320,"seeders":51,"completed":388,"published":"2026-09-22T00:00:00Z","leechers":6,"added":false},{"id":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","name":"Ghost of Yotei","size":91268055040,"seeders":88,"completed":960,"published":"2026-09-20T00:00:00Z","leechers":11,"added":false},{"id":"ffffffffffffffffffffffffffffffff","name":"Assassin's Creed Black Flag Resynced","size":64424509440,"seeders":40,"completed":215,"published":"2026-09-18T00:00:00Z","leechers":5,"added":false}]}})json";
+        if((is("delete-torrent")||is("confirm"))&&socketRequest.find("GET /api/state ")==0){body.insert(1,"\"torrentRemovalSupported\":true,");}
+        if((is("extract")||is("password"))&&socketRequest.find("GET /api/state ")==0)body.insert(1,R"json("storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":163208757248},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD (usb0)","available":true,"freeBytes":999653638144}],)json");
         if(mode&&std::string_view(mode).starts_with("update-")&&socketRequest.find("GET /api/state ")==0){
             const bool current=is("update-current"),waiting=is("update-waiting"),service=is("update-service");
             body=std::string(R"({"freeBytes":1000000000,"transmissionReady":true,"torrents":[],"jobs":[],"nativeUpdate":{"supported":true,"scope":"installation","status":")")+(current?"current":waiting?"waiting":"available")+
-                R"(","installedVersion":"01.006.000","availableVersion":")"+(current||service?"01.006.000":"01.006.001")+
+                R"(","installedVersion":"01.007.000","availableVersion":")"+(current||service?"01.007.000":"01.007.001")+
                 R"(","installedServiceVersion":"1.5.4","availableServiceVersion":")"+(current?"1.5.4":"1.5.5")+
                 R"(","installedWorkerVersion":"1.3.1","availableWorkerVersion":"1.3.1","installedEngineVersion":"0.16.24-botty8","availableEngineVersion":"0.16.24-botty8","updateAvailable":)"+(current?"false":"true")+R"(,"requested":)"+(waiting?"true":"false")+R"(,"closeRequired":)"+(waiting?"true":"false")+
                 R"(,"message":")"+(current?"App and services are up to date.":waiting?"Waiting for compression and file operations to finish.":service?"Manager update available. The app is already current.":"A compatible app and services update is available.")+R"("}})";
         }
+        // Cover fixtures need the artwork capability (host preview only).
+        if(std::getenv("BOTTY_PREVIEW_COVERS")&&socketRequest.find("GET /api/state ")==0&&body.starts_with("{"))body.insert(1,"\"catalogArtworkSupported\":true,");
         // Optional synthetic state for layout checks (host preview only).
         if(socketRequest.find("GET /api/state ")==0){
             if(const char* path=std::getenv("BOTTY_PREVIEW_STATE_FILE")){
@@ -116,10 +120,14 @@ int sceNetRecv(int,void* b,std::size_t n,int){
             }
         }
         if(is("delete-game")&&socketRequest.find("GET /api/state ")==0){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");body.insert(1,"\"libraryDeletionSupported\":true,");}
-        if(is("password")||is("job-actions")||is("move-confirm")||is("delete-torrent")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
+        if(is("password")||is("extract")||is("job-actions")||is("move-confirm")||is("delete-torrent")||is("confirm")){auto at=body.find("\"extracting\":true");if(at!=std::string::npos)body.replace(at,17,"\"extracting\":false");}
         if(socketRequest.find("POST ")==0)body="{}";
-        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"scope":"installation","status":"queued","version":"01.006.001","serviceVersion":"1.5.5","transaction":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";}
-        socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
+        if(is("error-toast")&&socketRequest.find("POST /api/torrent ")==0){
+            body=R"({"error":"rTorrent rejected the request. Check the download in Activity."})";
+            socketResponse="HTTP/1.1 400 Bad Request\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
+        }
+        if(socketRequest.find("POST /api/native-update ")==0){nativeUpdateSent=true;if(is("update-exit"))body=R"({"apiVersion":1,"scope":"installation","status":"queued","version":"01.007.001","serviceVersion":"1.5.5","transaction":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})";}
+        if(socketResponse.empty())socketResponse="HTTP/1.1 200 OK\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body;
     }
     const auto size=std::min(n,socketResponse.size()-offset);std::memcpy(b,socketResponse.data()+offset,size);offset+=size;return static_cast<int>(size);
 }
@@ -128,43 +136,27 @@ int sceUserServiceInitialize(void*){return 0;}
 int sceUserServiceGetInitialUser(int* u){*u=1;return 0;}
 int scePadInit(){return 0;}
 int scePadOpen(int,int,int,void*){return 1;}
+// Scripted presses on reads 3, 5, 7... for each preview mode; 0 skips a read.
+struct Script {const char* mode;std::array<unsigned,8> presses;};
+constexpr unsigned X=PS5_PAD_BUTTON_CROSS,SQ=PS5_PAD_BUTTON_SQUARE,TR=PS5_PAD_BUTTON_TRIANGLE,OPT=PS5_PAD_BUTTON_OPTIONS;
+constexpr unsigned D=PS5_PAD_BUTTON_DOWN,R=PS5_PAD_BUTTON_RIGHT;
+// Activity fixture order (real PS5 titles): running download, extraction, paused
+// download, completed download with RAR volumes, ready extraction.
+constexpr Script scripts[]={
+    {"get-game",{X}},{"sources",{X}},{"storage",{X}},{"download-mode",{X,D,D}},{"compare",{OPT}},
+    {"search-typing",{0,0,SQ}},{"keyboard",{SQ}},{"details",{X}},{"library-details",{X}},
+    {"actions",{OPT}},{"result",{OPT,X}},{"error-toast",{OPT,X}},
+    {"extract",{D,D,D,X,R,R,X}},{"password",{D,D,D,X,R,R,X,SQ}},
+    {"slow-password",{D,D,D,X,R,R,X,SQ}},{"buffered-password",{D,D,D,X,R,R,X,SQ}},
+    {"confirm",{OPT,D,D,D,X}},{"delete-torrent",{OPT,D,D,D,X}},{"deleting",{OPT,D,D,D,X,R,X}},{"checking-deletion",{OPT,D,D,D,X,R,X}},
+    {"job-actions",{D,OPT}},{"move-confirm",{D,D,D,D,OPT,X,X}},
+    {"quick-actions",{R,OPT}},{"delete-game",{R,OPT,X}},{"checking-game-deletion",{R,OPT,X,R,X}},
+    {"reconnecting",{TR}},{"quit",{D,D}},{"exit",{D,D,X}},
+    {"update-confirm",{0,0,X}},{"update-exit",{0,0,X,R,X}},{"update-uncertain",{0,0,X,R,X}},
+};
 int scePadRead(int,PS5_PadData* p,int){
     *p={};p->connected=1;p->leftStick.x=p->leftStick.y=128;p->timestamp=2*++reads;
-    if((reads==3&&(is("diagnostics")||is("extracted")||is("library")||is("connections")))||(reads==5&&(is("library")||is("connections")))||(reads==7&&is("connections")))p->buttons=PS5_PAD_BUTTON_R1;
-    if(reads==3&&is("reconnecting"))p->buttons=PS5_PAD_BUTTON_TRIANGLE;
-    if(reads==3&&(is("quit")||is("exit")))p->buttons=PS5_PAD_BUTTON_CIRCLE;
-    if(reads==4&&is("exit"))p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if(reads==5&&is("exit"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==5&&is("details"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==3&&(is("actions")||is("confirm")||is("password")||is("result")))p->buttons=PS5_PAD_BUTTON_OPTIONS;
-    if(reads==3&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
-    if((reads==5||reads==7||reads==9)&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_DOWN;
-    if(reads==11&&is("delete-torrent"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==13&&(is("deleting")||is("checking-deletion")))p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if(reads==15&&(is("deleting")||is("checking-deletion")))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==3&&is("keyboard"))p->buttons=PS5_PAD_BUTTON_SQUARE;
-    if(reads==5&&(is("confirm")||is("result")))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==3&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;
-    if(reads==5&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;
-    if(reads==7&&is("password"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
-    if(reads==9&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;
-    if(reads==11&&is("password"))p->buttons=PS5_PAD_BUTTON_DOWN;
-    if((reads==13||reads==15)&&is("password"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==7&&is("result"))p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if(reads==9&&is("result"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if((reads==3||reads==5)&&(is("job-actions")||is("move-confirm")||is("delete-game")))p->buttons=PS5_PAD_BUTTON_R1;
-    if(reads==7&&(is("job-actions")||is("move-confirm")))p->buttons=PS5_PAD_BUTTON_OPTIONS;
-    if(reads==7&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if(reads==9&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_OPTIONS;
-    if(reads==11&&is("delete-game"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==13&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if(reads==15&&is("checking-game-deletion"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(reads==9&&is("move-confirm"))p->buttons=PS5_PAD_BUTTON_CROSS;
-    if((is("sources")||is("storage")||is("download-mode"))&&reads==3)p->buttons=PS5_PAD_BUTTON_CROSS;
-    if(is("download-mode")&&reads==5)p->buttons=PS5_PAD_BUTTON_CROSS;
-    if((is("update-confirm")||is("update-exit")||is("update-uncertain"))&&reads==7)p->buttons=PS5_PAD_BUTTON_CROSS;
-    if((is("update-exit")||is("update-uncertain"))&&reads==9)p->buttons=PS5_PAD_BUTTON_RIGHT;
-    if((is("update-exit")||is("update-uncertain"))&&reads==11)p->buttons=PS5_PAD_BUTTON_CROSS;
+    if(mode&&reads>=3&&reads%2==1)for(const auto& script:scripts)if(std::strcmp(mode,script.mode)==0&&static_cast<unsigned>(reads-3)/2<script.presses.size())p->buttons=script.presses[static_cast<unsigned>(reads-3)/2];
     if(is("update-uncertain")&&reads==18)assert(nativeUpdateSent&&!videoClosed);
     if(is("update-exit")&&reads==18){std::fputs("Expected acknowledged update to exit before capture\n",stderr);std::exit(3);}
     if(reads==18){if(is("slow-password")||is("buffered-password")){assert(keyboardSeen);assert(!resumeSeen);std::puts("Archive selection reached the password keyboard with single taps.");}snapshot();std::exit(0);}

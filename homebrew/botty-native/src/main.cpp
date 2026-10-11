@@ -26,6 +26,10 @@ static_assert(offsetof(PS5_PadData,timestamp)==80);
 namespace {
 using ps5::demo::Canvas;
 using ps5::demo::Color;
+using Model=botty::Model;
+using Op=botty::Operation;
+using Panel=botty::Workflow::Panel;
+using Row=botty::Workflow::Row;
 botty::Model model;
 botty::InputEvents input;
 bool discardPadBatch=false;
@@ -39,65 +43,236 @@ botty::NativeKeyboard nativeKeyboard;
 enum class TextEntryState { idle, editing, ready, accepted, capacity, fallback };
 TextEntryState textEntryState=TextEntryState::idle;
 botty::ActionResult actionResult;
-bool showResult=false;
+// Success and notices expire; failures stay until Circle dismisses them.
+struct Toast {
+    enum class Kind { success, notice, error } kind=Kind::success;
+    bool visible=false;
+    std::uint64_t until=0;
+    std::array<char,160> title{};
+    std::array<char,512> message{};
+    std::array<char,96> cover{};
+} toast;
 botty::Network::Deletion deletion=botty::Network::Deletion::idle;
 std::uint64_t displayRevision=0;
 int pad=-1;
 bool connected=false;
 std::uint64_t retryPad=0;
 unsigned currentButtons=0;
+// The request in flight, described for its toast.
+Op sentOperation=Op::none;
+std::array<char,512> sentName{};
+std::array<char,96> sentCover{};
+std::array<char,256> detailNotice{};
+std::array<std::array<char,201>,3> recentSearches{};
 constexpr Color rgb(unsigned r,unsigned g,unsigned b) { return static_cast<Color>(0xff000000U|r|(g<<8)|(b<<16)); }
-constexpr Color background=rgb(9,13,27), card=rgb(18,25,44);
-constexpr Color muted=rgb(165,181,207), ink=rgb(244,247,255), accent=rgb(111,231,255);
-constexpr Color border=rgb(47,62,91), selected=rgb(29,48,73);
-constexpr Color coral=rgb(255,146,119), lemon=rgb(241,226,132);
-constexpr Color violet=rgb(171,148,255), success=rgb(123,239,190), warning=rgb(255,191,119);
-void shortLabel(Canvas&,unsigned,unsigned,std::string_view,unsigned,unsigned,Color) noexcept;
-void surface(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,bool focus=false) noexcept {
-    if(focus){c.rounded(x-4,y-4,w+8,h+8,20,rgb(33,82,108));c.rounded(x-2,y-2,w+4,h+4,18,accent);}
-    c.rounded(x,y,w,h,16,focus?selected:card);
+// Paper tokens: velvet, seat, raised, line, screen, dust, faint and one ember accent.
+constexpr Color bg=rgb(7,8,11), surface=rgb(18,20,26), raised=rgb(27,30,38), line=rgb(38,42,52);
+constexpr Color ink=rgb(244,242,237), muted=rgb(154,160,172), faint=rgb(94,100,112);
+constexpr Color accent=rgb(255,91,46), accentInk=rgb(26,7,0);
+constexpr Color success=rgb(70,217,138), warning=rgb(255,178,62), danger=rgb(255,77,94), dangerInk=rgb(26,3,6);
+constexpr unsigned bold=800, regular=600;
+// R3 refreshes saved Discover results; Square is reserved for search there.
+constexpr unsigned r3Button=PS5_PAD_BUTTON_R3;
+
+int lineTop(int box,unsigned size,unsigned lineHeight) noexcept {return box+(static_cast<int>(lineHeight)-static_cast<int>(size*139/100))/2;}
+void text(Canvas& c,int x,int box,std::string_view value,unsigned size,unsigned lineHeight,Color color,unsigned weight=regular,int tracking=0) noexcept {
+    const int y=lineTop(box,size,lineHeight);
+    if(x>=0&&y>=0)c.label(static_cast<unsigned>(x),static_cast<unsigned>(y),value,size,color,weight,tracking);
 }
-Color sectionColor() noexcept {
-    constexpr Color colors[]={coral,lemon,success,accent,violet,accent};return colors[model.tab];
+// Centers the line box of one label inside a container of the given height.
+void middle(Canvas& c,int x,int box,unsigned height,std::string_view value,unsigned size,Color color,unsigned weight=regular,int tracking=0) noexcept {
+    text(c,x,box,value,size,height,color,weight,tracking);
 }
-void titleLines(Canvas& c,unsigned x,unsigned y,std::string_view value,unsigned size,unsigned width,unsigned lines,Color color) noexcept {
-    for(unsigned line=0;line<lines&&!value.empty();++line){
-        auto n=value.size();while(n&&c.text_width(botty::slice(value,0,n),size)>width)n--;
-        if(n<value.size()){
-            auto word=n;while(word&&value[word]!=' ')--word;if(word)n=word;
-        }
-        if(!n)return;
-        if(line+1==lines){shortLabel(c,x,y+line*(size+8),value,size,width,color);return;}
-        c.label(x,y+line*(size+8),botty::slice(value,0,n),size,color);value.remove_prefix(n);
-        while(!value.empty()&&value.front()==' ')value.remove_prefix(1);
+unsigned width(Canvas& c,std::string_view value,unsigned size,unsigned weight=regular,int tracking=0) noexcept {return c.text_width(value,size,weight,tracking);}
+std::size_t codepointEnd(std::string_view value,std::size_t at) noexcept {
+    ++at;while(at<value.size()&&(static_cast<unsigned char>(value[at])&0xc0)==0x80)++at;return at;
+}
+// Bytes of value, at a code point boundary, whose rendering fits within limit.
+std::size_t fitting(Canvas& c,std::string_view value,unsigned size,unsigned weight,int tracking,unsigned limit) noexcept {
+    int used=0;std::size_t at=0;
+    while(at<value.size()){
+        const auto next=codepointEnd(value,at);
+        used+=static_cast<int>(c.text_width(botty::slice(value,at,next-at),size,weight))+(at?tracking:0);
+        if(used>static_cast<int>(limit))break;
+        at=next;
+    }
+    return at;
+}
+// Draws text within limit, ending with an ellipsis when shortened. Returns its width.
+unsigned fit(Canvas& c,int x,int box,std::string_view value,unsigned size,unsigned lineHeight,unsigned limit,Color color,unsigned weight=regular,int tracking=0) noexcept {
+    if(width(c,value,size,weight,tracking)<=limit){text(c,x,box,value,size,lineHeight,color,weight,tracking);return width(c,value,size,weight,tracking);}
+    const unsigned ellipsis=width(c,"\xe2\x80\xa6",size,weight);
+    std::array<char,600> shortened{};
+    auto n=fitting(c,value,size,weight,tracking,limit>ellipsis?limit-ellipsis:0);
+    if(n>shortened.size()-4)n=shortened.size()-4;
+    while(n&&(static_cast<unsigned char>(value[n])&0xc0)==0x80)--n;
+    while(n&&value[n-1]==' ')--n;
+    std::copy_n(value.begin(),n,shortened.begin());std::copy_n("\xe2\x80\xa6",3,shortened.begin()+n);
+    text(c,x,box,shortened.data(),size,lineHeight,color,weight,tracking);
+    return width(c,shortened.data(),size,weight,tracking);
+}
+// Shows the end of long input, such as magnet links, after an ellipsis.
+void fitEnd(Canvas& c,int x,int box,std::string_view value,unsigned size,unsigned lineHeight,unsigned limit,Color color,unsigned weight=regular) noexcept {
+    if(width(c,value,size,weight)<=limit){text(c,x,box,value,size,lineHeight,color,weight);return;}
+    const unsigned ellipsis=width(c,"\xe2\x80\xa6",size,weight);
+    std::size_t start=value.size()>480?value.size()-480:0;
+    while(start<value.size()&&(static_cast<unsigned char>(value[start])&0xc0)==0x80)++start;
+    while(start<value.size()&&width(c,botty::slice(value,start),size,weight)+ellipsis>limit)start=codepointEnd(value,start);
+    std::array<char,600> shortened{};std::copy_n("\xe2\x80\xa6",3,shortened.begin());
+    const auto tail=botty::slice(value,start);std::copy_n(tail.begin(),std::min(tail.size(),shortened.size()-4),shortened.begin()+3);
+    text(c,x,box,shortened.data(),size,lineHeight,color,weight);
+}
+// Word-wraps text into at most lines rows; the last row is shortened if needed.
+// Without paint it only counts the rows, to size a container first.
+unsigned wrap(Canvas& c,int x,int box,std::string_view value,unsigned size,unsigned lineHeight,unsigned limit,unsigned lines,Color color,unsigned weight=regular,bool paint=true) noexcept {
+    unsigned used=0;
+    while(used<lines){
+        while(!value.empty()&&(value.front()==' '||value.front()=='\n'))value.remove_prefix(1);
+        if(value.empty())break;
+        const auto newline=value.find('\n');
+        const auto row=newline==std::string_view::npos?value:botty::slice(value,0,newline);
+        const int y=box+static_cast<int>(used*lineHeight);
+        if(used+1==lines){if(paint)fit(c,x,y,row,size,lineHeight,limit,color,weight);++used;break;}
+        auto n=fitting(c,row,size,weight,0,limit);
+        if(n<row.size()){auto space=n;while(space&&row[space]!=' ')--space;if(space)n=space;}
+        if(!n)n=codepointEnd(row,0);
+        if(paint)text(c,x,y,botty::slice(row,0,n),size,lineHeight,color,weight);
+        value.remove_prefix(n);++used;
+    }
+    return used;
+}
+void upper(std::string_view value,char* out,unsigned size) noexcept {
+    unsigned n=0;for(char ch:value){if(n+1>=size)break;out[n++]=ch>='a'&&ch<='z'?static_cast<char>(ch-32):ch;}out[n]=0;
+}
+void grouped(long long value,char* out,unsigned size) noexcept {
+    if(value<0){std::snprintf(out,size,"Unknown");return;}
+    char digits[32];const int n=std::snprintf(digits,sizeof(digits),"%lld",value);unsigned at=0;
+    for(int i=0;i<n&&at+2<size;++i){if(i&&(n-i)%3==0)out[at++]=',';out[at++]=digits[i];}
+    out[at]=0;
+}
+// Remaining time without the "ETA" prefix, for compact rows.
+void timeLeft(const botty::Entry& e,char* out,unsigned size) noexcept {
+    if(e.eta<0||e.eta>315360000){out[0]=0;return;}
+    const auto seconds=static_cast<unsigned long long>(e.eta);const char* approx=e.etaEstimated?"~":"";
+    if(seconds<60)std::snprintf(out,size,"%s<1 min",approx);
+    else if(seconds<3600)std::snprintf(out,size,"%s%llu min",approx,seconds/60);
+    else if(seconds<86400)std::snprintf(out,size,"%s%llu h %llu min",approx,seconds/3600,(seconds%3600)/60);
+    else std::snprintf(out,size,"%s%llu d %llu h",approx,seconds/86400,(seconds%86400)/3600);
+}
+// 01.007.000 -> 1.7.0, the public form shown in the header and footer.
+void publicVersion(std::string_view native,char* out,unsigned size) noexcept {
+    if(!botty::validNativeVersion(native)){std::snprintf(out,size,"%.*s",static_cast<int>(native.size()),native.data());return;}
+    const auto part=[&](unsigned at,unsigned digits){unsigned n=0;for(unsigned i=0;i<digits;++i)n=n*10+static_cast<unsigned>(native[at+i]-'0');return n;};
+    std::snprintf(out,size,"%u.%u.%u",part(0,2),part(3,3),part(7,3));
+}
+void storageName(std::string_view id,char* out,unsigned size) noexcept {botty::storageLabel(catalog,id.empty()?std::string_view("internal"):id,out,size);}
+
+enum class Glyph { none, cross, square, triangle, circle, menu, arrows, updown };
+unsigned glyphWidth(Glyph g) noexcept {return g==Glyph::none?0:g==Glyph::arrows?40:24;}
+// Controller glyphs from the Paper icon paths, drawn in a 24-pixel box.
+void glyph(Canvas& c,Glyph g,float x,float y,Color color,float scale=1,float weight=2.6f) noexcept {
+    const auto at=[&](float vx,float vy,float wx,float wy){c.stroke(x+vx*scale,y+vy*scale,x+wx*scale,y+wy*scale,weight,color);};
+    switch(g){
+    case Glyph::cross:at(5,5,19,19);at(19,5,5,19);break;
+    case Glyph::square:at(4,4,20,4);at(20,4,20,20);at(20,20,4,20);at(4,20,4,4);break;
+    case Glyph::triangle:at(12,4,21,19);at(21,19,3,19);at(3,19,12,4);break;
+    case Glyph::circle:c.ring(x+12*scale,y+12*scale,8.5f*scale,weight,color);break;
+    case Glyph::menu:at(4,7,20,7);at(4,12,20,12);at(4,17,20,17);break;
+    case Glyph::arrows:at(10,5,4,12);at(4,12,10,19);at(30,5,36,12);at(36,12,30,19);break;
+    case Glyph::updown:at(6,9,12,3);at(12,3,18,9);at(6,15,12,21);at(12,21,18,15);break;
+    case Glyph::none:break;
     }
 }
+void chevron(Canvas& c,float x,float y,bool right,Color color) noexcept {
+    if(right){c.stroke(x+3,y+3,x+11,y+11,3,color);c.stroke(x+11,y+11,x+3,y+19,3,color);}
+    else {c.stroke(x+11,y+3,x+3,y+11,3,color);c.stroke(x+3,y+11,x+11,y+19,3,color);}
+}
+// One footer hint; the primary hint names the Cross action.
+unsigned hint(Canvas& c,unsigned x,Glyph g,std::string_view label,bool primary=false,unsigned y=1006) noexcept {
+    glyph(c,g,static_cast<float>(x),static_cast<float>(y),primary?ink:muted);
+    const unsigned at=x+glyphWidth(g)+(g==Glyph::none?0:10);
+    text(c,static_cast<int>(at),static_cast<int>(y),label,20,24,primary?ink:muted,primary?bold:regular);
+    return at+width(c,label,20,primary?bold:regular)+36;
+}
+unsigned keycap(Canvas& c,unsigned x,unsigned y,std::string_view label,unsigned height=32) noexcept {
+    const unsigned w=width(c,label,20,bold)+24;
+    c.rounded(x,y,w,height,8,line);c.rounded(x+2,y+2,w-4,height-4,6,bg);
+    middle(c,static_cast<int>(x+12),static_cast<int>(y),height,label,20,muted,bold);
+    return w;
+}
+// PS5 focus: a 3-pixel screen-white ring separated from the element by a gap.
+void focusRing(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,unsigned radius,unsigned gap,Color behind) noexcept {
+    c.rounded(x-gap-3,y-gap-3,w+2*(gap+3),h+2*(gap+3),radius,ink);
+    c.rounded(x-gap,y-gap,w+2*gap,h+2*gap,radius>3?radius-3:0,behind);
+}
+unsigned badge(Canvas& c,unsigned x,unsigned y,std::string_view label,Color color,Color fill,unsigned alpha) noexcept {
+    const unsigned w=width(c,label,20,bold,2)+20;
+    c.rounded(x,y,w,30,8,fill,alpha);middle(c,static_cast<int>(x+10),static_cast<int>(y),30,label,20,color,bold,2);
+    return w;
+}
+unsigned eyebrow(Canvas& c,int x,int box,std::string_view value,Color color,bool dot=false,Color dotColor=accent) noexcept {
+    char label[160];upper(value,label,sizeof(label));
+    if(dot){c.rounded(static_cast<unsigned>(x),static_cast<unsigned>(box+8),8,8,4,dotColor);x+=20;}
+    text(c,x,box,label,20,24,color,bold,3);
+    return static_cast<unsigned>(x)+width(c,label,20,bold,3);
+}
+// Filter chip; a nonzero dot color adds a status marker before the label.
+unsigned chip(Canvas& c,unsigned x,unsigned y,std::string_view label,bool active,const char* count=nullptr,Color dot=Color{}) noexcept {
+    const bool marker=static_cast<std::uint32_t>(dot)!=0;
+    unsigned w=44+width(c,label,20,bold)+(count?10+width(c,count,20,bold):0)+(marker?18:0);
+    c.rounded(x,y,w,48,24,active?ink:raised);
+    unsigned at=x+22;
+    if(marker){c.rounded(at,y+20,8,8,4,dot);at+=18;}
+    middle(c,static_cast<int>(at),static_cast<int>(y),48,label,20,active?bg:ink,bold);
+    if(count)middle(c,static_cast<int>(at+width(c,label,20,bold)+10),static_cast<int>(y),48,count,20,active?faint:muted,bold);
+    return w;
+}
+void progress(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,double value,Color color,Color track=line,unsigned trackAlpha=255) noexcept {
+    c.rounded(x,y,w,h,h/2,track,trackAlpha);
+    const unsigned filled=static_cast<unsigned>(w*std::clamp(value,0.0,1.0));
+    if(filled)c.rounded(x,y,std::max(filled,h),h,h/2,color);
+}
+
+std::array<char,96> artworkId(const std::array<char,96>& entryId,char source) noexcept {
+    if(source=='e')return entryId;
+    std::array<char,96> id{};
+    std::snprintf(id.data(),id.size(),"%c:%.93s",source,entryId.data());return id;
+}
+std::array<char,96> artworkId(const botty::Entry& entry,char source) noexcept {return artworkId(entry.id,source);}
+// Cover of the game a Get game sheet opened for: Explore ids are raw, search ids prefixed.
+std::array<char,96> sheetCover() noexcept {return artworkId(workflow.gameId,workflow.command.operation==botty::Operation::grab?'s':'e');}
+const std::array<unsigned char,160*240*3>* coverFor(const std::array<char,96>& id) noexcept {
+    if(!id[0])return nullptr;
+    for(unsigned i=0;i<covers.ids.size();++i)if(covers.ready[i]&&covers.ids[i]==id)return &covers.pixels[i];
+    return nullptr;
+}
+// Generated artwork for games without a cover.
 void gamePattern(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,unsigned seed) noexcept {
-    constexpr Color tops[]={rgb(67,44,99),rgb(31,75,90),rgb(99,49,54),rgb(41,68,107),rgb(67,77,40),rgb(87,46,93)};
-    constexpr Color lights[]={violet,accent,coral,rgb(123,175,255),lemon,rgb(247,148,210)};
-    c.gradient(x,y,w,h,tops[seed%6],background);
+    constexpr Color tops[]={rgb(58,40,52),rgb(32,46,58),rgb(64,38,30),rgb(36,40,64),rgb(48,52,34),rgb(56,34,58)};
+    constexpr Color lights[]={accent,ink,muted,accent,warning,ink};
+    c.gradient(x,y,w,h,tops[seed%6],bg);
     const unsigned radius=std::min(w,h)/3;
     c.circle(x+w*3/5,y+h*2/5,radius,lights[seed%6]);
     c.circle(x+w*3/5-radius/4,y+h*2/5-radius/5,radius-3,tops[seed%6]);
     for(unsigned i=0;i<5;++i){const unsigned yy=y+h*2/3+i*8;if(yy<y+h)c.rectangle(x+w/10,yy,w*4/5,1,lights[seed%6]);}
 }
-void heading(Canvas& c,const char* title,const char* subtitle) noexcept {
-    c.label(96,235,title,60,ink);c.label(98,311,subtitle,24,muted);
+void art(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,unsigned radius,const std::array<char,96>& id,std::string_view name,unsigned seed,Color behind,unsigned alpha=255) noexcept {
+    if(const auto* pixels=coverFor(id)){c.poster(x,y,w,h,*pixels,radius,alpha);return;}
+    gamePattern(c,x,y,w,h,seed);
+    if(w>=120&&!name.empty()){c.fade(x,y+h/2,w,h/2,bg,0,230,false);wrap(c,static_cast<int>(x+14),static_cast<int>(y+h-96),name,20,26,w-28,3,ink,bold);}
+    if(alpha<255)c.rounded(x,y,w,h,0,behind,255-alpha);
+    c.clip_corners(x,y,w,h,radius,behind);
 }
-void progressBar(Canvas& c,unsigned x,unsigned y,unsigned width,double value,Color color) noexcept {
-    c.rounded(x,y,width,6,3,border);
-    const unsigned filled=static_cast<unsigned>(width*std::clamp(value,0.0,1.0));
-    if(filled)c.rounded(x,y,filled,6,3,color);
+// Cover art blown up behind the hero, faded into velvet on the left and bottom.
+void hero(Canvas& c,const std::array<char,96>& id,unsigned seed,unsigned fadeTop) noexcept {
+    if(const auto* pixels=coverFor(id))c.poster(532,0,1388,780,*pixels,0,255,true);
+    else gamePattern(c,532,0,1388,780,seed);
+    c.fade(532,0,287,780,bg,255,209,true);c.fade(819,0,533,780,bg,209,0,true);
+    c.fade(0,fadeTop,1920,780-fadeTop,bg,0,255,false);
+    // Keeps the header status legible over bright cover art.
+    c.fade(532,0,1388,190,bg,190,0,false);
 }
-void downloadIcon(Canvas& c,unsigned x,unsigned y,Color color) noexcept {
-    c.rounded(x+20,y,8,29,4,color);
-    for(unsigned row=0;row<14;++row)c.rectangle(x+10+row,y+23+row,28-row*2,1,color);
-    c.rounded(x+2,y+43,44,5,2,color);
-}
-void statusDot(Canvas& c,unsigned x,unsigned y,Color color) noexcept {c.rounded(x,y,12,12,6,color);}
-void key(Canvas& c,unsigned x,unsigned y,const char* label,unsigned width=36) noexcept {
-    c.rounded(x,y,width,34,10,border);c.label(x+11,y+3,label,20,ink);
-}
+
 void openPad() noexcept {
     int user=-1;
     if(sceUserServiceGetInitialUser(&user)==0)
@@ -132,291 +307,923 @@ unsigned pollPad(std::uint64_t now) noexcept {
     return input.next(now);
 }
 
-void wrapped(Canvas& c,std::string_view text,unsigned& line,unsigned page,Color color) noexcept {
-    while(!text.empty()) {
-        unsigned n=text.size()>120?120:static_cast<unsigned>(text.size());
-        const auto newline=text.find('\n');if(newline<n)n=static_cast<unsigned>(newline);
-        while(n&&c.text_width(botty::slice(text,0,n),26)>1630)--n;
-        if(n<text.size()) {while(n&&(static_cast<unsigned char>(text[n])&0xc0)==0x80)--n;}
-        if(line>=page*12&&line<page*12+12)c.label(140,426+(line-page*12)*38,botty::slice(text,0,n),26,color);
-        ++line;text.remove_prefix(n);
-        if(!text.empty()&&text.front()=='\n')text.remove_prefix(1);
+struct Focus { const botty::Entry* entry=nullptr; bool torrent=false; };
+Focus focused() noexcept {
+    if(model.tab==Model::activity){const auto item=botty::activityAt(catalog,model.filter,model.selected);return {item.entry,item.torrent};}
+    if(model.tab==Model::library)return {botty::libraryAt(catalog,model.filter,model.selected),false};
+    return {};
+}
+unsigned workflowTab(const Focus& f) noexcept {return model.tab==Model::library?2:f.torrent?0:1;}
+char artSource(const Focus& f) noexcept {return f.torrent?'t':'j';}
+
+// Progress through Download -> Extract -> Library, or the name of another task.
+struct Stage { const char* label; Color color; int step; };
+Stage stageOf(const botty::Entry& e,bool torrent) noexcept {
+    const auto state=botty::activityState(e,torrent);const auto status=std::string_view(e.status.data());
+    if(state==botty::ActivityState::attention)return {"Needs you",warning,-1};
+    if(torrent){
+        if(state==botty::ActivityState::done)return {"Downloaded",success,0};
+        return {status=="Paused"?"Paused":status=="Queued"?"Queued":status=="Verifying"?"Verifying":"Download",state==botty::ActivityState::running?accent:muted,0};
+    }
+    if(e.task){
+        const auto kind=std::string_view(e.kind.data());
+        const char* label=kind=="transfer"?"Transfer":kind=="compression"?"Compress":kind=="deletion"?"Delete":kind=="restore"?"Restore":"Task";
+        if(state==botty::ActivityState::done)return {"Done",success,-1};
+        return {label,state==botty::ActivityState::running?accent:muted,-1};
+    }
+    // Ready content is extracted but not yet moved into the Library.
+    if(status=="ready")return {"Ready",success,1};
+    if(status=="moving")return {"Library",accent,2};
+    if(status=="extracting")return {"Extract",accent,1};
+    return {status=="cancelled"?"Cancelled":"Extract",muted,1};
+}
+void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexcept {
+    char done[48],total[48],rate[48],left[48];
+    botty::formatBytes(e.bytes,done,sizeof(done));botty::formatBytes(e.total,total,sizeof(total));botty::formatBytes(e.download,rate,sizeof(rate));timeLeft(e,left,sizeof(left));
+    const auto status=std::string_view(e.status.data());const auto state=botty::activityState(e,torrent);
+    if(state==botty::ActivityState::attention&&e.error[0]){std::snprintf(out,size,"%s",e.error.data());return;}
+    if(torrent){
+        if(e.complete){if(e.upload>0){botty::formatBytes(e.upload,rate,sizeof(rate));std::snprintf(out,size,"Downloaded \xc2\xb7 %s \xc2\xb7 seeding at %s/s",total,rate);}else std::snprintf(out,size,"Downloaded \xc2\xb7 %s",total);return;}
+        if(status=="Paused"){std::snprintf(out,size,"Paused \xc2\xb7 %s of %s",done,total);return;}
+        if(e.download>0)std::snprintf(out,size,"%s of %s \xc2\xb7 %s/s%s%s%s",done,total,rate,left[0]?" \xc2\xb7 ":"",left,left[0]?" left":"");
+        else std::snprintf(out,size,"%s of %s \xc2\xb7 %s",done,total,status=="Queued"?"queued":status=="Verifying"?"verifying files":"waiting for peers");
+        return;
+    }
+    if(e.task){
+        const char* phase=e.phase[0]?e.phase.data():e.status.data();
+        if(e.items&&e.total>0)std::snprintf(out,size,"%s \xc2\xb7 %.0f of %.0f items%s%s",phase,e.bytes,e.total,left[0]?" \xc2\xb7 ":"",left);
+        else if(e.total>0)std::snprintf(out,size,"%s \xc2\xb7 %s of %s%s%s",phase,done,total,left[0]?" \xc2\xb7 ":"",left);
+        else std::snprintf(out,size,"%s \xc2\xb7 %.0f s elapsed",phase,e.elapsed);
+        return;
+    }
+    if(status=="extracting"){std::snprintf(out,size,"%s \xc2\xb7 %s/s%s%s%s",e.phase[0]?e.phase.data():"Extracting",rate,left[0]?" \xc2\xb7 ":"",left,left[0]?" left":"");return;}
+    if(status=="ready"){std::snprintf(out,size,"Extracted \xc2\xb7 move it to Library from Quick actions");return;}
+    if(status=="moving"){std::snprintf(out,size,"Moving to Library");return;}
+    std::snprintf(out,size,"%s",status=="cancelled"?"Extraction cancelled \xc2\xb7 files were kept":status.data());
+}
+// finished marks the current step complete, such as a download waiting to be extracted.
+void pipeline(Canvas& c,int x,int box,unsigned size,unsigned lineHeight,unsigned dot,unsigned connector,int step,double value,bool percent,bool finished=false) noexcept {
+    const char* names[]={"Download","Extract","Library"};
+    for(int i=0;i<3;++i){
+        const unsigned dy=static_cast<unsigned>(box)+(lineHeight-dot)/2;
+        if(i==step&&!finished){c.rounded(static_cast<unsigned>(x),dy,dot,dot,dot/2,accent);}
+        else if(i<=step){c.rounded(static_cast<unsigned>(x),dy,dot,dot,dot/2,success);}
+        else c.ring(static_cast<float>(x)+dot/2.f,static_cast<float>(dy)+dot/2.f,dot/2.f-1,2,faint);
+        x+=static_cast<int>(dot)+(size>20?14:10);
+        char label[48];if(i==step&&percent)std::snprintf(label,sizeof(label),"%s %.0f%%",names[i],value*100);else std::snprintf(label,sizeof(label),"%s",names[i]);
+        const bool current=i==step&&!finished;
+        text(c,x,box,label,size,lineHeight,current?ink:i<=step?muted:faint,current?bold:regular);
+        x+=static_cast<int>(width(c,label,size,current?bold:regular));
+        if(i<2){x+=size>20?14:10;c.rectangle(static_cast<unsigned>(x),static_cast<unsigned>(box)+lineHeight/2-1,connector,2,line);x+=static_cast<int>(connector)+(size>20?14:10);}
     }
 }
-void peerCount(int value,char* out,unsigned size) noexcept {
-    if(value<0)std::snprintf(out,size,"Unknown");else std::snprintf(out,size,"%d",value);
-}
-void peers(const botty::Entry& e,char* out,unsigned size) noexcept {
-    char count[24];peerCount(e.peers,count,sizeof(count));std::snprintf(out,size,e.peers<0?"Peers: %s":"Peers: %s connected",count);
-}
-std::array<char,96> artworkId(const botty::Entry& entry,unsigned tab) noexcept {
-    if(tab==5)return entry.id;
-    std::array<char,96> id{};
-    std::snprintf(id.data(),id.size(),"%c:%.93s",tab==0?'t':tab==4?'s':'j',entry.id.data());return id;
-}
-bool hasCover(const botty::Entry& entry,unsigned tab,unsigned slot) noexcept {
-    return slot<covers.ready.size()&&covers.ready[slot]&&covers.ids[slot]==artworkId(entry,tab);
-}
-void drawCatalog(Canvas& c) noexcept {
-    char text[256],size[48],rate[48],upload[48],downloaded[48],eta[64];
-    const char* titles[]={"Your downloads.","Processing.","Your collection."};
-    const char* subtitles[]={"Track every download. Keep your next adventure moving.","Follow moves, extractions, compressions and deletions in real time.","Your prepared games, together in one place."};
-    c.label(96,238,titles[model.tab],60,ink);c.label(98,316,subtitles[model.tab],24,muted);
-    botty::formatBytes(catalog.freeBytes,size,sizeof(size));
-    if(catalog.valid&&model.tab!=2){c.rounded(1470,246,354,98,18,card);c.label(1500,258,size,32,sectionColor());c.label(1500,302,"FREE ON YOUR PS5",20,muted);}
-    if(catalog.valid&&model.tab!=2){
-        for(unsigned i=0;i<catalog.storageCount;++i){const auto& disk=catalog.storage[i];
-            if(!disk.available||std::string_view(disk.id.data())=="internal")continue;
-            surface(c,1470,350,354,60);botty::formatBytes(disk.freeBytes,size,sizeof(size));
-            std::snprintf(text,sizeof(text),"%s free",size);c.label(1500,350,text,26,sectionColor());
-            shortLabel(c,1500,382,disk.label[0]?disk.label.data():"External storage",18,294,muted);break;
-        }
+
+const char* explain(Op op,const botty::Entry* e) noexcept {
+    switch(op){
+    case Op::pause:return "Pauses this download. Resume it at any time.";
+    case Op::resume:return "Resumes this download where it stopped.";
+    case Op::verify:return "rTorrent rechecks downloaded pieces. Extraction waits until verification finishes.";
+    case Op::extract:return "Original archives are kept for seeding. Follow progress in Activity.";
+    case Op::transfer:return "Source removal follows a successful copy; torrents stay paused. Follow progress in Activity.";
+    case Op::move:return "Moves verified content. Existing files are not replaced. ShadowMount may need a scan.";
+    case Op::compress:return "Creates a compressed copy and keeps the original. Close Botty+ when prompted. APR games need an existing index.";
+    case Op::restoreOriginal:return "Restores the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
+    case Op::removeOriginal:return "Deletes the retained original without verification. The compressed copy, saves and archives are kept.";
+    case Op::cancelCompression:return "Requests cancellation and keeps the original game. Wait until the compression worker stops.";
+    case Op::removeLibrary:return e&&e->compressed?"Deletes the compressed game and its retained original. Saves, torrents and archives are kept.":"Deletes installed game files. Saves, torrents and archives are kept. Close the game first.";
+    case Op::removeTorrent:return "Permanently deletes this torrent and its downloaded files, including archives. Library games are kept.";
+    case Op::cancel:return "Stops extraction at the next safe point. Partial files and original archives are kept.";
+    case Op::dismiss:{const auto status=e?std::string_view(e->status.data()):std::string_view{};return status=="failed"||status=="cancelled"||status=="interrupted"?"Removes this row and deletes its partial files. Original downloads and archives are kept.":"Hides this row from Activity. Files are kept; ready and moved content stays in Library.";}
+    case Op::remove:return "Deletes this extraction and any partial output. Original downloads and archives are kept.";
+    default:return "";
     }
-    if(model.tab==2)(void)c.illustration(2,1520,220,208,208);
-    if(model.tab==0) {
-        const char* filters[]={"All","Active","Completed"};
-        for(unsigned i=0;i<3;++i){c.rounded(96+i*184,356,168,40,12,model.filter==i?coral:card);c.label(116+i*184,361,filters[i],24,model.filter==i?background:muted);}
-        c.label(674,365,"Left / right to filter",20,muted);
-    }else c.label(98,361,model.tab==1?"PROCESSING CONTROL":"YOUR COLLECTION",20,violet);
-    if(!catalog.valid&&!(model.tab==1&&catalog.processing.count)){
-        surface(c,96,436,1728,340);c.label(140,485,connection.status==botty::Probe::checking?"Syncing your downloads":"Your session is offline",44,ink);
-        c.label(140,565,connection.status==botty::Probe::checking?"Connecting to Botty on your PS5...":"Open the Botty portal and select Start session.",28,muted);
-        c.label(140,667,"Triangle  /  Retry connection",24,accent);return;
+}
+const char* buttonLabel(Op op) noexcept {
+    switch(op){
+    case Op::removeTorrent:case Op::removeLibrary:case Op::remove:return "Delete\xe2\x80\xa6";
+    case Op::removeOriginal:return "Delete original\xe2\x80\xa6";
+    case Op::restoreOriginal:return "Restore original\xe2\x80\xa6";
+    case Op::dismiss:return "Remove\xe2\x80\xa6";
+    case Op::cancel:return "Cancel extraction\xe2\x80\xa6";
+    case Op::cancelCompression:return "Cancel compression\xe2\x80\xa6";
+    case Op::compress:return "Compress";
+    default:return botty::operationLabel(op);
     }
-    if(deletion!=botty::Network::Deletion::idle)c.label(1040,365,"Waiting for deletion to finish...",22,accent);
-    else if(catalog.stale)c.label(1040,365,"Last update shown. Reconnecting...",22,warning);
-    else if(model.tab==0&&!catalog.transmissionReady)c.label(1040,365,"rTorrent not responding. Retrying...",22,warning);
-    const auto* entry=botty::entryAt(catalog,model.tab,model.filter,model.selected);
-    if(model.tab==1&&catalog.processing.stale)c.label(98,392,"Live task status unavailable - reconnecting...",20,warning);
-    if(model.details&&entry) {
-        surface(c,96,408,1728,506);unsigned line=0;
-        wrapped(c,entry->name.data(),line,model.detailPage,ink);
-        wrapped(c,entry->status.data(),line,model.detailPage,accent);
-        botty::formatBytes(entry->total,size,sizeof(size));botty::formatBytes(entry->download,rate,sizeof(rate));botty::formatBytes(entry->upload,upload,sizeof(upload));
-        std::snprintf(text,sizeof(text),"%.0f%%  /  %s",entry->progress*100,size);wrapped(c,text,line,model.detailPage,muted);
-        if(model.tab==0){
-            botty::formatBytes(entry->bytes,downloaded,sizeof(downloaded));botty::formatETA(*entry,eta,sizeof(eta));
-            std::snprintf(text,sizeof(text),"Downloaded %s of %s  /  %s",downloaded,size,eta);wrapped(c,text,line,model.detailPage,ink);
-            std::snprintf(text,sizeof(text),"Download: %s/s    Upload: %s/s",rate,upload);wrapped(c,text,line,model.detailPage,muted);
-            peers(*entry,text,sizeof(text));wrapped(c,text,line,model.detailPage,ink);
-            char incoming[24],outgoing[24];peerCount(entry->downloadingPeers,incoming,sizeof(incoming));peerCount(entry->uploadingPeers,outgoing,sizeof(outgoing));
-            std::snprintf(text,sizeof(text),"Downloading from %s peers  /  Uploading to %s peers",incoming,outgoing);wrapped(c,text,line,model.detailPage,muted);
-            if(entry->peers<0)wrapped(c,"Update Botty service to 0.1.2 to show peer counts.",line,model.detailPage,muted);
+}
+
+void notify(Toast::Kind kind,std::string_view title,std::string_view message) noexcept {
+    // An undismissed failure outranks later successes and notices.
+    if(toast.visible&&toast.kind==Toast::Kind::error&&kind!=Toast::Kind::error)return;
+    toast=Toast{};toast.kind=kind;toast.visible=true;toast.until=botty::platform::now()+4000000;
+    std::snprintf(toast.title.data(),toast.title.size(),"%.*s",static_cast<int>(title.size()),title.data());
+    std::snprintf(toast.message.data(),toast.message.size(),"%.*s",static_cast<int>(message.size()),message.data());
+    ++displayRevision;
+}
+void resultToast(const botty::ActionResult& result) noexcept {
+    using Status=botty::ActionResult::Status;
+    if(result.status!=Status::success){notify(Toast::Kind::error,result.status==Status::uncertain?"Check the current state":"Request failed",result.message.data());return;}
+    char title[160];const char* name=sentName.data();
+    switch(sentOperation){
+    case Op::grab:case Op::exploreGrab:std::snprintf(title,sizeof(title),"%s added",name);break;
+    case Op::add:std::snprintf(title,sizeof(title),"Magnet link added");break;
+    case Op::pause:std::snprintf(title,sizeof(title),"%s paused",name);break;
+    case Op::resume:std::snprintf(title,sizeof(title),"%s resumed",name);break;
+    case Op::checkNativeUpdate:std::snprintf(title,sizeof(title),"Checking for updates");break;
+    default:std::snprintf(title,sizeof(title),"%s",botty::operationLabel(sentOperation));break;
+    }
+    const bool shown=!(toast.visible&&toast.kind==Toast::Kind::error);
+    notify(Toast::Kind::success,title,result.message.data());if(shown)toast.cover=sentCover;
+}
+// Quiet requests (searches, Explore refreshes) report only failures.
+bool quietRequest=false,updateSubmitting=false,exitRequested=false;
+void consume(const botty::ActionResult& received) noexcept {
+    actionResult=received;++displayRevision;
+    const bool success=received.status==botty::ActionResult::Status::success;
+    if(updateSubmitting){updateSubmitting=false;if(success){exitRequested=true;return;}}
+    if(!quietRequest||!success)resultToast(received);
+    quietRequest=false;
+}
+// A finished request is reported before the next one replaces its description.
+// Submitting needs an idle worker in the same snapshot: a request that was still
+// running could otherwise finish just before submit and be reported as the new one.
+bool collectResult() noexcept {
+    botty::ActionResult latest=actionResult;bool busy=true;
+    if(!network.read(connection,nullptr,&latest,&busy))return false;
+    if(latest.revision!=actionResult.revision)consume(latest);
+    return !exitRequested&&!busy;
+}
+bool send(const botty::Command& command,std::string_view name,const std::array<char,96>& cover,bool quiet=false) noexcept {
+    if(!collectResult()||!network.submit(command)){
+        if(!exitRequested)notify(Toast::Kind::error,"Request not sent","Network is busy or unavailable. Please try again.");
+        return false;
+    }
+    sentOperation=command.operation;sentCover=cover;quietRequest=quiet;
+    std::snprintf(sentName.data(),sentName.size(),"%.*s",static_cast<int>(name.size()),name.data());
+    return true;
+}
+void rememberSearch(std::string_view query) noexcept {
+    std::array<char,201> entry{};std::copy_n(query.begin(),std::min<std::size_t>(query.size(),200),entry.begin());
+    unsigned keep=0;std::array<std::array<char,201>,3> next{};next[keep++]=entry;
+    for(const auto& old:recentSearches)if(old[0]&&old!=entry&&keep<next.size())next[keep++]=old;
+    recentSearches=next;
+}
+
+void header(Canvas& c,const char* state,Color stateColor) noexcept {
+    c.rounded(96,42,44,44,12,accent);
+    middle(c,static_cast<int>(96+(44-width(c,"B+",20,bold))/2),42,44,"B+",20,accentInk,bold);
+    middle(c,154,47,34,"Botty+",28,ink,bold);
+    unsigned x=154+width(c,"Botty+",28,bold)+64;
+    x+=keycap(c,x,48,"L1")+40;
+    const char* tabs[]={"Discover","Activity","Library","System"};
+    for(unsigned i=0;i<Model::tabCount;++i){
+        const bool active=model.tab==i;const unsigned w=width(c,tabs[i],28,active?bold:regular);
+        text(c,static_cast<int>(x),47,tabs[i],28,34,active?ink:muted,active?bold:regular);
+        if(active)c.rounded(x+(w-32)/2,89,32,4,2,accent);
+        x+=w+40;
+    }
+    keycap(c,x,48,"R1");
+    char free[96],size[48];free[0]=0;
+    if(catalog.valid){botty::formatBytes(catalog.freeBytes,size,sizeof(size));std::snprintf(free,sizeof(free),"PS5 SSD \xc2\xb7 %s free",size);}
+    unsigned right=1824;
+    if(free[0]){const unsigned w=width(c,free,20);text(c,static_cast<int>(right-w),52,free,20,24,muted);right-=w+28;c.rectangle(right-1,52,1,24,line);right-=29;}
+    const unsigned w=width(c,state,20);text(c,static_cast<int>(right-w),52,state,20,24,ink);
+    c.rounded(right-w-20,59,10,10,5,stateColor);
+}
+void footerRight(Canvas& c,const char* position) noexcept {
+    char label[48];std::snprintf(label,sizeof(label),"Botty+ %s",botty::nativeDisplayVersion);
+    const unsigned version=width(c,label,20);
+    text(c,static_cast<int>(1824-version),1006,label,20,24,faint);
+    if(position&&position[0]){const unsigned w=width(c,position,20);text(c,static_cast<int>(1824-version-36-w),1006,position,20,24,muted);}
+}
+
+// --- Discover ---------------------------------------------------------------
+bool exploreCurrent() noexcept {return std::string_view(catalog.exploreSort.data())==Model::exploreSorts[model.exploreSort];}
+void drawDiscover(Canvas& c,bool requested,const char* detail) noexcept {
+    const unsigned count=model.count;
+    char label[160];
+    if(count){
+        const auto& e=catalog.exploreResults[model.selected];
+        hero(c,e.id,model.selected,500);
+        char sort[64];std::snprintf(sort,sizeof(sort),"%s \xc2\xb7 PS5",Model::exploreLabels[model.exploreSort]);
+        eyebrow(c,96,196,sort,muted,true);
+        unsigned size=76;if(width(c,e.name.data(),76,bold,-2)>1100)size=60;
+        fit(c,96,240,e.name.data(),size,84,1100,ink,bold,-2);
+        char total[48],seeds[32],grabs[32],meta[96];botty::formatBytes(e.total,total,sizeof(total));grouped(e.peers,seeds,sizeof(seeds));grouped(e.completedCount,grabs,sizeof(grabs));
+        unsigned x=96;text(c,static_cast<int>(x),344,total,24,30,ink,bold);x+=width(c,total,24,bold)+18;
+        const unsigned sources=e.sourceCount?e.sourceCount:1;
+        const char* parts[]={seeds,grabs,nullptr};
+        const char* suffixes[]={" seeders"," grabs"};
+        for(unsigned i=0;i<3;++i){
+            text(c,static_cast<int>(x),344,"\xc2\xb7",24,30,faint);x+=width(c,"\xc2\xb7",24)+18;
+            if(i<2)std::snprintf(meta,sizeof(meta),"%s%s",parts[i],suffixes[i]);else std::snprintf(meta,sizeof(meta),"%u source%s",sources,sources==1?"":"s");
+            text(c,static_cast<int>(x),344,meta,24,30,muted);x+=width(c,meta,24)+18;
         }
-        if(model.tab!=0&&!entry->task){
-            botty::formatBytes(entry->bytes,downloaded,sizeof(downloaded));
-            std::snprintf(text,sizeof(text),"Extracted %s of %s",downloaded,size);wrapped(c,text,line,model.detailPage,ink);
-            if(entry->active){botty::formatETA(*entry,eta,sizeof(eta));std::snprintf(text,sizeof(text),"Extraction: %s/s  /  %s",rate,eta);wrapped(c,text,line,model.detailPage,ink);}
-        }
-        if(entry->task){
-            wrapped(c,entry->kind.data(),line,model.detailPage,accent);
-            botty::formatETA(*entry,eta,sizeof(eta));
-            if(entry->items)std::snprintf(text,sizeof(text),"%.0f / %.0f items  /  %.1f items/s",entry->bytes,entry->total,entry->download);
-            else {botty::formatBytes(entry->bytes,downloaded,sizeof(downloaded));botty::formatBytes(entry->total,size,sizeof(size));std::snprintf(text,sizeof(text),"%s / %s",downloaded,size);}
-            if(entry->total>0)wrapped(c,text,line,model.detailPage,ink);
-            std::snprintf(text,sizeof(text),"Elapsed: %.0f s  /  %s (current phase)",entry->elapsed,eta);wrapped(c,text,line,model.detailPage,ink);
-            wrapped(c,entry->currentFile.data(),line,model.detailPage,muted);
-        }
-        if(model.tab==2&&entry->compressed)wrapped(c,std::string_view(entry->compressionState.data())!="ready"?"Compression pending - check details":entry->originalKept?entry->compressionVerified?"Verified - original retained":"Not verified - original retained":entry->compressionVerified?"Verified - original deleted":"Not verified - original deleted",line,model.detailPage,accent);
-        if(model.tab==2&&std::string_view(catalog.compressionJob.data())==entry->id.data()) {
-            wrapped(c,"Library compression",line,model.detailPage,accent);
-            wrapped(c,catalog.compressionPhase.data(),line,model.detailPage,ink);
-            wrapped(c,catalog.compressionError.data(),line,model.detailPage,warning);
-            if(catalog.compressionBusy&&catalog.compressionTotal>0){
-                botty::formatBytes(catalog.compressionBytes,downloaded,sizeof(downloaded));botty::formatBytes(catalog.compressionTotal,size,sizeof(size));
-                std::snprintf(text,sizeof(text),"Compression: %s / %s",downloaded,size);wrapped(c,text,line,model.detailPage,ink);
-            }
-            if(catalog.compressedSize>0){botty::formatBytes(catalog.compressedSize,size,sizeof(size));std::snprintf(text,sizeof(text),"Compressed copy: %s",size);wrapped(c,text,line,model.detailPage,ink);}
-        }
-        wrapped(c,entry->phase.data(),line,model.detailPage,muted);
-        if(entry->kind[0])wrapped(c,entry->kind.data(),line,model.detailPage,accent);
-        if(entry->destination[0]){wrapped(c,"Destination",line,model.detailPage,muted);wrapped(c,entry->destination.data(),line,model.detailPage,ink);}
-        wrapped(c,entry->error.data(),line,model.detailPage,accent);
-        if(model.tab==2){wrapped(c,"Library folder",line,model.detailPage,muted);wrapped(c,catalog.library.data(),line,model.detailPage,ink);}
-        if(model.tab==0&&entry->fileCount){std::snprintf(text,sizeof(text),"Files (%u) - long lists are abbreviated",entry->fileCount);wrapped(c,text,line,model.detailPage,muted);wrapped(c,entry->files.data(),line,model.detailPage,ink);}
-        const unsigned pages=line?(line-1)/12+1:1;
-        if(model.detailPage>=pages){model.detailPage=pages-1;++displayRevision;}
-        std::snprintf(text,sizeof(text),"Page %u / %u  -  Up / down to scroll",model.detailPage+1,pages);c.label(96,932,text,22,muted);
-    }else if(!model.count) {
-        surface(c,96,430,1728,400);downloadIcon(c,144,486,accent);
-        c.label(228,476,model.tab==0?"A fresh start.":model.tab==1?"No tasks to follow.":"Your next game belongs here.",44,ink);
-        c.label(228,550,model.tab==0?"Add a magnet with Square, or browse Search and Explore.":"Moves, extractions, compressions and deletions appear here.",28,muted);
-        c.label(228,674,"L1 / R1  /  Browse tabs",24,accent);
-    }else if(model.tab==2){
-        const unsigned first=(model.selected/6)*6;
-        for(unsigned i=first;i<model.count&&i<first+6;++i){
-            const auto* e=botty::entryAt(catalog,2,0,i);const unsigned slot=i-first;
-            const unsigned x=96+(slot%3)*584,y=444+(slot/3)*250;const bool focus=i==model.selected;
-            surface(c,x,y,560,232,focus);
-            if(hasCover(*e,2,slot))c.gameCase(x+12,y+10,156,210,covers.pixels[slot]);
-            else {gamePattern(c,x+12,y+10,156,210,i);c.label(x+32,y+24,"PS5",28,ink);c.rectangle(x+12,y+156,156,64,background);c.label(x+22,y+155,"No artwork",20,muted);}
-            const auto status=std::string_view(e->status.data());
-            c.rounded(x+176,y+18,174,32,9,focus?success:background);
-            c.label(x+190,y+23,status=="moved"?"IN LIBRARY":status=="ready"?"PREPARED":"PREPARING",20,focus?background:success);
-            std::array<botty::LibraryCopy,2> copies{};
-            const unsigned copyCount=botty::libraryCopies(*e,copies);
-            c.rectangle(x+12,y+190,156,30,background);
-            shortLabel(c,x+15,y+195,copyCount==2?"Both formats":copies[0].format,20,150,accent);
-            titleLines(c,x+176,y+68,e->name.data(),28,360,2,ink);
-            for(unsigned n=0;n<copyCount;++n){
-                char location[100];botty::storageLabel(catalog,copies[n].storage,location,sizeof(location));
-                shortLabel(c,x+176,y+160+n*28,copies[n].format,20,162,n?muted:accent);
-                shortLabel(c,x+342,y+160+n*28,location,16,206,n?muted:accent);
-            }
-        }
-        std::snprintf(text,sizeof(text),"%u games  /  Page %u  /  Arrows to browse",model.count,first/6+1);c.label(96,946,text,20,muted);
+        // Hints, not focus targets: Cross gets the game and Options compares sources.
+        const unsigned getWidth=28+26+16+width(c,"Get game",28,bold)+36;
+        c.rounded(96,414,getWidth,72,14,accent);glyph(c,Glyph::cross,124,437,accentInk,26.f/24,3.5f);
+        middle(c,166,414,72,"Get game",28,accentInk,bold);
+        const unsigned compareX=96+getWidth+16,compareWidth=24+30+14+width(c,"Compare sources",28,bold)+32;
+        c.rounded(compareX,414,compareWidth,72,14,ink,26);
+        for(unsigned i=0;i<3;++i)c.stroke(static_cast<float>(compareX+27),static_cast<float>(444+i*6),static_cast<float>(compareX+51),static_cast<float>(444+i*6),3,ink);
+        middle(c,static_cast<int>(compareX+68),414,72,"Compare sources",28,ink,bold);
+        char disk[96];storageName(workflow.lastStorage.data(),disk,sizeof(disk));
+        if(catalog.storageSupported)std::snprintf(label,sizeof(label),"Best source \xc2\xb7 %s \xc2\xb7 %s \xe2\x80\x94 change before downloading",workflow.lastAutomatic?"Full auto":"Download only",disk);
+        else std::snprintf(label,sizeof(label),"Best source \xe2\x80\x94 change before downloading");
+        text(c,96,508,label,20,24,muted);
     }else {
-        const unsigned first=(model.selected/5)*5;unsigned y=418;
-        for(unsigned row=0;row<5&&first+row<model.count;++row){
-            const auto* e=botty::entryAt(catalog,model.tab,model.filter,first+row);const bool focus=model.selected==first+row;
-            const auto status=std::string_view(e->status.data());const bool done=e->complete||status=="ready"||status=="moved";
-            const Color tone=e->error[0]?warning:done?success:sectionColor();
-            botty::formatBytes(e->total,size,sizeof(size));botty::formatBytes(e->download,rate,sizeof(rate));
-            botty::formatBytes(e->bytes,downloaded,sizeof(downloaded));botty::formatETA(*e,eta,sizeof(eta));
-            if(e->items){std::snprintf(downloaded,sizeof(downloaded),"%.0f",e->bytes);std::snprintf(size,sizeof(size),"%.0f items",e->total);std::snprintf(rate,sizeof(rate),"%.1f items",e->download);}
-            if(focus){
-                c.rounded(92,y-4,1144,184,24,ink);c.rounded(96,y,1136,176,20,tone);
-                const unsigned textX=hasCover(*e,model.tab,row)?244:126;
-                if(hasCover(*e,model.tab,row))c.gameCase(112,y+12,108,152,covers.pixels[row]);
-                shortLabel(c,textX,y+16,e->error[0]?"NEEDS ATTENTION":e->task?e->phase.data():e->status.data(),20,850,background);
-                shortLabel(c,textX,y+47,e->name.data(),32,1036-textX,background);
-                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"--");else std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1060,y+26,text,44,background);
-                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"Elapsed: %.0f s",e->elapsed);else std::snprintf(text,sizeof(text),"%s of %s",downloaded,size);c.label(textX,y+104,text,24,background);
-                if(e->active&&!done)std::snprintf(text,sizeof(text),"%s/s  /  %s",rate,eta);
-                else if(e->task)std::snprintf(text,sizeof(text),"%s",e->complete?"Completed":"Needs attention");
-                else if(model.tab==0)peers(*e,text,sizeof(text));else std::snprintf(text,sizeof(text),"%s",done?"Verified and ready":"Options for actions");
-                shortLabel(c,618,y+104,text,24,578,background);
-                const unsigned barWidth=1198-textX;
-                c.rounded(textX,y+153,barWidth,7,3,rgb(77,76,79));
-                const unsigned filled=static_cast<unsigned>(barWidth*std::clamp(e->progress,0.0,1.0));
-                if(filled)c.rounded(textX,y+153,filled,7,3,background);
-                y+=188;
-            }else {
-                c.rounded(96,y,1136,72,14,card);c.rounded(116,y+20,6,30,3,tone);
-                shortLabel(c,146,y+5,e->name.data(),28,880,ink);
-                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"%s",e->phase.data());else std::snprintf(text,sizeof(text),"%s  /  %s of %s",e->error[0]?"Needs attention":e->status.data(),downloaded,size);shortLabel(c,146,y+40,text,20,860,muted);
-                if(e->task&&e->total<=0)std::snprintf(text,sizeof(text),"--");else std::snprintf(text,sizeof(text),"%.0f%%",e->progress*100);c.label(1100,y+10,text,28,tone);
-                progressBar(c,1040,y+52,160,e->progress,tone);y+=84;
+        eyebrow(c,96,196,"Discover \xc2\xb7 PS5",muted,true);
+        text(c,96,240,catalog.valid?"Find your next game.":"Botty is not connected.",76,84,ink,bold,-2);
+        wrap(c,96,344,catalog.valid?(*detail?detail:"Rankings from every enabled tracker appear here."):detail,24,34,1100,2,muted);
+    }
+    // Ranking chips: Triangle cycles them; Square searches every tracker.
+    unsigned x=96;
+    for(unsigned i=0;i<3;++i){
+        const bool active=model.exploreSort==i;
+        text(c,static_cast<int>(x),607,Model::exploreLabels[i],28,34,active?ink:faint,active?bold:regular);
+        x+=width(c,Model::exploreLabels[i],28,active?bold:regular)+32;
+    }
+    glyph(c,Glyph::triangle,static_cast<float>(x),613,muted,22.f/24,2.5f);x+=30;
+    text(c,static_cast<int>(x),612,"Sort",20,24,muted);x+=width(c,"Sort",20)+32;
+    const bool saved=std::string_view(catalog.exploreNotice.data()).starts_with("Cached")||std::string_view(catalog.exploreNotice.data()).starts_with("Saved");
+    const char* state=!catalog.exploreSupported?"":catalog.exploreAdding?"Adding the download\xe2\x80\xa6":catalog.exploreBusy||requested?(count?"Refreshing\xe2\x80\xa6":"Loading\xe2\x80\xa6"):catalog.exploreError[0]&&count?catalog.exploreError.data():"";
+    if(*state)fit(c,static_cast<int>(x),612,state,20,24,1500-x,faint);
+    else if(saved&&count){text(c,static_cast<int>(x),612,"Saved results",20,24,faint);x+=width(c,"Saved results",20)+14;x+=keycap(c,x,608,"R3")+10;text(c,static_cast<int>(x),612,"Refresh",20,24,faint);}
+    const unsigned pill=18+20+12+width(c,"Search all trackers",20)+24;
+    c.rounded(1824-pill,600,pill,48,24,raised);glyph(c,Glyph::square,static_cast<float>(1824-pill+18),614,ink,20.f/24,2.5f);
+    middle(c,static_cast<int>(1824-pill+50),600,48,"Search all trackers",20,ink);
+    // The focused game leads the shelf, like the PS5 home row.
+    x=96;
+    for(unsigned i=model.selected;i<count&&x<1824;++i){
+        const auto& e=catalog.exploreResults[i];
+        if(i==model.selected){focusRing(c,104,677,182,273,18,5,bg);art(c,104,677,182,273,12,e.id,e.name.data(),i,bg);x+=198+20;continue;}
+        if(x+168>1824)break;
+        art(c,x,688,168,252,12,e.id,e.name.data(),i,bg);x+=188;
+    }
+    unsigned hx=96;
+    if(count)hx=hint(c,hx,Glyph::cross,"Get game",true);
+    hx=hint(c,hx,Glyph::square,"Search",!count);hx=hint(c,hx,Glyph::triangle,"Sort");
+    if(count)hint(c,hx,Glyph::menu,"Compare sources");
+    char position[48];if(count)std::snprintf(position,sizeof(position),"%u of %u",model.selected+1,count);else position[0]=0;
+    footerRight(c,position);
+}
+void searchField(Canvas& c,std::string_view value,bool focus,const char* right,bool password) noexcept {
+    if(focus)focusRing(c,96,164,1728,104,24,4,bg);
+    c.rounded(96,164,1728,104,18,raised);
+    glyph(c,Glyph::square,128,201,focus?ink:muted,30.f/24,3);
+    std::array<char,160> masked{};
+    if(password){const unsigned n=std::min<std::size_t>(value.size(),24);for(unsigned i=0;i<n;++i)std::copy_n("\xe2\x80\xa2",3,masked.begin()+i*3);value=masked.data();}
+    const unsigned rightWidth=right?width(c,right,20):0,limit=1792-rightWidth-48-182-27;
+    unsigned w=0;
+    if(value.size()>200||width(c,value,44,bold,-1)>limit){fitEnd(c,182,189,value,28,54,limit,ink,bold);w=std::min(width(c,value,28,bold),limit);}
+    else {text(c,182,189,value,44,54,ink,bold,-1);w=width(c,value,44,bold,-1);}
+    if(focus)c.rounded(182+w+(w?24:0),192,3,48,2,accent);
+    if(right)text(c,static_cast<int>(1792-rightWidth),204,right,20,24,muted);
+}
+void drawSearch(Canvas& c) noexcept {
+    // Square edits the query; its glyph sits inside the right-hand hint.
+    c.rounded(96,164,1728,104,18,raised);
+    glyph(c,Glyph::square,128,201,muted,30.f/24,3);
+    const unsigned hintWidth=width(c,"Press",20)+8+18+8+width(c,"to edit with the PS5 keyboard",20);
+    const unsigned limit=1792-hintWidth-48-182-27;
+    fit(c,182,189,catalog.searchQuery.data(),44,54,limit,ink,bold,-1);
+    unsigned hx=1792-hintWidth;text(c,static_cast<int>(hx),204,"Press",20,24,muted);hx+=width(c,"Press",20)+8;
+    glyph(c,Glyph::square,static_cast<float>(hx),207,muted,18.f/24,2.2f);hx+=26;text(c,static_cast<int>(hx),204,"to edit with the PS5 keyboard",20,24,muted);
+    char heading[64];std::snprintf(heading,sizeof(heading),"%u result%s",catalog.resultCount,catalog.resultCount==1?"":"s");
+    if(catalog.resultCount){text(c,96,296,heading,28,34,ink,bold);text(c,static_cast<int>(96+width(c,heading,28,bold)+16),298,"most seeded first",24,30,muted);}
+    const char* state=!catalog.searchSupported?"Update the Botty service to enable search.":catalog.searchBusy?"Searching every tracker\xe2\x80\xa6":catalog.searchAdding?"Adding the download\xe2\x80\xa6":catalog.searchError[0]?catalog.searchError.data():!catalog.resultCount?"No results. Try another name.":"";
+    if(!catalog.resultCount){text(c,96,360,catalog.searchBusy?"Searching\xe2\x80\xa6":"Nothing found yet.",44,52,ink,bold,-1);wrap(c,96,424,state,24,34,1500,2,catalog.searchError[0]?warning:muted);}
+    else if(*state)fit(c,static_cast<int>(96+width(c,heading,28,bold)+16+width(c,"most seeded first",24)+32),298,state,24,30,900,catalog.searchError[0]?warning:muted);
+    const unsigned first=(model.selected/5)*5;
+    for(unsigned i=first;i<catalog.resultCount&&i<first+5;++i){
+        const auto& e=catalog.results[i];const unsigned y=359+(i-first)*122;const bool focus=i==model.selected;
+        if(focus)focusRing(c,96,y,1728,100,20,4,bg);
+        c.rounded(96,y,1728,100,14,focus?raised:surface);
+        const auto id=artworkId(e,'s');
+        if(coverFor(id))art(c,108,y+8,56,84,8,id,{},i,focus?raised:surface);else {c.rounded(108,y+8,56,84,8,line);glyph(c,Glyph::square,124,y+38,faint,1,2.2f);}
+        fit(c,188,y+19,e.name.data(),28,34,916,e.complete?muted:ink,bold);
+        text(c,188,y+57,e.complete?"Already added to Botty+":"Prowlarr",20,24,muted);
+        char size[48],seeds[48],peers[48];botty::formatBytes(e.total,size,sizeof(size));
+        if(e.peers<0)std::snprintf(seeds,sizeof(seeds),"Seeders unknown");else {char n[24];grouped(e.peers,n,sizeof(n));std::snprintf(seeds,sizeof(seeds),"%s seeder%s",n,e.peers==1?"":"s");}
+        if(e.downloadingPeers<0)std::snprintf(peers,sizeof(peers),"\xe2\x80\x94");else {char n[24];grouped(e.downloadingPeers,n,sizeof(n));std::snprintf(peers,sizeof(peers),"%s peer%s",n,e.downloadingPeers==1?"":"s");}
+        text(c,static_cast<int>(1278-width(c,size,24,bold)),y+35,size,24,30,ink,bold);
+        text(c,static_cast<int>(1472-width(c,seeds,24,bold)),y+35,seeds,24,30,focus&&!e.complete?success:e.complete?muted:ink,bold);
+        text(c,static_cast<int>(1626-width(c,peers,24)),y+35,peers,24,30,muted);
+        if(e.complete)badge(c,1800-width(c,"ADDED",20,bold,2)-20,y+35,"ADDED",success,success,36);
+        else if(focus){
+            const unsigned w=16+18+10+width(c,"Get",22,bold)+20;
+            c.rounded(1800-w,y+26,w,48,12,accent);glyph(c,Glyph::cross,static_cast<float>(1800-w+16),static_cast<float>(y+41),accentInk,.75f,3);
+            middle(c,static_cast<int>(1800-w+44),static_cast<int>(y+26),48,"Get",22,accentInk,bold);
+        }
+    }
+    unsigned hx2=96;hx2=hint(c,hx2,Glyph::cross,"Get",true);hx2=hint(c,hx2,Glyph::square,"Edit search");hint(c,hx2,Glyph::circle,"Back to Discover");
+    char position[48];if(catalog.resultCount)std::snprintf(position,sizeof(position),"%u of %u",model.selected+1,catalog.resultCount);else position[0]=0;
+    footerRight(c,position);
+}
+
+// --- Text entry ---------------------------------------------------------------
+// While the PS5 keyboard is open, the console draws it over the lower screen.
+void drawTyping(Canvas& c) noexcept {
+    const auto op=workflow.command.operation;const bool password=op==Op::extract,search=op==Op::search;
+    const auto value=std::string_view(workflow.command.text.data());
+    char counter[64];std::snprintf(counter,sizeof(counter),"%zu / %u",value.size(),botty::Workflow::textLimit(op));
+    searchField(c,value,true,counter,password);
+    unsigned x=96;
+    if(search&&recentSearches[0][0]){
+        x=eyebrow(c,96,328,"Recent",muted)+24;
+        for(const auto& recent:recentSearches){if(!recent[0])break;const unsigned w=44+width(c,recent.data(),20,bold);if(x+w>1200)break;chip(c,x,316,recent.data(),false);x+=w+12;}
+    }
+    const char* advice=search?"Confirm on the keyboard to search all trackers":password?"Confirm on the keyboard to return to Extract":"Confirm on the keyboard to continue";
+    text(c,static_cast<int>(1824-width(c,advice,20)),328,advice,20,24,muted);
+    if(workflow.notice[0])wrap(c,96,392,workflow.notice.data(),24,34,1728,2,warning);
+    if(!nativeKeyboard.active()){
+        unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Open PS5 keyboard",true);hx=hint(c,hx,Glyph::square,"In-app keyboard");hint(c,hx,Glyph::circle,"Cancel");
+    }
+}
+// In-app keyboard fallback, for links longer than the system dialog accepts.
+void drawKeyboard(Canvas& c) noexcept {
+    const auto op=workflow.command.operation;const bool password=op==Op::extract;
+    const auto value=std::string_view(workflow.unicodeInput?workflow.codepoint.data():workflow.command.text.data());
+    eyebrow(c,96,72,workflow.unicodeInput?"Unicode character":password?"Archive password":op==Op::search?"Search all trackers":"Add a magnet link",accent);
+    const bool capacity=op==Op::add&&value.size()>=2048;
+    text(c,96,104,workflow.unicodeInput?"Enter a code point":capacity?"Check the end of your link":password?"Enter the archive password":op==Op::search?"Type a game name":"Type your magnet link",44,52,ink,bold,-1);
+    const char* subtitle=workflow.notice[0]?workflow.notice.data():workflow.unicodeInput?"Hexadecimal, from 20 to 10FFFF.":capacity?"It is longer than the PS5 keyboard allows (2,048), so finish it here.":password&&!value.size()?"No password? Select Continue.":"L1 / R1 switch between letters, capitals and symbols.";
+    fit(c,96,164,subtitle,24,30,1728,workflow.notice[0]?warning:muted);
+    c.rounded(96,276,1728,202,18,raised);
+    std::array<char,400> shown{};std::string_view visible=value;
+    if(password&&!workflow.passwordVisible&&!workflow.unicodeInput){const unsigned n=std::min<std::size_t>(value.size(),120);for(unsigned i=0;i<n;++i)std::copy_n("\xe2\x80\xa2",3,shown.begin()+i*3);visible=shown.data();}
+    // Show the end: three wrapped rows that finish with the latest characters.
+    std::size_t start=visible.size()>360?visible.size()-360:0;
+    while(start<visible.size()&&(static_cast<unsigned char>(visible[start])&0xc0)==0x80)++start;
+    const auto tail=botty::slice(visible,start);
+    std::size_t rowStart=0;unsigned rows=0;std::array<std::size_t,64> breaks{};
+    while(rowStart<tail.size()&&rows<breaks.size()){breaks[rows++]=rowStart;const auto n=fitting(c,botty::slice(tail,rowStart),24,regular,0,1664);rowStart+=n?n:codepointEnd(tail,rowStart)-rowStart;}
+    const unsigned firstRow=rows>3?rows-3:0;
+    for(unsigned r=firstRow;r<rows;++r){
+        const auto end=r+1<rows?breaks[r+1]:tail.size();auto row=botty::slice(tail,breaks[r],end-breaks[r]);
+        std::array<char,404> buffer{};
+        if(r==firstRow&&(firstRow||start)){std::copy_n("\xe2\x80\xa6",3,buffer.begin());std::copy_n(row.begin(),std::min(row.size(),buffer.size()-4),buffer.begin()+3);row=buffer.data();}
+        text(c,128,304+static_cast<int>(r-firstRow)*36,row,24,36,ink);
+    }
+    text(c,128,426,firstRow||start?"Showing the end":rows?"":"Empty",20,24,muted);
+    char counter[64],used[24],limit[24];grouped(static_cast<long long>(value.size()),used,sizeof(used));grouped(workflow.unicodeInput?6:botty::Workflow::textLimit(op),limit,sizeof(limit));
+    std::snprintf(counter,sizeof(counter),"%s / %s",used,limit);text(c,static_cast<int>(1792-width(c,counter,20,bold)),426,counter,20,24,ink,bold);
+    const auto keys=botty::Workflow::keys(workflow.keyPage);
+    for(unsigned i=0;i<40;++i){
+        const unsigned x=96+(i%10)*174,y=520+(i/10)*80;const bool focus=workflow.selected==i;
+        c.rounded(x,y,162,68,12,focus?ink:surface);
+        const auto key=botty::slice(keys,i,1);middle(c,static_cast<int>(x+(162-width(c,key,28,bold))/2),static_cast<int>(y),68,key,28,focus?bg:ink,bold);
+    }
+    const char* controls[]={"Space","Backspace","Clear","ABC \xc2\xb7 #+=","Continue"};
+    const unsigned widths[]={522,244,244,244,426};
+    unsigned x=96;
+    for(unsigned i=0;i<5;++i){
+        const bool focus=workflow.selected>=40&&(workflow.selected-40)/2==i;
+        c.rounded(x,848,widths[i],68,12,focus?ink:i==4?accent:surface);
+        const char* label=i==4&&workflow.unicodeInput?"Insert":controls[i];
+        middle(c,static_cast<int>(x+(widths[i]-width(c,label,24,bold))/2),848,68,label,24,focus?bg:i==4?accentInk:ink,bold);
+        x+=widths[i]+12;
+    }
+    unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Type",true);hx=hint(c,hx,Glyph::square,"Backspace");
+    hx+=keycap(c,hx,1004,"L1 / R1",28)+10;text(c,static_cast<int>(hx),1006,"Letters \xc2\xb7 symbols",20,24,muted);hx+=width(c,"Letters \xc2\xb7 symbols",20)+36;
+    if(password)hx=hint(c,hx,Glyph::triangle,workflow.passwordVisible?"Hide":"Show");
+    hx=hint(c,hx,Glyph::menu,workflow.unicodeInput?"Letters":"Unicode");hint(c,hx,Glyph::circle,"Cancel");
+}
+
+// --- Activity -----------------------------------------------------------------
+void drawEmpty(Canvas& c,unsigned y,const char* title,const char* body) noexcept {
+    c.rounded(96,y,1728,240,22,surface);
+    text(c,152,static_cast<int>(y+56),title,44,52,ink,bold,-1);wrap(c,152,static_cast<int>(y+124),body,24,34,1600,2,muted);
+}
+void drawActivity(Canvas& c,const char* detail) noexcept {
+    text(c,96,148,"Activity",60,66,ink,bold,-2);
+    unsigned running=0;double rate=0;
+    for(unsigned i=0;;++i){const auto item=botty::activityAt(catalog,1,i);if(!item.entry)break;++running;if(!item.entry->items)rate+=item.entry->download;}
+    char subtitle[160],speed[48];botty::formatBytes(rate,speed,sizeof(speed));
+    std::snprintf(subtitle,sizeof(subtitle),"%u running \xc2\xb7 %s/s \xc2\xb7 keeps going when you close Botty+",running,speed);
+    const bool live=catalog.valid||catalog.processing.count;
+    text(c,96,224,!live?detail:catalog.stale?"Last update shown \xc2\xb7 reconnecting\xe2\x80\xa6":subtitle,24,30,catalog.stale||!live?warning:muted);
+    // Free space on the PS5 SSD and the first connected external disk. Disk
+    // totals are unknown, so no fill bars are drawn.
+    if(catalog.valid){
+        const botty::StorageDevice* external=nullptr;
+        for(unsigned i=0;i<catalog.storageCount&&!external;++i)if(catalog.storage[i].available&&std::string_view(catalog.storage[i].id.data())!="internal")external=&catalog.storage[i];
+        unsigned x=external?1176:1524;
+        for(unsigned n=0;n<(external?2U:1U);++n){
+            char name[96],free[64],size[48];
+            if(!n){std::snprintf(name,sizeof(name),"PS5 SSD");botty::formatBytes(catalog.freeBytes,size,sizeof(size));}
+            else {storageName(external->id.data(),name,sizeof(name));botty::formatBytes(external->freeBytes,size,sizeof(size));}
+            std::snprintf(free,sizeof(free),"%s free",size);const unsigned freeWidth=width(c,free,20);
+            fit(c,static_cast<int>(x),226,name,20,24,288-freeWidth,ink,bold);text(c,static_cast<int>(x+300-freeWidth),226,free,20,24,muted);
+            x+=348;
+        }
+    }
+    const char* names[]={"All","Running","Needs you","Done"};
+    unsigned x=96;
+    for(unsigned f=0;f<4;++f){char count[16];std::snprintf(count,sizeof(count),"%u",live?botty::activityCount(catalog,f):0);x+=chip(c,x,282,names[f],model.filter==f,count,f==2?warning:Color{})+12;}
+    glyph(c,Glyph::arrows,static_cast<float>(x+12),294,faint);text(c,static_cast<int>(x+60),294,"Filter",20,24,faint);
+    if(!live){drawEmpty(c,356,connection.status==botty::Probe::checking?"Syncing your downloads":"Your session is offline",detail);}
+    else if(!model.count)drawEmpty(c,356,model.filter==2?"Nothing needs you.":model.filter==3?"Nothing finished yet.":"Nothing running.","Find a game in Discover, or add a magnet link with Square. Downloads and extractions appear here.");
+    const unsigned first=(model.selected/5)*5;unsigned y=350;
+    for(unsigned i=first;i<model.count&&i<first+5;++i){
+        const auto item=botty::activityAt(catalog,model.filter,i);if(!item.entry)break;
+        const auto& e=*item.entry;const bool focus=i==model.selected;const auto stage=stageOf(e,item.torrent);
+        const auto state=botty::activityState(e,item.torrent);const auto id=artworkId(e,item.torrent?'t':'j');
+        char line[512],percent[16];describe(e,item.torrent,line,sizeof(line));
+        if(focus&&item.torrent&&state==botty::ActivityState::running){
+            // The focused download shows its peers and disk; time left sits on the right.
+            char done[48],total[48],rate[48],disk[96];botty::formatBytes(e.bytes,done,sizeof(done));botty::formatBytes(e.total,total,sizeof(total));botty::formatBytes(e.download,rate,sizeof(rate));storageName(e.storage.data(),disk,sizeof(disk));
+            if(e.peers>=0)std::snprintf(line,sizeof(line),"%s of %s \xc2\xb7 %s/s \xc2\xb7 %d peers \xc2\xb7 %s",done,total,rate,e.peers,disk);
+            else std::snprintf(line,sizeof(line),"%s of %s \xc2\xb7 %s/s \xc2\xb7 %s",done,total,rate,disk);
+        }
+        const bool measured=!(e.task&&e.total<=0)&&state!=botty::ActivityState::attention;
+        if(state==botty::ActivityState::done)std::snprintf(percent,sizeof(percent),"100%%");else if(measured)std::snprintf(percent,sizeof(percent),"%.0f%%",e.progress*100);else std::snprintf(percent,sizeof(percent),"\xe2\x80\x94");
+        const Color tone=state==botty::ActivityState::done?success:state==botty::ActivityState::attention?warning:state==botty::ActivityState::running?accent:muted;
+        if(focus){
+            focusRing(c,96,y+7,1728,180,20,4,bg);c.rounded(96,y+7,1728,180,14,raised);
+            art(c,114,y+25,96,144,10,id,{},i,raised);
+            const unsigned titleWidth=std::min(width(c,e.name.data(),32,bold),700U);
+            fit(c,238,static_cast<int>(y+44),e.name.data(),32,40,700,ink,bold);
+            if(stage.step>=0)pipeline(c,static_cast<int>(238+titleWidth+24),static_cast<int>(y+52),20,24,12,28,stage.step,0,false,state==botty::ActivityState::done);
+            else {c.rounded(238+titleWidth+24,y+58,12,12,6,stage.color);text(c,static_cast<int>(238+titleWidth+46),static_cast<int>(y+52),stage.label,20,24,ink,bold);}
+            text(c,static_cast<int>(1792-width(c,percent,44,bold,-1)),static_cast<int>(y+37),percent,44,54,state==botty::ActivityState::done?success:measured?ink:faint,bold,-1);
+            progress(c,238,y+105,1554,8,state==botty::ActivityState::attention||state==botty::ActivityState::done?1:e.progress,tone);
+            char left[48];timeLeft(e,left,sizeof(left));char eta[64];if(left[0]&&state==botty::ActivityState::running)std::snprintf(eta,sizeof(eta),"%s left",left);else eta[0]=0;
+            const unsigned etaWidth=width(c,eta,24,bold);
+            fit(c,238,static_cast<int>(y+127),line,24,30,1554-etaWidth-24,state==botty::ActivityState::attention?warning:muted);
+            if(eta[0])text(c,static_cast<int>(1792-etaWidth),static_cast<int>(y+127),eta,24,30,ink,bold);
+            y+=200;
+        }else {
+            c.rounded(96,y+7,1728,84,14,surface);
+            art(c,114,y+13,48,72,6,id,{},i,surface);
+            fit(c,186,static_cast<int>(y+19),e.name.data(),28,34,918,ink,bold);
+            fit(c,186,static_cast<int>(y+55),line,20,24,918,state==botty::ActivityState::attention?warning:muted);
+            c.rounded(1128,y+44,10,10,5,stage.color);text(c,1148,static_cast<int>(y+37),stage.label,20,24,ink,bold);
+            progress(c,1352,y+46,320,6,state==botty::ActivityState::attention||state==botty::ActivityState::done?1:e.progress,tone);
+            text(c,static_cast<int>(1792-width(c,percent,28,bold)),static_cast<int>(y+32),percent,28,34,state==botty::ActivityState::done?success:measured?ink:faint,bold);
+            y+=104;
+        }
+    }
+    if(catalog.truncated)text(c,960,1006,"Showing the first 256 downloads and jobs.",20,24,warning);
+    unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Details",true);hx=hint(c,hx,Glyph::menu,"Quick actions");hint(c,hx,Glyph::square,"Add magnet link");
+    char position[48];if(model.count)std::snprintf(position,sizeof(position),"%u of %u",model.selected+1,model.count);else position[0]=0;
+    footerRight(c,position);
+}
+
+// --- Details ------------------------------------------------------------------
+// Details layout, derived once before input and again for painting: rendering never
+// changes navigation state. Every line wraps to the panel; nothing is cut off.
+struct DetailLayout {
+    std::array<Op,8> actions{};std::array<unsigned,8> widths{};unsigned actionCount=0,buttons=0;
+    std::array<std::string_view,256> rows{};unsigned rowCount=0,errorRows=0;
+    std::array<char,64> title{};
+};
+DetailLayout detailView;
+void detailLayout(Canvas& c,const Focus& f,DetailLayout& out) noexcept {
+    out=DetailLayout{};if(!f.entry)return;
+    const auto& e=*f.entry;const bool library=model.tab==Model::library;
+    out.actionCount=botty::quickActions(&e,workflowTab(f),catalog,out.actions);
+    unsigned x=96;
+    for(unsigned i=0;i<out.actionCount;++i){
+        const unsigned w=56+width(c,buttonLabel(out.actions[i]),24,bold)+(out.actions[i]==Op::pause?32:0);
+        if(x+w>1824)break;out.widths[i]=w;x+=w+14;++out.buttons;
+    }
+    const auto add=[&](std::string_view value){
+        while(!value.empty()&&out.rowCount<out.rows.size()){
+            const auto end=value.find('\n');auto line=end==std::string_view::npos?value:botty::slice(value,0,end);
+            while(!line.empty()&&out.rowCount<out.rows.size()){
+                auto take=fitting(c,line,24,regular,0,860);if(!take)take=codepointEnd(line,0);
+                out.rows[out.rowCount++]=botty::slice(line,0,take);line.remove_prefix(take);
+            }
+            if(end==std::string_view::npos)break;
+            value.remove_prefix(end+1);
+        }
+    };
+    if(e.error[0]){add(e.error.data());out.errorRows=out.rowCount;}
+    if(f.torrent){std::snprintf(out.title.data(),out.title.size(),"Files \xc2\xb7 %u",e.fileCount);add(e.files.data());}
+    else {
+        std::snprintf(out.title.data(),out.title.size(),"%s",library?"Location":"Details");
+        if(e.currentFile[0])add(e.currentFile.data());
+        if(e.destination[0])add(e.destination.data());
+        if(library&&catalog.library[0])add(catalog.library.data());
+        if(e.phase[0]&&!e.task)add(e.phase.data());
+    }
+}
+void stat(Canvas& c,unsigned& x,const char* value,const char* label) noexcept {
+    text(c,static_cast<int>(x),434,value,32,40,ink,bold);text(c,static_cast<int>(x),478,label,20,24,muted);
+    x+=std::max(width(c,value,32,bold),width(c,label,20))+56;
+}
+void drawDetails(Canvas& c,const Focus& f) noexcept {
+    const auto& e=*f.entry;const auto id=artworkId(e,artSource(f));const bool library=model.tab==Model::library;
+    hero(c,id,model.selected,420);
+    const auto state=botty::activityState(e,f.torrent);const auto stage=stageOf(e,f.torrent);const auto status=std::string_view(e.status.data());
+    char location[96],kicker[192];storageName(e.storage.data(),location,sizeof(location));
+    const char* phase=library?(status=="moved"?"In Library":status=="ready"?"Ready to move":status=="moving"?"Moving":"Needs you"):
+        state==botty::ActivityState::attention?"Needs you":f.torrent?(e.complete?"Downloaded":status=="Paused"?"Paused":"Downloading"):e.task?stage.label:status=="extracting"?"Extracting":status=="ready"?"Extracted":status.data();
+    std::snprintf(kicker,sizeof(kicker),"%s \xc2\xb7 %s",phase,location);
+    eyebrow(c,96,184,kicker,muted,true,state==botty::ActivityState::attention?warning:library||state==botty::ActivityState::done?success:accent);
+    unsigned size=76;if(width(c,e.name.data(),76,bold,-2)>1180)size=60;
+    fit(c,96,224,e.name.data(),size,84,1180,ink,bold,-2);
+    const bool measured=!(e.task&&e.total<=0);
+    if(library){
+        std::array<botty::LibraryCopy,2> copies{};const unsigned copyCount=botty::libraryCopies(e,copies);
+        unsigned x=96;
+        for(unsigned n=0;n<copyCount;++n){char where[96],label[160];storageName(copies[n].storage,where,sizeof(where));std::snprintf(label,sizeof(label),"%s \xc2\xb7 %s",copies[n].format,where);
+            c.rounded(static_cast<unsigned>(x),345,14,14,7,n?muted:success);text(c,static_cast<int>(x+28),336,label,24,30,n?muted:ink,n?regular:bold);x+=28+width(c,label,24,n?regular:bold)+40;}
+    }else if(stage.step>=0)pipeline(c,96,336,24,30,14,56,stage.step,e.progress,measured&&state==botty::ActivityState::running,state==botty::ActivityState::done);
+    else {char label[64];if(measured)std::snprintf(label,sizeof(label),"%s %.0f%%",stage.label,e.progress*100);else std::snprintf(label,sizeof(label),"%s",stage.label);c.rounded(96,344,14,14,7,stage.color);text(c,124,336,label,24,30,ink,bold);}
+    if(!library)progress(c,96,390,860,8,state==botty::ActivityState::done?1:e.progress,state==botty::ActivityState::attention?warning:state==botty::ActivityState::done?success:accent,ink,31);
+    char a[64],b[64],d[64],r[64],t[96],left[48];unsigned x=96;
+    botty::formatBytes(e.bytes,a,sizeof(a));botty::formatBytes(e.total,b,sizeof(b));botty::formatBytes(e.download,r,sizeof(r));timeLeft(e,left,sizeof(left));
+    if(library){
+        std::snprintf(d,sizeof(d),"%s",b);stat(c,x,d,"Size");
+        stat(c,x,e.compressed?"Compressed":std::string_view(e.kind.data())=="folder"?"Folder":e.kind[0]?e.kind.data():"Unknown","Format");
+        if(e.titleId[0])stat(c,x,e.titleId.data(),"Title ID");
+        if(std::string_view(catalog.compressionJob.data())==e.id.data()&&catalog.compressionBusy&&catalog.compressionTotal>0){std::snprintf(d,sizeof(d),"%.0f%%",catalog.compressionBytes/catalog.compressionTotal*100);stat(c,x,d,"Compression");}
+    }else if(f.torrent){
+        std::snprintf(d,sizeof(d),"%s / %s",a,b);stat(c,x,d,"Downloaded");
+        char up[48];botty::formatBytes(e.upload,up,sizeof(up));std::snprintf(d,sizeof(d),"%s/s",r);std::snprintf(t,sizeof(t),"Down \xc2\xb7 %s/s up",up);stat(c,x,d,t);
+        if(e.peers<0){stat(c,x,"\xe2\x80\x94","Peers unavailable");}
+        else {std::snprintf(d,sizeof(d),"%d",e.peers);if(e.downloadingPeers>=0)std::snprintf(t,sizeof(t),"Peers \xc2\xb7 %d sending",e.downloadingPeers);else std::snprintf(t,sizeof(t),"Peers");stat(c,x,d,t);}
+        std::snprintf(t,sizeof(t),"Left \xc2\xb7 %s",location);stat(c,x,left[0]?left:e.complete?"Done":"\xe2\x80\x94",t);
+    }else {
+        if(e.items&&e.total>0)std::snprintf(d,sizeof(d),"%.0f / %.0f",e.bytes,e.total);else if(e.total>0)std::snprintf(d,sizeof(d),"%s / %s",a,b);else std::snprintf(d,sizeof(d),"\xe2\x80\x94");
+        stat(c,x,d,e.task?(e.items?"Items":"Processed"):"Extracted");
+        if(e.download>0){if(e.items)std::snprintf(d,sizeof(d),"%.1f/s",e.download);else std::snprintf(d,sizeof(d),"%s/s",r);stat(c,x,d,"Speed");}
+        std::snprintf(d,sizeof(d),"%.0f s",e.elapsed);if(e.task)stat(c,x,d,"Elapsed");
+        stat(c,x,left[0]?left:"\xe2\x80\x94","Left (current phase)");
+    }
+    // Buttons mirror Quick actions. Pause, Resume and Verify run immediately.
+    auto& layout=detailView;detailLayout(c,f,layout);
+    unsigned bx=96;
+    for(unsigned shown=0;shown<layout.buttons;++shown){
+        const auto op=layout.actions[shown];const char* label=buttonLabel(op);const bool risky=botty::Workflow::destructive(op);
+        const bool pauseIcon=op==Op::pause;const unsigned w=layout.widths[shown];
+        const bool focus=model.detailButton==shown;const bool enabled=!*botty::unavailable(op,&e,catalog);
+        if(focus){focusRing(c,bx,565,w,64,18,4,bg);c.rounded(bx,565,w,64,12,ink);}
+        else if(risky)c.rounded(bx,565,w,64,12,danger,31);else c.rounded(bx,565,w,64,12,ink,26);
+        unsigned tx=bx+28;
+        if(pauseIcon){const Color icon=focus?bg:ink;c.rounded(tx+3,586,5,18,2,icon);c.rounded(tx+12,586,5,18,2,icon);tx+=32;}
+        middle(c,static_cast<int>(tx),565,64,label,24,focus?bg:!enabled?faint:risky?danger:ink,bold);
+        bx+=w+14;
+    }
+    const auto op=model.detailButton<layout.buttons?layout.actions[model.detailButton]:Op::none;const char* reason=op!=Op::none?botty::unavailable(op,&e,catalog):"";
+    const char* note=detailNotice[0]?detailNotice.data():*reason?reason:op!=Op::none?explain(op,&e):e.task?"This task is followed here until it finishes.":"";
+    wrap(c,96,656,note,20,24,1180,2,detailNotice[0]||*reason?warning:muted);
+    // Files, destination and errors; up/down pages through every wrapped row.
+    if(layout.rowCount){
+        const unsigned pages=(layout.rowCount+2)/3,page=std::min(model.detailPage,pages-1);
+        eyebrow(c,96,760,layout.title.data(),muted);
+        if(pages>1){char more[48];std::snprintf(more,sizeof(more),"%u / %u \xc2\xb7 \xe2\x86\x93 to see more",page+1,pages);text(c,static_cast<int>(956-width(c,more,20)),760,more,20,24,faint);}
+        for(unsigned i=0;i<3&&page*3+i<layout.rowCount;++i){
+            const unsigned y=796+i*52,index=page*3+i;c.rectangle(96,y,860,1,line);
+            text(c,96,static_cast<int>(y+11),layout.rows[index],24,30,index<layout.errorRows?warning:ink);
+            if(i==2||index+1==layout.rowCount)c.rectangle(96,y+52,860,1,line);
+        }
+    }
+    unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Select",true);hx=hint(c,hx,Glyph::menu,"Quick actions");hint(c,hx,Glyph::circle,library?"Back to Library":"Back to Activity");
+    footerRight(c,nullptr);
+}
+
+// --- Library ------------------------------------------------------------------
+void drawLibrary(Canvas& c,const char* detail) noexcept {
+    text(c,96,148,"Library",60,66,ink,bold,-2);
+    double bytes=0;const unsigned all=catalog.valid?botty::libraryCount(catalog,0):0;
+    for(unsigned i=0;i<all;++i)bytes+=botty::libraryAt(catalog,0,i)->total;
+    char subtitle[160],size[48];botty::formatBytes(bytes,size,sizeof(size));
+    std::snprintf(subtitle,sizeof(subtitle),"%u game%s \xc2\xb7 %s \xc2\xb7 play them from the PS5 Home screen",all,all==1?"":"s",size);
+    text(c,96,224,catalog.valid?subtitle:detail,24,30,catalog.valid?muted:warning);
+    const char* filters[]={"All","PS5 SSD","External","Compressed"};
+    unsigned total=0;for(auto name:filters)total+=44+width(c,name,20,bold)+12;
+    unsigned x=1824-total+12;
+    for(unsigned f=0;f<4;++f)x+=chip(c,x,202,filters[f],model.filter==f)+12;
+    if(!catalog.valid)drawEmpty(c,296,"Your session is offline",detail);
+    else if(!model.count)drawEmpty(c,296,model.filter?"No games match this filter.":"Your next game belongs here.",model.filter?"Triangle changes the filter.":"Games you download and prepare appear here, ready to open from the PS5 Home screen.");
+    const unsigned row=model.selected/Model::libraryColumns;
+    for(unsigned r=0;r<2;++r)for(unsigned col=0;col<Model::libraryColumns;++col){
+        const unsigned index=(row+r)*Model::libraryColumns+col;if(index>=model.count)break;
+        const auto* e=botty::libraryAt(catalog,model.filter,index);if(!e)break;
+        const unsigned cx=97+col*250,cy=296+r*464;const bool focus=index==model.selected;
+        std::array<botty::LibraryCopy,2> copies{};const unsigned copyCount=botty::libraryCopies(*e,copies);
+        char first[96],second[96],line[200],total[48];storageName(copies[0].storage,first,sizeof(first));botty::formatBytes(e->total,total,sizeof(total));
+        bool offline=std::string_view(first).starts_with("Offline");
+        if(copyCount==2){storageName(copies[1].storage,second,sizeof(second));offline=offline&&std::string_view(second).starts_with("Offline");
+            if(std::string_view(first)==second)std::snprintf(line,sizeof(line),"%s \xc2\xb7 both formats",first);else std::snprintf(line,sizeof(line),"%s + %s",first,second);}
+        else if(e->total>0)std::snprintf(line,sizeof(line),"%s \xc2\xb7 %s",first,total);
+        else std::snprintf(line,sizeof(line),"%s",first);
+        const auto status=std::string_view(e->status.data());
+        if(std::string_view(catalog.compressionJob.data())==e->id.data()&&catalog.compressionBusy)std::snprintf(line,sizeof(line),"%s",catalog.compressionTotal>0?"Compressing\xe2\x80\xa6":"Compression pending");
+        if(status=="moving")std::snprintf(line,sizeof(line),"Moving to Library");
+        if(status=="ready")std::snprintf(line,sizeof(line),e->total>0?"Ready to move \xc2\xb7 %s":"Ready to move",total);
+        if(offline)std::snprintf(line,sizeof(line),"Disk disconnected");
+        if(focus)focusRing(c,cx,cy,216,324,18,5,bg);
+        art(c,cx,cy,216,324,12,artworkId(*e,'j'),e->name.data(),index,bg,offline?102:255);
+        if(offline)badge(c,cx+8,cy+8,"OFFLINE",warning,warning,41);
+        else if(status=="move-error")badge(c,cx+8,cy+8,"MOVE FAILED",warning,warning,41);
+        else if(status=="ready"||status=="moving")badge(c,cx+8,cy+8,status=="ready"?"READY":"MOVING",ink,bg,209);
+        else if(copyCount==2)badge(c,cx+8,cy+8,"BOTH FORMATS",ink,bg,209);
+        else if(e->compressed)badge(c,cx+8,cy+8,"COMPRESSED",ink,bg,209);
+        fit(c,static_cast<int>(cx),static_cast<int>(cy+344),e->name.data(),24,30,216,offline?muted:ink,bold);
+        fit(c,static_cast<int>(cx),static_cast<int>(cy+376),line,20,24,216,offline||status=="move-error"?warning:muted);
+    }
+    // The next row peeks out under the hint bar.
+    c.fade(0,800,1920,140,bg,0,224,false);c.fade(0,940,1920,90,bg,224,255,false);c.rectangle(0,1030,1920,50,bg);
+    unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Details",true);hx=hint(c,hx,Glyph::menu,"Compress, move, delete\xe2\x80\xa6");hint(c,hx,Glyph::triangle,"Filter");
+    char position[48];if(model.count)std::snprintf(position,sizeof(position),"%u of %u",model.selected+1,model.count);else position[0]=0;
+    footerRight(c,position);
+}
+
+// --- System -------------------------------------------------------------------
+void drawSystem(Canvas& c,bool online,bool managerOnline,bool updateStale,const char* detail) noexcept {
+    text(c,96,148,"System",60,66,ink,bold,-2);
+    text(c,96,224,"Remote access, updates and the Botty+ service",24,30,muted);
+    c.rounded(96,300,1040,600,22,surface);
+    eyebrow(c,152,356,"Open on your phone or computer",muted);
+    const auto url=std::string_view(connection.url.data());
+    const auto shown=url.starts_with("http://")?botty::slice(url,7):url;
+    fit(c,152,400,online?(shown.empty()?"Address unavailable":shown):connection.status==botty::Probe::checking?"Connecting\xe2\x80\xa6":"Unavailable",60,72,640,ink,bold,-1);
+    wrap(c,152,480,online?"Same Wi-Fi network \xc2\xb7 add a magnet or upload a .torrent from any browser":detail,24,34,600,2,online?muted:warning);
+    const std::string_view password=connection.password.data();
+    if(online&&password.size()>6)text(c,152,560,"Short password applies next session.",20,24,faint);
+    (void)c.illustration(0,816,420,280,280);
+    for(unsigned i=0;i<2;++i){
+        const unsigned x=152+i*476;c.rounded(x,702,452,142,16,raised);
+        eyebrow(c,static_cast<int>(x+32),730,i?"Password":"Username",muted);
+        const std::string_view value=!online?std::string_view("\xe2\x80\x94"):i?password:std::string_view(connection.username.data());
+        fit(c,static_cast<int>(x+32),762,value,value.size()>12?28:44,54,388,ink,bold,i?1:0);
+    }
+    const auto& update=catalog.nativeUpdate;
+    const bool available=botty::nativeUpdateAvailable(update,updateStale),waiting=update.requested&&update.closeRequired&&std::string_view(update.status.data())!="blocked";
+    c.rounded(1168,300,656,340,22,surface);
+    const auto updateStatus=std::string_view(update.status.data());
+    const bool upToDate=!updateStale&&update.supported&&!available&&(updateStatus=="current"||updateStatus=="complete");
+    eyebrow(c,1208,340,available?"Update available":waiting?"Update queued":upToDate?"Up to date":"Updates",muted,true,available||waiting?accent:upToDate?success:faint);
+    char current[32],next[32],title[96];publicVersion(botty::nativeVersion,current,sizeof(current));publicVersion(update.availableVersion.data(),next,sizeof(next));
+    std::snprintf(title,sizeof(title),"Botty+ %s",available&&update.availableVersion[0]?next:botty::nativeDisplayVersion);
+    text(c,1208,378,title,44,52,ink,bold,-1);
+    char body[384];
+    if(model.updateDialog)std::snprintf(body,sizeof(body),"App %s \xe2\x86\x92 %s \xc2\xb7 Manager %s \xe2\x86\x92 %s \xc2\xb7 Worker %s \xe2\x86\x92 %s \xc2\xb7 Engine %s \xe2\x86\x92 %s",current,next,update.installedServiceVersion.data(),update.availableServiceVersion.data(),update.installedWorkerVersion.data(),update.availableWorkerVersion.data(),update.installedEngineVersion.data(),update.availableEngineVersion.data());
+    else if(available)std::snprintf(body,sizeof(body),"App %s \xe2\x86\x92 %s \xc2\xb7 Manager %s \xe2\x86\x92 %s. File jobs finish first; downloads pause only if rTorrent restarts.",current,next,update.installedServiceVersion.data(),update.availableServiceVersion.data());
+    else std::snprintf(body,sizeof(body),"%s",!managerOnline?detail:update.message[0]?update.message.data():botty::nativeUpdateLabel(update,updateStale));
+    wrap(c,1208,438,body,20,30,576,2,muted);
+    if(model.updateDialog){
+        // Installing closes Botty+, so Cancel keeps the focus until moved.
+        for(unsigned i=0;i<2;++i){
+            const unsigned x=1215+i*289,w=273;const bool focus=model.confirmUpdate==(i==1);
+            if(focus)focusRing(c,x,533,w,68,18,4,surface);
+            c.rounded(x,533,w,68,12,focus?(i?accent:ink):ink,focus?255:26);
+            const char* label=i?"Install and close":"Cancel";
+            middle(c,static_cast<int>(x+(w-width(c,label,24,bold))/2),533,68,label,24,focus?(i?accentInk:bg):ink,bold);
+        }
+    }else {
+        const bool focus=model.selected==0;
+        const char* label=std::string_view(update.status.data())=="blocked"?"Retry update check":waiting?"Close for update":available?"Update and close":"Check for updates";
+        if(focus)focusRing(c,1215,533,562,68,18,4,surface);
+        const bool primary=available||waiting;
+        c.rounded(1215,533,562,68,12,primary?accent:ink,primary?255:26);
+        const unsigned w=(primary?36:0)+width(c,label,28,bold),lx=1215+(562-w)/2;
+        if(primary)glyph(c,Glyph::cross,static_cast<float>(lx),556,accentInk,22.f/24,3.5f);
+        middle(c,static_cast<int>(lx+(primary?36:0)),533,68,label,28,primary?accentInk:ink,bold);
+    }
+    const char* rows[]={"Reconnect to the service","Close Botty+"};
+    const char* stateText=online?"Connected":connection.status==botty::Probe::checking?"Connecting":managerOnline?"Reconnecting":"Offline";
+    for(unsigned i=0;i<2;++i){
+        const unsigned y=656+i*100;const bool focus=model.selected==i+1&&!model.updateDialog;
+        if(focus)focusRing(c,1168,y,656,84,22,4,bg);
+        c.rounded(1168,y,656,84,16,surface);
+        middle(c,1200,static_cast<int>(y),84,rows[i],24,ink,bold);
+        const char* right=i?"Downloads keep running":stateText;
+        middle(c,static_cast<int>(1792-width(c,right,20)),static_cast<int>(y),84,right,20,i?muted:online?success:warning);
+    }
+    hint(c,96,Glyph::cross,model.updateDialog?"Confirm":"Select",true);
+    const bool known=managerOnline&&!updateStale&&update.supported;
+    char versions[384];std::snprintf(versions,sizeof(versions),"Manager %s \xc2\xb7 Worker %s \xc2\xb7 rTorrent %s",
+        known&&update.installedServiceVersion[0]?update.installedServiceVersion.data():"unavailable",
+        known&&update.installedWorkerVersion[0]?update.installedWorkerVersion.data():"unavailable",
+        known&&update.installedEngineVersion[0]?update.installedEngineVersion.data():"unavailable");
+    char label[48];std::snprintf(label,sizeof(label),"Botty+ %s",botty::nativeDisplayVersion);
+    const unsigned version=width(c,label,20);
+    text(c,static_cast<int>(1824-version),1006,label,20,24,faint);
+    fit(c,static_cast<int>(1824-version-36-std::min(width(c,versions,20),1100U)),1006,versions,20,24,1100,faint);
+}
+
+// --- Sheets -------------------------------------------------------------------
+void sheetFrame(Canvas& c) noexcept {c.rounded(0,0,1920,1080,0,bg,184);c.rectangle(1120,0,800,1080,surface);}
+void sheetHeader(Canvas& c,const std::array<char,96>& cover,std::string_view name,const char* kicker,Color kickerColor,const char* line1,const char* line2,bool small) noexcept {
+    const unsigned w=small?112:128,h=small?168:192,x=1192+w+32;
+    if(cover[0]||!name.empty())art(c,1192,72,w,h,12,cover,{},0,surface);
+    else {c.rounded(1192,72,w,h,12,raised);glyph(c,Glyph::menu,1192+w/2.f-18,72+h/2.f-18,muted,1.5f,3);}
+    const unsigned block=24+10+50+(line1?10+(small?24:30):0)+(line2?34:0),top=72+h-(small?4:6)-block;
+    eyebrow(c,static_cast<int>(x),static_cast<int>(top),kicker,kickerColor);
+    fit(c,static_cast<int>(x),static_cast<int>(top+34),name,44,50,1848-x,ink,bold,-1);
+    if(line1)fit(c,static_cast<int>(x),static_cast<int>(top+94),line1,small?20:24,small?24:30,1848-x,muted);
+    if(line2)fit(c,static_cast<int>(x),static_cast<int>(top+128),line2,20,24,1848-x,muted);
+}
+// Left/right changes a focused row; from the button, up reaches the rows.
+void sheetFooter(Canvas& c,const char* primary,Glyph change,const char* back) noexcept {
+    unsigned x=1192;x=hint(c,x,Glyph::cross,primary,true,1008);
+    if(change!=Glyph::none)x=hint(c,x,change,"Change",false,1008);
+    hint(c,x,Glyph::circle,back,false,1008);
+}
+const char* ctaLabel(Op op) noexcept {
+    switch(op){case Op::grab:case Op::exploreGrab:return "Get game";case Op::add:return "Start download";case Op::extract:return "Extract";case Op::transfer:return "Move";case Op::move:return "Move to Library";case Op::compress:return "Compress game";default:return "Continue";}
+}
+void drawSheet(Canvas& c) noexcept {
+    sheetFrame(c);
+    const auto op=workflow.command.operation;const auto* target=workflow.target(catalog);
+    const bool download=op==Op::add||op==Op::grab||op==Op::exploreGrab;
+    char line1[192]{},size[48];
+    std::array<char,96> cover{};
+    const char* kicker=op==Op::add?"Add a magnet link":op==Op::extract?"Extract":op==Op::transfer?"Move to another disk":op==Op::move?"Move to Library":op==Op::compress?"Compress game":"Get game";
+    std::string_view name=workflow.targetName.data();
+    if(op==Op::exploreGrab){
+        cover=sheetCover();name=workflow.gameName.data();
+        const auto& source=workflow.sources[workflow.sourceIndex];botty::formatBytes(source.size,size,sizeof(size));
+        std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 PS5 \xc2\xb7 %u source%s",size,workflow.sourceCount,workflow.sourceCount==1?"":"s");
+    }else if(op==Op::grab){
+        cover=sheetCover();name=workflow.gameName.data();
+        botty::formatBytes(workflow.sources[0].size,size,sizeof(size));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 search result",size);
+    }else if(op==Op::add){name="Magnet link";std::snprintf(line1,sizeof(line1),"Added from a link you entered");}
+    else if(target){
+        cover=artworkId(*target,workflow.targetTab==0?'t':'j');botty::formatBytes(target->total,size,sizeof(size));
+        if(op==Op::extract)std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 %u file%s",size,target->fileCount,target->fileCount==1?"":"s");
+        else {char where[96];storageName(target->storage.data(),where,sizeof(where));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 now on %s",size,where);}
+    }
+    sheetHeader(c,cover,name,kicker,accent,line1,nullptr,false);
+    for(unsigned r=0;r<workflow.rowCount;++r){
+        const unsigned y=320+r*130;const bool focus=workflow.focus==r;const auto row=workflow.rows[r];
+        if(focus)focusRing(c,1192,y,656,120,22,5,surface);
+        c.rounded(1192,y,656,120,14,raised);
+        char label[64],value[512],sub[256];value[0]=sub[0]=0;unsigned index=0,count=0;bool showArrows=false;Color valueColor=ink;
+        const char* tag=nullptr;Color tagColor=success;
+        if(row==Row::source){
+            std::snprintf(label,sizeof(label),"Source");const auto& s=workflow.sources[workflow.sourceIndex];
+            // The release name tells editions apart; the indexer and counts follow.
+            std::snprintf(value,sizeof(value),"%s",s.name[0]?s.name.data():s.tracker[0]?s.tracker.data():"Release");
+            unsigned best=0;for(unsigned i=1;i<workflow.sourceCount;++i)if(workflow.sources[i].seeders>workflow.sources[best].seeders)best=i;
+            if(workflow.sourceCount>1&&workflow.sourceIndex==best)tag="BEST";
+            char seeds[24],bytes[48];grouped(s.seeders,seeds,sizeof(seeds));botty::formatBytes(s.size,bytes,sizeof(bytes));
+            const char* tracker=s.tracker[0]?s.tracker.data():"Prowlarr";
+            if(s.published[0])std::snprintf(sub,sizeof(sub),"%s \xc2\xb7 %s seeders \xc2\xb7 %s \xc2\xb7 %.10s",tracker,seeds,bytes,s.published.data());else std::snprintf(sub,sizeof(sub),"%s \xc2\xb7 %s seeders \xc2\xb7 %s",tracker,seeds,bytes);
+            index=workflow.sourceIndex;count=workflow.sourceCount;showArrows=true;
+        }else if(row==Row::magnet){
+            std::snprintf(label,sizeof(label),"Magnet link");
+            char used[24];grouped(static_cast<long long>(std::string_view(workflow.command.text.data()).size()),used,sizeof(used));
+            std::snprintf(sub,sizeof(sub),"%s characters \xc2\xb7 select to edit",used);
+        }else if(row==Row::storage){
+            std::snprintf(label,sizeof(label),"%s",download?"Install on":op==Op::extract?"Extract to":op==Op::transfer?"Move to":op==Op::move?"Library disk":"Compressed copy on");
+            const auto id=std::string_view(workflow.command.storage.data());
+            for(unsigned i=0;i<catalog.storageCount;++i){const auto& d=catalog.storage[i];
+                if(!d.available||(op==Op::transfer&&target&&d.id==target->storage))continue;
+                if(id==d.id.data()){index=count;char free[48];botty::formatBytes(d.freeBytes,free,sizeof(free));
+                    storageName(d.id.data(),value,sizeof(value));
+                    // Magnet sizes are unknown until rTorrent reads the metadata.
+                    const double needed=(op==Op::grab||op==Op::exploreGrab)&&workflow.sourceIndex<workflow.sourceCount?workflow.sources[workflow.sourceIndex].size:0;
+                    if(download&&needed>0&&d.freeBytes>needed){char after[48];botty::formatBytes(d.freeBytes-needed,after,sizeof(after));std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 %s left after",free,after);}
+                    else if(download&&needed>0)std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 not enough space",free);
+                    else if(op==Op::extract&&target&&d.id==target->storage)std::snprintf(sub,sizeof(sub),"Same disk as the download \xc2\xb7 %s free",free);
+                    else std::snprintf(sub,sizeof(sub),"%s free",free);}
+                ++count;
+            }
+            if(!value[0]){std::snprintf(value,sizeof(value),"No disk available");std::snprintf(sub,sizeof(sub),"Connect a disk to continue");valueColor=warning;}
+            showArrows=count>0;
+        }else if(row==Row::mode){
+            std::snprintf(label,sizeof(label),"After download");
+            std::snprintf(value,sizeof(value),"%s",workflow.command.automatic?"Extract and add to Library":"Keep the download only");
+            std::snprintf(sub,sizeof(sub),"%s",workflow.command.automatic?"Archives are kept for seeding":"Extract it later from Activity");
+            index=workflow.command.automatic?0:1;count=2;showArrows=true;
+        }else if(row==Row::archive){
+            std::snprintf(label,sizeof(label),"Archive");
+            // Show the archive the sheet will submit, wherever a refresh moved it.
+            int at=-1;
+            for(unsigned i=0;target&&i<target->archiveCount&&target->archiveStart+i<catalog.archiveCount;++i)if(catalog.archives[target->archiveStart+i]==workflow.command.archive){at=static_cast<int>(i);break;}
+            if(target&&at>=0){
+                const auto path=std::string_view(workflow.command.archive.data());
+                const auto slash=path.rfind('/');std::snprintf(value,sizeof(value),"%.*s",static_cast<int>(slash==std::string_view::npos?path.size():path.size()-slash-1),slash==std::string_view::npos?path.data():path.data()+slash+1);
+                if(target->archiveCount==1){tag="AUTO";tagColor=muted;std::snprintf(sub,sizeof(sub),"Found automatically%s",target->archivesOmitted?" \xc2\xb7 some names exceed the list limit":"");}
+                else std::snprintf(sub,sizeof(sub),"%u archive sets found%s",target->archiveCount,target->archivesOmitted?" \xc2\xb7 some names exceed the list limit":"");
+                index=static_cast<unsigned>(at);count=target->archiveCount;showArrows=count>1;
+            }else {std::snprintf(value,sizeof(value),"No archive available");valueColor=warning;}
+        }else {
+            std::snprintf(label,sizeof(label),"Password");const auto password=std::string_view(workflow.command.text.data());
+            if(password.empty()){std::snprintf(value,sizeof(value),"None");valueColor=muted;std::snprintf(sub,sizeof(sub),"Only needed for locked archives");}
+            else {
+                if(workflow.passwordVisible)std::snprintf(value,sizeof(value),"%.*s",static_cast<int>(std::min<std::size_t>(password.size(),200)),password.data());
+                else {const unsigned n=static_cast<unsigned>(std::min<std::size_t>(password.size(),20));for(unsigned i=0;i<n;++i)std::copy_n("\xe2\x80\xa2",3,value+i*3);value[n*3]=0;}
+                std::snprintf(sub,sizeof(sub),"Entered with the PS5 keyboard");
             }
         }
-        if(model.tab==1&&entry){
-            surface(c,1280,418,544,386);c.label(1308,444,"CURRENT TASK",20,accent);
-            titleLines(c,1308,490,entry->phase[0]?entry->phase.data():entry->status.data(),28,480,3,ink);
-            std::snprintf(text,sizeof(text),"Elapsed: %.0f s",entry->elapsed);c.label(1308,616,text,24,muted);
-            botty::formatETA(*entry,eta,sizeof(eta));c.label(1308,662,eta,28,accent);
-            if(entry->currentFile[0])shortLabel(c,1308,732,entry->currentFile.data(),20,480,muted);
-        }else (void)c.illustration(model.tab,1290,350,520,520);
-        c.label(1300,841,model.tab==0?"Keep the queue moving.":"Your work, in one place.",28,sectionColor());
-        unsigned active=0;double throughput=0;
-        for(unsigned i=0;i<botty::entryCount(catalog,model.tab,0);++i){const auto* e=botty::entryAt(catalog,model.tab,0,i);if(e->active&&!e->complete){++active;if(!e->items)throughput+=e->download;}}
-        botty::formatBytes(throughput,rate,sizeof(rate));std::snprintf(text,sizeof(text),"%u active  /  %s/s",active,rate);c.label(1300,886,text,24,ink);
-        c.label(1300,930,model.tab==0?"Continues when you close Botty+.":"ETA estimates the current phase.",20,muted);
-        std::snprintf(text,sizeof(text),"%u of %u  /  Up / down to browse",model.selected+1,model.count);c.label(96,950,text,20,muted);
+        eyebrow(c,1220,static_cast<int>(y+13),label,muted);
+        const unsigned rightWidth=row==Row::password?200:showArrows?132:0,limit=600-rightWidth-(tag?width(c,tag,20,bold,2)+32:0);
+        if(row==Row::magnet)fitEnd(c,1220,static_cast<int>(y+43),workflow.command.text.data(),28,34,600,ink,bold);
+        else {const unsigned w=fit(c,1220,static_cast<int>(y+43),value,28,34,limit,valueColor,bold,row==Row::password&&!workflow.passwordVisible?2:0);if(tag)badge(c,1220+w+12,y+45,tag,tagColor,tagColor,tagColor==success?36:20);}
+        fit(c,1220,static_cast<int>(y+83),sub,20,24,600-rightWidth,muted);
+        if(showArrows){
+            char position[24];std::snprintf(position,sizeof(position),"%u / %u",count?index+1:0,count);
+            const unsigned pw=width(c,position,20,bold);
+            chevron(c,1806,y+49,true,index+1<count?ink:faint);
+            text(c,static_cast<int>(1794-pw),static_cast<int>(y+48),position,20,24,muted,bold);
+            chevron(c,static_cast<float>(1794-pw-26),y+49,false,index>0?ink:faint);
+        }
+        if(row==Row::password){
+            // Square edits the password; Triangle reveals it.
+            const bool empty=!workflow.command.text[0];unsigned hx=1820;
+            if(!empty){const char* show=workflow.passwordVisible?"Hide":"Show";hx-=width(c,show,20);text(c,static_cast<int>(hx),static_cast<int>(y+48),show,20,24,muted);hx-=28;glyph(c,Glyph::triangle,static_cast<float>(hx),static_cast<float>(y+49),muted,20.f/24,2.4f);hx-=24;}
+            const char* edit=empty?"Enter":"Edit";hx-=width(c,edit,20);text(c,static_cast<int>(hx),static_cast<int>(y+48),edit,20,24,muted);hx-=28;glyph(c,Glyph::square,static_cast<float>(hx),static_cast<float>(y+49),muted,20.f/24,2.4f);
+        }
     }
-    if(catalog.truncated)c.label(500,932,"Showing the first 256 torrents and extraction jobs.",22,accent);
+    const unsigned cta=workflow.rowCount?320+workflow.rowCount*130+30:360;
+    const bool ctaFocus=workflow.focus>=workflow.rowCount;
+    if(ctaFocus)focusRing(c,1200,cta+8,640,84,20,5,surface);
+    c.rounded(1200,cta+8,640,84,14,accent);
+    const char* label=ctaLabel(op);const unsigned lw=26+16+width(c,label,32,bold),lx=1200+(640-lw)/2;
+    glyph(c,Glyph::cross,static_cast<float>(lx),static_cast<float>(cta+37),accentInk,26.f/24,3.5f);
+    middle(c,static_cast<int>(lx+42),static_cast<int>(cta+8),84,label,32,accentInk,bold);
+    const char* note=workflow.notice[0]?workflow.notice.data():download?"Starts right away. Pause or remove it anytime in Activity.":explain(op,target);
+    wrap(c,1192,static_cast<int>(cta+120),note,20,30,656,3,workflow.notice[0]?warning:muted);
+    const bool row=!ctaFocus&&workflow.focus<workflow.rowCount;
+    const auto focusedRow=row?workflow.rows[workflow.focus]:Row::source;
+    const Glyph change=!row?(workflow.rowCount?Glyph::updown:Glyph::none):focusedRow==Row::password||focusedRow==Row::magnet?Glyph::none:Glyph::arrows;
+    sheetFooter(c,!row?label:focusedRow==Row::password?"Enter password":focusedRow==Row::magnet?"Edit link":"Done",change,"Cancel");
 }
-void shortLabel(Canvas& c,unsigned x,unsigned y,std::string_view text,unsigned size,unsigned width,Color color) noexcept {
-    if(c.text_width(text,size)<=width){c.label(x,y,text,size,color);return;}
-    auto n=text.size();while(n&&c.text_width(botty::slice(text,0,n),size)>width-30)--n;
-    c.label(x,y,botty::slice(text,0,n),size,color);if(n<text.size())c.label(x+width-28,y,"...",size,color);
-}
-void drawWorkflow(Canvas& c) noexcept {
-    using Panel=botty::Workflow::Panel;using Op=botty::Operation;
-    c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
+// Confirmation fill: the sheet surface under a 8% danger tint.
+constexpr Color confirmFill=rgb(37,24,31);
+void drawMenu(Canvas& c) noexcept {
+    sheetFrame(c);
     const auto* target=workflow.target(catalog);
-    if(workflow.panel==Panel::menu){
-        c.label(140,322,"Actions",40,ink);shortLabel(c,140,378,workflow.targetName.data(),26,1620,muted);
-        for(unsigned i=0;i<workflow.optionCount;++i){auto op=workflow.options[i];const bool enabled=!*botty::unavailable(op,target,catalog);const bool focus=workflow.selected==i;
-            surface(c,140,408+i*60,1640,52,focus);c.label(166,420+i*60,botty::operationLabel(op),28,enabled?(focus?accent:ink):muted);
-            if(!enabled)c.label(1450,422+i*60,"Unavailable",22,muted);
-        }
-        const char* reason=workflow.notice[0]?workflow.notice.data():botty::unavailable(workflow.options[workflow.selected],target,catalog);
-        shortLabel(c,140,838,reason,24,1640,accent);
-        c.label(140,899,"Cross: Select    Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::sources){
-        c.label(140,322,"Choose a tracker",40,ink);shortLabel(c,140,378,workflow.targetName.data(),26,1640,muted);
-        const unsigned first=(workflow.selected/4)*4;
-        for(unsigned i=first;i<workflow.sourceCount&&i<first+4;++i){const auto& source=workflow.sources[i];const unsigned y=428+(i-first)*96;surface(c,140,y,1640,86,i==workflow.selected);
-            shortLabel(c,164,y+8,source.tracker.data(),26,340,i==workflow.selected?accent:ink);shortLabel(c,520,y+8,source.name.data(),23,1230,ink);
-            char size[48],line[256];botty::formatBytes(source.size,size,sizeof(size));std::snprintf(line,sizeof(line),"%s   /   %d seeders   /   %d leechers   /   %d grabs   /   %.10s",size,source.seeders,source.leechers,source.grabs,source.published.data());c.label(164,y+48,line,22,muted);
-        }
-        char footer[160];std::snprintf(footer,sizeof(footer),"%u / %u sources. More seeders usually means better availability.",workflow.selected+1,workflow.sourceCount);
-        const char* reason=network.busy()?"Sending request... You can still browse sources.":botty::unavailable(workflow.command.operation,nullptr,catalog);
-        c.label(140,838,*reason?reason:workflow.notice[0]?workflow.notice.data():footer,22,*reason||workflow.notice[0]?accent:muted);c.label(140,899,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::archives){
-        c.label(140,322,"Choose an archive",40,ink);
-        if(target){const unsigned first=(workflow.archiveIndex/6)*6;
-            for(unsigned i=first;i<target->archiveCount&&i<first+6;++i){const unsigned y=396+(i-first)*64;surface(c,140,y,1640,54,i==workflow.archiveIndex);shortLabel(c,166,y+10,catalog.archives[target->archiveStart+i].data(),24,1580,i==workflow.archiveIndex?accent:ink);}
-            if(target->archivesOmitted)c.label(140,816,"Some archive names exceed the list limit.",22,accent);
-        }
-        shortLabel(c,140,853,workflow.notice.data(),24,1640,accent);c.label(140,901,"Up / down: Choose    Cross: Select    Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::keyboard){
-        const bool password=workflow.command.operation==Op::extract;
-        c.label(140,316,workflow.unicodeInput?"Unicode code point (hex)":password?"Archive password (optional)":workflow.command.operation==Op::search?"Search games":"Add a magnet link",40,ink);
-        const auto text=std::string_view(workflow.unicodeInput?workflow.codepoint.data():workflow.command.text.data());std::array<char,128> visible{};
-        if(password&&!workflow.passwordVisible&&!workflow.unicodeInput){const unsigned n=text.size()>90?90:static_cast<unsigned>(text.size());for(unsigned i=0;i<n;++i)visible[i]='*';}
-        else {auto tail=botty::slice(text,text.size()>90?text.size()-90:0);for(unsigned i=0;i<tail.size();++i)visible[i]=tail[i];}
-        c.rounded(140,382,1640,76,12,background);shortLabel(c,162,402,visible.data(),26,1580,ink);
-        char counter[100];std::snprintf(counter,sizeof(counter),"%zu / %u characters   %s",text.size(),workflow.unicodeInput?6:botty::Workflow::textLimit(workflow.command.operation),text.size()>90?"(showing end)":"");c.label(140,464,counter,20,muted);
-        if(textEntryState!=TextEntryState::fallback){
-            c.label(140,538,nativeKeyboard.active()?"Enter text with the PS5 system keyboard.":"Cross: Open PS5 keyboard",28,ink);
-            shortLabel(c,140,836,workflow.notice.data(),24,1640,accent);
-            c.label(140,895,"Square: In-app keyboard (long links)    Circle: Cancel",22,muted);
-            return;
-        }
-        auto keys=botty::Workflow::keys(workflow.keyPage);
-        for(unsigned i=0;i<40;++i){const unsigned x=140+(i%10)*164,y=508+(i/10)*60;const bool focus=workflow.selected==i;
-            c.rounded(x,y,150,50,10,focus?accent:background);c.label(x+62,y+9,botty::slice(keys,i,1),28,focus?background:ink);}
-        const char* controls[]={"Space","Backspace","Clear","Case / Symbols","Done"};
-        for(unsigned i=0;i<5;++i){const bool focus=workflow.selected>=40&&(workflow.selected-40)/2==i;const unsigned x=140+i*328;
-            c.rounded(x,758,314,60,12,focus?accent:background);c.label(x+24,776,controls[i],24,focus?background:ink);}
-        shortLabel(c,140,836,workflow.notice[0]?workflow.notice.data():password&&!workflow.command.text[0]?"No password? Select Done to continue.":"",24,1640,accent);
-        c.label(140,895,password?"L1/R1: Keys   Square: Backspace   Triangle: Show/hide   Options: Unicode   Circle: Cancel":"L1/R1: Keys   Square: Backspace   Options: Unicode   Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::storage){
-        c.label(140,322,"Choose storage",40,ink);
-        c.label(140,380,"Keep this operation on the same disk, or choose another disk.",26,muted);
-        const unsigned first=(workflow.selected/5)*5;
-        for(unsigned i=first;i<catalog.storageCount&&i<first+5;++i){const auto& d=catalog.storage[i];const unsigned y=438+(i-first)*72;surface(c,140,y,1640,62,i==workflow.selected);char bytes[64],line[256];botty::formatBytes(d.freeBytes,bytes,sizeof(bytes));std::snprintf(line,sizeof(line),"%s   |   %s %s%s",d.label.data(),d.available?bytes:"Disconnected",d.available?"free":"",target&&d.id==target->storage?"   |   Current disk":"");shortLabel(c,164,y+14,line,26,1570,d.available?ink:muted);}
-        shortLabel(c,140,836,workflow.notice.data(),24,1640,accent);c.label(140,901,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::mode){
-        c.label(140,322,"Choose download mode",40,ink);
-        surface(c,140,430,1640,100,workflow.command.automatic);c.label(168,449,"Full auto: Download + extract + move to Library",30,ink);
-        c.label(168,491,"Every step stays on your selected disk. Archives are kept.",24,muted);
-        surface(c,140,570,1640,100,!workflow.command.automatic);c.label(168,590,"Download only",30,ink);c.label(168,632,"Prepare the game later from Torrents.",24,muted);
-        c.label(140,901,"Up / down: Choose    Cross: Continue    Circle: Cancel",22,muted);
-    }else if(workflow.panel==Panel::confirm){
-        char title[128];std::snprintf(title,sizeof(title),"%s?",botty::operationLabel(workflow.command.operation));c.label(140,322,title,40,ink);
-        shortLabel(c,140,392,workflow.command.operation==Op::add?workflow.command.text.data():workflow.targetName.data(),28,1640,ink);
-        const char* explanation="This request will be sent to rTorrent.";
-        if(workflow.command.operation==Op::add||workflow.command.operation==Op::grab||workflow.command.operation==Op::exploreGrab)explanation=workflow.command.automatic?"Download, extract and prepare in Library automatically on the selected disk. Original torrents are kept.":"Download only on the selected disk. Extract and move later when you choose.";
-        if(workflow.command.operation==Op::transfer)explanation="Move to the selected disk. Follow progress in Processing. Source removal follows a successful copy; torrents remain paused.";
-        if(workflow.command.operation==Op::compress)explanation="Create a compressed copy and keep the original. Close Botty+ when prompted to finish mounting. Full verification is optional. APR games require an existing index.";
-        if(workflow.command.operation==Op::restoreOriginal)explanation="Restore the retained original as the playable game. The compressed image and archives are kept. Close Botty+ to finish.";
-        if(workflow.command.operation==Op::removeOriginal)explanation="Delete the retained original without verification. Compressed copy, saves and archives are kept. Follow progress here.";
-        if(workflow.command.operation==Op::cancelCompression)explanation="Request cancellation and keep the original game. Wait until the compression worker stops.";
-        if(workflow.command.operation==Op::removeLibrary)explanation=target&&target->compressed?"Delete the compressed game and its retained original. Saves, torrents and archives are kept. Follow progress in Processing.":"Delete installed game files. Saves, torrents and archives are kept. Follow progress in Processing.";
-        if(workflow.command.operation==Op::removeTorrent)explanation="Permanently delete this torrent and its downloaded files, including archives. Library games are kept.";
-        if(workflow.command.operation==Op::verify)explanation="rTorrent will recheck downloaded pieces. Extraction waits until verification finishes.";
-        if(workflow.command.operation==Op::extract){explanation="Extract on this PS5. Original archive volumes are kept for seeding.";shortLabel(c,140,448,workflow.command.archive.data(),24,1640,accent);}
-        if(workflow.command.operation==Op::move){explanation="Move verified content. Existing files will not be replaced. ShadowMount may need a scan.";}
-        if(workflow.command.operation==Op::cancel)explanation="Stop extraction at the next safe point. Partial files and original archives are kept.";
-        if(workflow.command.operation==Op::dismiss){const auto status=target?std::string_view(target->status.data()):std::string_view{};explanation=status=="failed"||status=="cancelled"||status=="interrupted"?"Remove this row and delete its partial files. Original downloads and archives are kept.":"Hide this row from Processing. Files are kept; ready and moved content stays in Library.";}
-        if(workflow.command.operation==Op::remove)explanation="Delete this extraction and any partial output. Original downloads and archives are kept.";
-        titleLines(c,140,520,explanation,24,1640,2,muted);
-        if(workflow.command.operation==Op::removeLibrary||workflow.command.operation==Op::removeTorrent){
-            char estimate[160];botty::formatDeletionEstimate(target?(workflow.command.operation==Op::removeLibrary?target->total:target->bytes):0,estimate,sizeof(estimate));
-            c.label(140,602,estimate,24,muted);
-            c.label(140,645,"You can browse Botty while deletion runs. Processing shows the result.",24,muted);
-            shortLabel(c,140,690,workflow.notice.data(),22,1640,accent);
-        }else shortLabel(c,140,618,workflow.notice.data(),24,1640,accent);
-        if(workflow.command.storage[0])for(unsigned i=0;i<catalog.storageCount;++i)if(catalog.storage[i].id==workflow.command.storage){char line[160];std::snprintf(line,sizeof(line),"Destination: %s",catalog.storage[i].label.data());shortLabel(c,140,682,line,24,1640,accent);}
-        for(unsigned i=0;i<2;++i){const bool chosen=workflow.confirm==(i==1);c.rounded(140+i*840,742,800,80,16,chosen?accent:background);c.label(180+i*840,766,i==0?"Cancel":botty::operationLabel(workflow.command.operation),28,chosen?background:ink);}
-        c.label(140,892,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
+    std::array<char,96> cover{};char line1[192]{},line2[192]{};
+    if(target){
+        cover=artworkId(*target,workflow.targetTab==0?'t':'j');
+        char size[48];botty::formatBytes(target->total,size,sizeof(size));
+        if(workflow.targetTab==2){
+            std::array<botty::LibraryCopy,2> copies{};const unsigned n=botty::libraryCopies(*target,copies);
+            for(unsigned i=0;i<n;++i){char where[96];storageName(copies[i].storage,where,sizeof(where));const bool sized=!i&&target->total>0;std::snprintf(i?line2:line1,sizeof(line1),"%s \xc2\xb7 %s%s%s",copies[i].format,where,sized?" \xc2\xb7 ":"",sized?size:"");}
+        }else {char where[96];storageName(target->storage.data(),where,sizeof(where));describe(*target,workflow.targetTab==0,line1,sizeof(line1));if(target->total>0)std::snprintf(line2,sizeof(line2),"%s \xc2\xb7 %s",size,where);else std::snprintf(line2,sizeof(line2),"%s",where);}
     }
+    sheetHeader(c,cover,workflow.targetName.data(),"Quick actions",muted,line1[0]?line1:nullptr,line2[0]?line2:nullptr,true);
+    unsigned y=288;
+    for(unsigned i=0;i<workflow.optionCount;++i){
+        const auto op=workflow.options[i];const bool focus=workflow.selected==i;
+        const char* reason=botty::unavailable(op,target,catalog);const bool enabled=!*reason;
+        if(workflow.confirming&&focus){
+            // Destructive choices confirm inline, with Cancel focused first.
+            char explanation[400],estimate[160];
+            if(op==Op::removeLibrary||op==Op::removeTorrent){botty::formatDeletionEstimate(target?(op==Op::removeLibrary?target->total:target->bytes):0,estimate,sizeof(estimate));std::snprintf(explanation,sizeof(explanation),"%s %s",explain(op,target),estimate);}
+            else std::snprintf(explanation,sizeof(explanation),"%s",explain(op,target));
+            const unsigned lines=wrap(c,1220,0,explanation,20,30,600,4,ink,regular,false);
+            const unsigned h=28+34+10+lines*30+22+74+28;
+            c.rounded(1192,y,656,h,16,danger,115);c.rounded(1194,y+2,652,h-4,14,confirmFill);
+            char title[96];std::snprintf(title,sizeof(title),"%s?",botty::operationLabel(op));
+            fit(c,1220,static_cast<int>(y+28),title,28,34,600,danger,bold);
+            wrap(c,1220,static_cast<int>(y+72),explanation,20,30,600,4,ink);
+            const unsigned row=y+72+lines*30+22;
+            for(unsigned b=0;b<2;++b){
+                const unsigned bx=1227+b*307;const bool chosen=workflow.confirm==(b==1);
+                if(chosen)focusRing(c,bx,row+7,279,60,16,4,confirmFill);
+                if(b)c.rounded(bx,row+7,279,60,10,danger);else c.rounded(bx,row+7,279,60,10,ink,chosen?255:26);
+                const char* label=b?botty::operationLabel(op):"Cancel";
+                fit(c,static_cast<int>(bx+(279-std::min(width(c,label,24,bold),255U))/2),static_cast<int>(row+7+15),label,24,30,255,b?dangerInk:chosen?bg:ink,bold);
+            }
+            y+=h+8;continue;
+        }
+        if(focus)focusRing(c,1192,y,656,76,20,4,surface);
+        c.rounded(1192,y,656,76,14,raised);
+        char right[96];right[0]=0;
+        if(!enabled)std::snprintf(right,sizeof(right),"Unavailable");
+        else if(op==Op::restoreOriginal)std::snprintf(right,sizeof(right),"Close Botty+ to finish");
+        else if(op==Op::transfer){unsigned disks=0;for(unsigned d=0;d<catalog.storageCount;++d)if(catalog.storage[d].available&&!(target&&catalog.storage[d].id==target->storage))++disks;std::snprintf(right,sizeof(right),"%u other disk%s",disks,disks==1?"":"s");}
+        else if(op==Op::extract&&target)std::snprintf(right,sizeof(right),"%u archive%s",target->archiveCount,target->archiveCount==1?"":"s");
+        else if(botty::Workflow::immediate(op))std::snprintf(right,sizeof(right),"Runs right away");
+        const unsigned rw=width(c,right,20);
+        fit(c,1220,static_cast<int>(y+23),botty::operationLabel(op),24,30,600-rw-16,enabled?botty::Workflow::destructive(op)?danger:ink:faint,bold);
+        if(right[0])text(c,static_cast<int>(1820-rw),static_cast<int>(y+26),right,20,24,enabled?muted:faint);
+        y+=84;
+    }
+    const auto selectedOp=workflow.selected<workflow.optionCount?workflow.options[workflow.selected]:Op::none;
+    const char* reason=selectedOp!=Op::none?botty::unavailable(selectedOp,target,catalog):"";
+    const char* note=workflow.notice[0]?workflow.notice.data():*reason?reason:workflow.confirming?"":explain(selectedOp,target);
+    wrap(c,1192,static_cast<int>(y+16),note,20,30,656,3,workflow.notice[0]||*reason?warning:muted);
+    sheetFooter(c,workflow.confirming?"Confirm choice":"Select",workflow.confirming?Glyph::arrows:Glyph::none,workflow.confirming?"Back":"Close");
 }
+void drawToast(Canvas& c,bool sheet) noexcept {
+    if(!toast.visible)return;
+    const bool error=toast.kind==Toast::Kind::error;const unsigned x=sheet?96:1184,w=640;
+    const bool cover=!error&&coverFor(toast.cover);
+    const unsigned textX=x+24+(cover?58:0),limit=x+w-24-(error?0:30)-textX;
+    const unsigned lines=wrap(c,static_cast<int>(textX),0,toast.message.data(),20,24,limit,error?4:2,ink,regular,false);
+    const unsigned h=20+30+2+lines*24+(error?34:0)+20,y=996-24-h;
+    if(error){c.rounded(x,y,w,h,16,danger,115);c.rounded(x+2,y+2,w-4,h-4,14,bg);c.rounded(x+2,y+2,w-4,h-4,14,danger,26);}
+    else c.rounded(x,y,w,h,16,raised);
+    if(cover)art(c,x+24,y+(h-60)/2,40,60,6,toast.cover,{},0,raised);
+    fit(c,static_cast<int>(textX),static_cast<int>(y+20),toast.title.data(),24,30,limit,error?danger:ink,bold);
+    wrap(c,static_cast<int>(textX),static_cast<int>(y+52),toast.message.data(),20,24,limit,error?4:2,error?ink:muted);
+    if(error)hint(c,textX,Glyph::circle,"Dismiss",false,y+52+lines*24+8);
+    else c.rounded(x+w-34,y+h/2-5,10,10,5,toast.kind==Toast::Kind::success?success:warning);
+}
+
 bool nativeInputPending() noexcept {return textEntryState==TextEntryState::accepted||textEntryState==TextEntryState::capacity;}
 bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept {
-    if(edge&botty::Buttons::circle)workflow.close();
+    // Circle backs out like the keyboard panel does: a password edit returns to Extract.
+    if(edge&botty::Buttons::circle)(void)workflow.press(botty::Buttons::circle,catalog,busy);
     else if(textEntryState==TextEntryState::capacity){
         const auto text=nativeKeyboard.text();workflow.command.text.fill(0);
         std::copy(text.begin(),text.end(),workflow.command.text.begin());workflow.selected=0;
@@ -427,9 +1234,22 @@ bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept
     else if(busy){workflow.finishInput(catalog,true);return false;}
     else {
         const bool emit=workflow.acceptText(nativeKeyboard.text(),catalog,false);
-        nativeKeyboard.clearText();++displayRevision;textEntryState=workflow.panel==botty::Workflow::Panel::keyboard?TextEntryState::ready:TextEntryState::idle;return emit;
+        nativeKeyboard.clearText();++displayRevision;textEntryState=workflow.panel==Panel::keyboard?TextEntryState::ready:TextEntryState::idle;return emit;
     }
     nativeKeyboard.clearText();++displayRevision;textEntryState=TextEntryState::idle;return false;
+}
+void submitWorkflow() noexcept {
+    const auto op=workflow.command.operation;
+    std::array<char,96> cover{};std::string_view name=workflow.targetName.data();
+    if(op==Op::exploreGrab||op==Op::grab){cover=sheetCover();name=workflow.gameName.data();}
+    else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==0?'t':'j');
+    if(op==Op::add)name="Magnet link";
+    if(send(workflow.command,name,cover,op==Op::search)){
+        if(op==Op::search){rememberSearch(workflow.command.text.data());model.tab=Model::discover;model.searchResults=true;model.selected=0;}
+        // File operations continue in Activity, where their progress is shown.
+        if(op==Op::transfer||op==Op::move||op==Op::extract||op==Op::compress||op==Op::remove||op==Op::removeLibrary||op==Op::removeTorrent||op==Op::removeOriginal||op==Op::dismiss){model.tab=Model::activity;model.selected=model.filter=0;model.details=false;}
+    }
+    workflow.command.text.fill(0);
 }
 
 bool draw(Canvas& c) noexcept {
@@ -438,20 +1258,16 @@ bool draw(Canvas& c) noexcept {
         input.reset();discardPadBatch=true;network.retry();
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
-    static bool exploreRequested=false,quietExplore=false,exploreRefresh=false,exploreVisited=false;
-    static bool updateSubmitting=false;
+    static bool exploreRequested=false,exploreRefresh=false,exploreVisited=false;
     // The worker publishes result and busy under one gate. Consume that snapshot
-    // before dispatching deferred input, so its result overlay takes precedence.
+    // before dispatching deferred input, so a toast reflects the finished request.
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
     bool inputNetworkBusy=false;
     const bool inputNetworkKnown=network.read(connection,nullptr,&receivedResult,&inputNetworkBusy);
-    if(receivedResult.revision!=resultRevision){
-        actionResult=receivedResult;
-        if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
-        showResult=!quietExplore||receivedResult.status!=botty::ActionResult::Status::success;quietExplore=false;++displayRevision;
-    }
-    const auto& exploreSorts=botty::Model::exploreSorts;
+    if(receivedResult.revision!=resultRevision)consume(receivedResult);
+    if(exitRequested)return false;
+    if(toast.visible&&toast.kind!=Toast::Kind::error&&now>=toast.until){toast.visible=false;++displayRevision;}
     const unsigned oldTab=model.tab;
     const bool keyboardWasActive=nativeKeyboard.active();
     const auto keyboardResult=nativeKeyboard.poll();
@@ -477,284 +1293,232 @@ bool draw(Canvas& c) noexcept {
         }
         if(keyboardResult!=Result::pending)++displayRevision;
     }
-    if(workflow.panel!=botty::Workflow::Panel::keyboard)textEntryState=TextEntryState::idle;
+    if(workflow.panel!=Panel::keyboard)textEntryState=TextEntryState::idle;
     if(edge)++displayRevision;
-    if(showResult){if(edge&(botty::Buttons::cross|botty::Buttons::circle))showResult=false;}
-    else if(workflow.panel!=botty::Workflow::Panel::closed){
+    // A failure stays visible until Circle, and that press only dismisses it.
+    if(toast.visible&&toast.kind==Toast::Kind::error&&(edge&botty::Buttons::circle)){toast.visible=false;edge&=~botty::Buttons::circle;}
+    // Details navigation counts come from the current entry before input is handled.
+    if(model.details){
+        detailLayout(c,focused(),detailView);
+        model.buttonCount=detailView.buttons;model.pageCount=std::max(1U,(detailView.rowCount+2)/3);
+        if(model.detailButton>=model.buttonCount)model.detailButton=model.buttonCount?model.buttonCount-1:0;
+        if(model.detailPage>=model.pageCount)model.detailPage=model.pageCount-1;
+    }
+    if(workflow.panel!=Panel::closed){
         unsigned workflowEdge=edge;
-        if(workflow.panel==botty::Workflow::Panel::keyboard&&textEntryState!=TextEntryState::fallback){
+        if(workflow.panel==Panel::keyboard&&textEntryState!=TextEntryState::fallback){
             workflowEdge=edge&botty::Buttons::circle;
             if(!nativeKeyboard.active()&&!nativeInputPending()&&(edge&botty::Buttons::square)){textEntryState=TextEntryState::fallback;workflow.notice.fill(0);}
             if(!nativeKeyboard.active()&&!nativeInputPending()&&(edge&(botty::Buttons::cross|botty::Buttons::options)))textEntryState=TextEntryState::idle;
         }
         const bool emit=nativeInputPending()?finishNativeInput(edge,inputNetworkBusy,inputNetworkKnown):workflow.press(workflowEdge,catalog,network.busy());
-        if(emit){
-            if(!network.submit(workflow.command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Network is busy or unavailable. Please try again.");showResult=true;}
-            if(network.busy()){
-                using Op=botty::Operation;const auto op=workflow.command.operation;
-                if(op==Op::transfer||op==Op::move||op==Op::extract||op==Op::compress||op==Op::remove||op==Op::removeLibrary||op==Op::removeTorrent||op==Op::removeOriginal||op==Op::dismiss){model.tab=1;model.selected=0;model.details=false;}
-            }
-            workflow.command.text.fill(0);
-        }
+        if(emit)submitWorkflow();
     }else {
+        using Action=Model::Action;
+        if(edge)detailNotice.fill(0);
         const auto action=model.press(edge);
-        if(action==botty::Model::Action::retry)network.retry();
-        if(action==botty::Model::Action::update){
-            if(catalog.nativeUpdate.requested&&catalog.nativeUpdate.closeRequired&&std::string_view(catalog.nativeUpdate.status.data())!="blocked"){model.quitDialog=true;model.confirmQuit=false;}
+        if(action==Action::retry)network.retry();
+        if(action==Action::update){
+            if(catalog.nativeUpdate.requested&&catalog.nativeUpdate.closeRequired&&std::string_view(catalog.nativeUpdate.status.data())!="blocked"){
+                if(!network.busy())return false;
+                notify(Toast::Kind::error,"Close Botty+ later","Wait for the pending request before closing.");
+            }
             else if(botty::nativeUpdateAvailable(catalog.nativeUpdate,catalog.stale)){model.updateDialog=true;model.confirmUpdate=false;}
             else {
-                botty::Command command;command.operation=botty::Operation::checkNativeUpdate;
+                botty::Command command;command.operation=Op::checkNativeUpdate;
                 const auto reason=botty::unavailable(command.operation,nullptr,catalog);
-                if(*reason||!network.submit(command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"%s",*reason?reason:"Network is busy. Please try again.");showResult=true;}
+                if(*reason)notify(Toast::Kind::error,"Request not sent",reason);else (void)send(command,"Botty+",{});
             }
         }
-        if(action==botty::Model::Action::installUpdate){
-            botty::Command command;command.operation=botty::Operation::nativeUpdate;
+        if(action==Action::installUpdate){
+            botty::Command command;command.operation=Op::nativeUpdate;
             command.serviceVersion=catalog.nativeUpdate.installedServiceVersion;
             const auto reason=botty::unavailable(command.operation,nullptr,catalog);
-            if(*reason||!network.submit(command)){actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"%s",*reason?reason:"Network is busy. Please try again.");showResult=true;}
-            else updateSubmitting=true;
+            if(*reason)notify(Toast::Kind::error,"Request not sent",reason);
+            else if(send(command,"Botty+",{}))updateSubmitting=true;
         }
-        if(action==botty::Model::Action::quit){if(!network.busy())return false;model.quitDialog=false;actionResult.status=botty::ActionResult::Status::failed;std::snprintf(actionResult.message.data(),actionResult.message.size(),"Wait for the pending request before quitting.");showResult=true;}
-        if(model.tab==4&&!model.quitDialog){
-            if(action==botty::Model::Action::add||action==botty::Model::Action::menu||action==botty::Model::Action::retry)workflow.search();
-            if(model.details){model.details=false;if(model.selected<catalog.resultCount&&!catalog.results[model.selected].complete)workflow.grab(catalog.results[model.selected],false,catalog.storageSupported);}
+        if(action==Action::quit){if(!network.busy())return false;notify(Toast::Kind::error,"Close Botty+ later","Wait for the pending request before closing.");}
+        if(action==Action::search){
+            if(!catalog.valid||!catalog.searchSupported)notify(Toast::Kind::notice,"Search unavailable",botty::unavailable(Op::search,nullptr,catalog));
+            else workflow.search(model.searchResults?std::string_view(catalog.searchQuery.data()):std::string_view{});
         }
-        if(model.tab==5&&!model.quitDialog){
-            if(action==botty::Model::Action::explore||action==botty::Model::Action::add||action==botty::Model::Action::retry||action==botty::Model::Action::menu){exploreRequested=true;exploreRefresh=action!=botty::Model::Action::explore;}
-            if(model.details){model.details=false;if(std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog);}
+        if(action==Action::get||action==Action::compare){
+            if(model.searchResults){
+                if(model.selected<catalog.resultCount){
+                    const auto& result=catalog.results[model.selected];
+                    if(result.complete)notify(Toast::Kind::notice,"Already added","This result is already in Botty+. Follow it in Activity.");
+                    else workflow.grab(result,catalog);
+                }
+            }else if(exploreCurrent()&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog,action==Action::compare);
         }
-        if(action==botty::Model::Action::menu&&model.tab<4)workflow.open(model.tab<3?botty::entryAt(catalog,model.tab,model.filter,model.selected):nullptr,model.tab,catalog);
-        if(action==botty::Model::Action::add&&model.tab<4)workflow.add();
+        if(action==Action::explore){exploreRequested=true;exploreRefresh=false;}
+        if(model.tab==Model::discover&&!model.searchResults&&(edge&r3Button)){exploreRequested=true;exploreRefresh=true;}
+        if(action==Action::menu){
+            const auto f=focused();
+            if(f.entry){workflow.open(f.entry,workflowTab(f),catalog);if(workflow.panel==Panel::closed)notify(Toast::Kind::notice,"No quick actions",f.entry->task?"This task is followed in Activity until it finishes.":"Nothing can be changed here right now.");}
+        }
+        if(action==Action::add){
+            const char* reason=botty::unavailable(Op::add,nullptr,catalog);
+            if(*reason)notify(Toast::Kind::notice,"Magnet links unavailable",reason);else workflow.add();
+        }
+        if(action==Action::run){
+            const auto f=focused();
+            // detailView was derived from this entry before input, not from the last paint.
+            if(f.entry&&model.detailButton<detailView.buttons){
+                const auto op=detailView.actions[model.detailButton];
+                workflow.open(f.entry,workflowTab(f),catalog);
+                if(workflow.choose(op,catalog,network.busy()))submitWorkflow();
+                else if(workflow.panel==Panel::menu&&!workflow.confirming){detailNotice.fill(0);std::copy_n(workflow.notice.begin(),detailNotice.size()-1,detailNotice.begin());workflow.close();}
+            }
+        }
     }
-    if(!showResult&&workflow.panel==botty::Workflow::Panel::keyboard&&textEntryState==TextEntryState::idle&&!nativeKeyboard.active()){
+    if(workflow.panel==Panel::keyboard&&textEntryState==TextEntryState::idle&&!nativeKeyboard.active()){
         textEntryState=TextEntryState::editing;
         const auto op=workflow.command.operation;
-        const bool password=op==botty::Operation::extract,url=op==botty::Operation::add;
+        const bool password=op==Op::extract,url=op==Op::add;
         const unsigned limit=botty::Workflow::textLimit(op);
-        if(!nativeKeyboard.open(workflow.command.text.data(),password?"Archive password (optional)":url?"Add a magnet link":"Search games",limit,password,url)){
+        if(!nativeKeyboard.open(workflow.command.text.data(),password?"Archive password":url?"Add a magnet link":"Search all trackers",limit,password,url)){
             textEntryState=TextEntryState::fallback;
             std::snprintf(workflow.notice.data(),workflow.notice.size(),"PS5 keyboard unavailable. Use the in-app keyboard.");
         }else workflow.notice.fill(0);
         input.reset();discardPadBatch=true;++displayRevision;
     }
-    std::array<char,96> focused{};
-    if(model.tab<3){const auto* old=botty::entryAt(catalog,model.tab,model.filter,model.selected);if(old)focused=old->id;}
-    if(model.tab==5&&std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]&&model.selected<catalog.exploreCount)focused=catalog.exploreResults[model.selected].id;
+    // Keep the focused row selected when a refresh reorders the lists.
+    std::array<char,96> focusedId{};bool focusedTorrent=false;
+    {const auto f=focused();if(f.entry){focusedId=f.entry->id;focusedTorrent=f.torrent;}}
+    if(model.tab==Model::discover){
+        if(model.searchResults){if(model.selected<catalog.resultCount)focusedId=catalog.results[model.selected].id;}
+        else if(exploreCurrent()&&model.selected<catalog.exploreCount)focusedId=catalog.exploreResults[model.selected].id;
+    }
     const auto previousRevision=catalog.revision;
     (void)network.read(connection,&catalog);
     static botty::Processing processing;
-    if(network.readProcessing(processing))++displayRevision;
+    const bool processingChanged=network.readProcessing(processing);
+    if(processingChanged)++displayRevision;
     catalog.processing=processing;
     static bool wasBusy=false;if(wasBusy!=network.busy()){wasBusy=network.busy();++displayRevision;}
     const auto nextDeletion=network.deletion();
     if(deletion!=nextDeletion){deletion=nextDeletion;++displayRevision;}
+    // Processing refreshes reorder Activity independently of the catalog.
+    const bool changed=previousRevision!=catalog.revision||processingChanged;
     if(previousRevision!=catalog.revision)++displayRevision;
-    if(model.tab<3) {
-        model.count=(catalog.valid||(model.tab==1&&catalog.processing.count))?botty::entryCount(catalog,model.tab,model.filter):0;
-        if(previousRevision!=catalog.revision&&focused[0]) {
+    if(model.tab==Model::activity){
+        model.count=(catalog.valid||catalog.processing.count)?botty::activityCount(catalog,model.filter):0;
+        if(changed&&focusedId[0]){
             bool found=false;
-            for(unsigned i=0;i<model.count;++i)if(std::string_view(botty::entryAt(catalog,model.tab,model.filter,i)->id.data())==focused.data()){model.selected=i;found=true;break;}
+            for(unsigned i=0;i<model.count;++i){const auto item=botty::activityAt(catalog,model.filter,i);if(item.entry&&item.entry->id==focusedId&&item.torrent==focusedTorrent){model.selected=i;found=true;break;}}
             if(!found)model.details=false;
         }
-        if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
-    }
-    if(model.tab==4){model.count=catalog.resultCount;if(model.selected>=model.count)model.selected=model.count?model.count-1:0;}
-    if(model.tab==5){
-        if((!exploreVisited||oldTab!=5)&&std::string_view(catalog.exploreSort.data())!=exploreSorts[model.exploreSort]){exploreRequested=true;exploreRefresh=false;}
-        exploreVisited=true;
-        if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==botty::Workflow::Panel::closed&&!showResult){
-            botty::Command command;command.operation=botty::Operation::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",exploreSorts[model.exploreSort]);
-            if(network.submit(command)){exploreRequested=false;quietExplore=true;}
+    }else if(model.tab==Model::library){
+        model.count=catalog.valid?botty::libraryCount(catalog,model.filter):0;
+        if(changed&&focusedId[0]){
+            bool found=false;
+            for(unsigned i=0;i<model.count;++i)if(botty::libraryAt(catalog,model.filter,i)->id==focusedId){model.selected=i;found=true;break;}
+            if(!found)model.details=false;
         }
-        model.count=std::string_view(catalog.exploreSort.data())==exploreSorts[model.exploreSort]?catalog.exploreCount:0;
-        if(previousRevision!=catalog.revision&&focused[0])for(unsigned i=0;i<model.count;++i)if(catalog.exploreResults[i].id==focused){model.selected=i;break;}
-        if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
-    }
+    }else if(model.tab==Model::discover){
+        if((!exploreVisited||oldTab!=Model::discover)&&!exploreCurrent()){exploreRequested=true;exploreRefresh=false;}
+        exploreVisited=true;
+        if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==Panel::closed){
+            botty::Command command;command.operation=Op::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",Model::exploreSorts[model.exploreSort]);
+            if(collectResult()&&network.submit(command)){exploreRequested=false;quietRequest=true;sentOperation=Op::explore;}
+        }
+        if(model.searchResults){
+            model.count=catalog.resultCount;
+            if(changed&&focusedId[0])for(unsigned i=0;i<model.count;++i)if(catalog.results[i].id==focusedId){model.selected=i;break;}
+        }else {
+            model.count=exploreCurrent()?catalog.exploreCount:0;
+            if(changed&&focusedId[0])for(unsigned i=0;i<model.count;++i)if(catalog.exploreResults[i].id==focusedId){model.selected=i;break;}
+        }
+    }else model.count=Model::systemItems;
+    if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
+    if(model.details&&!focused().entry)model.details=false;
     {
-        botty::CoverIds ids{};
-        if(model.tab==5){const unsigned first=(model.selected/6)*6;for(unsigned i=0;i<6&&first+i<model.count;++i)ids[i]=catalog.exploreResults[first+i].id;}
-        else if(catalog.catalogArtworkSupported&&model.tab!=3){
-            const unsigned perPage=model.tab<2?5:6,first=(model.selected/perPage)*perPage;
-            for(unsigned i=0;i<perPage&&first+i<model.count;++i){
-                const auto* entry=model.tab==4?&catalog.results[first+i]:botty::entryAt(catalog,model.tab,model.filter,first+i);
-                if(entry)ids[i]=artworkId(*entry,model.tab);
-            }
+        botty::CoverIds ids{};std::array<std::string_view,botty::coverSlots> names{};
+        if(model.tab==Model::discover&&!model.searchResults){for(unsigned i=0;i<9&&model.selected+i<model.count;++i){ids[i]=catalog.exploreResults[model.selected+i].id;names[i]=catalog.exploreResults[model.selected+i].name.data();}}
+        else if(catalog.catalogArtworkSupported&&model.tab==Model::discover){const unsigned first=(model.selected/5)*5;for(unsigned i=0;i<5&&first+i<model.count;++i){ids[i]=artworkId(catalog.results[first+i],'s');names[i]=catalog.results[first+i].name.data();}}
+        else if(catalog.catalogArtworkSupported&&model.tab==Model::activity){
+            const unsigned first=(model.selected/5)*5;
+            for(unsigned i=0;i<5&&first+i<model.count;++i){const auto item=botty::activityAt(catalog,model.filter,first+i);if(item.entry){ids[i]=artworkId(*item.entry,item.torrent?'t':'j');names[i]=item.entry->name.data();}}
+        }else if(catalog.catalogArtworkSupported&&model.tab==Model::library){
+            const unsigned first=(model.selected/Model::libraryColumns)*Model::libraryColumns;
+            for(unsigned i=0;i<botty::coverSlots&&first+i<model.count;++i){const auto* entry=botty::libraryAt(catalog,model.filter,first+i);if(entry){ids[i]=artworkId(*entry,'j');names[i]=entry->name.data();}}
         }
         artwork.request(ids);if(artwork.read(covers))++displayRevision;
 #ifdef BOTTY_HOST_PREVIEW
-        // Explicit cover fixtures belong only to the matching real game title.
-        for(unsigned i=0;i<6&&ids[i][0];++i){
-            const unsigned perPage=model.tab<2?5:6,index=(model.selected/perPage)*perPage+i;
-            const auto* entry=model.tab==5?&catalog.exploreResults[index]:model.tab==4?&catalog.results[index]:botty::entryAt(catalog,model.tab,model.filter,index);
-            if(entry&&std::string_view(entry->name.data())=="Elden Ring - PS5"&&covers.ids[i]!=ids[i]){
-                FILE* file=std::fopen("build/preview-cover.rgb","rb");if(file){covers.ready[i]=std::fread(covers.pixels[i].data(),1,covers.pixels[i].size(),file)==covers.pixels[i].size();std::fclose(file);covers.ids[i]=ids[i];}
+        // Cover fixtures are matched by title, so a cover never lands on another game:
+        // "Astro Bot" loads <BOTTY_PREVIEW_COVERS>/astro-bot.rgb when it exists.
+        const char* directory=std::getenv("BOTTY_PREVIEW_COVERS");
+        for(unsigned i=0;directory&&i<ids.size();++i){
+            if(!ids[i][0]||coverFor(ids[i]))continue;
+            char slug[160]{};unsigned length=0;bool dash=false;
+            for(char ch:names[i]){
+                const char lower=ch>='A'&&ch<='Z'?static_cast<char>(ch-'A'+'a'):ch;
+                const bool keep=(lower>='a'&&lower<='z')||(lower>='0'&&lower<='9');
+                if(keep){if(dash&&length&&length+1<sizeof(slug))slug[length++]='-';if(length+1<sizeof(slug))slug[length++]=lower;dash=false;}else dash=true;
             }
+            char path[256];std::snprintf(path,sizeof(path),"%s/%s.rgb",directory,slug);
+            FILE* file=std::fopen(path,"rb");if(!file)continue;
+            covers.ready[i]=std::fread(covers.pixels[i].data(),1,covers.pixels[i].size(),file)==covers.pixels[i].size();std::fclose(file);covers.ids[i]=ids[i];
         }
 #endif
     }
-    static auto previousPanel=botty::Workflow::Panel::closed;
+    if(exitRequested)return false;
+    static auto previousPanel=Panel::closed;
     if(previousPanel!=workflow.panel){previousPanel=workflow.panel;
-        const char* panels[]={"Workflow: closed","Workflow: menu","Workflow: archive chooser","Workflow: keyboard","Workflow: storage","Workflow: download mode","Workflow: confirmation","Workflow: source chooser"};
+        const char* panels[]={"Workflow: closed","Workflow: quick actions","Workflow: sheet","Workflow: keyboard"};
         const auto index=static_cast<unsigned>(previousPanel);
         botty::platform::log(index<sizeof(panels)/sizeof(panels[0])?panels[index]:"Workflow: unknown panel");
     }
     const auto status=connection.status;
     if(!c.needs_update(displayRevision))return true;
     const bool online=status==botty::Probe::ready;
-    const char* state=deletion!=botty::Network::Deletion::idle?"Deleting files":catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
+    const bool managerOnline=online||status==botty::Probe::transmissionUnavailable;
+    const bool updateStale=catalog.stale||!catalog.valid||!managerOnline;
+    const char* state=deletion!=botty::Network::Deletion::idle?"Deleting files":network.busy()?"Sending request":catalog.stale?"Reconnecting":online?"Connected":status==botty::Probe::checking?"Connecting":
         status==botty::Probe::legacy?"Update required":status==botty::Probe::transmissionUnavailable?"Reconnecting":"Offline";
+    const Color stateColor=deletion!=botty::Network::Deletion::idle||network.busy()?accent:catalog.stale?warning:online?success:status==botty::Probe::checking||status==botty::Probe::transmissionUnavailable?warning:danger;
     const char* detail=status==botty::Probe::legacy?"Update Botty from the portal to show your login details.":
         status==botty::Probe::unavailable?"Open the Botty portal and select Start session.":
         status==botty::Probe::transmissionUnavailable?"rTorrent is not responding. Retrying automatically.":
-        status==botty::Probe::rejected?"Access rejected. Retry to reconnect.":
+        status==botty::Probe::rejected?"Access rejected. Reconnect from System.":
         status==botty::Probe::incompatible?"Update Botty from the portal.":
-        status==botty::Probe::workerError?"Close and reopen Botty.":
-        status==botty::Probe::malformed?"Invalid response from Botty. Retry to reconnect.":"";
-    c.backdrop(model.tab!=5);
-    c.rounded(96,64,58,58,17,coral);c.label(104,73,"B+",28,background);
-    c.label(174,62,"Botty+",44,ink);c.rounded(346,80,82,28,8,border);c.label(356,80,botty::nativeDisplayVersion,20,ink);
-    const bool managerOnline=online||status==botty::Probe::transmissionUnavailable;
-    const bool updateStale=catalog.stale||!catalog.valid||!managerOnline;
-    const auto updateColor=botty::nativeUpdateAvailable(catalog.nativeUpdate,updateStale)?accent:muted;
-    shortLabel(c,450,82,botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),20,550,updateColor);
-    c.rounded(1488,69,336,48,24,card);
-    statusDot(c,1510,87,online?success:warning);c.label(1536,77,state,24,online?success:warning);
-    const char* tabs[]={"Downloads","Processing","Library","Connections","Search","Explore"};
-    c.rectangle(96,209,1728,1,border);
-    for(unsigned i=0;i<6;++i){const unsigned x=96+i*288,tab=botty::Model::tabOrder[i];
-        if(model.tab==tab)c.rounded(x,153,272,52,14,sectionColor());
-        c.label(x+22,162,tabs[tab],28,model.tab==tab?background:muted);
+        status==botty::Probe::workerError?"Close and reopen Botty+.":
+        status==botty::Probe::malformed?"Invalid response from Botty. Reconnect from System.":
+        status==botty::Probe::checking?"Connecting to Botty on your PS5\xe2\x80\xa6":"";
+    c.clear(bg);
+    if(workflow.panel==Panel::keyboard&&textEntryState==TextEntryState::fallback)drawKeyboard(c);
+    else {
+        if(workflow.panel==Panel::keyboard)drawTyping(c);
+        else if(model.tab==Model::discover){
+            if(model.searchResults)drawSearch(c);
+            else {
+                const char* exploreState=!catalog.exploreSupported?"Update the Botty service to enable Discover.":catalog.exploreBusy||exploreRequested?"Loading this ranking\xe2\x80\xa6":catalog.exploreError[0]?catalog.exploreError.data():"No new PS5 games found for this ranking.";
+                drawDiscover(c,exploreRequested||quietRequest,catalog.valid?exploreState:detail);
+            }
+        }else if(model.tab==Model::system)drawSystem(c,online,managerOnline,updateStale,detail);
+        else if(model.details)drawDetails(c,focused());
+        else if(model.tab==Model::activity)drawActivity(c,detail);
+        else drawLibrary(c,detail);
+        header(c,state,stateColor);
+        if(catalog.transferring&&workflow.panel==Panel::closed&&!model.details&&model.tab!=Model::system)
+            fit(c,760,1006,catalog.transferError[0]?catalog.transferError.data():catalog.transferPhase.data(),20,24,560,catalog.transferError[0]?warning:muted);
+        if(workflow.panel==Panel::menu)drawMenu(c);
+        else if(workflow.panel==Panel::sheet)drawSheet(c);
     }
-    if(model.tab<3)drawCatalog(c);
-    else if(model.tab==4){
-        c.label(96,246,"Find something",60,ink);c.label(96,318,"worth playing.",60,violet);
-        c.rounded(96,428,518,500,24,violet);
-        c.label(128,460,"YOUR SEARCH",20,background);
-        titleLines(c,128,510,catalog.searchQuery[0]?catalog.searchQuery.data():"What are you playing next?",44,446,3,background);
-        c.rounded(128,728,454,70,16,background);c.label(160,750,"Square: New search",28,ink);
-        c.label(128,830,"Download and prepare",24,background);c.label(128,866,"with a single confirmation.",24,background);
-        const unsigned first=(model.selected/6)*6;
-        char count[100];std::snprintf(count,sizeof(count),"%u RESULTS  /  MOST SEEDED FIRST",catalog.resultCount);c.label(672,260,count,24,muted);
-        for(unsigned i=first;i<catalog.resultCount&&i<first+6;++i){const auto& e=catalog.results[i];const unsigned y=330+(i-first)*96;const bool focus=i==model.selected;
-            surface(c,670,y,1154,84,focus);
-            if(hasCover(e,4,i-first))c.gameCase(684,y+7,44,66,covers.pixels[i-first]);
-            shortLabel(c,748,y+10,e.name.data(),28,922,ink);
-            char line[160],size[48];botty::formatBytes(e.total,size,sizeof(size));std::snprintf(line,sizeof(line),"%s   /   %d seeds   /   %d peers",size,e.peers,e.downloadingPeers);c.label(748,y+49,line,20,muted);
-            c.label(1720,y+48,e.complete?"ADDED":"GET",20,e.complete?success:accent);
-        }
-        if(!catalog.resultCount){c.label(710,420,catalog.searchBusy?"Searching the catalog...":"The next adventure awaits.",32,ink);c.label(710,480,"Enter a game name with Square.",24,muted);}
-        const char* state=!catalog.searchSupported?"Update the Botty service to enable search.":catalog.searchBusy?"Searching Prowlarr...":catalog.searchAdding?"Adding torrent...":catalog.searchError[0]?catalog.searchError.data():catalog.searchNotice[0]?catalog.searchNotice.data():catalog.searchQuery[0]&&!catalog.resultCount?"No results. Try another name.":"Prowlarr / Console  -  Cross: Download and prepare";
-        shortLabel(c,670,939,state,20,1154,muted);
-    }else if(model.tab==5){
-        const unsigned first=(model.selected/6)*6,slot=model.selected-first;
-        const auto& sorts=botty::Model::exploreLabels;
-        c.label(96,248,"DISCOVER  /  PS5",24,coral);
-        if(model.count){
-            const auto& e=catalog.exploreResults[model.selected];
-            titleLines(c,92,288,e.name.data(),60,1140,2,ink);
-            char line[128],size[48];botty::formatBytes(e.total,size,sizeof(size));
-            std::snprintf(line,sizeof(line),"%s    /    %d seeds    /    %d grabs",size,e.peers,e.completedCount);c.label(98,439,line,24,muted);
-            c.rounded(96,492,380,64,18,coral);key(c,114,507,"X");c.label(166,506,"Choose a tracker",28,background);
-            c.label(506,500,"Compare sources before downloading.",24,ink);c.label(506,531,"Seeders, size and grabs for every source.",20,muted);
-            // The selected cover owns the right side; the shelf remains navigable.
-            c.rounded(1392,246,368,544,18,border);
-            if(covers.ready[slot]&&covers.ids[slot]==e.id)c.gameCase(1400,254,352,528,covers.pixels[slot]);
-            else {gamePattern(c,1400,254,352,528,model.selected);c.label(1440,300,"PS5",44,ink);titleLines(c,1430,600,e.name.data(),28,288,3,ink);}
-
-            c.label(1392,812,"THE NEXT ONE IS YOURS.",24,coral);
-            c.label(1392,858,"01  Download",24,ink);c.label(1392,890,"02  Extract & verify",24,muted);c.label(1392,922,"03  Ready in Library",24,muted);
-        }else {
-            c.label(96,296,"Find your next",60,ink);c.label(96,364,"great adventure.",60,coral);
-        }
-        for(unsigned i=0;i<3;++i){const unsigned x=96+i*252;c.rounded(x,585,236,42,12,model.exploreSort==i?ink:card);c.label(x+16,591,sorts[i],24,model.exploreSort==i?background:muted);}
-        c.label(870,596,"Triangle: Sort",20,muted);
-        for(unsigned i=first;i<model.count&&i<first+6;++i){const auto& e=catalog.exploreResults[i];const unsigned at=i-first,x=96+at*202,y=i==model.selected?646:656;const bool focus=i==model.selected;
-            c.rounded(x-4,y-4,180,266,14,focus?coral:border);
-            if(covers.ready[at]&&covers.ids[at]==e.id)c.gameCase(x,y,172,258,covers.pixels[at]);
-            else {gamePattern(c,x,y,172,258,i);c.label(x+14,y+16,"PS5",24,ink);c.rectangle(x,y+140,172,118,background);titleLines(c,x+14,y+146,e.name.data(),20,146,3,ink);}
-            if(focus)c.rounded(x+62,y+268,48,4,2,coral);
-        }
-        const char* state=!catalog.exploreSupported?"Update the Botty service to enable Explore.":catalog.exploreAdding?"Adding torrent...":catalog.exploreBusy||exploreRequested||quietExplore?(model.count?"Refreshing... Displayed games remain selectable.":"Loading this selection... You can change sort or tab."):catalog.exploreError[0]?catalog.exploreError.data():!model.count?"No new PS5 games found in this selection.":catalog.exploreNotice[0]?catalog.exploreNotice.data():"";
-        if(!model.count){surface(c,96,656,1200,258);shortLabel(c,136,696,state,28,1120,accent);c.label(136,770,"Square: Refresh   /   L1 or R1: Change tab",24,muted);}
-        char footer[220];std::snprintf(footer,sizeof(footer),"%u games  /  Page %u  /  Artwork: Steam, Wikipedia, PlayStation",model.count,model.count?first/6+1:0);
-        shortLabel(c,96,947,*state&&model.count?state:footer,20,1240,muted);
-    }else {
-        heading(c,"Connect to your console.","Manage downloads from your Mac, iPhone or any browser on your network.");
-        c.rounded(96,386,1728,202,24,accent);c.label(136,413,"01  /  OPEN THIS ADDRESS",20,background);
-        const char* url=online?(connection.url[0]?connection.url.data():"Network address unavailable"):status==botty::Probe::checking?"Connecting...":"Unavailable";
-        shortLabel(c,136,463,url,60,1640,background);
-        surface(c,96,610,842,172);surface(c,962,610,862,172);
-        c.label(136,635,"02  /  USERNAME",20,muted);c.label(136,681,online?connection.username.data():"-",44,ink);
-        c.label(1002,635,"03  /  PASSWORD",20,muted);
-        const std::string_view password=connection.password.data();
-        shortLabel(c,1002,681,online?password:std::string_view("-"),password.size()>6?28:44,770,accent);
-        if(online&&password.size()>6)c.label(1002,745,"Short password applies next session.",20,muted);
-        char versions[384];
-        const auto& update=catalog.nativeUpdate;
-        const bool known=managerOnline&&!updateStale&&update.supported;
-        std::snprintf(versions,sizeof(versions),"Native: %s  /  Manager: %s  /  Worker: %s  /  rTorrent: %s",botty::nativeVersion,
-            known&&update.installedServiceVersion[0]?update.installedServiceVersion.data():"unavailable",
-            known&&update.installedWorkerVersion[0]?update.installedWorkerVersion.data():"unavailable",
-            known&&update.installedEngineVersion[0]?update.installedEngineVersion.data():"unavailable");
-        shortLabel(c,96,947,versions,20,1728,muted);
-        if(!managerOnline)shortLabel(c,96,805,detail,24,1728,warning);
-        else shortLabel(c,96,805,catalog.nativeUpdate.message[0]?catalog.nativeUpdate.message.data():botty::nativeUpdateLabel(catalog.nativeUpdate,updateStale),22,1728,updateColor);
-        const unsigned xs[2]={96,578};
-        for(unsigned i=0;i<2;++i){surface(c,xs[i],858,446,70,model.selected==i);c.label(xs[i]+32,877,i==0?"Retry connection":"Quit app",28,model.selected==i?accent:ink);}
-        surface(c,1060,858,764,70,model.selected==2);
-        const char* updateButton=std::string_view(catalog.nativeUpdate.status.data())=="blocked"?"Retry update check":catalog.nativeUpdate.requested&&catalog.nativeUpdate.closeRequired?"Close for update":botty::nativeUpdateAvailable(catalog.nativeUpdate,updateStale)?"Update Botty+":"Check for updates";
-        c.label(1092,877,updateButton,28,model.selected==2?accent:ink);
-    }
-    c.rectangle(96,982,1728,1,border);
-    key(c,96,1000,"X");c.label(146,1004,model.tab==5||model.tab==4?"Get game":model.details?"Select":"Open",20,ink);
-    key(c,292,1000,"O");c.label(342,1004,"Back",20,muted);
-    key(c,446,1000,"L1 / R1",108);c.label(566,1004,"Tabs",20,muted);
-    c.label(720,1004,model.tab==5||model.tab==2?"Arrows: Browse":model.tab==4?"Square: Search":"Options: Actions",20,muted);
-    c.label(1070,1004,model.tab==5?"Square: Refresh":model.tab==4?"Up / down: Browse":model.tab==2?"Options: Actions":model.tab==3?"Triangle: Retry":"Square: Add   Triangle: Refresh",20,muted);
-    c.label(1620,1004,botty::nativeDisplayVersion,20,muted);
-    if(network.busy()&&deletion==botty::Network::Deletion::idle)c.label(1070,81,"Sending request...",24,accent);
-    if(workflow.panel!=botty::Workflow::Panel::closed)drawWorkflow(c);
-    if(showResult){
-        c.shade(210);surface(c,96,292,1728,654);c.rounded(140,300,64,4,2,accent);
-        c.label(140,306,actionResult.status==botty::ActionResult::Status::success?"Request confirmed":actionResult.status==botty::ActionResult::Status::uncertain?"Check the current state":"Request failed",36,ink);
-        unsigned line=0;wrapped(c,actionResult.message.data(),line,0,accent);c.label(140,884,"Cross / Circle: Continue",24,muted);
-    }
-    if(catalog.transferring){surface(c,96,920,1728,58);shortLabel(c,120,934,catalog.transferError[0]?catalog.transferError.data():catalog.transferPhase.data(),23,1670,accent);}
-    if(model.updateDialog){
-        c.shade(170);surface(c,360,300,1200,510);
-        c.label(410,342,"Update app and services?",44,ink);
-        char version[256];std::snprintf(version,sizeof(version),"App: %s  >  %s",botty::nativeVersion,catalog.nativeUpdate.availableVersion.data());
-        c.label(410,414,version,24,accent);
-        std::snprintf(version,sizeof(version),"Manager: %s  >  %s",catalog.nativeUpdate.installedServiceVersion.data(),catalog.nativeUpdate.availableServiceVersion.data());
-        c.label(410,452,version,24,accent);
-        char components[384];std::snprintf(components,sizeof(components),"Worker: %s > %s  /  Engine: %s > %s",catalog.nativeUpdate.installedWorkerVersion.data(),catalog.nativeUpdate.availableWorkerVersion.data(),catalog.nativeUpdate.installedEngineVersion.data(),catalog.nativeUpdate.availableEngineVersion.data());
-        shortLabel(c,410,496,components,20,1100,accent);
-        c.label(410,538,"File jobs finish first; reopen after the completion notification.",22,muted);
-        c.label(410,580,"Downloads pause only if rTorrent restarts, then resume.",22,muted);
-        for(unsigned i=0;i<2;++i){const bool chosen=model.confirmUpdate==(i==1);c.rounded(410+i*560,644,520,78,16,chosen?accent:background);c.label(442+i*560,667,i==0?"Cancel":"Install and close",28,chosen?background:ink);}
-        c.label(410,755,"Left / right: Choose    Cross: Confirm    Circle: Cancel",22,muted);
-    }
-    if(model.quitDialog) {
-        c.shade(170);
-        c.rounded(488,334,1120,408,30,border);
-        c.rounded(490,336,1116,404,28,card);
-        c.label(540,382,"Quit Botty+?",44,ink);
-        c.label(540,459,"Downloads and extractions will continue.",24,muted);
-        c.rounded(540,588,480,78,18,!model.confirmQuit?accent:selected);
-        c.rounded(1050,588,504,78,18,model.confirmQuit?accent:selected);
-        c.label(580,610,"Keep app open",28,!model.confirmQuit?background:ink);
-        c.label(1090,610,"Quit app",28,model.confirmQuit?background:ink);
-        c.label(540,695,"Left / right to choose. Cross to confirm. Circle to go back.",20,muted);
-    }
+    drawToast(c,workflow.panel==Panel::menu||workflow.panel==Panel::sheet);
     return true;
 }
 }
 int main() {
 #ifdef BOTTY_HOST_PREVIEW
     const char* previewMode=std::getenv("BOTTY_PREVIEW_MODE");
-    model.tab=previewMode&&(std::string_view(previewMode)=="sources"||std::string_view(previewMode)=="explore"||std::string_view(previewMode)=="storage"||std::string_view(previewMode)=="download-mode")?5:previewMode&&std::string_view(previewMode)=="search"?4:0;
-    if(previewMode&&std::string_view(previewMode).starts_with("update-")){model.tab=3;model.selected=2;}
+    const std::string_view mode=previewMode?previewMode:"";
+    if(mode=="discover"||mode=="explore"||mode=="sources"||mode=="storage"||mode=="download-mode"||mode=="get-game"||mode=="compare")model.tab=Model::discover;
+    else if(mode=="search"||mode=="search-typing"){model.tab=Model::discover;model.searchResults=true;}
+    else if(mode=="library"||mode=="delete-game"||mode=="checking-game-deletion"||mode=="quick-actions"||mode=="library-details")model.tab=Model::library;
+    else if(mode=="connections"||mode=="system"||mode=="quit"||mode=="exit"||mode.starts_with("update-"))model.tab=Model::system;
+    else model.tab=Model::activity;
 #endif
     // A fresh per-launch log stays bounded; no access to /data or credentials.
     const int fd=sceKernelOpen("/download0/botty-native-network.log",O_WRONLY|O_CREAT|O_TRUNC,0644);
