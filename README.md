@@ -6,160 +6,181 @@
 
 <p align="center">Your downloads. Your library. On PS5.</p>
 
-<p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Requires a compatible jailbreak session. <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
+<p align="center"><strong>PS5 firmware 7.00–13.60</strong> · Requires a compatible jailbreak session · <a href="homebrew/botty-native/VALIDATION.md">Compatibility details</a></p>
 
 <p align="center">
-  <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">Download Botty+</a> ·
-  <a href="deployment/README.md">Installation guide</a> ·
-  <a href="homebrew/botty-native/VALIDATION.md">Compatibility</a>
+  <a href="#get-started">Get started</a> ·
+  <a href="#using-botty">How to use it</a> ·
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">What's new</a>
 </p>
 
-Botty+ lets you download, extract and manage your PS5 game library directly
-from your console, using your controller. Downloads and file operations continue
-in the background when you close the app.
+Botty+ is a PS5 app for finding, downloading and organizing your games
+from the couch, with your controller. Pick a game, choose where it goes, and
+Botty+ downloads it, extracts it and adds it to your Library. Downloads and file
+operations keep running in the background after you close the app.
 
-Starting with 1.6.0, Botty+ uses one public version in the app and GitHub
-releases. PS5 metadata is generated from it; component versions remain
-available in System. See the [versioning policy](docs/VERSIONING.md).
+## Highlights
 
-## What you can do
+- **Discover:** browse popular releases or search every connected tracker, then
+  get a game in one step.
+- **Activity:** follow every download, extraction, move and deletion in one
+  list, with progress and time remaining.
+- **Library:** see your games with their covers and where each copy is stored,
+  compress supported games to save space, move them or delete them.
+- **External storage:** use the PS5 SSD or an external exFAT disk, and move
+  games between them.
+- **Phone or computer access:** add downloads and follow them from a browser on
+  the same network.
 
-- **Browse and download:** find content in Discover, by ranking or by searching every tracker, or add a magnet link or upload a `.torrent` file through the web interface. One sheet picks the source, disk and mode, then starts the download.
-- **Follow every task:** Activity brings downloads, extraction, compression, moves and deletion together, with a Download → Extract → Library pipeline, progress and estimated time remaining.
-- **Manage your Library:** view covers, compress supported games and see where each copy is stored. When both formats exist, their locations appear separately.
-- **Use external storage:** choose the PS5 SSD or an external exFAT disk, check free space and transfer content between them.
-- **Connect from another device:** open System to find the web address and login details for your phone or computer.
+## Get started
 
-Discover merges all enabled Prowlarr torrent indexers. Choose a game, then
-compare its tracker sources by size, seeders, grabs and date in the Get game
-sheet before downloading. Discover requires optional Prowlarr setup. Manual magnet and torrent-file downloads work
-without it. Extraction supports RAR archives; ZIP/7z extraction, PKG installation
-and automatic game launching are not supported.
+### What you need
 
-## Start here
+- A PS5 on firmware 7.00–13.60 that can run a jailbreak session
+  ([compatibility details](homebrew/botty-native/VALIDATION.md)).
+- Access to a **Portal+** site: the web page that starts the jailbreak and
+  installs Botty+. Ask whoever provides your portal for its address, or
+  [host your own](https://github.com/Portablelle/Portal-Plus).
+- Enough free space for your downloads and the extracted games. An external
+  disk must be formatted as exFAT.
 
-You need a [compatible PS5](homebrew/botty-native/VALIDATION.md), enough storage
-for downloads and extracted files, and a Botty+ portal hosted over trusted HTTPS.
+### Install Botty+
 
-### 1. Get access to Portal+
+1. **Open Portal+ on your PS5.** Use the address you were given. If your portal
+   uses the User's Guide shortcut, follow the
+   [DNS and User's Guide walkthrough](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md).
+2. **Check Botty+ in "Your loadout".** It includes the download engine; there
+   is nothing else to select.
+3. **Select LAUNCH** and keep the page open until it shows **READY**.
+4. **Open Botty+ from the home screen.** Press the PS button and select the
+   Botty+ icon. On the first installation, the icon can take a moment to appear.
 
-Botty+ is the console app and its background services. The jailbreak, DNS and
-installer live in [Portal+](https://github.com/Portablelle/Portal-Plus).
-Use a hosted Portal+ instance or follow its hosting guide. Portal+ automatically
-publishes the verified Botty+ packages from this repository's `main` branch.
-The native ZIP alone does not start the required background services.
+After each console restart, open Portal+ and select **LAUNCH** again before
+opening Botty+.
 
-### 2. Open the portal on your PS5
+### Your first download
 
-Open the portal's HTTPS URL using your working PS5 browser entry point. If your
-host provides a User's Guide redirect, use the
-[PS5 DNS and User's Guide walkthrough](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md): it explains which
-network settings to change, how to open the Guide and what to check if the
-redirect fails. You need the DNS address supplied by your host for that route.
+- **From Discover:** select a game, check the **Get game** sheet and press Cross.
+  Discover works once your portal provider has
+  [set up game search](deployment/README.md#optional-search-and-explore).
+- **From a magnet link:** in **Activity**, press Square and paste or type the link.
 
-### 3. Install and launch Botty+
+In the **Get game** sheet, choose:
 
-Enable **Botty+** in the launch options, then select **LAUNCH** once and keep the page open until it shows **READY**. The portal
-prepares the native app and its background services. Press **PS**, return to the
-home screen and open **Botty+**; allow some time for the icon to appear on the
-first installation.
+- **Install on:** the PS5 SSD or your external disk.
+- **After download:** **Extract and add to Library** to have everything done
+  for you, or **Keep the download only** to handle the next steps yourself.
 
-Repeat **LAUNCH** after a console reboot. For the screen layout and controller
-shortcuts, see the [native app guide](homebrew/botty-native/README.md#screens-and-controls).
+Botty+ remembers both choices until you close it. Follow progress in **Activity**;
+the game appears in **Library** once it is ready.
 
-### 4. Add your first download
+## Using Botty+
 
-In **Activity**, press **Square** to add a magnet link. In the Get game sheet,
-choose the PS5 SSD or an external exFAT disk, then **Extract and add to Library**
-(Full auto) or **Keep the download only**, and press Cross. Botty+ remembers
-both choices for the session. Follow the download and its extraction in
-**Activity**.
+Botty+ has four tabs. Press L1 or R1 to switch between them.
 
-To browse content in **Discover**, your host must first configure
-[Prowlarr and the optional services](deployment/README.md#optional-search-and-explore).
-To manage Botty+ from a phone or computer on the same network, open
-**System** and use the displayed web address and login details.
-
-### 5. Keep your installation up to date
-
-With native 1.4.2 and the corresponding modern service stack, the app header
-shows installation-wide update status. Open **System**, select **Update and
-close**, and confirm **Install and close**. Close other native apps too. The app closes; the updater waits
-for compression and file operations to finish, installs a compatible app/service
-bundle and verifies the replacements before notifying you to reopen it. Downloads
-pause only when their engine needs to restart, and updater-paused downloads are
-resumed afterward. Real PS5 acceptance remains pending; see the [installation
-update guide](homebrew/botty-native/README.md#installation-updates).
-
-Use Portal+ for the initial installation and recovery. Activating this modern
-stack requires a deliberately restarted idle console session after existing work
-has finished, not a live-session service swap. It follows the
-latest verified packages committed to Botty+ `main`. Close Botty+ before running
-**LAUNCH**. If a service update is pending, let ongoing tasks finish before
-restarting the console and launching again. See [updates and rollback](deployment/README.md#updates-and-rollback)
-for recovery options.
-
-## Everyday use
-
-Choose **Full auto** to download, extract and add content to your Library, or
-**Download only** to handle the next steps yourself. Pause, resume and verify
-run at once from an item's details; select an item and press **Options** for
-all its actions. Deleting always asks once more, with Cancel focused.
-
-| Control | Action |
+| Tab | What you do there |
 | --- | --- |
-| L1 / R1 | Switch tabs: Discover, Activity, Library, System |
-| D-pad / stick | Navigate; left/right changes a sheet row or filter |
-| Cross / Circle | Select or confirm / go back or dismiss an error |
-| Options | Quick actions, or compare sources in Discover |
-| Square | Search all trackers in Discover, add a magnet in Activity |
+| **Discover** | Browse releases by newest, most seeded or most downloaded, or search every tracker. |
+| **Activity** | Follow downloads and file operations, pause or resume them, extract an archive or add a magnet link. |
+| **Library** | See your games, filter by disk or compression, compress, move or delete a game. |
+| **System** | Find the web address and login for your phone or computer, update Botty+, reconnect or close the app. |
+
+| Button | Action |
+| --- | --- |
+| L1 / R1 | Switch tabs |
+| D-pad / left stick | Move around; left and right change an option in a sheet |
+| Cross | Select or confirm |
+| Circle | Go back, or dismiss an error message |
+| Options | Show actions for the selected item, or compare sources in Discover |
+| Square | Search in Discover, add a magnet link in Activity |
 | Triangle | Change the Discover ranking, filter Library or refresh Activity |
 
-Close Botty+ from **System**; Circle never quits the app.
+To close the app, open **System** and select **Close Botty+**. Circle never
+closes it by accident.
 
-With the bundled ShadowMount, supported Library moves and deletions can run
-while Botty+ stays open. Follow their progress in **Activity**; failures remain
-visible. Compression activation/restoration and registration of new titles can
-still require closing Botty+.
+Pause, resume and verify happen right away. Anything that deletes or replaces
+files asks you once more, with **Cancel** selected so a quick press is safe.
+A short message confirms each request; errors stay on screen until you press
+Circle.
 
-Compression keeps the original until you explicitly delete it. Full content
-verification is optional; a skipped check is shown as **Not verified**. If
-compression is interrupted, retrying on the same disk cleans its tracked
-temporary files and starts from zero. Interrupted RAR extraction can reuse and verify partial output
-on the same disk. Botty 1.5.1 requests experimental background-service retention during rest mode on
-firmware 7.00–13.60 while its service is running. Long sessions can still be interrupted. Check the rest-mode status in the
-web interface. FTP and a generated torrent download were tested in rest on 13.00;
-upload, extraction, compression and other firmwares still need hardware validation.
+From a phone or computer on the same network, open the web address shown in
+**System** and sign in with the login details shown there. From there you can
+also upload a `.torrent` file.
 
-## Preview
+### Keep Botty+ up to date
 
-Discover leads with the focused game and its cover art. One **Get game** sheet
-picks the source, disk and after-download step, with the button focused first.
+When an update is available, **System** shows it. Select **Update and close**,
+then **Install and close**. Close any other app you opened first. Botty+ waits for
+running extractions, compressions and moves to finish, installs the update and
+lets you know when you can reopen it. Downloads pause only if needed and resume
+afterward.
+
+In-app updates are new and still being tested on consoles. Selecting **LAUNCH**
+in Portal+ also installs the latest version.
+
+## Good to know
+
+- **Your files are kept.** Botty+ keeps the original download after extracting it,
+  and keeps the original game after compressing it until you choose to delete it.
+- **Supported archives:** RAR, including password-protected and multi-part
+  archives. ZIP and 7z archives, PKG installation and launching games from
+  Botty+ are not supported.
+- **Interrupted work:** an interrupted extraction can resume on the same disk;
+  an interrupted compression starts again from the beginning.
+- **Rest mode is experimental.** Botty+ asks the console to keep its services
+  running in rest mode, but long sessions can still be interrupted. Check the
+  rest-mode status in the web interface.
+- **Testing status:** Botty+ has been used on PS5 firmware 13.00. Other firmware
+  versions and some workflows still need hardware testing; see
+  [compatibility and known limitations](homebrew/botty-native/VALIDATION.md).
+
+## Troubleshooting
+
+| Problem | What to try |
+| --- | --- |
+| The Botty+ icon does not appear | Wait a moment after **READY**, then check the home screen again. If it is still missing, select **LAUNCH** again. |
+| Botty+ cannot reach its service after a restart | Open Portal+, select **LAUNCH**, then use **System → Reconnect to the service**. |
+| Discover is empty | Game search is optional and must be set up by your portal provider. Magnet links and `.torrent` uploads work without it. |
+| An extraction needs your attention | Open the item in **Activity**: it may need a password, a missing part of the archive or more free space. |
+| An update is waiting | Let running extractions and compressions finish, then use **System → Update and close**. |
+
+## Screenshots
+
+Discover leads with the focused game and its cover art. The **Get game** sheet
+picks the source, the disk and what happens after the download.
 
 ![Discover](docs/screenshots/redesign-discover.png)
 
 ![Get game sheet](docs/screenshots/redesign-get-game-sheet.png)
 
-Activity follows downloads, extractions and moves in one list. Destructive
-actions confirm inline, with Cancel focused.
+Activity follows downloads, extractions and moves in one list. Deleting asks
+once more, with Cancel selected.
 
 ![Activity](docs/screenshots/redesign-activity.png)
 
 ![Quick actions with a delete confirmation](docs/screenshots/redesign-quick-actions-confirm.png)
 
-*Rendered by the native UI on the host with sample PS5 titles, using covers from
-an earlier console capture; not a console capture of this version.*
+*Rendered from the app's own drawing code with sample PS5 titles; not captured
+on a console.*
 
-## Guides
+## More information
 
-- [Search/Explore setup and service updates](deployment/README.md)
-- [PS5 User's Guide and DNS setup](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md)
-- [Native app guide](homebrew/botty-native/README.md)
+For users:
+
+- [Release notes](https://github.com/Portablelle/Botty-Plus/releases)
+- [Screens and controls in detail](homebrew/botty-native/README.md#screens-and-controls)
+- [PS5 DNS and User's Guide setup](https://github.com/Portablelle/Portal-Plus/blob/main/docs/CONSOLE-SETUP.md)
+- [Compatibility and known limitations](homebrew/botty-native/VALIDATION.md)
+
+For portal hosts and developers:
+
+- [Portal+ hosting](https://github.com/Portablelle/Portal-Plus)
+- [Game search, cover art, updates and rollback](deployment/README.md)
 - [Compression and recovery](homebrew/game-compressor/README.md)
 - [External storage](homebrew/botty/README.md#external-storage-13)
-- [Compatibility and known limitations](homebrew/botty-native/VALIDATION.md)
 - [Building and contributing](docs/DEVELOPMENT.md)
-- [Release notes and downloads](https://github.com/Portablelle/Botty-Plus/releases)
+- [Versioning policy](docs/VERSIONING.md)
 
 ## Credits and licenses
 
