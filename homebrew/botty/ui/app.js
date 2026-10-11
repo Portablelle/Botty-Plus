@@ -25,21 +25,23 @@ function chooseStorage(current,adding,next,transfer=false){
 }
 function storageLabel(id){return (state.storage||[]).find(d=>d.id===id)?.label||(id&&id!=='internal'?'External disk unavailable':'Internal SSD');}
 function transferItem(kind,item){chooseStorage(item.storage||'internal',false,choice=>modal('Transfer to another disk?','Move to the selected disk and follow progress here. Keep both disks connected. Torrents remain paused after transfer.','Transfer',()=>action('/api/transfer',{kind,id:item.id,...choice},'Transfer started. Keep both disks connected.')),true);}
-function archives(torrent){return (torrent.files||[]).filter(file=>{if(!file.name.endsWith('.rar'))return false;const part=/\.part(\d+)\.rar$/i.exec(file.name);return !part||Number(part[1])===1;});}
+function archives(torrent){return (torrent.files||[]).filter(file=>{if(!file.name.toLowerCase().endsWith('.rar'))return false;const part=/\.part(\d+)\.rar$/i.exec(file.name);return !part||Number(part[1])===1;});}
 function torrentCard(torrent){
  const card=node('article',undefined,'card'),completed=torrent.leftUntilDone===0,paused=torrent.status===0;
- card.appendChild(node('span',torrent.error?'NEEDS ATTENTION':completed?'COMPLETED':paused?'PAUSED':'DOWNLOADING','badge'));
- card.appendChild(node('h2',torrent.name));card.appendChild(node('p',storageLabel(torrent.storage),'muted'));
+ card.appendChild(node('span',torrent.remoteCandidate?'AVAILABLE ON SERVER':torrent.error?'NEEDS ATTENTION':completed?'COMPLETED':paused?'PAUSED':torrent.remotePhase==='transfer'?'IMPORTING TO PS5':torrent.remote?'SERVER DOWNLOAD':'DOWNLOADING','badge'));
+ card.appendChild(node('h2',torrent.name));if(torrent.phase)card.appendChild(node('p',torrent.phase,'muted'));
+ if(torrent.remoteCandidate){card.appendChild(node('p','PS5 content candidate. Archive contents are checked after extraction. Originals stay on the dedicated server.'));card.appendChild(button('Import to PS5','torrent-'+torrent.id+'-import',()=>chooseStorage('internal',true,choice=>action('/api/remote/import',{hash:torrent.hashString,...choice},'Import queued.'))));return card;}card.appendChild(node('p',storageLabel(torrent.storage),'muted'));
  const progress=node('progress');progress.max=1;progress.value=torrent.percentDone||0;progress.setAttribute('aria-label','Download progress');card.appendChild(progress);
  card.appendChild(node('p',Math.round((torrent.percentDone||0)*100)+'% · '+size(torrent.totalSize)+' · ↓ '+size(torrent.rateDownload)+'/s · ↑ '+size(torrent.rateUpload)+'/s'));
  if(torrent.errorString)card.appendChild(node('p',torrent.errorString,'error'));
  const actions=node('div',undefined,'actions');
  actions.appendChild(button(paused?'Resume':'Pause','torrent-'+torrent.id+'-toggle',()=>action('/api/torrent',{id:torrent.id,action:paused?'resume':'pause'},paused?'Torrent resumed.':'Torrent paused.')));
- actions.appendChild(button('Verify','torrent-'+torrent.id+'-verify',()=>modal('Verify downloaded files','rTorrent will recheck downloaded pieces. Extraction waits until verification is complete.','Verify',()=>action('/api/torrent',{id:torrent.id,action:'verify'},'Verification requested.'))));
+ if(!torrent.remote)actions.appendChild(button('Verify','torrent-'+torrent.id+'-verify',()=>modal('Verify downloaded files','rTorrent will recheck downloaded pieces. Extraction waits until verification is complete.','Verify',()=>action('/api/torrent',{id:torrent.id,action:'verify'},'Verification requested.'))));
  if(state.torrentRemovalSupported)actions.appendChild(button("Delete torrent & files","torrent-"+torrent.id+"-delete",()=>modal("Delete torrent and downloaded files?","This permanently deletes the torrent and its downloaded archives. Games in Library are kept.","Delete",()=>action("/api/torrent",{id:torrent.id,action:"remove-data",confirmed:true},"Torrent removed; downloaded-file deletion requested.")),!!state.extracting));
  const starts=archives(torrent);
+ if(torrent.remote&&completed&&!starts.length)actions.appendChild(button("Prepare game","torrent-"+torrent.id+"-prepare",()=>chooseStorage(torrent.storage||"internal",false,choice=>action("/api/extract",{id:torrent.id,archive:"",...choice},"Preparation started.")),!!state.extracting));
  starts.forEach((file,index)=>actions.appendChild(button(starts.length===1?'Extract':'Extract '+file.name.split('/').pop(),'torrent-'+torrent.id+'-extract-'+index,()=>modal('Extract on this PS5',file.name+'\nArchive volumes are kept for seeding. Output is checked before you can move it to the library.','Extract',password=>chooseStorage(torrent.storage||'internal',false,choice=>action('/api/extract',{id:torrent.id,archive:file.name,password,...choice},'Extraction started. Open Extractions to follow progress.')),{name:'Archive password (leave empty if none)',type:'password'}),!completed||!!torrent.error||!!state.extracting||[1,2].includes(torrent.status))));
- if(state.storageSupported)actions.appendChild(button('Transfer to another disk','torrent-'+torrent.id+'-transfer',()=>transferItem('torrent',torrent),!!state.extracting));
+ if(state.storageSupported&&(!torrent.remote||completed))actions.appendChild(button('Transfer to another disk','torrent-'+torrent.id+'-transfer',()=>transferItem('torrent',torrent),!!state.extracting));
  card.appendChild(actions);
  if(completed&&!starts.length)card.appendChild(node('p','No first RAR volume found. This version extracts .rar / .r00 / .s00 and part1.rar sets.'));
  return card;

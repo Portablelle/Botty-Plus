@@ -1,2 +1,2 @@
-Botty+ 1.7.0
+Botty+ 1.8.0
 rTorrent download engine

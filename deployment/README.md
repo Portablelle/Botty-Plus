@@ -9,6 +9,12 @@ compression worker and optional services described below.
 Deployments must preserve torrent state, archives, saves and active jobs.
 No credentials belong in source or public packages.
 
+## Optional dedicated qBittorrent
+
+See [the dedicated download bridge](botty-remote/README.md) for remote torrent
+downloads, explicit PS5 candidate imports and resumable multi-file HTTPS transfer.
+Existing server torrents are read-only until explicitly selected.
+
 ## Optional Search and Explore
 
 Manual magnets, Transmission and extraction work without this integration.
