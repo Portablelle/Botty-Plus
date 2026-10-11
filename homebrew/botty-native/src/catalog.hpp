@@ -11,7 +11,7 @@ struct Entry {
     std::array<char,2048> files{};
     unsigned fileCount=0,archiveStart=0,archiveCount=0,sourceStart=0,sourceCount=0;
     bool sourcesOmitted=false;
-    bool task=false,items=false,remote=false,remoteCandidate=false;
+    bool task=false,items=false,remote=false,remoteCandidate=false,remoteLoose=false;
     double elapsed=0;
     std::array<char,512> currentFile{};
     bool compressed=false,originalKept=false,compressionVerified=false;

@@ -635,6 +635,19 @@ int main() {
         remote.torrents[0].remoteCandidate=false;
         assert(*unavailable(Operation::verify,&remote.torrents[0],remote));
         assert(*unavailable(Operation::transfer,&remote.torrents[0],remote));
+        std::string omitted=R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":3,"name":"Remote archive","remote":true,"status":0,"leftUntilDone":0,"files":[{"name":")";
+        omitted+=std::string(4100,'a')+R"(.rar"}]}],"jobs":[]})";
+        assert(parseCatalog(omitted,remote));
+        assert(remote.torrents[0].archivesOmitted&&remote.torrents[0].archiveCount==0);
+        assert(std::string_view(unavailable(Operation::extract,&remote.torrents[0],remote))=="Archive names exceed the display limit.");
+        std::string exhausted=R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":4,"name":"Many archives","status":0,"leftUntilDone":0,"files":[)";
+        for(unsigned i=0;i<512;++i){if(i)exhausted+=',';exhausted+="{\"name\":\""+std::to_string(i)+".rar\"}";}
+        exhausted+=R"(]},{"id":5,"name":"Remote archive","remote":true,"status":0,"leftUntilDone":0,"files":[{"name":"game.rar"}]}],"jobs":[]})";
+        assert(parseCatalog(exhausted,remote));assert(remote.torrents[1].archivesOmitted&&remote.torrents[1].archiveCount==0);
+        assert(*unavailable(Operation::extract,&remote.torrents[1],remote));
+        assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":6,"name":"Loose import","remote":true,"remoteLoose":true,"status":0,"leftUntilDone":0,"files":[{"name":"app/sce_sys/param.json"}]}],"jobs":[]})",remote));
+        assert(remote.torrents[0].remoteLoose&&!remote.torrents[0].archivesOmitted);
+        assert(!*unavailable(Operation::extract,&remote.torrents[0],remote));
     }
 
 }

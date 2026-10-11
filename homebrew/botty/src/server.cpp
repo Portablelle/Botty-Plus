@@ -229,7 +229,10 @@ json startExtraction(const json& request, bool automatic=false) {
           job["extractionRate"]=estimate.rate;job["eta"]=estimate.eta;
           publishJob(job,decision.checkpoint);
         };
-        if(plan.loose())copyChecked(plan.source,final,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");},[&](uint64_t bytes,uint64_t total,const std::string& file){report({"Preparing imported game",file,bytes,total});},stage);
+        if(plan.loose()){
+          copyChecked(plan.source,final,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");},[&](uint64_t bytes,uint64_t total,const std::string& file){report({"Preparing imported game",file,bytes,total});},stage);
+          if(fs::exists(fs::symlink_status(final/remoteOwnerFile)))fs::remove(containedExisting(final,final/remoteOwnerFile));
+        }
         else extractRar(plan.source,stage,report,plan.password,[]{return cancelExtraction.load();},0,resuming);
         if(!plan.loose()&&cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
         check();if(!plan.loose())fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
@@ -285,18 +288,14 @@ void automaticDownloads(){
             std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)continue;
             archives.push_back(name);
           }
-          if(archives.empty()&&torrent.value("remote",false)){
-            try{const auto job=startExtraction({{"id",torrent.at("id")},{"archive",""},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
-            catch(const PreparationBusy&){continue;}
-            catch(const std::exception& e){json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",e.what()}};publishJob(job);task["status"]="attention";}
-            writeJson(file.path(),task);break;
-          }
-          if(archives.size()!=1){
+          if(archives.size()!=1&&!(archives.empty()&&torrent.value("remote",false))){
             json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",archives.empty()?"No supported RAR archive found. Automatic installation supports one RAR set containing an app folder or exFAT image.":"Multiple RAR sets found. Choose the archive manually from Torrents."}};
             publishJob(job);task["status"]="attention";writeJson(file.path(),task);break;
           }
-          auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives[0]},{"storage",task.value("storage","internal")}},true);
-          task["job"]=job.at("id");task["status"]="tracked";writeJson(file.path(),task);break;
+          try{const auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives.empty()?std::string{}:archives[0]},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
+          catch(const PreparationBusy&){continue;}
+          catch(const std::exception& e){json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",e.what()}};publishJob(job);task["status"]="attention";}
+          writeJson(file.path(),task);break;
         }
         {std::lock_guard<std::mutex> guard(lock);if(extracting)break;}
       }

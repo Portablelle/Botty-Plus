@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import tempfile
 from release_sources import source_archive
 
 
@@ -36,9 +37,20 @@ def main():
         (out / 'manifest.json').write_bytes(manifest)
         digest = hashlib.sha256(manifest).hexdigest()
         print('Botty manifest:', digest)
-    source_archive(source, out / 'botty-source.tar.gz',
-                   ['src', 'ui', 'vendor', 'tests', 'tools', 'Dockerfile', 'Makefile',
-                    'README.md', 'LICENSE', 'cacert.pem', 'icon0.png'])
+    names = ['src', 'ui', 'vendor', 'tests', 'tools', 'Dockerfile', 'Makefile',
+             'README.md', 'LICENSE', 'cacert.pem', 'icon0.png']
+    with tempfile.TemporaryDirectory() as temporary:
+        assembled = Path(temporary) / source.name
+        assembled.mkdir()
+        for name in names:
+            if (source/name).is_symlink(): raise ValueError('Symbolic source path: ' + name)
+            if (source/name).is_dir(): shutil.copytree(source/name, assembled/name, symlinks=True)
+            else: shutil.copy2(source/name, assembled/name)
+        bridge = assembled / 'deployment/botty-remote'
+        bridge.mkdir(parents=True)
+        for name in ['server.py', 'test_server.py', 'README.md']:
+            shutil.copy2(project/'deployment/botty-remote'/name, bridge/name)
+        source_archive(assembled, out / 'botty-source.tar.gz', names + ['deployment'])
     shutil.copyfile(source / 'README.md', out / 'NOTICE.md')
     shutil.copyfile(source / 'LICENSE', out / 'LICENSE')
     worker=project/'homebrew/game-compressor'
