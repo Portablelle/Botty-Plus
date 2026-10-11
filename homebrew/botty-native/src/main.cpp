@@ -433,9 +433,28 @@ void resultToast(const botty::ActionResult& result) noexcept {
     const bool shown=!(toast.visible&&toast.kind==Toast::Kind::error);
     notify(Toast::Kind::success,title,result.message.data());if(shown)toast.cover=sentCover;
 }
-bool send(const botty::Command& command,std::string_view name,const std::array<char,96>& cover) noexcept {
-    if(!network.submit(command)){notify(Toast::Kind::error,"Request not sent","Network is busy or unavailable. Please try again.");return false;}
-    sentOperation=command.operation;sentCover=cover;
+// Quiet requests (searches, Explore refreshes) report only failures.
+bool quietRequest=false,updateSubmitting=false,exitRequested=false;
+void consume(const botty::ActionResult& received) noexcept {
+    actionResult=received;++displayRevision;
+    const bool success=received.status==botty::ActionResult::Status::success;
+    if(updateSubmitting){updateSubmitting=false;if(success){exitRequested=true;return;}}
+    if(!quietRequest||!success)resultToast(received);
+    quietRequest=false;
+}
+// A finished request is reported before the next one replaces its description.
+bool collectResult() noexcept {
+    botty::ActionResult latest=actionResult;
+    if(!network.read(connection,nullptr,&latest))return false;
+    if(latest.revision!=actionResult.revision)consume(latest);
+    return !exitRequested;
+}
+bool send(const botty::Command& command,std::string_view name,const std::array<char,96>& cover,bool quiet=false) noexcept {
+    if(!collectResult()||!network.submit(command)){
+        if(!exitRequested)notify(Toast::Kind::error,"Request not sent","Network is busy or unavailable. Please try again.");
+        return false;
+    }
+    sentOperation=command.operation;sentCover=cover;quietRequest=quiet;
     std::snprintf(sentName.data(),sentName.size(),"%.*s",static_cast<int>(name.size()),name.data());
     return true;
 }
@@ -1183,19 +1202,18 @@ bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept
     }
     nativeKeyboard.clearText();++displayRevision;textEntryState=TextEntryState::idle;return false;
 }
-void submitWorkflow(bool& quiet) noexcept {
+void submitWorkflow() noexcept {
     const auto op=workflow.command.operation;
     std::array<char,96> cover{};std::string_view name=workflow.targetName.data();
     if(op==Op::exploreGrab&&model.selected<catalog.exploreCount)cover=catalog.exploreResults[model.selected].id;
     else if(op==Op::grab&&model.selected<catalog.resultCount)cover=artworkId(catalog.results[model.selected],'s');
     else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==0?'t':'j');
     if(op==Op::add)name="Magnet link";
-    if(op==Op::search)quiet=true;
-    if(send(workflow.command,name,cover)){
+    if(send(workflow.command,name,cover,op==Op::search)){
         if(op==Op::search){rememberSearch(workflow.command.text.data());model.tab=Model::discover;model.searchResults=true;model.selected=0;}
         // File operations continue in Activity, where their progress is shown.
         if(op==Op::transfer||op==Op::move||op==Op::extract||op==Op::compress||op==Op::remove||op==Op::removeLibrary||op==Op::removeTorrent||op==Op::removeOriginal||op==Op::dismiss){model.tab=Model::activity;model.selected=model.filter=0;model.details=false;}
-    }else quiet=false;
+    }
     workflow.command.text.fill(0);
 }
 
@@ -1205,20 +1223,15 @@ bool draw(Canvas& c) noexcept {
         input.reset();discardPadBatch=true;network.retry();
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
-    static bool exploreRequested=false,quietRequest=false,exploreRefresh=false,exploreVisited=false;
-    static bool updateSubmitting=false;
+    static bool exploreRequested=false,exploreRefresh=false,exploreVisited=false;
     // The worker publishes result and busy under one gate. Consume that snapshot
     // before dispatching deferred input, so a toast reflects the finished request.
     const auto resultRevision=actionResult.revision;
     botty::ActionResult receivedResult=actionResult;
     bool inputNetworkBusy=false;
     const bool inputNetworkKnown=network.read(connection,nullptr,&receivedResult,&inputNetworkBusy);
-    if(receivedResult.revision!=resultRevision){
-        actionResult=receivedResult;
-        if(updateSubmitting){updateSubmitting=false;if(receivedResult.status==botty::ActionResult::Status::success)return false;}
-        if(!quietRequest||receivedResult.status!=botty::ActionResult::Status::success)resultToast(receivedResult);
-        quietRequest=false;++displayRevision;
-    }
+    if(receivedResult.revision!=resultRevision)consume(receivedResult);
+    if(exitRequested)return false;
     if(toast.visible&&toast.kind!=Toast::Kind::error&&now>=toast.until){toast.visible=false;++displayRevision;}
     const unsigned oldTab=model.tab;
     const bool keyboardWasActive=nativeKeyboard.active();
@@ -1257,7 +1270,7 @@ bool draw(Canvas& c) noexcept {
             if(!nativeKeyboard.active()&&!nativeInputPending()&&(edge&(botty::Buttons::cross|botty::Buttons::options)))textEntryState=TextEntryState::idle;
         }
         const bool emit=nativeInputPending()?finishNativeInput(edge,inputNetworkBusy,inputNetworkKnown):workflow.press(workflowEdge,catalog,network.busy());
-        if(emit)submitWorkflow(quietRequest);
+        if(emit)submitWorkflow();
     }else {
         using Action=Model::Action;
         if(edge)detailNotice.fill(0);
@@ -1313,7 +1326,7 @@ bool draw(Canvas& c) noexcept {
             if(f.entry&&model.detailButton<detailActions.optionCount&&model.detailButton<model.buttonCount){
                 const auto op=detailActions.options[model.detailButton];
                 workflow.open(f.entry,workflowTab(f),catalog);
-                if(workflow.choose(op,catalog,network.busy()))submitWorkflow(quietRequest);
+                if(workflow.choose(op,catalog,network.busy()))submitWorkflow();
                 else if(workflow.panel==Panel::menu&&!workflow.confirming){detailNotice.fill(0);std::copy_n(workflow.notice.begin(),detailNotice.size()-1,detailNotice.begin());workflow.close();}
             }
         }
@@ -1367,7 +1380,7 @@ bool draw(Canvas& c) noexcept {
         exploreVisited=true;
         if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==Panel::closed){
             botty::Command command;command.operation=Op::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",Model::exploreSorts[model.exploreSort]);
-            if(network.submit(command)){exploreRequested=false;quietRequest=true;sentOperation=Op::explore;}
+            if(collectResult()&&network.submit(command)){exploreRequested=false;quietRequest=true;sentOperation=Op::explore;}
         }
         if(model.searchResults){
             model.count=catalog.resultCount;
@@ -1409,6 +1422,7 @@ bool draw(Canvas& c) noexcept {
         }
 #endif
     }
+    if(exitRequested)return false;
     static auto previousPanel=Panel::closed;
     if(previousPanel!=workflow.panel){previousPanel=workflow.panel;
         const char* panels[]={"Workflow: closed","Workflow: quick actions","Workflow: sheet","Workflow: keyboard"};
