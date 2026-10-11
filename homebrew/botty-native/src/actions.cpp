@@ -201,13 +201,13 @@ void Workflow::search(std::string_view previous) noexcept {
  panel=Panel::keyboard;selected=0;keyPage=0;
 }
 void Workflow::grab(const Entry& e,const Catalog& c) noexcept {
- close();command=Command{};command.operation=Operation::grab;command.id=e.id;targetName=e.name;targetId.fill(0);
+ close();command=Command{};command.operation=Operation::grab;command.id=e.id;targetName=e.name;targetId.fill(0);gameName=e.name;gameId=e.id;
  sourceCount=1;sourceIndex=0;auto& source=sources[0];source=DownloadSource{};source.id=e.id;source.name=e.name;
  std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;
  openSheet(c);
 }
 void Workflow::chooseSources(const Entry& e,const Catalog& c,bool compare) noexcept {
- close();command=Command{};command.operation=Operation::exploreGrab;targetName=e.name;targetId.fill(0);sourceCount=0;
+ close();command=Command{};command.operation=Operation::exploreGrab;targetName=e.name;targetId.fill(0);sourceCount=0;gameName=e.name;gameId=e.id;
  for(unsigned i=0;i<e.sourceCount&&i<sources.size()&&e.sourceStart+i<c.sourceCount;++i)sources[sourceCount++]=c.sources[e.sourceStart+i];
  // Older services provide a single source.
  if(!sourceCount){auto& source=sources[sourceCount++];source=DownloadSource{};source.id=e.id;source.name=e.name;std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;source.grabs=e.completedCount;source.published=e.published;}
@@ -216,7 +216,7 @@ void Workflow::chooseSources(const Entry& e,const Catalog& c,bool compare) noexc
  command.id=sources[sourceIndex].id;
  openSheet(c);if(compare)focus=0;
 }
-void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;sourceCount=sourceIndex=0;targetId.fill(0);targetName.fill(0);std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
+void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;sourceCount=sourceIndex=0;targetId.fill(0);targetName.fill(0);gameName.fill(0);gameId.fill(0);std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
 std::string_view Workflow::keys(unsigned page) noexcept {
  switch(page%3){case 0:return "1234567890qwertyuiopasdfghjkl;zxcvbnm,./";case 1:return "1234567890QWERTYUIOPASDFGHJKL:ZXCVBNM<>?";default:return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~01234567";}
 }
