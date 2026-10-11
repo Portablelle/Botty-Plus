@@ -191,22 +191,22 @@ ActionResult performCommand(const Command& command) noexcept {
     case Operation::explore:message("Explore updated.");break;
     case Operation::nativeUpdate:message("Installation update queued. Botty+ will close; reopen after the completion notification. File operations finish first.");break;
     case Operation::checkNativeUpdate:message("Checking for updates in the background.");break;
-    case Operation::search:message("Search started. Results will appear in Search.");break;
-    case Operation::exploreGrab:case Operation::grab:message("Download requested. Botty will extract and prepare supported content automatically.");break;
+    case Operation::search:message("Search started. Results will appear in Discover.");break;
+    case Operation::exploreGrab:case Operation::grab:message(command.storage[0]&&!command.automatic?"Download requested. Extract it later from Activity.":"Download requested. Botty will extract and prepare supported content automatically.");break;
     case Operation::pause:message("Torrent paused.");break;
     case Operation::resume:message("Torrent resumed.");break;
     case Operation::verify:message("Verification requested. Extraction waits until verification finishes.");break;
     case Operation::add:message("Torrent added or already present.");break;
-    case Operation::extract:message("Extraction started. Open Processing to follow its progress.");break;
-    case Operation::transfer:message("Move requested. Follow progress in Processing.");break;
+    case Operation::extract:message("Extraction started. Follow its progress in Activity.");break;
+    case Operation::transfer:message("Move requested. Follow progress in Activity.");break;
     case Operation::compress:message("Creating a separate compressed copy. Original game is kept.");break;
-    case Operation::removeOriginal:message("Deletion requested. Follow progress in Processing.");break;
+    case Operation::removeOriginal:message("Deletion requested. Follow progress in Activity.");break;
     case Operation::restoreOriginal:message("Restore queued. Close Botty+ and games to switch back to the original.");break;
     case Operation::cancelCompression:message("Compression cancellation requested. Wait for the worker to finish.");break;
-    case Operation::move:message("Library preparation requested. Follow progress in Processing.");break;
+    case Operation::move:message("Library preparation requested. Follow progress in Activity.");break;
     case Operation::cancel:message("Cancellation requested. Waiting for a safe stop.");break;
-    case Operation::dismiss:message("Removed from Processing. Partial files from unsuccessful jobs were deleted.");break;
-    case Operation::removeLibrary:message(response.status==202?"Deletion requested. Follow progress in Processing. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
+    case Operation::dismiss:message("Removed from Activity. Partial files from unsuccessful jobs were deleted.");break;
+    case Operation::removeLibrary:message(response.status==202?"Deletion requested. Follow progress in Activity. Saves and archives are kept.":"Game files deleted from Library. Torrent and original archives were kept.");break;
     case Operation::removeTorrent:message("Torrent removed and download-file deletion requested. Library games are kept.");break;
     case Operation::remove:message("Extraction deleted. Original downloads and archive volumes were kept.");break;
     default:break;
@@ -349,12 +349,18 @@ void* Artwork::worker(void* context) noexcept {
         while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
         ids=self.requested_;requestRevision=self.requestRevision_;self.gate_.clear(std::memory_order_release);
         if(requestRevision==handled){platform::sleep(100000);continue;}handled=requestRevision;
+        // Scrolling shifts covers between slots: keep any that are already loaded.
+        static ArtworkPage previous;
+        std::array<bool,coverSlots> done{};
         while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
-        self.page_.ids=ids;self.page_.ready.fill(false);++self.page_.revision;self.gate_.clear(std::memory_order_release);
+        previous=self.page_;self.page_.ids=ids;self.page_.ready.fill(false);
+        for(unsigned i=0;i<ids.size();++i)for(unsigned j=0;ids[i][0]&&j<previous.ids.size();++j)
+            if(previous.ready[j]&&previous.ids[j]==ids[i]){self.page_.pixels[i]=previous.pixels[j];self.page_.ready[i]=done[i]=true;break;}
+        ++self.page_.revision;self.gate_.clear(std::memory_order_release);
         Response bootstrap;FlatJSON json;
         if(get("/api/bootstrap",{},bootstrap,platform::now()+5000000)!=Probe::ready||!json.parse(bootstrap.view()))continue;
         const auto token=json.string("token");if(token.size()!=32)continue;
-        std::array<bool,6> done{};bool stale=false;
+        bool stale=false;
         for(unsigned attempt=0;attempt<20&&!self.stop_.load()&&!stale;++attempt){
         for(unsigned i=0;i<ids.size()&&!self.stop_.load();++i){
             if(done[i])continue;
@@ -374,7 +380,7 @@ void* Artwork::worker(void* context) noexcept {
             if(!stale&&ready){for(unsigned b=0;b<response.length;++b)self.page_.pixels[i][b]=static_cast<unsigned char>(response.body[b]);self.page_.ready[i]=true;++self.page_.revision;}
             self.gate_.clear(std::memory_order_release);if(stale)break;
         }
-        bool complete=true;for(unsigned i=0;i<6;++i)if(ids[i][0]&&!done[i])complete=false;if(complete)break;
+        bool complete=true;for(unsigned i=0;i<ids.size();++i)if(ids[i][0]&&!done[i])complete=false;if(complete)break;
         for(unsigned wait=0;wait<20&&!self.stop_.load();++wait)platform::sleep(100000);
         }
     }
