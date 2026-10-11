@@ -359,3 +359,20 @@ and activation. When rTorrent changes, verify that user-paused torrents remain
 paused and only updater-paused torrents resume. Power-loss and live permission
 failures remain console acceptance items. Never run Portal concurrently. No
 console deployment or diagnostic payload was performed for this change.
+
+## Four-tab interface redesign (unreleased)
+
+The native interface follows the Paper redesign: Discover, Activity, Library and
+System tabs; one Get game sheet, one Extract sheet and Quick actions with inline
+destructive confirmations; non-blocking success toasts; and a two-weight
+Manrope atlas. Host model tests cover tab order, Circle never quitting, sheet
+focus and row changes, remembered disk and mode, inline Cancel-first
+confirmations, immediate safe actions, Activity grouping and Library filters.
+The keyboard overlay test drives the real draw loop: toasts never freeze input,
+Circle only dismisses failures, and accepted IME text survives busy snapshots.
+Every redesigned screen has a renderer preview scenario.
+
+Not yet validated on PS5: TV readability of the new type sizes, frame time of
+the full-screen hero scrim and cover blits, focus visibility at a distance, R3 as
+the saved-results refresh, and the complete Discover → Get game → Activity →
+Library flow. A native release build and package refresh are still required.

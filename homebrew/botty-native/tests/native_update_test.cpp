@@ -72,12 +72,14 @@ int main(){
     assert(std::string_view(nativeUpdateLabel(catalog->nativeUpdate,true))=="Update status unavailable");
     assert(*unavailable(Operation::checkNativeUpdate,nullptr,*catalog));
     assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[],"jobs":[],"nativeUpdate":{"supported":true,"scope":17,"status":"available","installedVersion":"01.006.000","availableVersion":"01.006.001","installedServiceVersion":"1.5.4","availableServiceVersion":"1.5.5","installedWorkerVersion":"1.3.1","availableWorkerVersion":"1.3.1","installedEngineVersion":"0.16.24-botty5","availableEngineVersion":"0.16.24-botty5","updateAvailable":true,"requested":false,"closeRequired":false}})",*catalog)&&!catalog->nativeUpdate.supported);
-    Model model;model.tab=3;
-    model.press(Buttons::right);assert(model.selected==1);
-    model.press(Buttons::right);assert(model.selected==2);
+    // System lists the update button first, then Reconnect and Close Botty+.
+    Model model;model.tab=Model::system;
     assert(model.press(Buttons::cross)==Model::Action::update);
-    model.press(Buttons::right);assert(model.selected==0);
-    model.press(Buttons::left);assert(model.selected==2);
+    model.press(Buttons::down);assert(model.selected==1);
+    model.press(Buttons::down);assert(model.selected==2);
+    model.press(Buttons::down);assert(model.selected==2);
+    assert(model.press(Buttons::cross)==Model::Action::quit);
+    model.press(Buttons::up);model.press(Buttons::up);assert(model.selected==0);
     model.updateDialog=true;model.confirmUpdate=false;
     assert(model.press(Buttons::cross)==Model::Action::none&&!model.updateDialog);
     model.updateDialog=true;model.press(Buttons::right);

@@ -54,15 +54,18 @@ struct InputEvents {
     }
 };
 struct Model {
-    static constexpr std::array<const char*,3> exploreSorts{"newest","completed","seeders"};
-    static constexpr std::array<const char*,3> exploreLabels{"Newest","Most grabbed","Most seeded"};
-    // Browse -> find -> download -> prepare -> collect -> connect.
-    static constexpr std::array<unsigned,6> tabOrder{5,4,0,1,2,3};
-    unsigned tab=5, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
-    bool details=false;
-    bool quitDialog=false, confirmQuit=false;
+    // Display order of the Discover ranking chips.
+    static constexpr std::array<const char*,3> exploreSorts{"newest","seeders","completed"};
+    static constexpr std::array<const char*,3> exploreLabels{"Newest","Most seeded","Most grabbed"};
+    // Browse -> follow -> collect -> manage. Circle never quits; Close lives in System.
+    enum Tab : unsigned { discover=0, activity=1, library=2, system=3 };
+    static constexpr unsigned tabCount=4, libraryColumns=7, systemItems=3;
+    unsigned tab=discover, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
+    unsigned detailButton=0, buttonCount=0;
+    bool details=false, searchResults=false;
+    // Inline System confirmation; Cancel stays focused until moved explicitly.
     bool updateDialog=false, confirmUpdate=false;
-    enum class Action { none, retry, quit, menu, add, explore, update, installUpdate };
+    enum class Action { none, retry, quit, menu, add, explore, update, installUpdate, search, get, compare, run };
     Action press(unsigned edge) noexcept {
         if (updateDialog) {
             if (edge & Buttons::circle) { updateDialog=false; return Action::none; }
@@ -73,52 +76,59 @@ struct Model {
             }
             return Action::none;
         }
-        if (quitDialog) {
-            if (edge & Buttons::circle) { quitDialog=false; return Action::none; }
-            if (edge & (Buttons::left|Buttons::right)) confirmQuit=!confirmQuit;
-            if (edge & Buttons::cross) {
-                if (confirmQuit) return Action::quit;
-                quitDialog=false;
-            }
-            return Action::none;
+        if (edge & (Buttons::l1|Buttons::r1)) {
+            tab=(tab+((edge&Buttons::r1)?1:tabCount-1))%tabCount;
+            selected=filter=detailPage=detailButton=0;details=false;return Action::none;
         }
         if (edge & Buttons::circle) {
-            if(details)details=false;else {quitDialog=true;confirmQuit=false;}
+            if(details)details=false;
+            else if(tab==discover&&searchResults){searchResults=false;selected=0;}
             return Action::none;
         }
-        if (edge & (Buttons::l1|Buttons::r1)) {
-            unsigned index=0;while(index<tabOrder.size()&&tabOrder[index]!=tab)++index;
-            tab=tabOrder[(index+((edge&Buttons::r1)?1:5))%6];selected=0;details=false;return Action::none;
-        }
-        if(tab==5&&(edge&Buttons::triangle)){exploreSort=(exploreSort+1)%3;selected=0;return Action::explore;}
-        if(edge & Buttons::options)return Action::menu;
-        if(edge & Buttons::triangle)return Action::retry;
-        if(edge & Buttons::square)return Action::add;
-        if(tab==3) {
-            if(edge&(Buttons::right|Buttons::down))selected=(selected+1)%3;
-            else if(edge&(Buttons::left|Buttons::up))selected=(selected+2)%3;
-            if(edge&Buttons::cross){if(selected==0)return Action::retry;if(selected==2)return Action::update;quitDialog=true;confirmQuit=false;}
-        }else if(tab==5){
-            if((edge&Buttons::right)&&selected+1<count)++selected;
-            if((edge&Buttons::left)&&selected)--selected;
-            if((edge&Buttons::down)&&selected+6<count)selected+=6;
-            if((edge&Buttons::up)&&selected>=6)selected-=6;
-            if((edge&Buttons::cross)&&count)details=true;
-        }else if(tab==2&&!details) {
-            if((edge&Buttons::right)&&selected+1<count)++selected;
-            if((edge&Buttons::left)&&selected)--selected;
-            if((edge&Buttons::down)&&selected+3<count)selected+=3;
-            if((edge&Buttons::up)&&selected>=3)selected-=3;
-            if((edge&Buttons::cross)&&count){details=true;detailPage=0;}
-        }else if(details) {
+        if(details){
+            if((edge&Buttons::right)&&detailButton+1<buttonCount)++detailButton;
+            if((edge&Buttons::left)&&detailButton)--detailButton;
             if(edge&Buttons::down)++detailPage;
             if((edge&Buttons::up)&&detailPage)--detailPage;
+            if(edge&Buttons::options)return Action::menu;
+            if((edge&Buttons::cross)&&buttonCount)return Action::run;
+            return Action::none;
+        }
+        if(tab==discover){
+            if(edge&Buttons::square)return Action::search;
+            if(searchResults){
+                if((edge&Buttons::down)&&selected+1<count)++selected;
+                if((edge&Buttons::up)&&selected)--selected;
+                return (edge&Buttons::cross)&&count?Action::get:Action::none;
+            }
+            if(edge&Buttons::triangle){exploreSort=(exploreSort+1)%3;selected=0;return Action::explore;}
+            if((edge&Buttons::right)&&selected+1<count)++selected;
+            if((edge&Buttons::left)&&selected)--selected;
+            if((edge&Buttons::options)&&count)return Action::compare;
+            return (edge&Buttons::cross)&&count?Action::get:Action::none;
+        }
+        if(tab==system){
+            if((edge&Buttons::down)&&selected+1<systemItems)++selected;
+            if((edge&Buttons::up)&&selected)--selected;
+            if(edge&Buttons::triangle)return Action::retry;
+            if(edge&Buttons::cross)return selected==0?Action::update:selected==1?Action::retry:Action::quit;
+            return Action::none;
+        }
+        if(edge & Buttons::options)return count?Action::menu:Action::none;
+        if(tab==library){
+            if(edge&Buttons::triangle){filter=(filter+1)%4;selected=0;}
+            if((edge&Buttons::right)&&selected+1<count)++selected;
+            if((edge&Buttons::left)&&selected)--selected;
+            if((edge&Buttons::down)&&selected+libraryColumns<count)selected+=libraryColumns;
+            if((edge&Buttons::up)&&selected>=libraryColumns)selected-=libraryColumns;
         }else {
-            if(tab==0&&(edge&(Buttons::left|Buttons::right))){filter=(filter+((edge&Buttons::right)?1:2))%3;selected=0;}
+            if(edge&Buttons::square)return Action::add;
+            if(edge&Buttons::triangle)return Action::retry;
+            if(edge&(Buttons::left|Buttons::right)){filter=(filter+((edge&Buttons::right)?1:3))%4;selected=0;}
             if((edge&Buttons::down)&&selected+1<count)++selected;
             if((edge&Buttons::up)&&selected)--selected;
-            if((edge&Buttons::cross)&&count){details=true;detailPage=0;}
         }
+        if((edge&Buttons::cross)&&count){details=true;detailPage=detailButton=0;}
         return Action::none;
     }
 };
