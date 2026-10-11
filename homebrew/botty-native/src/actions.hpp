@@ -23,6 +23,9 @@ const char* actionPath(Operation) noexcept;
 bool encodeCommand(const Command&,char*,std::size_t,std::size_t&) noexcept;
 ActionResult performCommand(const Command&) noexcept;
 const char* unavailable(Operation,const Entry*,const Catalog&) noexcept;
+// Quick actions for one entry (0 download, 1 Activity job, 2 Library game),
+// destructive choices last. Followed tasks have none.
+unsigned quickActions(const Entry*,unsigned tab,const Catalog&,std::array<Operation,8>&) noexcept;
 struct Workflow {
     // menu: Quick actions with inline destructive confirmation. sheet: one settings
     // sheet for Get game, Extract and disk moves. keyboard: text entry.

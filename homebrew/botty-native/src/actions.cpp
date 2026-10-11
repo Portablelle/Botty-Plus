@@ -103,8 +103,8 @@ bool Workflow::destructive(Operation op) noexcept {
 void Workflow::close() noexcept {panel=Panel::closed;rowCount=focus=0;confirming=confirm=false;unicodeInput=false;codepoint.fill(0);command.text.fill(0);savedPassword.fill(0);notice.fill(0);++revision;}
 const Entry* Workflow::target(const Catalog& c) const noexcept {const auto& list=targetTab==0?c.torrents:c.jobs;const auto count=targetTab==0?c.torrentCount:c.jobCount;for(unsigned i=0;i<count;++i)if(std::string_view(list[i].id.data())==targetId.data())return &list[i];return nullptr;}
 bool Workflow::hasRow(Row row) const noexcept {for(unsigned i=0;i<rowCount;++i)if(rows[i]==row)return true;return false;}
-void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
- close();optionCount=0;if(!e||e->task||tab>2)return;panel=Panel::menu;selected=0;targetTab=tab;targetId=e->id;targetName=e->name;
+unsigned quickActions(const Entry* e,unsigned tab,const Catalog& c,std::array<Operation,8>& options) noexcept {
+ unsigned optionCount=0;if(!e||e->task||tab>2)return 0;
  if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;}
  else if(tab==2){
   if(std::string_view(e->status.data())=="ready")options[optionCount++]=Operation::move;
@@ -121,6 +121,11 @@ void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
  if(tab==0)options[optionCount++]=Operation::removeTorrent;
  else if(tab==2){if(std::string_view(e->status.data())=="ready")options[optionCount++]=Operation::remove;else options[optionCount++]=Operation::removeLibrary;}
  else {options[optionCount++]=Operation::remove;options[optionCount++]=Operation::dismiss;}
+ return optionCount;
+}
+void Workflow::open(const Entry* e,unsigned tab,const Catalog& c) noexcept {
+ close();optionCount=quickActions(e,tab,c,options);if(!optionCount)return;
+ panel=Panel::menu;selected=0;targetTab=tab;targetId=e->id;targetName=e->name;
 }
 bool Workflow::choose(Operation op,const Catalog& c,bool busy) noexcept {
  const Entry* e=target(c);++revision;

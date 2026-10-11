@@ -251,12 +251,14 @@ ActivityState activityState(const Entry& e,bool torrent) noexcept {
     }
     if(e.task){
         if(status=="waiting-close"||status=="failed"||status=="uncertain")return ActivityState::attention;
-        if(e.complete)return ActivityState::done;
+        // A cancelled task is finished: its worker keeps or cleans its own files.
+        if(e.complete||status=="cancelled")return ActivityState::done;
         if(e.active)return ActivityState::running;
         return e.error[0]?ActivityState::attention:ActivityState::waiting;
     }
     if(status=="extracting"||status=="moving")return ActivityState::running;
-    if(status=="failed"||status=="interrupted"||status=="move-error"||e.error[0])return ActivityState::attention;
+    // Cancelled extractions keep partial files until removed or retried.
+    if(status=="failed"||status=="interrupted"||status=="move-error"||status=="cancelled"||e.error[0])return ActivityState::attention;
     return status=="ready"?ActivityState::done:ActivityState::waiting;
 }
 namespace {
