@@ -211,7 +211,7 @@ void Workflow::chooseSources(const Entry& e,const Catalog& c,bool compare) noexc
  command.id=sources[sourceIndex].id;
  openSheet(c);if(compare)focus=0;
 }
-void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
+void Workflow::add() noexcept {close();command=Command{};command.operation=Operation::add;sourceCount=sourceIndex=0;targetId.fill(0);targetName.fill(0);std::snprintf(command.text.data(),command.text.size(),"magnet:?xt=urn:btih:");panel=Panel::keyboard;selected=0;keyPage=0;passwordVisible=false;}
 std::string_view Workflow::keys(unsigned page) noexcept {
  switch(page%3){case 0:return "1234567890qwertyuiopasdfghjkl;zxcvbnm,./";case 1:return "1234567890QWERTYUIOPASDFGHJKL:ZXCVBNM<>?";default:return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~01234567";}
 }

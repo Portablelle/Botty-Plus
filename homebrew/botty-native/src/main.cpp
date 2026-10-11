@@ -411,6 +411,8 @@ const char* buttonLabel(Op op) noexcept {
 }
 
 void notify(Toast::Kind kind,std::string_view title,std::string_view message) noexcept {
+    // An undismissed failure outranks later successes and notices.
+    if(toast.visible&&toast.kind==Toast::Kind::error&&kind!=Toast::Kind::error)return;
     toast=Toast{};toast.kind=kind;toast.visible=true;toast.until=botty::platform::now()+4000000;
     std::snprintf(toast.title.data(),toast.title.size(),"%.*s",static_cast<int>(title.size()),title.data());
     std::snprintf(toast.message.data(),toast.message.size(),"%.*s",static_cast<int>(message.size()),message.data());
@@ -428,7 +430,8 @@ void resultToast(const botty::ActionResult& result) noexcept {
     case Op::checkNativeUpdate:std::snprintf(title,sizeof(title),"Checking for updates");break;
     default:std::snprintf(title,sizeof(title),"%s",botty::operationLabel(sentOperation));break;
     }
-    notify(Toast::Kind::success,title,result.message.data());toast.cover=sentCover;
+    const bool shown=!(toast.visible&&toast.kind==Toast::Kind::error);
+    notify(Toast::Kind::success,title,result.message.data());if(shown)toast.cover=sentCover;
 }
 bool send(const botty::Command& command,std::string_view name,const std::array<char,96>& cover) noexcept {
     if(!network.submit(command)){notify(Toast::Kind::error,"Request not sent","Network is busy or unavailable. Please try again.");return false;}
@@ -1021,7 +1024,8 @@ void drawSheet(Canvas& c) noexcept {
                 if(!d.available||(op==Op::transfer&&target&&d.id==target->storage))continue;
                 if(id==d.id.data()){index=count;char free[48];botty::formatBytes(d.freeBytes,free,sizeof(free));
                     storageName(d.id.data(),value,sizeof(value));
-                    const double needed=download?workflow.sources[workflow.sourceIndex].size:0;
+                    // Magnet sizes are unknown until rTorrent reads the metadata.
+                    const double needed=(op==Op::grab||op==Op::exploreGrab)&&workflow.sourceIndex<workflow.sourceCount?workflow.sources[workflow.sourceIndex].size:0;
                     if(download&&needed>0&&d.freeBytes>needed){char after[48];botty::formatBytes(d.freeBytes-needed,after,sizeof(after));std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 %s left after",free,after);}
                     else if(download&&needed>0)std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 not enough space",free);
                     else if(op==Op::extract&&target&&d.id==target->storage)std::snprintf(sub,sizeof(sub),"Same disk as the download \xc2\xb7 %s free",free);

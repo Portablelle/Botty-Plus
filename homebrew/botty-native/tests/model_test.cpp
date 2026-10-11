@@ -286,7 +286,8 @@ int main() {
     flow.unicodeInput=true;flow.append('e');flow.append('9');assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="é");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("1f680"))flow.append(c);assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="🚀");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("d800"))flow.append(c);assert(!flow.finishUnicode());flow.close();
-    flow.add();assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
+    flow.add();assert(!flow.sourceCount&&!flow.targetName[0]); // No size or name carried over from another sheet.
+    assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
     assert(!flow.acceptText("magnet:?xt=urn:btih:abcdef&dn=Game",catalog,false));
     assert(flow.panel==Workflow::Panel::sheet&&flow.hasRow(Workflow::Row::magnet)&&flow.focus==flow.rowCount);
     flow.press(Buttons::up,catalog,false);flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::keyboard); // Edit the link again.
