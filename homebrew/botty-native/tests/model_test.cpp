@@ -283,8 +283,15 @@ int main() {
     flow.append('s');flow.append('e');flow.append('c');flow.erase();assert(std::string_view(flow.command.text.data())=="se");
     flow.selected=48;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount);
     assert(!flow.press(Buttons::cross,catalog,true)&&flow.notice[0]&&flow.panel==Workflow::Panel::sheet);
-    assert(flow.press(Buttons::cross,catalog,false));
+    // A refresh that reorders the archives keeps the chosen path; one that drops it refuses.
+    std::swap(catalog.archives[catalog.torrents[0].archiveStart],catalog.archives[catalog.torrents[0].archiveStart+1]);
+    assert(flow.press(Buttons::cross,catalog,false)&&flow.archiveIndex==0);
     assert(std::string_view(flow.command.archive.data())=="two\".rar"&&std::string_view(flow.command.text.data())=="se");
+    flow.panel=Workflow::Panel::sheet;std::snprintf(catalog.archives[catalog.torrents[0].archiveStart].data(),4096,"other.rar");
+    assert(!flow.press(Buttons::cross,catalog,false)&&std::string_view(flow.notice.data()).find("archive list changed")!=std::string_view::npos);
+    assert(std::string_view(flow.command.archive.data())=="other.rar"&&flow.panel==Workflow::Panel::sheet);
+    std::swap(catalog.archives[catalog.torrents[0].archiveStart],catalog.archives[catalog.torrents[0].archiveStart+1]);
+    std::snprintf(catalog.archives[catalog.torrents[0].archiveStart+1].data(),4096,"two\".rar");
     flow.close();assert(!flow.command.text[0]);
     flow.open(&catalog.jobs[0],1,catalog);flow.press(Buttons::cross,catalog,false);flow.press(Buttons::right,catalog,false);
     catalog.jobCount=0;assert(!flow.press(Buttons::cross,catalog,false));assert(flow.notice[0]); // Removed target cannot redirect to another job.

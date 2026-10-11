@@ -89,6 +89,11 @@ namespace {
 int storageIndex(const Catalog& c,std::string_view id) noexcept {for(unsigned i=0;i<c.storageCount;++i)if(id==c.storage[i].id.data())return static_cast<int>(i);return -1;}
 bool storageReady(const Catalog& c,std::string_view id) noexcept {const int i=storageIndex(c,id);return !id.empty()&&i>=0&&c.storage[static_cast<unsigned>(i)].available;}
 // Keep the preferred disk when connected, else the first connected disk other than avoid.
+// Position of an exact archive path in an entry's current list, or -1.
+int archivePosition(const Catalog& c,const Entry& e,const std::array<char,4096>& path) noexcept {
+ for(unsigned i=0;i<e.archiveCount&&e.archiveStart+i<c.archiveCount;++i)if(c.archives[e.archiveStart+i]==path)return static_cast<int>(i);
+ return -1;
+}
 void pickStorage(const Catalog& c,std::array<char,64>& out,std::string_view preferred,std::string_view avoid) noexcept {
  out.fill(0);
  if(preferred!=avoid&&storageReady(c,preferred)){const int i=storageIndex(c,preferred);out=c.storage[static_cast<unsigned>(i)].id;return;}
@@ -143,7 +148,8 @@ bool Workflow::choose(Operation op,const Catalog& c,bool busy) noexcept {
 }
 void Workflow::openSheet(const Catalog& c) noexcept {
  const auto op=command.operation;const Entry* e=target(c);rowCount=0;passwordVisible=false;
- if(op==Operation::extract)archiveIndex=0;
+ // The archive is kept by path: refreshes may reorder the list while a password is typed.
+ if(op==Operation::extract){archiveIndex=0;command.archive.fill(0);if(e&&e->archiveCount)command.archive=c.archives[e->archiveStart];}
  if(op==Operation::exploreGrab||op==Operation::grab)rows[rowCount++]=Row::source;
  if(op==Operation::add)rows[rowCount++]=Row::magnet;
  if(op==Operation::extract){rows[rowCount++]=Row::archive;rows[rowCount++]=Row::password;}
@@ -163,7 +169,11 @@ void Workflow::change(Row row,bool forward,const Catalog& c) noexcept {
   if(forward&&sourceIndex+1<sourceCount)++sourceIndex;else if(!forward&&sourceIndex)--sourceIndex;
   command.id=sources[sourceIndex].id;targetName=sources[sourceIndex].name;
  }else if(row==Row::mode)command.automatic=!forward;
- else if(row==Row::archive&&e){if(forward&&archiveIndex+1<e->archiveCount)++archiveIndex;else if(!forward&&archiveIndex)--archiveIndex;}
+ else if(row==Row::archive&&e&&e->archiveCount){
+  const int at=archivePosition(c,*e,command.archive);if(at>=0)archiveIndex=static_cast<unsigned>(at);else archiveIndex=0;
+  if(at>=0&&forward&&archiveIndex+1<e->archiveCount)++archiveIndex;else if(at>=0&&!forward&&archiveIndex)--archiveIndex;
+  command.archive=c.archives[e->archiveStart+archiveIndex];
+ }
  else if(row==Row::storage){
   const std::string_view avoid=command.operation==Operation::transfer&&e?std::string_view(e->storage.data()):std::string_view{};
   int current=storageIndex(c,command.storage.data()),next=-1;
@@ -185,8 +195,13 @@ bool Workflow::submit(const Catalog& c,bool busy) noexcept {
  if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
  if(op==Operation::exploreGrab||op==Operation::grab){if(sourceIndex>=sourceCount)return false;command.id=sources[sourceIndex].id;}
  if(op==Operation::extract){
-  if(!e||archiveIndex>=e->archiveCount){std::snprintf(notice.data(),notice.size(),"This archive is no longer available. Close and try again.");return false;}
-  command.archive=c.archives[e->archiveStart+archiveIndex];
+  const int at=e&&command.archive[0]?archivePosition(c,*e,command.archive):-1;
+  if(at<0){
+   std::snprintf(notice.data(),notice.size(),"The archive list changed. Check the archive, then extract again.");
+   archiveIndex=0;command.archive.fill(0);if(e&&e->archiveCount)command.archive=c.archives[e->archiveStart];
+   return false;
+  }
+  archiveIndex=static_cast<unsigned>(at);
  }
  if(hasRow(Row::storage)){
   if(!storageReady(c,command.storage.data())){std::snprintf(notice.data(),notice.size(),"Connect the selected disk, or choose another one.");return false;}

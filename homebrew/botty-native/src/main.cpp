@@ -1064,12 +1064,15 @@ void drawSheet(Canvas& c) noexcept {
             index=workflow.command.automatic?0:1;count=2;showArrows=true;
         }else if(row==Row::archive){
             std::snprintf(label,sizeof(label),"Archive");
-            if(target&&workflow.archiveIndex<target->archiveCount){
-                const auto path=std::string_view(catalog.archives[target->archiveStart+workflow.archiveIndex].data());
+            // Show the archive the sheet will submit, wherever a refresh moved it.
+            int at=-1;
+            for(unsigned i=0;target&&i<target->archiveCount&&target->archiveStart+i<catalog.archiveCount;++i)if(catalog.archives[target->archiveStart+i]==workflow.command.archive){at=static_cast<int>(i);break;}
+            if(target&&at>=0){
+                const auto path=std::string_view(workflow.command.archive.data());
                 const auto slash=path.rfind('/');std::snprintf(value,sizeof(value),"%.*s",static_cast<int>(slash==std::string_view::npos?path.size():path.size()-slash-1),slash==std::string_view::npos?path.data():path.data()+slash+1);
                 if(target->archiveCount==1){tag="AUTO";tagColor=muted;std::snprintf(sub,sizeof(sub),"Found automatically%s",target->archivesOmitted?" \xc2\xb7 some names exceed the list limit":"");}
                 else std::snprintf(sub,sizeof(sub),"%u archive sets found%s",target->archiveCount,target->archivesOmitted?" \xc2\xb7 some names exceed the list limit":"");
-                index=workflow.archiveIndex;count=target->archiveCount;showArrows=count>1;
+                index=static_cast<unsigned>(at);count=target->archiveCount;showArrows=count>1;
             }else {std::snprintf(value,sizeof(value),"No archive available");valueColor=warning;}
         }else {
             std::snprintf(label,sizeof(label),"Password");const auto password=std::string_view(workflow.command.text.data());
