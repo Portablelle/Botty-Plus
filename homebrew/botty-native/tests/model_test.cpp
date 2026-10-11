@@ -170,6 +170,35 @@ int main() {
         assert(std::string_view(entryAt(ordered,0,0,0)->id.data())=="5");
         assert(std::string_view(entryAt(ordered,0,1,0)->id.data())=="5");
     }
+    {
+        // Activity groups downloads and jobs by state; it never pairs rows by name.
+        static Catalog a;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[{"id":1,"name":"Down","status":4,"leftUntilDone":5,"totalSize":10,"rateDownload":1},{"id":2,"name":"Paused","status":0,"leftUntilDone":5,"totalSize":10},{"id":3,"name":"Seed","status":6,"leftUntilDone":0,"totalSize":10},{"id":4,"name":"Broken","status":0,"leftUntilDone":5,"totalSize":10,"errorString":"Tracker error"}],"jobs":[{"id":"j1","name":"Down","status":"extracting","bytes":1,"total":2},{"id":"j2","name":"Ready","status":"ready","content":{"kind":"folder"}},{"id":"j3","name":"Failed","status":"failed","error":"CRC error"},{"id":"j4","name":"Moved","status":"moved","content":{"kind":"folder"}},{"id":"j5","name":"Hidden","status":"ready","dismissed":true,"content":{"kind":"folder"}}]})",a));
+        assert(activityCount(a,0)==7&&activityCount(a,1)==2&&activityCount(a,2)==2&&activityCount(a,3)==2);
+        const char* order[]={"1","j1","4","j3","2","3","j2"};
+        for(unsigned i=0;i<7;++i)assert(std::string_view(activityAt(a,0,i).entry->id.data())==order[i]);
+        assert(activityAt(a,0,0).torrent&&!activityAt(a,0,1).torrent&&!activityAt(a,0,7).entry);
+        assert(activityState(a.torrents[2],true)==ActivityState::done&&activityState(a.jobs[1],false)==ActivityState::done);
+        // A Processing task replaces its job row; waiting for Botty+ to close needs the user.
+        a.processing.count=1;a.processing.tasks[0]=Entry{};a.processing.tasks[0].task=true;a.processing.tasks[0].active=true;a.processing.tasks[0].id=a.jobs[0].id;
+        std::snprintf(a.processing.tasks[0].status.data(),a.processing.tasks[0].status.size(),"waiting-close");
+        assert(activityCount(a,0)==7&&activityCount(a,2)==3&&activityAt(a,2,1).entry==&a.processing.tasks[0]);
+        // Library keeps dismissed rows and filters by disk or compression.
+        assert(libraryCount(a,0)==3&&libraryCount(a,1)==3&&libraryCount(a,2)==0&&libraryCount(a,3)==0);
+        std::snprintf(a.jobs[3].storage.data(),a.jobs[3].storage.size(),"external-x");
+        assert(libraryCount(a,2)==1&&std::string_view(libraryAt(a,2,0)->id.data())=="j4"&&libraryCount(a,1)==2&&!libraryAt(a,2,1));
+        // A restored original keeps its compressed image, so Compressed still lists it.
+        std::snprintf(a.jobs[3].kind.data(),a.jobs[3].kind.size(),"folder");std::snprintf(a.jobs[3].compressionState.data(),a.jobs[3].compressionState.size(),"restored");
+        assert(!a.jobs[3].compressed&&libraryCount(a,3)==1&&std::string_view(libraryAt(a,3,0)->id.data())=="j4");
+        // Queued downloads wait; only transferring or verifying work counts as running.
+        std::snprintf(a.torrents[0].status.data(),a.torrents[0].status.size(),"Queued");
+        assert(activityState(a.torrents[0],true)==ActivityState::waiting&&activityCount(a,1)==0);
+        // Cancellation is terminal: extraction leftovers need the user; tasks are done.
+        Entry cancelled=a.jobs[2];std::snprintf(cancelled.status.data(),cancelled.status.size(),"cancelled");cancelled.error.fill(0);
+        assert(activityState(cancelled,false)==ActivityState::attention);
+        cancelled.task=true;cancelled.active=false;assert(activityState(cancelled,false)==ActivityState::done);
+        std::array<Operation,8> actions{};
+        assert(quickActions(&a.torrents[1],0,a,actions)==4&&actions[3]==Operation::removeTorrent&&!quickActions(&a.processing.tasks[0],1,a,actions));
+    }
     char formatted[64];formatETA(catalog.torrents[0],formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA ~17 min");
     formatETA(catalog.torrents[1],formatted,sizeof(formatted));assert(std::string_view(formatted)=="Completed");
     auto paused=catalog.torrents[0];paused.eta=-1;formatETA(paused,formatted,sizeof(formatted));assert(std::string_view(formatted)=="ETA unavailable");
@@ -187,12 +216,25 @@ int main() {
     assert(probeConnection(&catalog).status==Probe::transmissionUnavailable&&catalog.valid);
     reset("");responses={wire(health),wire(boot),wire(login),"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"};
     assert(probeConnection(&catalog).status==Probe::rejected&&!catalog.valid);
-    Model browse;browse.tab=0;browse.count=12;browse.press(Buttons::down);assert(browse.selected==1);
-    browse.press(Buttons::cross);assert(browse.details);browse.press(Buttons::circle);assert(!browse.details&&!browse.quitDialog);
+    Model browse;browse.tab=Model::activity;browse.count=12;browse.press(Buttons::down);assert(browse.selected==1);
+    browse.press(Buttons::cross);assert(browse.details);browse.press(Buttons::circle);assert(!browse.details);
     browse.press(Buttons::right);assert(browse.filter==1&&browse.selected==0);
-    browse.press(Buttons::r1);assert(browse.tab==1&&browse.selected==0);
-    browse.press(Buttons::l1);assert(browse.tab==0);
+    browse.press(Buttons::left);browse.press(Buttons::left);assert(browse.filter==3);
+    browse.press(Buttons::r1);assert(browse.tab==Model::library&&browse.selected==0&&browse.filter==0);
+    browse.press(Buttons::l1);assert(browse.tab==Model::activity);
     assert(browse.press(Buttons::options)==Model::Action::menu);
+    assert(browse.press(Buttons::square)==Model::Action::add);
+    // Circle never opens a quit dialog: Close Botty+ lives in System.
+    for(unsigned tab=0;tab<Model::tabCount;++tab){Model root;root.tab=tab;root.count=3;assert(root.press(Buttons::circle)==Model::Action::none&&root.tab==tab&&!root.details);}
+    {
+        Model tabs;assert(tabs.tab==Model::discover);tabs.press(Buttons::l1);assert(tabs.tab==Model::system);
+        tabs.press(Buttons::r1);tabs.press(Buttons::r1);tabs.press(Buttons::r1);assert(tabs.tab==Model::library);
+        // Details buttons move left/right; files page up/down; Cross runs the focused button.
+        tabs.count=4;tabs.press(Buttons::cross);assert(tabs.details&&tabs.detailButton==0);tabs.buttonCount=3;tabs.pageCount=2;
+        tabs.press(Buttons::right);tabs.press(Buttons::right);tabs.press(Buttons::right);assert(tabs.detailButton==2);
+        tabs.press(Buttons::down);tabs.press(Buttons::down);assert(tabs.detailPage==1);assert(tabs.press(Buttons::cross)==Model::Action::run);
+        assert(tabs.press(Buttons::options)==Model::Action::menu);tabs.press(Buttons::circle);assert(!tabs.details);
+    }
     // Native commands encode exact paths/passwords and never auto-replay a POST.
     Command command;command.operation=Operation::extract;std::snprintf(command.id.data(),command.id.size(),"9");
     std::snprintf(command.archive.data(),command.archive.size(),"folder/a\"b\\c.rar");
@@ -230,11 +272,26 @@ int main() {
     assert(*unavailable(Operation::move,&catalog.jobs[1],catalog));assert(*unavailable(Operation::remove,&catalog.jobs[2],catalog));
     catalog.extracting=true;assert(*unavailable(Operation::extract,&catalog.torrents[0],catalog));assert(*unavailable(Operation::move,&catalog.jobs[0],catalog));catalog.extracting=false;
     Workflow flow;flow.open(&catalog.torrents[0],0,catalog);assert(flow.options[0]==Operation::resume);
-    flow.press(Buttons::down,catalog,false);flow.press(Buttons::down,catalog,false);flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::archives);
-    flow.press(Buttons::down,catalog,false);flow.press(Buttons::cross,catalog,false);assert(std::string_view(flow.command.archive.data())=="two\".rar");
+    // One Extract sheet: archive, optional password, and the button focused first.
+    flow.press(Buttons::down,catalog,false);flow.press(Buttons::down,catalog,false);flow.press(Buttons::cross,catalog,false);
+    assert(flow.panel==Workflow::Panel::sheet&&flow.rowCount==2&&flow.focus==2&&flow.hasRow(Workflow::Row::password));
+    flow.press(Buttons::up,catalog,false);flow.press(Buttons::up,catalog,false);flow.press(Buttons::right,catalog,false);assert(flow.archiveIndex==1);
+    flow.press(Buttons::left,catalog,false);flow.press(Buttons::left,catalog,false);assert(flow.archiveIndex==0);flow.press(Buttons::right,catalog,false);
+    flow.press(Buttons::square,catalog,false);assert(flow.panel==Workflow::Panel::keyboard&&flow.command.operation==Operation::extract);
+    flow.append('x');flow.press(Buttons::circle,catalog,false);assert(flow.panel==Workflow::Panel::sheet&&!flow.command.text[0]); // Cancel keeps the old password.
+    flow.press(Buttons::square,catalog,false);
     flow.append('s');flow.append('e');flow.append('c');flow.erase();assert(std::string_view(flow.command.text.data())=="se");
-    flow.selected=48;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
-    flow.press(Buttons::right,catalog,false);assert(!flow.press(Buttons::cross,catalog,true));assert(flow.press(Buttons::cross,catalog,false));
+    flow.selected=48;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount);
+    assert(!flow.press(Buttons::cross,catalog,true)&&flow.notice[0]&&flow.panel==Workflow::Panel::sheet);
+    // A refresh that reorders the archives keeps the chosen path; one that drops it refuses.
+    std::swap(catalog.archives[catalog.torrents[0].archiveStart],catalog.archives[catalog.torrents[0].archiveStart+1]);
+    assert(flow.press(Buttons::cross,catalog,false)&&flow.archiveIndex==0);
+    assert(std::string_view(flow.command.archive.data())=="two\".rar"&&std::string_view(flow.command.text.data())=="se");
+    flow.panel=Workflow::Panel::sheet;std::snprintf(catalog.archives[catalog.torrents[0].archiveStart].data(),4096,"other.rar");
+    assert(!flow.press(Buttons::cross,catalog,false)&&std::string_view(flow.notice.data()).find("archive list changed")!=std::string_view::npos);
+    assert(std::string_view(flow.command.archive.data())=="other.rar"&&flow.panel==Workflow::Panel::sheet);
+    std::swap(catalog.archives[catalog.torrents[0].archiveStart],catalog.archives[catalog.torrents[0].archiveStart+1]);
+    std::snprintf(catalog.archives[catalog.torrents[0].archiveStart+1].data(),4096,"two\".rar");
     flow.close();assert(!flow.command.text[0]);
     flow.open(&catalog.jobs[0],1,catalog);flow.press(Buttons::cross,catalog,false);flow.press(Buttons::right,catalog,false);
     catalog.jobCount=0;assert(!flow.press(Buttons::cross,catalog,false));assert(flow.notice[0]); // Removed target cannot redirect to another job.
@@ -242,8 +299,13 @@ int main() {
     flow.unicodeInput=true;flow.append('e');flow.append('9');assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="é");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("1f680"))flow.append(c);assert(flow.finishUnicode());assert(std::string_view(flow.command.text.data())=="🚀");flow.erase();assert(!flow.command.text[0]);
     flow.unicodeInput=true;for(char c:std::string_view("d800"))flow.append(c);assert(!flow.finishUnicode());flow.close();
-    flow.add();assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
-    assert(!flow.acceptText("magnet:?xt=urn:btih:abcdef&dn=Game",catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    flow.add();assert(!flow.sourceCount&&!flow.targetName[0]); // No size or name carried over from another sheet.
+    assert(!flow.acceptText("magnet:?xt=urn:btih:",catalog,false));assert(flow.panel==Workflow::Panel::keyboard);
+    assert(!flow.acceptText("magnet:?xt=urn:btih:abcdef&dn=Game",catalog,false));
+    assert(flow.panel==Workflow::Panel::sheet&&flow.hasRow(Workflow::Row::magnet)&&flow.focus==flow.rowCount);
+    flow.press(Buttons::up,catalog,false);flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::keyboard); // Edit the link again.
+    flow.selected=48;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::sheet&&flow.rowCount==1);
+    assert(flow.press(Buttons::cross,catalog,false)&&flow.command.operation==Operation::add);
     flow.close();flow.search();catalog.searchSupported=true;catalog.stale=false;catalog.valid=true;
     assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::keyboard);
     assert(!flow.acceptText(std::string(201,'x'),catalog,false)&&flow.command.text[0]==0);
@@ -253,7 +315,7 @@ int main() {
     assert(flow.acceptText("Pokémon",catalog,false)&&flow.panel==Workflow::Panel::closed);
     assert(std::string_view(flow.command.text.data())=="Pokémon");
     flow.close();flow.panel=Workflow::Panel::keyboard;flow.command.operation=Operation::extract;
-    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::confirm&&!flow.confirm);
+    assert(!flow.acceptText("",catalog,false)&&flow.panel==Workflow::Panel::sheet); // Empty passwords are allowed.
     flow.close();
     for(const auto op:{Operation::search,Operation::extract,Operation::add}){
         flow.close();flow.panel=Workflow::Panel::keyboard;flow.command.operation=op;
@@ -268,7 +330,7 @@ int main() {
         std::string boundary=op==Operation::add?"magnet:?xt=urn:btih:":"";boundary.resize(limit,'x');
         const bool emitted=flow.acceptText(boundary,catalog,false);
         assert(emitted==(op==Operation::search)&&std::string_view(flow.command.text.data())==boundary);
-        assert(flow.panel==(op==Operation::search?Workflow::Panel::closed:Workflow::Panel::confirm));
+        assert(flow.panel==(op==Operation::search?Workflow::Panel::closed:Workflow::Panel::sheet));
     }
     flow.close();
     bool printable[127]={};printable[' ']=true;
@@ -278,15 +340,19 @@ int main() {
     Input input;Model ui;
     assert(input.update(Buttons::cross,true,0)==0); // held on launch
     assert(input.update(0,true,1)==0);
-    ui.tab=3;ui.selected=1;
+    ui.tab=Model::system;ui.selected=0;
     auto edge=input.update(Buttons::cross,true,2);
-    assert(ui.press(edge)==Model::Action::none && ui.quitDialog && !ui.confirmQuit);
+    assert(ui.press(edge)==Model::Action::update);
     assert(input.update(Buttons::cross,true,900000)==0); // no repeat for action
-    ui.press(Buttons::right);
-    assert(ui.confirmQuit);
+    // The update confirmation focuses Cancel; one held press cannot also confirm it.
+    ui.updateDialog=true;ui.confirmUpdate=false;assert(ui.press(Buttons::cross)==Model::Action::none&&!ui.updateDialog);
+    ui.updateDialog=true;ui.press(Buttons::right);
+    assert(ui.confirmUpdate);
     assert(ui.press(input.update(Buttons::cross,true,1000000))==Model::Action::none);
     input.update(0,true,1000001);
-    assert(ui.press(input.update(Buttons::cross,true,1000002))==Model::Action::quit);
+    assert(ui.press(input.update(Buttons::cross,true,1000002))==Model::Action::installUpdate);
+    ui.press(Buttons::down);ui.press(Buttons::down);ui.press(Buttons::down);assert(ui.selected==2&&ui.press(Buttons::cross)==Model::Action::quit);
+    ui.selected=1;assert(ui.press(Buttons::cross)==Model::Action::retry);
     input.update(0,false,1000003);
     assert(input.update(Buttons::cross,true,1000004)==0); // reconnect held
     input.update(0,true,1000005);
@@ -295,8 +361,8 @@ int main() {
     assert(input.update(Buttons::down,true,1400010)==Buttons::down);
     assert(input.update(Buttons::down,true,1450010)==0);
     assert(input.update(Buttons::down,true,1540010)==Buttons::down);
-    ui.quitDialog=true;ui.confirmQuit=true;ui.press(Buttons::circle);assert(!ui.quitDialog);
-    ui.press(Buttons::circle);assert(ui.quitDialog&&!ui.confirmQuit);
+    ui.updateDialog=true;ui.confirmUpdate=true;ui.press(Buttons::circle);assert(!ui.updateDialog);
+    assert(ui.press(Buttons::circle)==Model::Action::none&&ui.tab==Model::system);
     // The controller can deliver press AND release since the last rendered frame.
     InputEvents buffered;buffered.ingest(0,true,1,0);
     buffered.ingest(Buttons::options,true,2,10);buffered.ingest(0,true,3,10);
@@ -390,55 +456,74 @@ int main() {
     Command readonlyUpdate;readonlyUpdate.operation=Operation::checkNativeUpdate;assert(updateCheck.submit(readonlyUpdate));
     for(unsigned i=0;i<800;++i){updateCheck.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision&&result.status==ActionResult::Status::success);assert(request.find("POST /api/native-update/check ")!=std::string::npos);updateCheck.stop();workerAllowed=false;
-    // Start in Explore and follow the browse -> prepare -> collect journey.
-    Model searchModel;assert(searchModel.tab==5);
-    searchModel.press(Buttons::r1);assert(searchModel.tab==4);
-    searchModel.press(Buttons::l1);assert(searchModel.tab==5);
+    // Start in Discover: Explore and Search share one tab.
+    Model searchModel;assert(searchModel.tab==Model::discover);
+    searchModel.press(Buttons::r1);assert(searchModel.tab==Model::activity);
+    searchModel.press(Buttons::l1);assert(searchModel.tab==Model::discover);
     assert(searchModel.press(Buttons::triangle)==Model::Action::explore);assert(searchModel.exploreSort==1);
-    searchModel.press(Buttons::r1);searchModel.press(Buttons::r1);assert(searchModel.tab==0);
-    Model library;library.tab=2;library.count=8;
+    assert(searchModel.press(Buttons::square)==Model::Action::search);
+    assert(searchModel.press(Buttons::cross)==Model::Action::none); // Nothing to get yet.
+    searchModel.count=3;searchModel.press(Buttons::right);searchModel.press(Buttons::right);searchModel.press(Buttons::right);assert(searchModel.selected==2);
+    assert(searchModel.press(Buttons::cross)==Model::Action::get&&searchModel.press(Buttons::options)==Model::Action::compare);
+    searchModel.searchResults=true;searchModel.selected=0;searchModel.press(Buttons::down);assert(searchModel.selected==1);
+    assert(searchModel.press(Buttons::triangle)==Model::Action::none&&searchModel.exploreSort==1);
+    assert(searchModel.press(Buttons::square)==Model::Action::search&&searchModel.press(Buttons::cross)==Model::Action::get);
+    searchModel.press(Buttons::circle);assert(!searchModel.searchResults&&searchModel.tab==Model::discover);
+    searchModel.press(Buttons::r1);searchModel.press(Buttons::r1);assert(searchModel.tab==Model::library);
+    Model library;library.tab=Model::library;library.count=16;
     library.press(Buttons::right);assert(library.selected==1);
-    library.press(Buttons::down);assert(library.selected==4);
-    library.press(Buttons::down);assert(library.selected==7);
-    library.press(Buttons::right);assert(library.selected==7);
-    library.press(Buttons::up);assert(library.selected==4);
-    library.press(Buttons::left);assert(library.selected==3);
-    library.press(Buttons::cross);assert(library.details);
-    library.press(Buttons::down);assert(library.detailPage==1&&library.selected==3);
-    library.press(Buttons::circle);assert(!library.details&&library.selected==3);
+    library.press(Buttons::down);assert(library.selected==8);
+    library.press(Buttons::down);assert(library.selected==15);
+    library.press(Buttons::right);assert(library.selected==15);
+    library.press(Buttons::up);assert(library.selected==8);
+    library.press(Buttons::left);assert(library.selected==7);
+    library.press(Buttons::triangle);assert(library.filter==1&&library.selected==0);library.selected=7;
+    library.press(Buttons::cross);assert(library.details);library.pageCount=2;
+    library.press(Buttons::down);assert(library.detailPage==1&&library.selected==7);
+    library.press(Buttons::circle);assert(!library.details&&library.selected==7);
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"searchSupported":true,"search":{"query":"demo","busy":false,"adding":false,"results":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Demo","size":100,"seeders":9,"leechers":2,"added":false}]}})",catalog));
     assert(catalog.searchSupported&&catalog.resultCount==1&&catalog.results[0].peers==9);
     flow.search();flow.append('a');flow.selected=48;assert(flow.press(Buttons::cross,catalog,false));
     assert(flow.command.operation==Operation::search);
-    flow.grab(catalog.results[0]);assert(!flow.press(Buttons::cross,catalog,false));
-    flow.grab(catalog.results[0]);flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));
-    assert(flow.command.operation==Operation::grab);
+    // A search result needs one press on the focused Get game button; busy waits.
+    flow.grab(catalog.results[0],catalog);assert(flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount&&flow.rowCount==1);
+    assert(!flow.press(Buttons::cross,catalog,true)&&flow.notice[0]&&flow.panel==Workflow::Panel::sheet);
+    assert(flow.press(Buttons::cross,catalog,false));
+    assert(flow.command.operation==Operation::grab&&std::string_view(flow.command.id.data())=="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"completed","busy":false,"results":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Demo PS5","size":123,"seeders":4,"completed":77,"published":"2026-10-01T12:00:00Z"}]}})",catalog));
     assert(catalog.exploreSupported&&catalog.exploreCount==1&&catalog.exploreResults[0].completedCount==77);
-    flow.grab(catalog.exploreResults[0],true);flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(flow.command.operation==Operation::exploreGrab);
+    flow.chooseSources(catalog.exploreResults[0],catalog);assert(flow.press(Buttons::cross,catalog,false));assert(flow.command.operation==Operation::exploreGrab);
     assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[],"exploreSupported":true,"explore":{"sort":"seeders","results":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Demo PS5","sources":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tracker":"Tracker One","name":"Demo PS5","size":100,"seeders":20,"leechers":2,"completed":12},{"id":"cccccccccccccccccccccccccccccccc","tracker":"Tracker Two","name":"Demo PS5 Deluxe","size":200,"seeders":3,"completed":50}]}]}})",catalog));
     assert(catalog.exploreResults[0].sourceCount==2&&catalog.sourceCount==2&&catalog.sources[1].grabs==50&&catalog.sources[1].size==200);
-    flow.chooseSources(catalog.exploreResults[0],catalog);assert(flow.panel==Workflow::Panel::sources);
-    assert(!flow.press(Buttons::down,catalog,false)&&flow.selected==1);
-    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::confirm&&!flow.confirm);
-    assert(std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");
-    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::closed); // Cancel defaults to no download.
-    catalog.storageSupported=true;flow.chooseSources(catalog.exploreResults[0],catalog);
-    catalog.exploreBusy=true;assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sources);catalog.exploreBusy=false;
-    assert(std::string_view(Model::exploreSorts[0])=="newest"&&std::string_view(Model::exploreSorts[1])=="completed"&&std::string_view(Model::exploreSorts[2])=="seeders");
+    // The best-seeded source is preselected; Compare focuses the source row.
+    flow.chooseSources(catalog.exploreResults[0],catalog);assert(flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount);
+    assert(flow.sourceIndex==0&&std::string_view(flow.command.id.data())=="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    flow.chooseSources(catalog.exploreResults[0],catalog,true);assert(flow.focus==0);
+    assert(!flow.press(Buttons::right,catalog,false)&&flow.sourceIndex==1&&std::string_view(flow.targetName.data())=="Demo PS5 Deluxe");
+    assert(std::string_view(flow.gameName.data())=="Demo PS5"&&std::string_view(flow.gameId.data())=="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); // The sheet keeps its game.
+    flow.press(Buttons::right,catalog,false);assert(flow.sourceIndex==1); // No wrap past the last source.
+    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount); // Cross on a row returns to the button.
+    assert(flow.press(Buttons::cross,catalog,false)&&std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");
+    catalog.storageSupported=true;flow.chooseSources(catalog.exploreResults[0],catalog);assert(flow.hasRow(Workflow::Row::storage)&&flow.hasRow(Workflow::Row::mode));
+    catalog.exploreBusy=true;assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sheet&&std::string_view(flow.notice.data()).find("Browse sources")!=std::string_view::npos);catalog.exploreBusy=false;
+    assert(std::string_view(Model::exploreSorts[0])=="newest"&&std::string_view(Model::exploreSorts[1])=="seeders"&&std::string_view(Model::exploreSorts[2])=="completed");
     assert(std::string_view(Model::exploreLabels[0])=="Newest");
-    assert(std::string_view(Model::exploreLabels[1])=="Most grabbed"&&std::string_view(Model::exploreLabels[2])=="Most seeded");
-    flow.chooseSources(catalog.exploreResults[0],catalog);flow.press(Buttons::down,catalog,true);assert(flow.selected==1);
-    assert(!flow.press(Buttons::cross,catalog,true)&&flow.panel==Workflow::Panel::sources&&!flow.notice[0]);
-    catalog.exploreBusy=true;flow.chooseSources(catalog.exploreResults[0],catalog);
-    flow.press(Buttons::down,catalog,false);assert(flow.selected==1);
-    assert(!flow.press(Buttons::cross,catalog,false)&&std::string_view(unavailable(Operation::exploreGrab,nullptr,catalog)).find("Browse sources")!=std::string_view::npos&&!flow.notice[0]);
-    catalog.exploreBusy=false;flow.press(Buttons::cross,catalog,false);assert(flow.panel==Workflow::Panel::storage&&std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");
-    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::storage);flow.press(Buttons::circle,catalog,false);assert(flow.panel==Workflow::Panel::closed);catalog.storageSupported=false;
+    assert(std::string_view(Model::exploreLabels[1])=="Most seeded"&&std::string_view(Model::exploreLabels[2])=="Most grabbed");
+    flow.chooseSources(catalog.exploreResults[0],catalog,true);flow.press(Buttons::right,catalog,true);assert(flow.sourceIndex==1); // Browsing works while busy.
+    flow.press(Buttons::down,catalog,true);flow.press(Buttons::down,catalog,true);flow.press(Buttons::down,catalog,true);
+    assert(!flow.press(Buttons::cross,catalog,true)&&flow.panel==Workflow::Panel::sheet&&flow.notice[0]);
+    // No connected disk: the sheet stays open and explains why.
+    assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sheet&&std::string_view(flow.notice.data()).find("disk")!=std::string_view::npos);
+    flow.press(Buttons::circle,catalog,false);assert(flow.panel==Workflow::Panel::closed);catalog.storageSupported=false;
     command=Command{};command.operation=Operation::explore;std::snprintf(command.text.data(),command.text.size(),"completed");assert(encodeCommand(command,encoded.data(),encoded.size(),encodedSize));
     assert(parseCatalog(actionable,catalog));catalog.torrentRemovalSupported=true;
-    flow.open(&catalog.torrents[0],0,catalog);assert(flow.options[3]==Operation::removeTorrent);flow.selected=3;assert(!flow.press(Buttons::cross,catalog,false));assert(flow.panel==Workflow::Panel::confirm&&!flow.confirm);
-    flow.press(Buttons::right,catalog,false);assert(flow.press(Buttons::cross,catalog,false));assert(encodeCommand(flow.command,encoded.data(),encoded.size(),encodedSize));assert(std::string_view(encoded.data())==R"({"id":9,"action":"remove-data","confirmed":true})");
+    flow.open(&catalog.torrents[0],0,catalog);assert(flow.options[3]==Operation::removeTorrent);flow.selected=3;assert(!flow.press(Buttons::cross,catalog,false));
+    assert(flow.panel==Workflow::Panel::menu&&flow.confirming&&!flow.confirm);
+    assert(!flow.press(Buttons::cross,catalog,false)&&!flow.confirming&&flow.panel==Workflow::Panel::menu); // Cancel is focused first.
+    flow.press(Buttons::cross,catalog,false);flow.press(Buttons::up,catalog,false);assert(flow.selected==3&&flow.confirming);
+    flow.press(Buttons::circle,catalog,false);assert(!flow.confirming&&flow.panel==Workflow::Panel::menu); // Circle backs out of the confirmation only.
+    flow.press(Buttons::cross,catalog,false);flow.press(Buttons::right,catalog,false);assert(!flow.press(Buttons::cross,catalog,true)&&flow.confirming);
+    assert(flow.press(Buttons::cross,catalog,false));assert(encodeCommand(flow.command,encoded.data(),encoded.size(),encodedSize));assert(std::string_view(encoded.data())==R"({"id":9,"action":"remove-data","confirmed":true})");
     catalog.extracting=true;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));catalog.extracting=false;catalog.torrentRemovalSupported=false;assert(*unavailable(Operation::removeTorrent,&catalog.torrents[0],catalog));
     std::cout<<"Protocol fragmentation, failure cleanup, bounded responses, API versions, focus and input tests passed\n";
     {
@@ -447,7 +532,7 @@ int main() {
         Workflow menu;menu.open(&lib.jobs[0],2,lib);
         assert(menu.optionCount==1&&menu.options[0]==Operation::removeLibrary);
         assert(!*unavailable(Operation::removeLibrary,&lib.jobs[0],lib));
-        assert(!menu.press(Buttons::cross,lib,false));assert(menu.panel==Workflow::Panel::confirm&&!menu.confirm);
+        assert(!menu.press(Buttons::cross,lib,false));assert(menu.panel==Workflow::Panel::menu&&menu.confirming&&!menu.confirm);
         menu.press(Buttons::right,lib,false);assert(menu.press(Buttons::cross,lib,false));
         char body[256];std::size_t length=0;assert(encodeCommand(menu.command,body,sizeof(body),length));
         assert(std::string_view(body).find("\"confirmed\":true")!=std::string_view::npos);
@@ -459,8 +544,9 @@ int main() {
         static Catalog beta;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"compression":{"supported":true,"busy":false,"status":"idle"},"torrents":[],"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"LEGO","status":"moved","content":{"kind":"folder","titleId":"PPSA23732"}}]})",beta));
         Workflow menu;menu.open(&beta.jobs[0],2,beta);assert(menu.options[0]==Operation::compress);
         assert(!*unavailable(Operation::compress,&beta.jobs[0],beta));
-        assert(!menu.press(Buttons::cross,beta,false));assert(!menu.confirm);
-        menu.press(Buttons::right,beta,false);assert(menu.press(Buttons::cross,beta,false));
+        // Compression is not destructive: its sheet starts on the Compress button.
+        assert(!menu.press(Buttons::cross,beta,false));assert(menu.panel==Workflow::Panel::sheet&&!menu.rowCount&&!menu.confirming);
+        assert(menu.press(Buttons::cross,beta,false));
         char body[256];std::size_t length=0;assert(encodeCommand(menu.command,body,sizeof(body),length));
         assert(std::string_view(body)==R"({"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","confirmed":true})");
         assert(std::string_view(actionPath(menu.command.operation))=="/api/compress-game");
@@ -497,7 +583,7 @@ int main() {
         assert(*unavailable(Operation::removeLibrary,&e,release)); // Old service must not pretend to support deletion.
         release.compressedDeletionSupported=true;release.transmissionReady=false;
         assert(!*unavailable(Operation::removeLibrary,&e,release)); // No torrent or archive required.
-        assert(!w.press(Buttons::cross,release,false)&&w.panel==Workflow::Panel::confirm&&!w.confirm);
+        assert(!w.press(Buttons::cross,release,false)&&w.panel==Workflow::Panel::menu&&w.confirming&&!w.confirm);
         w.press(Buttons::right,release,false);assert(w.press(Buttons::cross,release,false));
         assert(w.command.operation==Operation::removeLibrary);
         release.compressionBusy=true;assert(*unavailable(Operation::removeLibrary,&e,release));
@@ -508,11 +594,28 @@ int main() {
         static Catalog c;assert(parseCatalog(R"({"freeBytes":123,"transmissionReady":true,"searchSupported":true,"torrents":[],"jobs":[],"storageSupported":true,"storage":[{"id":"internal","label":"Internal SSD","available":true,"freeBytes":123},{"id":"external-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"External SSD","available":true,"freeBytes":999}]})",c));
         assert(c.storageCount==2&&c.storage[1].freeBytes==999);
         Entry game;std::snprintf(game.id.data(),game.id.size(),"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        Workflow w;w.grab(game,false,true);assert(w.panel==Workflow::Panel::storage);
-        w.press(Buttons::down,c,false);w.press(Buttons::cross,c,false);assert(w.panel==Workflow::Panel::mode);
-        w.press(Buttons::down,c,false);assert(!w.command.automatic);w.press(Buttons::cross,c,false);assert(w.panel==Workflow::Panel::confirm&&!w.confirm);
-        w.press(Buttons::right,c,false);c.storage[1].available=false;assert(!w.press(Buttons::cross,c,false));c.storage[1].available=true;assert(w.press(Buttons::cross,c,false));
+        // One Get game sheet: source, install-on and after-download rows, button focused.
+        Workflow w;w.grab(game,c);assert(w.panel==Workflow::Panel::sheet&&w.rowCount==3&&w.focus==3);
+        assert(w.command.automatic&&std::string_view(w.command.storage.data())=="internal");
+        w.press(Buttons::up,c,false);w.press(Buttons::right,c,false);assert(!w.command.automatic);
+        w.press(Buttons::up,c,false);w.press(Buttons::right,c,false);assert(w.command.storage==c.storage[1].id);
+        w.press(Buttons::right,c,false);assert(w.command.storage==c.storage[1].id); // Last disk: no wrap.
+        w.press(Buttons::down,c,false);w.press(Buttons::down,c,false);assert(w.focus==3);
+        c.storage[1].available=false;assert(!w.press(Buttons::cross,c,false)&&w.notice[0]);c.storage[1].available=true;assert(w.press(Buttons::cross,c,false));
         char body[512];size_t n=0;assert(encodeCommand(w.command,body,sizeof(body),n));assert(std::string_view(body).find("\"automatic\":false")!=std::string_view::npos);assert(std::string_view(body).find(c.storage[1].id.data())!=std::string_view::npos);
+        // The last disk and mode are remembered, and dropped if that disk disconnects.
+        w.grab(game,c);assert(w.command.storage==c.storage[1].id&&!w.command.automatic);
+        c.storage[1].available=false;w.grab(game,c);assert(std::string_view(w.command.storage.data())=="internal");c.storage[1].available=true;
+        // Moving to another disk never offers the current one.
+        static Catalog disks;disks=c;disks.jobCount=1;auto& moved=disks.jobs[0];moved=Entry{};std::snprintf(moved.id.data(),moved.id.size(),"job");std::snprintf(moved.name.data(),moved.name.size(),"Game");
+        std::snprintf(moved.status.data(),moved.status.size(),"moved");std::snprintf(moved.storage.data(),moved.storage.size(),"internal");std::snprintf(moved.kind.data(),moved.kind.size(),"folder");
+        disks.valid=true;disks.transmissionReady=true;
+        Workflow move;move.open(&moved,2,disks);assert(!move.choose(Operation::transfer,disks,false)&&move.panel==Workflow::Panel::sheet);
+        assert(move.command.storage==disks.storage[1].id);move.press(Buttons::up,disks,false);move.press(Buttons::left,disks,false);assert(move.command.storage==disks.storage[1].id);
+        move.press(Buttons::down,disks,false);assert(move.press(Buttons::cross,disks,false)&&move.command.operation==Operation::transfer);
+        // Safe actions run at once; destructive ones always confirm first.
+        assert(Workflow::immediate(Operation::pause)&&Workflow::immediate(Operation::verify)&&!Workflow::immediate(Operation::extract));
+        for(auto op:{Operation::removeTorrent,Operation::removeLibrary,Operation::removeOriginal,Operation::restoreOriginal,Operation::remove,Operation::dismiss,Operation::cancel,Operation::cancelCompression})assert(Workflow::destructive(op)&&!Workflow::immediate(op));
         Command cmd;cmd.operation=Operation::transfer;cmd.torrent=true;std::snprintf(cmd.id.data(),cmd.id.size(),"42");cmd.storage=c.storage[1].id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).starts_with("{\"id\":42"));assert(std::string_view(body).find("\"kind\":\"torrent\"")!=std::string_view::npos);
         cmd.torrent=false;cmd.id=game.id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"kind\":\"job\"")!=std::string_view::npos);
     }

@@ -53,11 +53,13 @@ public:
         out=connection_;if(result)*result=result_;if(busy)*busy=busy_.load();if(catalog&&catalog->revision!=catalog_.revision)*catalog=catalog_;gate_.clear(std::memory_order_release);return true;
     }
 };
-using CoverIds=std::array<std::array<char,96>,6>;
+// Enough slots for two Library rows; the Discover shelf and lists use fewer.
+inline constexpr unsigned coverSlots=14;
+using CoverIds=std::array<std::array<char,96>,coverSlots>;
 struct ArtworkPage {
     CoverIds ids{};
-    std::array<std::array<unsigned char,160*240*3>,6> pixels{};
-    std::array<bool,6> ready{};
+    std::array<std::array<unsigned char,160*240*3>,coverSlots> pixels{};
+    std::array<bool,coverSlots> ready{};
     unsigned revision=0;
 };
 class Artwork final {

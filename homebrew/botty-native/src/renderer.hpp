@@ -40,16 +40,26 @@ class Canvas final
     }
     bool take_resumed() noexcept {const bool result=resumed_;resumed_=false;return result;}
     bool take_dirty() noexcept {const bool result=dirty_;dirty_=false;return result;}
-    void poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
+    // Crop fills the box like CSS "cover"; radius and alpha mask the result.
+    void poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,
+                unsigned radius=0,unsigned alpha=255,bool crop=false) noexcept;
     void gameCase(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
     void clear(Color color) noexcept;
     void backdrop(bool subdued) noexcept;
     void gradient(unsigned x,unsigned y,unsigned width,unsigned height,Color top,Color bottom) noexcept;
+    // Blends one color with linearly interpolated opacity, for hero scrims.
+    void fade(unsigned x,unsigned y,unsigned width,unsigned height,Color color,unsigned from,unsigned to,bool horizontal) noexcept;
     bool illustration(unsigned asset,unsigned x,unsigned y,unsigned width,unsigned height) noexcept;
     void shade(unsigned alpha) noexcept;
-    void rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color) noexcept;
-    unsigned text_width(std::string_view text,unsigned size) const noexcept;
-    void label(unsigned x,unsigned y,std::string_view text,unsigned size,Color color) noexcept;
+    void rounded(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color color,unsigned alpha=255) noexcept;
+    // UTF-8 text; weights of 700 and above use the bold face. Tracking is in pixels.
+    unsigned text_width(std::string_view text,unsigned size,unsigned weight=600,int tracking=0) const noexcept;
+    void label(unsigned x,unsigned y,std::string_view text,unsigned size,Color color,unsigned weight=600,int tracking=0) noexcept;
+    // Antialiased round-capped segment and circle outline for controller glyphs.
+    void stroke(float x0,float y0,float x1,float y1,float width,Color color) noexcept;
+    void ring(float center_x,float center_y,float radius,float width,Color color) noexcept;
+    // Rounds the corners of an already drawn rectangle against its surroundings.
+    void clip_corners(unsigned x,unsigned y,unsigned width,unsigned height,unsigned radius,Color behind) noexcept;
     void rectangle(unsigned x, unsigned y, unsigned width, unsigned height, Color color) noexcept;
     void circle(unsigned center_x, unsigned center_y, unsigned radius, Color color) noexcept;
     void triangle(unsigned center_x, unsigned top, unsigned half_width, unsigned height,
