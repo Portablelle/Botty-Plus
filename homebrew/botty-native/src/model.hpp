@@ -61,7 +61,8 @@ struct Model {
     enum Tab : unsigned { discover=0, activity=1, library=2, system=3 };
     static constexpr unsigned tabCount=4, libraryColumns=7, systemItems=3;
     unsigned tab=discover, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
-    unsigned detailButton=0, buttonCount=0;
+    // Details buttons and file pages; the app derives both counts before input.
+    unsigned detailButton=0, buttonCount=0, pageCount=1;
     bool details=false, searchResults=false;
     // Inline System confirmation; Cancel stays focused until moved explicitly.
     bool updateDialog=false, confirmUpdate=false;
@@ -88,7 +89,7 @@ struct Model {
         if(details){
             if((edge&Buttons::right)&&detailButton+1<buttonCount)++detailButton;
             if((edge&Buttons::left)&&detailButton)--detailButton;
-            if(edge&Buttons::down)++detailPage;
+            if((edge&Buttons::down)&&detailPage+1<pageCount)++detailPage;
             if((edge&Buttons::up)&&detailPage)--detailPage;
             if(edge&Buttons::options)return Action::menu;
             if((edge&Buttons::cross)&&buttonCount)return Action::run;

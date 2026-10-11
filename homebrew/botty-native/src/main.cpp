@@ -770,6 +770,44 @@ void drawActivity(Canvas& c,const char* detail) noexcept {
 }
 
 // --- Details ------------------------------------------------------------------
+// Details layout, derived once before input and again for painting: rendering never
+// changes navigation state. Every line wraps to the panel; nothing is cut off.
+struct DetailLayout {
+    std::array<Op,8> actions{};std::array<unsigned,8> widths{};unsigned actionCount=0,buttons=0;
+    std::array<std::string_view,256> rows{};unsigned rowCount=0,errorRows=0;
+    std::array<char,64> title{};
+};
+DetailLayout detailView;
+void detailLayout(Canvas& c,const Focus& f,DetailLayout& out) noexcept {
+    out=DetailLayout{};if(!f.entry)return;
+    const auto& e=*f.entry;const bool library=model.tab==Model::library;
+    out.actionCount=botty::quickActions(&e,workflowTab(f),catalog,out.actions);
+    unsigned x=96;
+    for(unsigned i=0;i<out.actionCount;++i){
+        const unsigned w=56+width(c,buttonLabel(out.actions[i]),24,bold)+(out.actions[i]==Op::pause?32:0);
+        if(x+w>1824)break;out.widths[i]=w;x+=w+14;++out.buttons;
+    }
+    const auto add=[&](std::string_view value){
+        while(!value.empty()&&out.rowCount<out.rows.size()){
+            const auto end=value.find('\n');auto line=end==std::string_view::npos?value:botty::slice(value,0,end);
+            while(!line.empty()&&out.rowCount<out.rows.size()){
+                auto take=fitting(c,line,24,regular,0,860);if(!take)take=codepointEnd(line,0);
+                out.rows[out.rowCount++]=botty::slice(line,0,take);line.remove_prefix(take);
+            }
+            if(end==std::string_view::npos)break;
+            value.remove_prefix(end+1);
+        }
+    };
+    if(e.error[0]){add(e.error.data());out.errorRows=out.rowCount;}
+    if(f.torrent){std::snprintf(out.title.data(),out.title.size(),"Files \xc2\xb7 %u",e.fileCount);add(e.files.data());}
+    else {
+        std::snprintf(out.title.data(),out.title.size(),"%s",library?"Location":"Details");
+        if(e.currentFile[0])add(e.currentFile.data());
+        if(e.destination[0])add(e.destination.data());
+        if(library&&catalog.library[0])add(catalog.library.data());
+        if(e.phase[0]&&!e.task)add(e.phase.data());
+    }
+}
 void stat(Canvas& c,unsigned& x,const char* value,const char* label) noexcept {
     text(c,static_cast<int>(x),434,value,32,40,ink,bold);text(c,static_cast<int>(x),478,label,20,24,muted);
     x+=std::max(width(c,value,32,bold),width(c,label,20))+56;
@@ -815,42 +853,33 @@ void drawDetails(Canvas& c,const Focus& f) noexcept {
         stat(c,x,left[0]?left:"\xe2\x80\x94","Left (current phase)");
     }
     // Buttons mirror Quick actions. Pause, Resume and Verify run immediately.
-    std::array<Op,8> actions{};const unsigned actionCount=botty::quickActions(&e,workflowTab(f),catalog,actions);
-    unsigned bx=96,shown=0;
-    for(unsigned i=0;i<actionCount;++i){
-        const auto op=actions[i];const char* label=buttonLabel(op);const bool risky=botty::Workflow::destructive(op);
-        const bool pauseIcon=op==Op::pause;const unsigned w=56+width(c,label,24,bold)+(pauseIcon?32:0);
-        if(bx+w>1824)break;
+    auto& layout=detailView;detailLayout(c,f,layout);
+    unsigned bx=96;
+    for(unsigned shown=0;shown<layout.buttons;++shown){
+        const auto op=layout.actions[shown];const char* label=buttonLabel(op);const bool risky=botty::Workflow::destructive(op);
+        const bool pauseIcon=op==Op::pause;const unsigned w=layout.widths[shown];
         const bool focus=model.detailButton==shown;const bool enabled=!*botty::unavailable(op,&e,catalog);
         if(focus){focusRing(c,bx,565,w,64,18,4,bg);c.rounded(bx,565,w,64,12,ink);}
         else if(risky)c.rounded(bx,565,w,64,12,danger,31);else c.rounded(bx,565,w,64,12,ink,26);
         unsigned tx=bx+28;
         if(pauseIcon){const Color icon=focus?bg:ink;c.rounded(tx+3,586,5,18,2,icon);c.rounded(tx+12,586,5,18,2,icon);tx+=32;}
         middle(c,static_cast<int>(tx),565,64,label,24,focus?bg:!enabled?faint:risky?danger:ink,bold);
-        bx+=w+14;++shown;
+        bx+=w+14;
     }
-    model.buttonCount=shown;if(model.detailButton>=shown&&shown)model.detailButton=shown-1;
-    const auto op=shown?actions[model.detailButton]:Op::none;const char* reason=op!=Op::none?botty::unavailable(op,&e,catalog):"";
+    const auto op=model.detailButton<layout.buttons?layout.actions[model.detailButton]:Op::none;const char* reason=op!=Op::none?botty::unavailable(op,&e,catalog):"";
     const char* note=detailNotice[0]?detailNotice.data():*reason?reason:op!=Op::none?explain(op,&e):e.task?"This task is followed here until it finishes.":"";
     wrap(c,96,656,note,20,24,1180,2,detailNotice[0]||*reason?warning:muted);
-    // Files, destination and errors; up/down pages through them.
-    std::array<std::string_view,40> rows{};unsigned rowCount=0;
-    const auto addLines=[&](std::string_view value){while(!value.empty()&&rowCount<rows.size()){const auto n=value.find('\n');const auto row=n==std::string_view::npos?value:botty::slice(value,0,n);if(!row.empty())rows[rowCount++]=row;if(n==std::string_view::npos)break;value.remove_prefix(n+1);}};
-    char title[64];
-    if(e.error[0])addLines(e.error.data());
-    if(f.torrent){std::snprintf(title,sizeof(title),"Files \xc2\xb7 %u",e.fileCount);addLines(e.files.data());}
-    else {std::snprintf(title,sizeof(title),library?"Location":"Details");if(e.currentFile[0])addLines(e.currentFile.data());if(e.destination[0])addLines(e.destination.data());if(library&&catalog.library[0])addLines(catalog.library.data());if(e.phase[0]&&!e.task)addLines(e.phase.data());}
-    if(rowCount){
-        const unsigned pages=(rowCount+2)/3;if(model.detailPage>=pages){model.detailPage=pages-1;++displayRevision;}
-        eyebrow(c,96,760,title,muted);
-        if(pages>1){char more[48];std::snprintf(more,sizeof(more),"%u / %u \xc2\xb7 \xe2\x86\x93 to see more",model.detailPage+1,pages);text(c,static_cast<int>(956-width(c,more,20)),760,more,20,24,faint);}
-        for(unsigned i=0;i<3&&model.detailPage*3+i<rowCount;++i){
-            const unsigned y=796+i*52;c.rectangle(96,y,860,1,line);
-            const auto row=rows[model.detailPage*3+i];const bool error=e.error[0]&&row.data()==e.error.data();
-            fit(c,96,static_cast<int>(y+11),row,24,30,860,error?warning:i==2?muted:ink);
-            if(i==2||model.detailPage*3+i+1==rowCount)c.rectangle(96,y+52,860,1,line);
+    // Files, destination and errors; up/down pages through every wrapped row.
+    if(layout.rowCount){
+        const unsigned pages=(layout.rowCount+2)/3,page=std::min(model.detailPage,pages-1);
+        eyebrow(c,96,760,layout.title.data(),muted);
+        if(pages>1){char more[48];std::snprintf(more,sizeof(more),"%u / %u \xc2\xb7 \xe2\x86\x93 to see more",page+1,pages);text(c,static_cast<int>(956-width(c,more,20)),760,more,20,24,faint);}
+        for(unsigned i=0;i<3&&page*3+i<layout.rowCount;++i){
+            const unsigned y=796+i*52,index=page*3+i;c.rectangle(96,y,860,1,line);
+            text(c,96,static_cast<int>(y+11),layout.rows[index],24,30,index<layout.errorRows?warning:ink);
+            if(i==2||index+1==layout.rowCount)c.rectangle(96,y+52,860,1,line);
         }
-    }else model.detailPage=0;
+    }
     unsigned hx=96;hx=hint(c,hx,Glyph::cross,"Select",true);hx=hint(c,hx,Glyph::menu,"Quick actions");hint(c,hx,Glyph::circle,library?"Back to Library":"Back to Activity");
     footerRight(c,nullptr);
 }
@@ -1268,6 +1297,13 @@ bool draw(Canvas& c) noexcept {
     if(edge)++displayRevision;
     // A failure stays visible until Circle, and that press only dismisses it.
     if(toast.visible&&toast.kind==Toast::Kind::error&&(edge&botty::Buttons::circle)){toast.visible=false;edge&=~botty::Buttons::circle;}
+    // Details navigation counts come from the current entry before input is handled.
+    if(model.details){
+        detailLayout(c,focused(),detailView);
+        model.buttonCount=detailView.buttons;model.pageCount=std::max(1U,(detailView.rowCount+2)/3);
+        if(model.detailButton>=model.buttonCount)model.detailButton=model.buttonCount?model.buttonCount-1:0;
+        if(model.detailPage>=model.pageCount)model.detailPage=model.pageCount-1;
+    }
     if(workflow.panel!=Panel::closed){
         unsigned workflowEdge=edge;
         if(workflow.panel==Panel::keyboard&&textEntryState!=TextEntryState::fallback){
@@ -1327,10 +1363,9 @@ bool draw(Canvas& c) noexcept {
         }
         if(action==Action::run){
             const auto f=focused();
-            // Resolve the button from the current entry, not from the last painted frame.
-            std::array<Op,8> actions{};const unsigned actionCount=f.entry?botty::quickActions(f.entry,workflowTab(f),catalog,actions):0;
-            if(model.detailButton<actionCount&&model.detailButton<model.buttonCount){
-                const auto op=actions[model.detailButton];
+            // detailView was derived from this entry before input, not from the last paint.
+            if(f.entry&&model.detailButton<detailView.buttons){
+                const auto op=detailView.actions[model.detailButton];
                 workflow.open(f.entry,workflowTab(f),catalog);
                 if(workflow.choose(op,catalog,network.busy()))submitWorkflow();
                 else if(workflow.panel==Panel::menu&&!workflow.confirming){detailNotice.fill(0);std::copy_n(workflow.notice.begin(),detailNotice.size()-1,detailNotice.begin());workflow.close();}
