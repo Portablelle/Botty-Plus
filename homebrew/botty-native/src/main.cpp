@@ -233,11 +233,14 @@ void progress(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,double value
     if(filled)c.rounded(x,y,std::max(filled,h),h,h/2,color);
 }
 
-std::array<char,96> artworkId(const botty::Entry& entry,char source) noexcept {
-    if(source=='e')return entry.id;
+std::array<char,96> artworkId(const std::array<char,96>& entryId,char source) noexcept {
+    if(source=='e')return entryId;
     std::array<char,96> id{};
-    std::snprintf(id.data(),id.size(),"%c:%.93s",source,entry.id.data());return id;
+    std::snprintf(id.data(),id.size(),"%c:%.93s",source,entryId.data());return id;
 }
+std::array<char,96> artworkId(const botty::Entry& entry,char source) noexcept {return artworkId(entry.id,source);}
+// Cover of the game a Get game sheet opened for: Explore ids are raw, search ids prefixed.
+std::array<char,96> sheetCover() noexcept {return artworkId(workflow.gameId,workflow.command.operation==botty::Operation::grab?'s':'e');}
 const std::array<unsigned char,160*240*3>* coverFor(const std::array<char,96>& id) noexcept {
     if(!id[0])return nullptr;
     for(unsigned i=0;i<covers.ids.size();++i)if(covers.ready[i]&&covers.ids[i]==id)return &covers.pixels[i];
@@ -1004,12 +1007,11 @@ void drawSheet(Canvas& c) noexcept {
     const char* kicker=op==Op::add?"Add a magnet link":op==Op::extract?"Extract":op==Op::transfer?"Move to another disk":op==Op::move?"Move to Library":op==Op::compress?"Compress game":"Get game";
     std::string_view name=workflow.targetName.data();
     if(op==Op::exploreGrab){
-        if(model.selected<catalog.exploreCount&&!model.searchResults)cover=catalog.exploreResults[model.selected].id;
+        cover=sheetCover();name=workflow.gameName.data();
         const auto& source=workflow.sources[workflow.sourceIndex];botty::formatBytes(source.size,size,sizeof(size));
         std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 PS5 \xc2\xb7 %u source%s",size,workflow.sourceCount,workflow.sourceCount==1?"":"s");
-        if(!model.searchResults&&model.selected<catalog.exploreCount)name=catalog.exploreResults[model.selected].name.data();
     }else if(op==Op::grab){
-        cover=artworkId(catalog.results[std::min(model.selected,99U)],'s');
+        cover=sheetCover();name=workflow.gameName.data();
         botty::formatBytes(workflow.sources[0].size,size,sizeof(size));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 search result",size);
     }else if(op==Op::add){name="Magnet link";std::snprintf(line1,sizeof(line1),"Added from a link you entered");}
     else if(target){
@@ -1026,11 +1028,13 @@ void drawSheet(Canvas& c) noexcept {
         const char* tag=nullptr;Color tagColor=success;
         if(row==Row::source){
             std::snprintf(label,sizeof(label),"Source");const auto& s=workflow.sources[workflow.sourceIndex];
-            std::snprintf(value,sizeof(value),"%s",s.tracker[0]?s.tracker.data():"Tracker");
+            // The release name tells editions apart; the indexer and counts follow.
+            std::snprintf(value,sizeof(value),"%s",s.name[0]?s.name.data():s.tracker[0]?s.tracker.data():"Release");
             unsigned best=0;for(unsigned i=1;i<workflow.sourceCount;++i)if(workflow.sources[i].seeders>workflow.sources[best].seeders)best=i;
             if(workflow.sourceCount>1&&workflow.sourceIndex==best)tag="BEST";
             char seeds[24],bytes[48];grouped(s.seeders,seeds,sizeof(seeds));botty::formatBytes(s.size,bytes,sizeof(bytes));
-            if(s.published[0])std::snprintf(sub,sizeof(sub),"%s seeders \xc2\xb7 %s \xc2\xb7 %.10s",seeds,bytes,s.published.data());else std::snprintf(sub,sizeof(sub),"%s seeders \xc2\xb7 %s",seeds,bytes);
+            const char* tracker=s.tracker[0]?s.tracker.data():"Prowlarr";
+            if(s.published[0])std::snprintf(sub,sizeof(sub),"%s \xc2\xb7 %s seeders \xc2\xb7 %s \xc2\xb7 %.10s",tracker,seeds,bytes,s.published.data());else std::snprintf(sub,sizeof(sub),"%s \xc2\xb7 %s seeders \xc2\xb7 %s",tracker,seeds,bytes);
             index=workflow.sourceIndex;count=workflow.sourceCount;showArrows=true;
         }else if(row==Row::magnet){
             std::snprintf(label,sizeof(label),"Magnet link");
@@ -1205,8 +1209,7 @@ bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept
 void submitWorkflow() noexcept {
     const auto op=workflow.command.operation;
     std::array<char,96> cover{};std::string_view name=workflow.targetName.data();
-    if(op==Op::exploreGrab&&model.selected<catalog.exploreCount)cover=catalog.exploreResults[model.selected].id;
-    else if(op==Op::grab&&model.selected<catalog.resultCount)cover=artworkId(catalog.results[model.selected],'s');
+    if(op==Op::exploreGrab||op==Op::grab){cover=sheetCover();name=workflow.gameName.data();}
     else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==0?'t':'j');
     if(op==Op::add)name="Magnet link";
     if(send(workflow.command,name,cover,op==Op::search)){

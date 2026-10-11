@@ -493,6 +493,7 @@ int main() {
     assert(flow.sourceIndex==0&&std::string_view(flow.command.id.data())=="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     flow.chooseSources(catalog.exploreResults[0],catalog,true);assert(flow.focus==0);
     assert(!flow.press(Buttons::right,catalog,false)&&flow.sourceIndex==1&&std::string_view(flow.targetName.data())=="Demo PS5 Deluxe");
+    assert(std::string_view(flow.gameName.data())=="Demo PS5"&&std::string_view(flow.gameId.data())=="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); // The sheet keeps its game.
     flow.press(Buttons::right,catalog,false);assert(flow.sourceIndex==1); // No wrap past the last source.
     assert(!flow.press(Buttons::cross,catalog,false)&&flow.panel==Workflow::Panel::sheet&&flow.focus==flow.rowCount); // Cross on a row returns to the button.
     assert(flow.press(Buttons::cross,catalog,false)&&std::string_view(flow.command.id.data())=="cccccccccccccccccccccccccccccccc");

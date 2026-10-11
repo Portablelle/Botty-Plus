@@ -42,6 +42,9 @@ struct Workflow {
     // Target source: 0 download, 1 Activity job, 2 Library game.
     unsigned targetTab=0,sourceCount=0;
     std::array<DownloadSource,32> sources{};
+    // The game a Get game sheet opened for; catalog refreshes cannot change it.
+    std::array<char,512> gameName{};
+    std::array<char,96> gameId{};
     Command command{};
     std::array<Operation,8> options{};
     unsigned optionCount=0;
