@@ -99,8 +99,10 @@ Botty+ has four tabs. Press L1 or R1 to switch between them.
 To close the app, open **System** and select **Close Botty+**. Circle never
 closes it by accident.
 
-Pause, resume and verify happen right away. Anything that deletes or replaces
-files asks you once more, with **Cancel** selected so a quick press is safe.
+Pause, resume and verify happen right away. Deleting, cancelling or restoring
+asks you once more, with **Cancel** selected so a quick press is safe. Moving a
+game to another disk opens a sheet instead: check the destination before you
+confirm, because the copy on the old disk is removed once the move succeeds.
 A short message confirms each request; errors stay on screen until you press
 Circle.
 
