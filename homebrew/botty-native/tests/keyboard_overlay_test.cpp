@@ -13,7 +13,12 @@ bool overlayFrame(Canvas& canvas) noexcept {
     if(frame==0){
         model.tab=Model::activity;pad=1;workflow.add();textEntryState=TextEntryState::ready;
         notify(Toast::Kind::error,"Request failed","Fixture failure");edge=Buttons::circle;
-    }else if(frame==1){notify(Toast::Kind::success,"Done","Fixture success");edge=Buttons::square;}
+    }else if(frame==1){
+        // A failure stays until Circle: a later success cannot replace it.
+        notify(Toast::Kind::error,"Request failed","Fixture failure");notify(Toast::Kind::success,"Done","Fixture success");
+        assert(toast.kind==Toast::Kind::error);toast.visible=false;
+        notify(Toast::Kind::success,"Done","Fixture success");edge=Buttons::square;
+    }
     else if(frame==2)edge=Buttons::circle;
     else if(frame==3&&!retries){
         workflow.search();std::snprintf(workflow.command.text.data(),workflow.command.text.size(),"original");
