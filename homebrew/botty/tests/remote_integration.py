@@ -634,7 +634,9 @@ with tempfile.TemporaryDirectory() as tmp:
         if Path('/proc/self/fd').exists():
             proc.terminate(); proc.wait(timeout=10)
             counter = root / 'registry-sync-count'
-            count_environment = dict(os.environ, LD_PRELOAD=str(library), BOTTY_COUNT_REGISTRY_SYNCS=str(counter))
+            # Keep production polling: idle discovery also saves the registry, so a
+            # shorter interval would make these sync bounds depend on runner speed.
+            count_environment = dict(os.environ, BOTTY_TEST_POLL_MS='5000', LD_PRELOAD=str(library), BOTTY_COUNT_REGISTRY_SYNCS=str(counter))
             proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=count_environment); token = ''; token = wait(bootstrap)
             many = 'ab' * 20; files = []
             for i in range(256):
