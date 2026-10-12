@@ -299,7 +299,7 @@ else:
     def test_review_starts_without_waiting_for_checks_but_verdict_waits_for_both(self):
         source = WORKFLOW.read_text()
         review = source.split('\n  claude-review:', 1)[1].split('\n  verdict:', 1)[0]
-        self.assertIn('needs: [context, announce]', review)
+        self.assertIn('needs: context', review)
         self.assertNotIn('needs.host-checks', review)
         self.assertIn('CLAUDE_HOST_CHECK_RESULT: pending', review)
         self.assertNotIn('Load completed host-check result', review)
