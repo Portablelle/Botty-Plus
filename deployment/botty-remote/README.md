@@ -7,6 +7,16 @@ The PS5 initiates the transfer; no inbound PS5 connection or shared filesystem i
 required. Server torrent completion and PS5 import progress are separate phases.
 Extraction/preparation starts only after the complete local inventory is published.
 
+Configuring the bridge does not replace local rTorrent. Each new magnet, `.torrent`,
+Search or Discover download offers a **Download on** choice: **PS5 (rTorrent)** or
+**Dedicated server (qBittorrent)**. Both preserve the destination storage and
+automatic-preparation choices. Requests to `/api/torrent` (add), `/api/search/add`
+and `/api/explore/add` accept `engine: "rtorrent"` or `engine: "qbittorrent"`;
+omitting it defaults to local rTorrent for older clients. Invalid or unavailable
+engines fail without falling back to the other backend. Duplicate detection is
+scoped to the selected engine. Existing-server **Import to PS5** remains an explicit
+remote-only operation, with no engine selector.
+
 ## Existing server torrents
 
 Discovery reads the existing torrent catalogue without enrolling it. A release

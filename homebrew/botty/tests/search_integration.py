@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  (complete/'sample.rar').write_bytes((root/'fixtures/app.rar').read_bytes())
  size=(complete/'sample.rar').stat().st_size
  torrent=dict(id=1,hashString=hashlib.sha1(b'd4:name7:fixturee').hexdigest(),name='Original homebrew fixture',status=4,error=0,leftUntilDone=size,totalSize=size,downloadDir=str(complete),files=[dict(name='sample.rar',length=size,bytesCompleted=0)])
- calls=[]; queries=[]; cover_calls=[]
+ calls=[]; queries=[]; cover_calls=[]; remote_calls=[]; remote_rows={}; remote_payload=None
  refresh_started=threading.Event();refresh_release=threading.Event();delayed_refresh=False
  def rpc_hook(method, params):
   if method=='load.start':
@@ -28,6 +28,11 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
     obj=[r for r in obj if r.get('title')!='Demo PS5']
    data=json.dumps(obj).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
   def do_GET(self):
+   if self.path.startswith('/remote/'):
+    assert self.headers.get('Authorization')=='Bearer '+('d'*64)
+    if self.path=='/remote/candidates':self.reply([])
+    else:self.reply(remote_rows[self.path.rsplit('/',1)[1]])
+    return
    assert self.headers.get('X-Api-Key')=='b'*32
    url=urllib.parse.urlsplit(self.path)
    if url.path=='/api/v1/search':
@@ -43,7 +48,12 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
     data=bytes([12,80,160])*(160*240);self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
    else:
     assert url.path in ['/1/download','/8/download'] and 'apikey' not in urllib.parse.parse_qs(url.query)
-    data=b'd4:infod4:name7:fixtureee';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+    data=remote_payload or b'd4:infod4:name7:fixtureee';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+  def do_POST(self):
+   assert self.path=='/remote/add' and self.headers.get('Authorization')=='Bearer '+('d'*64)
+   body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));remote_calls.append(body);h=body['hash']
+   remote_rows[h]=dict(hash=h,name='Remote PS5 route',complete=False,paused=True,total=10,done=0,rate=0,upload=0,peers=0,files=[dict(name='game.rar',size=10,index=0)])
+   self.reply({'hash':h})
  rpc=RtorrentFixture(entries,rpc_hook);calls=rpc.calls;indexer=ThreadingHTTPServer(('127.0.0.1',0),Indexer)
  cert=root/'cert.pem';key=root/'key.pem'
  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -52,6 +62,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  config=json.dumps(dict(url=f'https://localhost:{indexer.server_port}',apiKey='b'*32,caFile=str(cert),exploreIndexers={'seeders':2,'completed':3,'newest':1}))
  credentials=root/'rtorrent/state';credentials.mkdir(parents=True);(credentials/'botty-credentials.json').write_text(json.dumps(dict(username='botty',password='TESTpw')))
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+ (root/'remote.json').write_text(json.dumps(dict(url=f'https://localhost:{indexer.server_port}/remote',token='d'*64,caFile=str(cert))))
  command=[str(HERE.parent/'build/botty-native'),'--root',str(root),'--port',str(port),'--rpc-port',str(rpc.server_port),'--ui',str(HERE.parent/'ui')]
  proc=subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);token=''
  def request(path,data=None):
@@ -192,6 +203,20 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   (root/'automatic'/('d'*40+'.json')).write_text(json.dumps({'hash':'d'*40,'status':'waiting'}))
   def failed():return next((j for j in request('/api/state')['jobs'] if j.get('hash')=='d'*40 and j['status']=='failed'),None)
   until(failed);assert (complete/'broken.rar').is_file()
+  # Both Prowlarr paths keep the engine selected for their asynchronous callback.
+  loads=sum(c['method']=='load.start' for c in calls)
+  remote_payload=b'd4:infod4:name11:remoteseed1ee'
+  explore_result=next(r for r in request('/api/state')['explore']['results'] if r['name']=='Second PS5')
+  request('/api/explore/add',{'id':explore_result['sources'][0]['id'],'engine':'qbittorrent','automatic':False})
+  until(lambda:len(remote_calls)==1 and not request('/api/state')['explore']['adding'])
+  remote_payload=b'd4:infod4:name11:remoteseed2ee'
+  request('/api/search',{'query':'remote engine choice'})
+  until(lambda:bool(request('/api/state')['search']['results']) and not request('/api/state')['search']['busy'])
+  search_result=request('/api/state')['search']['results'][0]
+  request('/api/search/add',{'id':search_result['id'],'engine':'qbittorrent','automatic':False})
+  until(lambda:len(remote_calls)==2 and not request('/api/state')['search']['adding'])
+  assert all(call['engine']=='qbittorrent' for call in remote_calls)
+  assert sum(c['method']=='load.start' for c in calls)==loads
   # Losing setup after a successful search also drops stale download choices.
   (root/'prowlarr.json').unlink()
   for path,body,section in [('/api/explore',{'sort':'newest','refresh':True},'explore'),('/api/search',{'query':'demo'},'search')]:

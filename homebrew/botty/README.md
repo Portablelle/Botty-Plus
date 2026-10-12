@@ -66,12 +66,13 @@ the in-app updater concurrently.
 
 ## Dedicated server downloads (1.6.0)
 
-Optional private `remote.json` routes new additions to the dedicated qBittorrent
-bridge and offers existing PS5 candidates for explicit import. The server torrent
+Optional private `remote.json` enables a per-download choice between local rTorrent
+and dedicated qBittorrent, and offers existing PS5 candidates for explicit import. The default remains local. The server torrent
 and PS5 HTTPS import have distinct progress phases; all members must arrive before
 preparation. Local rTorrent jobs remain available. See the
 [bridge deployment guide](../../deployment/botty-remote/README.md).
-PS5 hardware acceptance of the dedicated-server workflow remains pending.
+Authenticated multifile import to PS5 USB/exFAT passed a synthetic live test.
+Real-game preparation and updated native-interface acceptance remain pending.
 
 ## Capabilities
 

@@ -95,6 +95,12 @@ std::string connectionUrl() {
   return result;
 }
 Rtorrent& localBackend(){static Rtorrent backend(paths,rpcPort);return backend;}
+std::string selectedDownloadEngine(const json& arguments){
+  const auto engine=arguments.value("engine",std::string("rtorrent"));
+  if(engine!="rtorrent"&&engine!="qbittorrent")throw std::runtime_error("Choose rTorrent on PS5 or qBittorrent on the dedicated server");
+  if(engine=="qbittorrent"&&!remote)throw std::runtime_error(remoteError.empty()?"Dedicated server is not configured":remoteError);
+  return engine;
+}
 json rpc(const std::string& method, const json& arguments=json::object()) {
   auto& backend=localBackend();
   if(method=="torrent-get"&&remote){
@@ -105,17 +111,18 @@ json rpc(const std::string& method, const json& arguments=json::object()) {
     for(const auto& r:remoteRows)if(r.value("remoteCandidate",false))combined.push_back(r);
     return {{"torrents",combined}};
   }
-  if(method=="torrent-add"&&(remote||!remoteError.empty())){
-    if(!remote)throw std::runtime_error(remoteError);
-    const auto hash=Rtorrent::inputHash(arguments);
-    try{const auto local=backend.request("torrent-get",json::object());for(const auto& item:local.at("torrents"))if(item.at("hashString")==hash)return {{"torrent-duplicate",{{"id",item.at("id")},{"hashString",hash}}}};}catch(...){}
-    return remote->add(hash,arguments);
+  if(method=="torrent-add"){
+    const auto engine=selectedDownloadEngine(arguments);
+    if(engine=="qbittorrent"){
+      if(!remote)throw std::runtime_error(remoteError.empty()?"Dedicated server is not configured":remoteError);
+      return remote->add(Rtorrent::inputHash(arguments),arguments);
+    }
+    auto local=arguments;local.erase("engine");return backend.request(method,local);
   }
   if(remote&&arguments.contains("ids")){
     bool any=false,all=true;for(const auto& id:arguments.at("ids")){const bool owned=remote->contains(id);any|=owned;all&=owned;}
     if(any){if(!all)throw std::runtime_error("Split local and remote torrent operations");return remote->action(method,arguments);}
   }
-  if(remote&&method=="session-get")return {{"incomplete-dir-enabled",false},{"download-dir",paths.complete.string()}};
   return backend.request(method,arguments);
 }
 json torrents() {
@@ -252,11 +259,11 @@ json startExtraction(const json& request, bool automatic=false) {
 }
 // Only explicitly requested Prowlarr downloads enter this durable queue.
 fs::path automaticTaskPath(const std::string& hash,int id,bool isRemote){return paths.root/"automatic"/(isRemote?"remote-"+std::to_string(id)+".json":hash+".json");}
-json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true){
+json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true,const std::string& engine="rtorrent"){
   std::lock_guard<std::mutex> guard(lock);if(transferring||retiring)throw std::runtime_error("Wait for the storage transfer to finish");
   nativeUpdater->requireAdmission();
   const auto selectedPaths=storage.get(selected);
-  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;
+  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;
   auto result=rpc(method,args);
   auto torrent=result.contains("torrent-added")?result.at("torrent-added"):result.at("torrent-duplicate");
   auto hash=torrent.at("hashString").get<std::string>();
@@ -632,9 +639,9 @@ int main(int argc,char** argv) {
       else res.set_content(data,"application/octet-stream");
     });
     server.Post("/api/explore",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
-    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
     server.Post("/api/search",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();search.start(paths,json::parse(req.body).at("query").template get<std::string>());reply(res,{{"ok",true}},202);});
-    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);search.add(paths,body.at("id").template get<std::string>(),[selected,automatic](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);search.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
     server.Post("/api/torrent",[](const auto& req,auto& res){
       auto body=json::parse(req.body);const auto action=body.at("action").template get<std::string>();
       if(action=="add") {
@@ -642,11 +649,11 @@ int main(int argc,char** argv) {
           if(body.contains("magnet"))throw std::runtime_error("Choose a magnet link or a torrent file");
           const auto metainfo=body.at("metainfo").template get<std::string>();
           if(metainfo.empty()||metainfo.size()>1398104)throw std::runtime_error("Torrent files must be between 1 byte and 1 MiB");
-          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false)));return;
+          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
         }
         const auto magnet=body.at("magnet").template get<std::string>();
         if(magnet.rfind("magnet:?",0)!=0 || magnet.size()>16384)throw std::runtime_error("Enter a valid magnet link");
-        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false)));return;
+        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
       }
       if(transferring)throw std::runtime_error("Wait for the storage transfer to finish");
       const int id=body.at("id").template get<int>();

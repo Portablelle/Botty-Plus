@@ -648,6 +648,22 @@ int main() {
         assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":6,"name":"Loose import","remote":true,"remoteLoose":true,"status":0,"leftUntilDone":0,"files":[{"name":"app/sce_sys/param.json"}]}],"jobs":[]})",remote));
         assert(remote.torrents[0].remoteLoose&&!remote.torrents[0].archivesOmitted);
         assert(!*unavailable(Operation::extract,&remote.torrents[0],remote));
+        static Catalog engines;
+        assert(parseCatalog(R"({"freeBytes":1000000000,"transmissionReady":true,"storageSupported":true,"remoteDownloads":{"enabled":true},"storage":[{"id":"internal","label":"PS5","available":true,"freeBytes":1000000000}],"torrents":[],"jobs":[]})",engines));
+        Workflow download;download.add();download.acceptText("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",engines,false);
+        assert(download.hasRow(Workflow::Row::engine)&&download.rowCount==4&&!download.command.useRemote);
+        download.focus=1;download.press(Buttons::right,engines,false);assert(download.command.useRemote);
+        assert(encodeCommand(download.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\":\"qbittorrent\"")!=std::string_view::npos);
+        download.press(Buttons::left,engines,false);assert(!download.command.useRemote);
+        assert(encodeCommand(download.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\":\"rtorrent\"")!=std::string_view::npos);
+        download.press(Buttons::right,engines,false);engines.remoteEnabled=false;download.focus=download.rowCount;assert(!download.press(Buttons::cross,engines,false));
+        engines.remoteEnabled=true;
+        Workflow fixedImport;engines.torrents[0]=remote.torrents[0];engines.torrents[0].remoteCandidate=true;engines.torrentCount=1;fixedImport.open(&engines.torrents[0],0,engines);
+        fixedImport.choose(Operation::importRemote,engines,false);assert(!fixedImport.hasRow(Workflow::Row::engine)&&fixedImport.hasRow(Workflow::Row::mode));
+        assert(encodeCommand(fixedImport.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\"")==std::string_view::npos);
+        Entry result;std::snprintf(result.id.data(),result.id.size(),"%s","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");std::snprintf(result.name.data(),result.name.size(),"%s","PS5 game");
+        Workflow searched;searched.grab(result,engines);assert(searched.hasRow(Workflow::Row::engine)&&searched.rowCount==4);
+        Workflow discovered;discovered.chooseSources(result,engines,false);assert(discovered.hasRow(Workflow::Row::engine)&&discovered.rowCount==4);
     }
 
 }

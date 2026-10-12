@@ -106,7 +106,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     out.valid=false;out.stale=false;out.transmissionStale=false;JSON root{body};if(!root.value())return false;root.ws();if(root.p!=body.size())return false;
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
-    out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    out.torrentCount=out.jobCount=out.archiveCount=0;out.remoteEnabled=field(field(body,"remoteDownloads"),"enabled")=="true";out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     out.nativeUpdate=NativeUpdate{};
     const auto update=field(body,"nativeUpdate");
     if(field(update,"supported")=="true"){

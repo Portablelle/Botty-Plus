@@ -6,7 +6,7 @@ void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
 enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
 struct Command {
     Operation operation=Operation::none;
-    bool refresh=false,automatic=true,torrent=false;
+    bool refresh=false,automatic=true,torrent=false,useRemote=false;
     std::array<char,64> storage{};
     std::array<char,65> serviceVersion{};
     std::array<char,96> id{};
@@ -30,7 +30,7 @@ struct Workflow {
     // menu: Quick actions with inline destructive confirmation. sheet: one settings
     // sheet for Get game, Extract and disk moves. keyboard: text entry.
     enum class Panel { closed, menu, sheet, keyboard } panel=Panel::closed;
-    enum class Row { source, magnet, storage, mode, archive, password };
+    enum class Row { source, magnet, engine, storage, mode, archive, password };
     unsigned selected=0,keyPage=0,revision=0,archiveIndex=0;
     // Sheet focus covers its rows, then the primary button, which starts focused.
     unsigned focus=0,rowCount=0,sourceIndex=0;
