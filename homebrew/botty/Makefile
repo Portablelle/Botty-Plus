@@ -61,28 +61,22 @@ TEST_BINARIES := build/rest-companion-test build/rest-network-test build/rest-ht
 .PHONY: test-build
 # Compiles every `test` prerequisite without running it (warms ccache).
 test-build: $(TEST_BINARIES)
-test: $(TEST_BINARIES)
-	./build/remote-buffer-test
-	./build/progress-test
-	./build/core-test
-	./build/rest-mode-test
-	./build/rest-companion-test
-	./build/rest-network-test
-	./build/rest-http-test
-	./build/native-transaction-test
-	./build/native-update-test
-	./build/native-idle-test
-	./build/installation-update-test
-	./build/installation-runtime-test
-	./build/search-idle-test
-	python3 tests/integration.py
-	python3 tests/rtorrent_resume.py
+# Each `test` command is its own target so TEST_JOBS can run them concurrently
+# (tests use temporary directories and ephemeral ports). Longest runs start first.
+SERVICE_UNIT_TESTS := remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
+SERVICE_INTEGRATION_TESTS := remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
+UNIT_RUNS := $(addprefix unit-,$(SERVICE_UNIT_TESTS))
+INTEGRATION_RUNS := $(addprefix integration-,$(SERVICE_INTEGRATION_TESTS))
+.PHONY: $(UNIT_RUNS) $(INTEGRATION_RUNS) integration-remote-bridge
+$(UNIT_RUNS): unit-%:
+	./build/$*
+$(INTEGRATION_RUNS): integration-%:
+	python3 tests/$*.py
+integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
-	python3 tests/remote_integration.py
-	python3 tests/search_integration.py
-	./build/storage-test
-	python3 tests/storage_integration.py
-	python3 tests/background_storage_integration.py
+TEST_JOBS ?= 1
+test: $(TEST_BINARIES)
+	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(if $(filter-out 1,$(TEST_JOBS)),--output-sync=target) $(INTEGRATION_RUNS) integration-remote-bridge $(UNIT_RUNS)
 
 build/compressor-test: build/tests/compressor-test.o build/host/core.o build/host/storage.o src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl
