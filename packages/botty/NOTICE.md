@@ -1,4 +1,4 @@
-# Botty service 1.6.1
+# Botty service 1.7.0
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.6.1`; its installed marker is in the parent directory.
+`/data/botty/manager/1.7.0`; its installed marker is in the parent directory.
 
 ## Installation updates
 
@@ -470,3 +470,37 @@ actual file size. Files remain sequential, pinned and verified before publicatio
 The PS5 baseline was about 4.2 MiB/s on Ethernet to the internal SSD. Host tests
 verify write coalescing, short writes, interruption and Range recovery; they do
 not establish the throughput improvement on PS5. Measure that after installation.
+
+### Parallel HTTPS imports (1.7.0)
+
+Remote imports transfer one file at a time in bounded 8 MiB ranges, using two
+connections by default. POST `/api/remote/import` accepts `parallelConnections`
+with values 1, 2 or 4. To change a paused import without restarting the manager,
+POST `/api/torrent` with its `id`, `action: "resume"` and `parallelConnections`.
+The range ledger is independent of connection count. Fully received ranges
+become resumable only after file fsync and durable registry persistence. Sparse
+file length never establishes completion. Legacy append-only partials migrate
+after syncing their existing prefix; interrupted new ranges are downloaded again.
+The client verifies status 206, Content-Range and Content-Length before writes.
+HTTP 416 pauses the import for inspection; HTTP 429 keeps admitted completed
+ranges, halves effective concurrency (4 to 2 to 1) and retries after the manager's
+five-second delay. Explicitly setting parallelConnections on resume resets this
+adaptive limit. The bridge retains a global limit of four simultaneous file
+responses across consoles. Four connections can contend with another console.
+
+`scripts/benchmark-remote-ddl.py` prepares/runs the controlled 1/2/4 comparison
+against the same remote member, records elapsed time and MiB/s, and requires
+matching SHA-256 for every downloaded copy. Default invocation prints an offline plan. After explicit approval to install
+1.7.0 and test, `--execute --config <private-json>` uses the manager import API
+and FTP to verify each copy. It refuses existing fixture tracking and removes
+only the new local fixture copies between trials. Results include scheduling,
+file fsync and publication; FTP hash verification is outside the timed interval.
+No PS5 speedup is claimed before those measurements.
+
+Format 2 staging uses `.remote2-<hash>.partial`, distinct from the 1.6.x
+append-only staging path. Owned legacy partials migrate via a durable rename
+intent before any segmented write. Returning to 1.6.x cannot interpret these
+sparse partials as complete prefixes. Pause incomplete imports before a downgrade;
+keep their format 2 directories for resumption with 1.7.0. Older managers can
+start a separate fresh legacy copy, so avoid resuming those records until 1.7.0
+is restored. Preserve both copies if a downgrade was already used.

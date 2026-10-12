@@ -31,7 +31,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.6.1/ui"
+#define BOTTY_UI "/data/botty/manager/1.7.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -493,7 +493,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.6.1"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.7.0"}});
     NativeTransaction::Config nativeConfig;
 #ifndef __PS5__
     nativeConfig.nativeRoot=paths.root/"native-test/PPSA99071";
@@ -560,10 +560,10 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.6.1"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.7.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/installation/status",[](const auto&,auto& res){
       const auto update=nativeUpdater->state();
-      reply(res,{{"app","Botty"},{"version","1.6.1"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
+      reply(res,{{"app","Botty"},{"version","1.7.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
     });
     server.Post("/api/installation/retire",[&](const auto& req,auto& res){
       const auto body=json::parse(req.body);
@@ -712,14 +712,15 @@ int main(int argc,char** argv) {
       const auto method=methods.find(action);if(method==methods.end())throw std::runtime_error("Unsupported torrent action");
       std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       if(action=="resume"||action=="verify")storage.get(storage.forDownload(getTorrent(id).at("downloadDir").template get<std::string>()));
-      reply(res,rpc(method->second,{{"ids",{id}}}));
+      json arguments={{"ids",{id}}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");reply(res,rpc(method->second,arguments));
     });
     server.Post("/api/remote/import",[](const auto& req,auto& res){
       auto body=json::parse(req.body);std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       if(!remote||transferring||retiring)throw std::runtime_error("Remote downloads unavailable or storage transfer active");
       const auto hash=body.contains("hash")?body.at("hash").template get<std::string>():remote->candidateHash(body.at("id").template get<int>());if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))throw std::runtime_error("Invalid remote hash");
       const auto selected=body.value("storage",std::string("internal"));auto selectedPaths=storage.get(selected);
-      const auto result=remote->add(hash,{{"download-dir",selectedPaths.complete.string()},{"storage",selected}},true);
+      json arguments={{"download-dir",selectedPaths.complete.string()},{"storage",selected}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");
+      const auto result=remote->add(hash,arguments,true);
       if(result.contains("torrent-added"))writeJson(automaticTaskPath(hash,result.at("torrent-added").at("id"),true),{{"torrentId",result.at("torrent-added").at("id")},{"remote",true},{"hash",hash},{"status",body.value("automatic",true)?"waiting":"download-only"},{"storage",selected}});
       reply(res,result,202);
     });

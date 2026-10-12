@@ -94,6 +94,8 @@ class RemoteDownloads {
       throw std::runtime_error("Remote registry metadata limit reached; remove completed tracking before importing more");
     }
     writeJson(paths_.root/"remote-downloads.json",records_);
+    int parent=::open(paths_.root.c_str(),O_RDONLY|O_DIRECTORY);if(parent<0)throw std::runtime_error("Cannot sync remote registry directory");
+    const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync remote registry directory");
   }
   json row(const std::string& hash,const json& r) const {
     const auto snapshot=r.value("snapshot",json::object());
@@ -107,7 +109,7 @@ class RemoteDownloads {
     const bool paused=r.value("paused",false)||(phase=="remote"&&snapshot.value("paused",false));
     bool archive=false,loose=false;for(const auto& f:r.value("inventory",json::array())){const fs::path name=asciiLower(f.at("name").get<std::string>());archive=archive||name.extension()==".rar";loose=loose||name.extension()==".exfat"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
     return {{"id",r.at("id")},{"hashString",hash},{"name",snapshot.value("name",r.value("name",std::string("Remote torrent")))},{"status",paused?0:ready?6:4},
-      {"remote",true},{"remoteLoose",ready&&loose&&!archive},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
+      {"remote",true},{"parallelConnections",r.value("parallelConnections",2)},{"effectiveConnections",r.value("effectiveConnections",r.value("parallelConnections",2))},{"remoteLoose",ready&&loose&&!archive},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
       {"rateDownload",phase=="transfer"?r.value("rate",uint64_t(0)):ready?uint64_t(0):snapshot.value("rate",uint64_t(0))},{"rateUpload",phase=="remote"?snapshot.value("upload",uint64_t(0)):uint64_t(0)},{"eta",r.value("eta",-1.0)},
       {"downloadDir",r.at("directory")},{"storage",r.at("storage")},{"files",files},{"error",error.empty()?0:1},{"errorString",error},{"peersConnected",snapshot.value("peers",0)},{"peersSendingToUs",0},{"peersGettingFromUs",0}};
   }
@@ -115,32 +117,66 @@ class RemoteDownloads {
     std::lock_guard<std::mutex> g(mutex_);if(!records_.contains(hash))return;
     auto values=changes;
     if(values.contains("snapshot")&&records_[hash].contains("inventory"))values["snapshot"].erase("files");
+    const auto previous=records_[hash];
     records_[hash].update(values);
     if(values.contains("inventory")&&records_[hash].contains("snapshot"))records_[hash]["snapshot"].erase("files");
-    if(durable||values.contains("snapshot")||values.contains("inventory"))save();
+    if(durable||values.contains("snapshot")||values.contains("inventory")){try{save();}catch(...){records_[hash]=previous;throw;}}
+  }
+  static constexpr uint64_t segmentSize=8ULL*1024*1024;
+  static int connections(const json& args,int fallback=2){
+    if(!args.contains("parallelConnections"))return fallback;
+    if(!args.at("parallelConnections").is_number_integer())throw std::runtime_error("parallelConnections must be 1, 2 or 4");
+    const auto n=args.at("parallelConnections").get<int>();
+    if(n!=1&&n!=2&&n!=4)throw std::runtime_error("parallelConnections must be 1, 2 or 4");return n;
   }
   struct Sink {
-    RemoteDownloads* owner;std::string hash,storage;fs::path directory;int fd;
-    uint64_t bytes,limit,base,total,offset;RemoteWriteBuffer output;CURL* curl;long expectedStatus;ExtractionEstimate estimate;
-    std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now(),last=start;
-    std::string error;
+    RemoteDownloads* owner;std::string storage;fs::path directory;
+    uint64_t start,end,total,bytes=0;RemoteWriteBuffer output;CURL* curl;std::atomic<bool>* abort;
+    bool rangeValid=false,lengthValid=false;std::string error;
+    std::chrono::steady_clock::time_point last=std::chrono::steady_clock::now();
   };
-  static int cancelled(void* opaque,curl_off_t,curl_off_t,curl_off_t,curl_off_t){auto& s=*static_cast<Sink*>(opaque);return s.owner->stop_||s.owner->cancel_;}
+  static int cancelled(void* opaque,curl_off_t,curl_off_t,curl_off_t,curl_off_t){auto& s=*static_cast<Sink*>(opaque);return s.owner->stop_||s.owner->cancel_||s.abort->load();}
+  static size_t rangeHeader(char* p,size_t size,size_t count,void* opaque){
+    auto& s=*static_cast<Sink*>(opaque);const size_t n=size*count;
+    const std::string line(p,n),lower=asciiLower(line);
+    if(lower.rfind("http/",0)==0){s.rangeValid=false;s.lengthValid=false;}
+    if(lower.rfind("content-range:",0)==0){
+      const auto expected="content-range: bytes "+std::to_string(s.start)+"-"+std::to_string(s.end-1)+"/"+std::to_string(s.total)+"\r\n";
+      s.rangeValid=lower==expected;
+    }
+    if(lower.rfind("content-length:",0)==0)s.lengthValid=lower=="content-length: "+std::to_string(s.end-s.start)+"\r\n";
+    return n;
+  }
   static size_t writeFile(char* p,size_t size,size_t count,void* opaque) {
     auto& s=*static_cast<Sink*>(opaque);const size_t bytes=size*count;
     try{
-      if(s.owner->stop_||s.owner->cancel_||bytes>s.limit-s.bytes)return 0;
-      long status=0;curl_easy_getinfo(s.curl,CURLINFO_RESPONSE_CODE,&status);if(status!=s.expectedStatus)throw std::runtime_error("Unexpected HTTPS response; partial bytes kept unchanged");
+      if(s.owner->stop_||s.owner->cancel_||s.abort->load()||bytes>s.end-s.start-s.bytes)return 0;
+      long status=0;curl_easy_getinfo(s.curl,CURLINFO_RESPONSE_CODE,&status);
+      if(status!=206||!s.rangeValid||!s.lengthValid)throw std::runtime_error("Invalid HTTPS range response; segment not committed");
       const auto now=std::chrono::steady_clock::now();
-      if(now-s.last>=std::chrono::milliseconds(250)){
-        s.owner->checkStorage_(s.storage,s.directory);
-        const auto done=s.base+s.offset+s.output.written();s.estimate.update(now,done,s.total);
-        const auto seconds=std::chrono::duration<double>(now-s.start).count();
-        s.owner->update(s.hash,{{"bytes",done},{"rate",seconds>0?uint64_t(s.output.written()/seconds):uint64_t(0)},{"eta",s.estimate.eta}});s.last=now;
-      }
-      s.output.append(p,bytes);
-      s.bytes+=bytes;return bytes;
+      if(now-s.last>=std::chrono::milliseconds(250)){s.owner->checkStorage_(s.storage,s.directory);s.last=now;}
+      s.output.append(p,bytes);s.bytes+=bytes;return bytes;
     }catch(const std::exception& e){s.error=e.what();return 0;}
+  }
+  void segment(Handle& h,const std::string& hash,const json& file,const std::string& storage,const fs::path& directory,int fd,uint64_t start,uint64_t end,std::atomic<bool>& abort){
+    setup(h,"/file/"+hash+"/"+std::to_string(file.at("index").get<unsigned>()));
+    uint64_t position=start;
+    Sink sink{this,storage,directory,start,end,file.at("size").get<uint64_t>(),0,
+      RemoteWriteBuffer([fd,&position](const char* p,size_t n){const auto wrote=::pwrite(fd,p,n,static_cast<off_t>(position));if(wrote>0)position+=static_cast<uint64_t>(wrote);return wrote;}),h.curl,&abort,false,false,"",std::chrono::steady_clock::now()};
+    const auto name=file.at("name").get<std::string>();auto* escaped=curl_easy_escape(h.curl,name.c_str(),static_cast<int>(name.size()));if(!escaped)throw std::runtime_error("Cannot encode pinned remote member");
+    const std::string nameHeader=std::string("X-Botty-File-Name: ")+escaped;curl_free(escaped);
+    h.headers=curl_slist_append(h.headers,nameHeader.c_str());h.headers=curl_slist_append(h.headers,("X-Botty-File-Size: "+std::to_string(sink.total)).c_str());curl_easy_setopt(h.curl,CURLOPT_HTTPHEADER,h.headers);
+    const auto range=std::to_string(start)+"-"+std::to_string(end-1);curl_easy_setopt(h.curl,CURLOPT_RANGE,range.c_str());
+    curl_easy_setopt(h.curl,CURLOPT_SOCKOPTFUNCTION,receiveSocket);curl_easy_setopt(h.curl,CURLOPT_BUFFERSIZE,256L*1024);
+    curl_easy_setopt(h.curl,CURLOPT_HEADERFUNCTION,rangeHeader);curl_easy_setopt(h.curl,CURLOPT_HEADERDATA,&sink);
+    curl_easy_setopt(h.curl,CURLOPT_WRITEFUNCTION,writeFile);curl_easy_setopt(h.curl,CURLOPT_WRITEDATA,&sink);curl_easy_setopt(h.curl,CURLOPT_FAILONERROR,1L);
+    curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_LIMIT,1L);curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_TIME,30L);
+    curl_easy_setopt(h.curl,CURLOPT_XFERINFOFUNCTION,cancelled);curl_easy_setopt(h.curl,CURLOPT_XFERINFODATA,&sink);curl_easy_setopt(h.curl,CURLOPT_NOPROGRESS,0L);
+    const auto code=curl_easy_perform(h.curl);long status=0;curl_easy_getinfo(h.curl,CURLINFO_RESPONSE_CODE,&status);
+    if(status==416)throw std::runtime_error("Server rejected pinned byte range (416); pause and inspect the remote file");
+    if(status==429)throw std::runtime_error("Server transfer slots busy (429); retrying after bounded delay");
+    if(code!=CURLE_OK||status!=206||!sink.rangeValid||!sink.lengthValid||sink.bytes!=end-start)throw std::runtime_error(sink.error.empty()?"HTTPS segment interrupted; uncommitted range will be retried":sink.error);
+    checkStorage_(storage,directory);sink.output.flush();
   }
   static int leaf(const fs::path& root,const fs::path& relative) {
     int fd=::open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(fd<0)throw std::runtime_error("Download storage unavailable");
@@ -155,7 +191,7 @@ class RemoteDownloads {
       return result;
     }catch(...){if(fd>=0)::close(fd);throw;}
   }
-  static fs::path stagingPath(const fs::path& directory,const std::string& hash){return directory/(".remote-"+hash+".partial");}
+  static fs::path stagingPath(const fs::path& directory,const std::string& hash,const json& r){return directory/((r.value("stagingFormat",1)==2?".remote2-":".remote-")+hash+".partial");}
   static json directoryIdentity(const fs::path& path) {
     struct stat st{};if(lstat(path.c_str(),&st)||!S_ISDIR(st.st_mode))throw std::runtime_error("Import directory is unavailable or unsafe");
     const auto marker=path/remoteOwnerFile;
@@ -177,7 +213,7 @@ class RemoteDownloads {
   static PublicationState publicationState(const std::string& hash,const json& r) {
     if(!r.value("publishing",false)||!r.contains("stageIdentity")||!r.contains("inventory"))return PublicationState::none;
     const fs::path directory=r.at("directory").get<std::string>();
-    const auto stage=stagingPath(directory,hash),target=directory/hash;
+    const auto stage=stagingPath(directory,hash,r),target=directory/hash;
     if(!fs::exists(fs::symlink_status(target)))return PublicationState::none;
     containedExisting(directory,target);
     if(fs::exists(fs::symlink_status(stage)))return directoryIdentity(stage)==r.at("stageIdentity")&&r.contains("reservationIdentity")&&directoryIdentity(target)==r.at("reservationIdentity")?PublicationState::reservation:PublicationState::none;
@@ -186,15 +222,17 @@ class RemoteDownloads {
   bool recoverPublished(const std::string& hash,const json& r) {
     const fs::path directory=r.at("directory").get<std::string>();checkStorage_(r.at("storage"),directory);
     if(publicationState(hash,r)!=PublicationState::renamed)return false;
-    checkMembers_(stagingPath(directory,hash),directory/hash,r.at("inventory"));validateTree(directory/hash,r.at("inventory"));uint64_t total=0;
+    checkMembers_(stagingPath(directory,hash,r),directory/hash,r.at("inventory"));validateTree(directory/hash,r.at("inventory"));uint64_t total=0;
     for(const auto& f:r.at("inventory")){const uint64_t size=f.at("size");if(size>UINT64_MAX-total)throw std::runtime_error("Remote size overflow");total+=size;}
     update(hash,{{"phase","ready"},{"publishedIdentity",r.at("stageIdentity")},{"bytes",total},{"error",""}},true);return true;
   }
   void transfer(const std::string& hash,json r,const json& snapshot) {
     const fs::path directory=r.at("directory").get<std::string>();const std::string storage=r.at("storage");
-    checkStorage_(storage,directory);const auto stage=stagingPath(directory,hash),target=directory/hash;
-    json inventory=json::array();std::set<fs::path> seen;uint64_t total=0;
+    checkStorage_(storage,directory);
+    auto stage=stagingPath(directory,hash,r);const auto target=directory/hash;
+    json inventory=json::array();std::set<fs::path> seen;std::set<unsigned> indexes;uint64_t total=0;
     for(const auto& f:snapshot.at("files")){
+      if(!indexes.insert(f.at("index").get<unsigned>()).second)throw std::runtime_error("Duplicate remote member index");
       const auto name=safeRelative(f.at("name").get<std::string>());if(!seen.insert(name).second)throw std::runtime_error("Duplicate remote member");
       if(asciiLower(name.begin()->string())==remoteOwnerFile)throw std::runtime_error("Remote member conflicts with import ownership metadata");
       uint64_t size=f.at("size");if(size>INT64_MAX||size>UINT64_MAX-total)throw std::runtime_error("Remote size overflow");total+=size;inventory.push_back(f);
@@ -206,6 +244,15 @@ class RemoteDownloads {
     if(fs::exists(fs::symlink_status(target))){
       if(publicationState(hash,r)!=PublicationState::reservation||::rmdir(target.c_str()))throw std::runtime_error("Local destination already exists; files kept");
     }
+    // Separate staging names prevent 1.6.x rollback from mistaking sparse file
+    // length for a downloaded prefix. Persist migration intent before rename.
+    const auto oldStage=directory/(".remote-"+hash+".partial"),newStage=directory/(".remote2-"+hash+".partial");
+    if(fs::exists(fs::symlink_status(oldStage))&&!fs::exists(fs::symlink_status(newStage))&&r.contains("stageIdentity")){
+      if(directoryIdentity(oldStage)!=r.at("stageIdentity"))throw std::runtime_error("Legacy partial directory is not owned by this import");
+      update(hash,{{"stagingFormat",2}},true);r["stagingFormat"]=2;fs::rename(oldStage,newStage);
+      int parent=::open(directory.c_str(),O_RDONLY|O_DIRECTORY);if(parent<0)throw std::runtime_error("Cannot sync staging migration");const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync staging migration");
+    }else if(r.value("stagingFormat",1)!=2){update(hash,{{"stagingFormat",2}},true);r["stagingFormat"]=2;}
+    stage=stagingPath(directory,hash,r);
     if(fs::exists(fs::symlink_status(stage))&&!r.contains("stageIdentity")){
       throw std::runtime_error("Unowned partial directory exists; retained for inspection");
     }
@@ -214,36 +261,65 @@ class RemoteDownloads {
       r["stageIdentity"]=markDirectory(stage);update(hash,{{"stageIdentity",r.at("stageIdentity")}},true);
     }else if(!r.contains("stageIdentity")||directoryIdentity(stage)!=r.at("stageIdentity"))throw std::runtime_error("Partial directory is not owned by this import");
     containedExisting(directory,stage);
-    checkMembers_(stage,target,inventory);uint64_t done=0;Handle h;
+    // Repeat this barrier even when a prior rename/create succeeded but its
+    // directory fsync failed. No sparse write can precede a durable new name.
+    for(const auto& path:{stage,directory}){
+      int parent=::open(path.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(parent<0)throw std::runtime_error("Cannot sync segmented staging directory");
+      const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync segmented staging directory");
+    }
+    checkMembers_(stage,target,inventory);uint64_t done=0;
+    // Older managers exclusively appended a sequential prefix. New imports always
+    // persist format 2 before pwrite can create holes; file length is never progress.
+    json ledger=r.value("segments",json::object());const bool legacy=!r.contains("transferFormat");
+    if(!ledger.is_object()||(!legacy&&r.at("transferFormat")!=2))throw std::runtime_error("Unsupported remote transfer ledger");
+    const int parallel=std::min(connections(r),connections(json{{"parallelConnections",r.value("effectiveConnections",connections(r))}}));const auto started=std::chrono::steady_clock::now();uint64_t received=0;
     for(const auto& file:inventory){
       checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
-      const auto name=safeRelative(file.at("name").get<std::string>());const uint64_t size=file.at("size");
+      const auto name=safeRelative(file.at("name").get<std::string>());const uint64_t size=file.at("size");const auto key=std::to_string(file.at("index").get<unsigned>());
       int fd=leaf(stage,name);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
       if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>size)throw std::runtime_error("Partial file size is invalid");
-      const auto offset=uint64_t(st.st_size);
-      const uint64_t available=freeBytes(directory),reserve=512ULL*1024*1024;
-      if(available<=reserve||size-offset>available-reserve)throw std::runtime_error("Not enough space to import remote torrent");
-      if(offset<size){
-        if(lseek(fd,st.st_size,SEEK_SET)<0)throw std::runtime_error("Cannot resume local file");
-        Sink sink{this,hash,storage,directory,fd,offset,size,done,total,offset,RemoteWriteBuffer(fd),h.curl,offset?206L:200L,ExtractionEstimate{},std::chrono::steady_clock::now(),std::chrono::steady_clock::now(),""};sink.start=sink.last=std::chrono::steady_clock::now();
-        setup(h,"/file/"+hash+"/"+std::to_string(file.at("index").get<unsigned>()));
-        auto* escaped=curl_easy_escape(h.curl,name.string().c_str(),static_cast<int>(name.string().size()));if(!escaped)throw std::runtime_error("Cannot encode pinned remote member");
-        const std::string nameHeader=std::string("X-Botty-File-Name: ")+escaped;curl_free(escaped);
-        h.headers=curl_slist_append(h.headers,nameHeader.c_str());h.headers=curl_slist_append(h.headers,("X-Botty-File-Size: "+std::to_string(size)).c_str());curl_easy_setopt(h.curl,CURLOPT_HTTPHEADER,h.headers);
-        curl_easy_setopt(h.curl,CURLOPT_SOCKOPTFUNCTION,receiveSocket);
-        curl_easy_setopt(h.curl,CURLOPT_BUFFERSIZE,256L*1024);
-        curl_easy_setopt(h.curl,CURLOPT_WRITEFUNCTION,writeFile);curl_easy_setopt(h.curl,CURLOPT_WRITEDATA,&sink);
-        curl_easy_setopt(h.curl,CURLOPT_FAILONERROR,1L);
-        curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_LIMIT,1L);curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_TIME,30L);
-        curl_easy_setopt(h.curl,CURLOPT_XFERINFOFUNCTION,cancelled);curl_easy_setopt(h.curl,CURLOPT_XFERINFODATA,&sink);curl_easy_setopt(h.curl,CURLOPT_NOPROGRESS,0L);
-        if(offset)curl_easy_setopt(h.curl,CURLOPT_RESUME_FROM_LARGE,static_cast<curl_off_t>(offset));
-        const auto code=curl_easy_perform(h.curl);long status=0;curl_easy_getinfo(h.curl,CURLINFO_RESPONSE_CODE,&status);
-        // Keep a valid received prefix on pause or a truncated response. A crash may
-        // lose only the bounded in-memory tail; the next Range starts at file size.
-        if(sink.output.pending()){checkStorage_(storage,directory);sink.output.flush();}
-        if(code!=CURLE_OK||status!=(offset?206:200)||sink.bytes!=size)throw std::runtime_error(sink.error.empty()?"HTTPS transfer interrupted; resume retains partial files":sink.error);
+      if(!ledger.contains(key)){
+        ledger[key]=json::array();
+        if(legacy&&st.st_size){if(fsync(fd))throw std::runtime_error("Cannot sync legacy partial file");ledger[key].push_back({0,uint64_t(st.st_size)});}
       }
-      if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");done+=size;update(hash,{{"bytes",done}});
+      uint64_t completed=0,previous=0;
+      for(const auto& interval:ledger.at(key)){
+        if(!interval.is_array()||interval.size()!=2||!interval[0].is_number_integer()||!interval[1].is_number_integer()||interval[0]<0||interval[1]<0)throw std::runtime_error("Invalid remote segment ledger");
+        const uint64_t start=interval[0],end=interval[1];if(start<previous||end<=start||end>size||end>uint64_t(st.st_size))throw std::runtime_error("Invalid remote segment bounds");
+        completed+=end-start;previous=end;
+      }
+      // This is a persistence barrier on EVERY attempt, even when RAM already had
+      // a marker from an earlier save. A failed save prevents all sparse writes.
+      update(hash,{{"transferFormat",2},{"segments",ledger}},true);
+      const uint64_t available=freeBytes(directory),reserve=512ULL*1024*1024;
+      if(available<=reserve||size-completed>available-reserve)throw std::runtime_error("Not enough space to import remote torrent");
+      done+=completed;update(hash,{{"bytes",done}});
+      std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
+      const auto committed=ledger.at(key);size_t intervalIndex=0;uint64_t cursor=0;
+      while(cursor<size){
+        std::vector<std::pair<uint64_t,uint64_t>> missing;
+        while(cursor<size&&missing.size()<size_t(parallel)){
+          if(intervalIndex<committed.size()&&cursor==committed[intervalIndex][0].get<uint64_t>()){cursor=committed[intervalIndex++][1].get<uint64_t>();continue;}
+          const uint64_t gapEnd=intervalIndex<committed.size()?committed[intervalIndex][0].get<uint64_t>():size;
+          const auto end=std::min(gapEnd,cursor+segmentSize);missing.emplace_back(cursor,end);cursor=end;
+        }
+        if(missing.empty())break;
+        if(stop_||cancel_)throw std::runtime_error("Transfer paused");
+        const size_t count=missing.size();std::vector<std::thread> workers;std::vector<std::exception_ptr> errors(count);std::atomic<bool> abort{false};
+        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].first,missing[i].second,abort);}catch(const std::exception& e){errors[i]=std::current_exception();if(std::string(e.what()).find("(429)")==std::string::npos)abort=true;}catch(...){errors[i]=std::current_exception();abort=true;}});}
+        catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
+        for(auto& worker:workers)worker.join();
+        if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
+        for(size_t i=0;i<count;++i)if(!errors[i]){const auto range=missing[i];ledger[key].push_back({range.first,range.second});const auto n=range.second-range.first;done+=n;received+=n;}
+        std::sort(ledger[key].begin(),ledger[key].end(),[](const json& a,const json& b){return a[0].get<uint64_t>()<b[0].get<uint64_t>();});
+        // Merge adjacent intervals to bound registry growth for large downloads.
+        json merged=json::array();for(const auto& range:ledger[key]){if(!merged.empty()&&merged.back()[1]==range[0])merged.back()[1]=range[1];else merged.push_back(range);}ledger[key]=merged;
+        const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+        update(hash,{{"segments",ledger},{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}},true);
+        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const std::exception& e){if(std::string(e.what()).find("(429)")!=std::string::npos){update(hash,{{"effectiveConnections",std::max(1,parallel/2)}},true);throw;}if(std::string(e.what()).find("(416)")!=std::string::npos)throw;}}
+        for(const auto& error:errors)if(error)std::rethrow_exception(error);
+      }
+      if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");
     }
     validateTree(stage,inventory);checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
     checkMembers_(stage,target,inventory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");update(hash,{{"publishing",true}},true);
@@ -305,7 +381,7 @@ class RemoteDownloads {
           update(hash,{{"snapshot",snapshot},{"error",""}});
           if(snapshot.at("complete").get<bool>())transfer(hash,r,snapshot);
           else update(hash,{{"phase","remote"},{"rate",0},{"eta",-1.0}});
-        }catch(const std::exception& e){try{update(hash,{{"error",e.what()},{"rate",0},{"eta",-1.0}},true);}catch(...){}}
+        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};if(std::string(e.what()).find("(416)")!=std::string::npos)failure["paused"]=true;update(hash,failure,true);}catch(...){}}
         {std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();}
       }
       std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});
@@ -317,7 +393,7 @@ public:
     for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==torrent.at("id")){
       const auto& r=it.value();const auto hash=it.key();const fs::path root=r.at("directory").get<std::string>();
       std::vector<fs::path> owned;
-      for(const auto& pair:std::vector<std::pair<fs::path,std::string>>{{root/hash,"publishedIdentity"},{stagingPath(root,hash),"stageIdentity"},{root/hash,"reservationIdentity"}})
+      for(const auto& pair:std::vector<std::pair<fs::path,std::string>>{{root/hash,"publishedIdentity"},{stagingPath(root,hash,r),"stageIdentity"},{root/hash,"reservationIdentity"}})
         if(r.contains(pair.second)&&fs::exists(fs::symlink_status(pair.first))&&directoryIdentity(pair.first)==r.at(pair.second))owned.push_back(pair.first);
       if(publicationState(hash,r)==PublicationState::renamed)owned.push_back(root/hash);
       std::set<fs::path> result;
@@ -363,9 +439,9 @@ public:
     if(hash.empty()||r.value("phase","")=="available")throw std::runtime_error("Only imported torrents can be removed");
     const fs::path directory=r.at("directory").get<std::string>();checkStorage_(r.at("storage"),directory);
     std::vector<fs::path> members;for(const auto& f:r.value("inventory",json::array()))members.push_back(safeRelative(f.at("name")));
-    for(const auto& folder:{directory/hash,stagingPath(directory,hash)})if(fs::exists(fs::symlink_status(folder))){
+    for(const auto& folder:{directory/hash,stagingPath(directory,hash,r)})if(fs::exists(fs::symlink_status(folder))){
       const auto identity=folder==directory/hash?"publishedIdentity":"stageIdentity";
-      const auto stage=stagingPath(directory,hash);
+      const auto stage=stagingPath(directory,hash,r);
       if(!r.contains(identity)&&folder==directory/hash&&publicationState(hash,r)==PublicationState::renamed)r[identity]=r.at("stageIdentity");
       if(!r.contains(identity)){
         // Only remove an empty publication reservation; unowned files are never touched.
@@ -385,9 +461,9 @@ public:
     std::lock_guard<std::mutex> serial(requests_);
     {std::lock_guard<std::mutex> g(mutex_);if(records_.contains(hash)&&records_[hash].value("phase","")!="available")return {{"torrent-duplicate",{{"id",records_[hash].at("id")},{"hashString",hash}}}};}
     const auto directory=args.at("download-dir").get<std::string>(),storage=args.value("storage",std::string("internal"));checkStorage_(storage,directory);
-    auto body=args;body["hash"]=hash;auto response=http(importing?"/import":"/add",&body);
+    const int parallel=connections(args);auto body=args;body["hash"]=hash;auto response=http(importing?"/import":"/add",&body);
     std::lock_guard<std::mutex> g(mutex_);if(records_.size()>=4096&&!records_.contains(hash))throw std::runtime_error("Remote download registry is full");const int id=records_.contains(hash)?records_[hash].at("id").get<int>():allocateId();
-    records_[hash]={{"id",id},{"directory",directory},{"storage",storage},{"paused",false},{"phase","remote"},{"snapshot",importing?response:json::object()},{"name",args.value("name",std::string("Remote torrent"))}};save();
+    records_[hash]={{"id",id},{"stagingFormat",2},{"transferFormat",2},{"segments",json::object()},{"parallelConnections",parallel},{"directory",directory},{"storage",storage},{"paused",false},{"phase","remote"},{"snapshot",importing?response:json::object()},{"name",args.value("name",std::string("Remote torrent"))}};save();
     return {{"torrent-added",{{"id",id},{"hashString",hash}}}};
   }
   json action(const std::string& method,const json& args) {
@@ -399,6 +475,7 @@ public:
         r["paused"]=true;save();if(active_==hash){cancel_=true;if(!wake_.wait_for(g,std::chrono::seconds(35),[&]{return active_!=hash;}))throw std::runtime_error("Waiting for remote transfer to pause; no files removed");}
         if(method=="torrent-stop"&&records_[hash].value("phase","")=="remote"){g.unlock();try{json body={{"hash",hash},{"action","pause"}};http("/action",&body);}catch(...){g.lock();throw;}g.lock();}
       }else if(method=="torrent-start"||method=="torrent-start-now"){
+        if(args.contains("parallelConnections")){if(active_==hash||!r.value("paused",false))throw std::runtime_error("Pause before changing parallelConnections");r["parallelConnections"]=connections(args);r.erase("effectiveConnections");}
         const bool control=r.value("phase","")=="remote";g.unlock();try{if(control){json body={{"hash",hash},{"action","resume"}};http("/action",&body);}}catch(...){g.lock();throw;}g.lock();records_[hash]["paused"]=false;records_[hash]["error"]="";save();
       }
       else if(method=="torrent-remove"){if(!r.value("paused",false)||active_==hash)throw std::runtime_error("Pause transfer before removing it");records_.erase(hash);save();}
