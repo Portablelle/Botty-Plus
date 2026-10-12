@@ -183,8 +183,8 @@ class RemoteDownloads {
   }
   // File-local coordinator: all threads finish before fsync, and only synced
   // successful ranges enter the ledger. Lifecycle/persistence stays with caller.
-  RemoteBatchOutcome copyFileSegments(const std::string& hash,const json& file,const std::string& storage,const fs::path& directory,int fd,int parallel,RemoteRangeLedger& ranges,const std::function<void(uint64_t,bool)>& committed){
-    std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
+  RemoteBatchOutcome copyFileSegments(const std::string& hash,const json& file,const std::string& storage,const fs::path& directory,int fd,std::vector<std::unique_ptr<Handle>>& handles,RemoteRangeLedger& ranges,const std::function<void(uint64_t,bool)>& committed){
+    const auto parallel=handles.size();
     uint64_t cursor=0;const uint64_t size=file.at("size");
     while(cursor<size){
       const auto missing=ranges.gaps(cursor,size_t(parallel),segmentSize);if(missing.empty())break;
@@ -376,6 +376,8 @@ class RemoteDownloads {
       dirty=false;checkpointBytes=0;checkpointAt=now;
     };
     const int parallel=std::min(connections(r),connections(json{{"parallelConnections",r.value("effectiveConnections",connections(r))}}));const auto started=std::chrono::steady_clock::now();uint64_t received=0;
+    // Preserve connection/TLS caches across every member in this attempt.
+    std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
     try{for(const auto& file:inventory){
       checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
       const auto name=safeRelative(file.at("name").get<std::string>());const uint64_t size=file.at("size");const auto key=std::to_string(file.at("index").get<unsigned>());
@@ -387,7 +389,7 @@ class RemoteDownloads {
       const auto required=remoteAdditionalAllocation(size,completed,st.st_blocks>0?uint64_t(st.st_blocks):0);
       if(required&&(available<=reserve||required>available-reserve))throw std::runtime_error("Not enough space to import remote torrent");
       done+=completed;update(hash,{{"bytes",done}});
-      const auto outcome=copyFileSegments(hash,file,storage,directory,fd,parallel,ranges,[&](uint64_t bytes,bool force){
+      const auto outcome=copyFileSegments(hash,file,storage,directory,fd,handles,ranges,[&](uint64_t bytes,bool force){
         if(bytes){ledger[key]=ranges.toJson();dirty=true;checkpointBytes+=bytes;done+=bytes;received+=bytes;}
         checkpoint(force);
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();

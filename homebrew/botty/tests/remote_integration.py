@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as tmp:
         return json.dumps([dict(t, hash=h) for h, (t, f) in rows.items()]).encode()
     bridge.qb = qb
     ranges = []; rejected = []; interrupted = []; blocked_copy = threading.Event(); release_copy = threading.Event(); blocked_folder = threading.Event(); release_folder = threading.Event()
-    active_ranges = {}; peak_ranges = {}; ranges_lock = threading.Lock(); member_requests = []
+    active_ranges = {}; peak_ranges = {}; connection_ports = {}; ranges_lock = threading.Lock(); member_requests = []
     legacy_copy_blocked = threading.Event(); legacy_copy_release = threading.Event(); legacy_copy_release.set()
     class Handler(module.Handler):
         @contextlib.contextmanager
@@ -89,6 +89,7 @@ with tempfile.TemporaryDirectory() as tmp:
             with super().file_transfer():
                 hash_ = self.path.split('/')[2]
                 with ranges_lock:
+                    connection_ports.setdefault(hash_, set()).add(self.client_address[1])
                     active_ranges[hash_] = active_ranges.get(hash_, 0) + 1
                     peak_ranges[hash_] = max(peak_ranges.get(hash_, 0), active_ranges[hash_])
                 try:
@@ -643,6 +644,7 @@ with tempfile.TemporaryDirectory() as tmp:
             many_id = api('/api/remote/import', {'hash': many, 'automatic': False})['torrent-added']['id']
             wait(lambda: any(t['id'] == many_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']), 90)
             assert counter.stat().st_size < 40, counter.stat().st_size
+            assert len(connection_ports[many]) == 1, connection_ports[many]
             many_target = data / 'downloads/complete' / many
             for file in files: assert (many_target / file['name']).read_bytes() == (sources / file['name']).read_bytes()
             proc.terminate(); proc.wait(timeout=10)
