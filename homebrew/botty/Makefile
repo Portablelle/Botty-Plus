@@ -39,13 +39,18 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 REMOTE_BRIDGE := $(if $(wildcard deployment/botty-remote/server.py),deployment/botty-remote,../../deployment/botty-remote)
-test-remote: build/botty-native
+build/remote-buffer-test: tests/remote-buffer-test.cpp src/remote-buffer.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+test-remote: build/botty-native build/remote-buffer-test
+	./build/remote-buffer-test
 	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 tests/remote_integration.py
 
 test-progress: build/progress-test
 	./build/progress-test
-test: build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test
+test: build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
+	./build/remote-buffer-test
 	./build/progress-test
 	./build/core-test
 	./build/rest-mode-test

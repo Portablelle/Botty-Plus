@@ -1,4 +1,4 @@
-# Botty service 1.6.0
+# Botty service 1.6.1
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.6.0`; its installed marker is in the parent directory.
+`/data/botty/manager/1.6.1`; its installed marker is in the parent directory.
 
 ## Installation updates
 
@@ -456,3 +456,17 @@ the standby download/readback evidence above comes from the prototype trials.
 
 For the PS5Tailscale comparison and the limits of manager-hosted renewal, see
 [the rest-mode investigation](../../docs/REST-MODE.md).
+
+### Faster HTTPS imports (1.6.1)
+
+File transfers request a 4 MiB TCP receive window before connecting, falling back
+to 1 MiB or 256 KiB when the kernel refuses a larger socket buffer. The curl
+receive buffer is 256 KiB. A bounded 512 KiB write buffer combines small HTTPS
+callbacks into larger disk writes. Progress counts bytes written, and pause or
+network errors flush the valid tail before retaining the partial file. A process
+crash can discard at most the in-memory tail; resumption still starts at the
+actual file size. Files remain sequential, pinned and verified before publication.
+
+The PS5 baseline was about 4.2 MiB/s on Ethernet to the internal SSD. Host tests
+verify write coalescing, short writes, interruption and Range recovery; they do
+not establish the throughput improvement on PS5. Measure that after installation.

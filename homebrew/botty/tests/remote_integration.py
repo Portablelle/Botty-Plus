@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp).resolve()
     sources = root / 'sources'; sources.mkdir()
     game = 'a' * 40; movie = 'b' * 40; folder = 'c' * 40
-    payload = os.urandom(256 * 1024)
+    payload = os.urandom(2 * 512 * 1024 + 73)
     (sources / 'Game PS5').mkdir()
     (sources / 'Game PS5/a space.RAR').write_bytes(payload)
     (sources / 'Game PS5/ü.r00').write_bytes(b'volume')
