@@ -40,6 +40,7 @@ jobs:
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
       active: ${{ steps.announce.outputs.active }}
+      announce: ${{ steps.announce.outcome }}
     steps:
       - name: Resolve the pull request
         id: pr
@@ -238,9 +239,14 @@ jobs:
             docs=true small=true lines=0
             while IFS=$'\t' read -r added deleted path; do
               case "$path" in
-                # Git quotes unusual names; never classify those as light.
-                \"*|CLAUDE.md|AGENTS.md|.claude/*|.github/*|scripts/*|infra/*|packages/*) docs=false small=false ;;
-                *.md|docs/*|LICENSE) ;;
+                # Git quotes unusual names; never classify those as light. Agent
+                # policy files apply at any depth.
+                \"*|CLAUDE.md|*/CLAUDE.md|CLAUDE.local.md|*/CLAUDE.local.md|AGENTS.md|*/AGENTS.md|\
+                .claude/*|*/.claude/*|.github/*|scripts/*|infra/*|packages/*) docs=false small=false ;;
+                docs/*) ;;
+                # Component READMEs and notices ship in release source archives.
+                */*) docs=false ;;
+                *.md|LICENSE) ;;
                 *) docs=false ;;
               esac
               if [[ "$added$deleted" =~ ^[0-9]+$ ]]; then
@@ -364,6 +370,12 @@ jobs:
           if [ "$FORK" != true ] && [ "${{ github.event.action }}" != labeled ] &&
              [ "${{ github.event.action }}" != unlabeled ]; then
             latest=$(bash .github/scripts/claude-status.sh "Claude host checks" target_url)
+            # An announcement that failed before publishing statuses has nothing to
+            # replace; fail visibly instead of leaving a green run.
+            if [ "$latest" != "$REVIEW_RUN" ] && [ "${{ needs.context.outputs.announce }}" = failure ]; then
+              echo "::error::The review announcement failed for this run; re-run this workflow."
+              exit 2
+            fi
             [ "$latest" = "$REVIEW_RUN" ] || exit 0
           fi
           # A cancelled current run is terminal, not an indefinite wait. Superseded
