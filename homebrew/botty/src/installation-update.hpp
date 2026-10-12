@@ -8,7 +8,7 @@ public:
   using Download=std::function<std::string(const std::string&,size_t,const std::atomic<bool>&)>;
   struct Config {
     fs::path root="/data/botty";
-    std::string managerVersion="1.6.0";
+    std::string managerVersion="1.6.1";
     Download download;
     std::function<json()> inspect;
     std::function<bool(const json&)> owns;
@@ -23,7 +23,7 @@ private:
   std::thread thread_;
   std::atomic<bool> cancelled_{false},requested_{false},finished_{false};
   bool check_=true;
-  json state_={{"supported",true},{"scope","installation"},{"status","checking"},{"installedVersion",""},{"availableVersion",""},{"installedServiceVersion","1.6.0"},{"availableServiceVersion",""},{"installedWorkerVersion",""},{"availableWorkerVersion",""},{"installedEngineVersion",""},{"availableEngineVersion",""},{"updateAvailable",false},{"requested",false},{"closeRequired",false},{"message","Checking the installation release."}};
+  json state_={{"supported",true},{"scope","installation"},{"status","checking"},{"installedVersion",""},{"availableVersion",""},{"installedServiceVersion","1.6.1"},{"availableServiceVersion",""},{"installedWorkerVersion",""},{"availableWorkerVersion",""},{"installedEngineVersion",""},{"availableEngineVersion",""},{"updateAvailable",false},{"requested",false},{"closeRequired",false},{"message","Checking the installation release."}};
   InstallationRelease trusted_;
   json request_;
   fs::path requestPath() const {return cfg_.root/"installation/request.json";}
