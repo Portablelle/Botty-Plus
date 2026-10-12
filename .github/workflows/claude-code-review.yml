@@ -141,6 +141,25 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: List the PR's changed files
+        env:
+          BASE: ${{ github.sha }}
+          HEAD: ${{ fromJSON(needs.context.outputs.pr).head.sha }}
+        run: |
+          # The trusted entry point skips compiled suites no changed path can affect.
+          # Any failure leaves no list, so every suite runs.
+          list="$RUNNER_TEMP/changed-files"
+          if git diff --name-only --no-renames "$BASE" "$HEAD" > "$list.tmp"; then
+            mv "$list.tmp" "$list"
+            echo "BOTTY_CHANGED_FILES=$list" >> "$GITHUB_ENV"
+          fi
+      # Restore only: this job runs PR code, so it never writes the shared cache.
+      # The default branch's Botty+ checks save it after each merge.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/ccache
+          key: ccache-host-${{ fromJSON(needs.context.outputs.pr).head.sha }}
+          restore-keys: ccache-host-
       - name: Run trusted host checks against the PR head
         env:
           BASE: ${{ github.sha }}
