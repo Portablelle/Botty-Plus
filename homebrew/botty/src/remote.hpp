@@ -2,6 +2,8 @@
 #include "core.hpp"
 #include "progress.hpp"
 #include "storage.hpp"
+#include "remote-buffer.hpp"
+#include <sys/socket.h>
 #include <curl/curl.h>
 #include <atomic>
 #include <arpa/inet.h>
@@ -50,6 +52,15 @@ class RemoteDownloads {
     CURL* curl=curl_easy_init();curl_slist* headers=nullptr;curl_slist* resolve=nullptr;
     ~Handle(){curl_slist_free_all(headers);curl_slist_free_all(resolve);if(curl)curl_easy_cleanup(curl);}
   };
+  static int receiveSocket(void*,curl_socket_t fd,curlsocktype purpose) {
+    if(purpose==CURLSOCKTYPE_IPCXN){
+      // Set before connect so TCP window scaling can use the larger receive window.
+      // Some PS5 kernels cap socket memory: keep a working smaller buffer on refusal.
+      for(const int bytes:{4*1024*1024,1024*1024,256*1024})
+        if(::setsockopt(fd,SOL_SOCKET,SO_RCVBUF,&bytes,sizeof(bytes))==0)break;
+    }
+    return CURL_SOCKOPT_OK;
+  }
   void setup(Handle& h,const std::string& route) {
     if(!h.curl)throw std::runtime_error("Cannot initialize remote HTTPS");
     curl_easy_reset(h.curl);curl_slist_free_all(h.headers);h.headers=nullptr;curl_slist_free_all(h.resolve);h.resolve=nullptr;
@@ -110,7 +121,7 @@ class RemoteDownloads {
   }
   struct Sink {
     RemoteDownloads* owner;std::string hash,storage;fs::path directory;int fd;
-    uint64_t bytes,limit,base,total,offset;CURL* curl;long expectedStatus;ExtractionEstimate estimate;
+    uint64_t bytes,limit,base,total,offset;RemoteWriteBuffer output;CURL* curl;long expectedStatus;ExtractionEstimate estimate;
     std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now(),last=start;
     std::string error;
   };
@@ -123,11 +134,11 @@ class RemoteDownloads {
       const auto now=std::chrono::steady_clock::now();
       if(now-s.last>=std::chrono::milliseconds(250)){
         s.owner->checkStorage_(s.storage,s.directory);
-        const auto done=s.base+s.bytes;s.estimate.update(now,done,s.total);
+        const auto done=s.base+s.offset+s.output.written();s.estimate.update(now,done,s.total);
         const auto seconds=std::chrono::duration<double>(now-s.start).count();
-        s.owner->update(s.hash,{{"bytes",done},{"rate",seconds>0?uint64_t((s.bytes-s.offset)/seconds):uint64_t(0)},{"eta",s.estimate.eta}});s.last=now;
+        s.owner->update(s.hash,{{"bytes",done},{"rate",seconds>0?uint64_t(s.output.written()/seconds):uint64_t(0)},{"eta",s.estimate.eta}});s.last=now;
       }
-      size_t at=0;while(at<bytes){auto n=::write(s.fd,p+at,bytes-at);if(n<0&&errno==EINTR)continue;if(n<=0)throw std::runtime_error("Local download write failed");at+=n;}
+      s.output.append(p,bytes);
       s.bytes+=bytes;return bytes;
     }catch(const std::exception& e){s.error=e.what();return 0;}
   }
@@ -214,17 +225,22 @@ class RemoteDownloads {
       if(available<=reserve||size-offset>available-reserve)throw std::runtime_error("Not enough space to import remote torrent");
       if(offset<size){
         if(lseek(fd,st.st_size,SEEK_SET)<0)throw std::runtime_error("Cannot resume local file");
-        Sink sink{this,hash,storage,directory,fd,offset,size,done,total,offset,h.curl,offset?206L:200L,ExtractionEstimate{},std::chrono::steady_clock::now(),std::chrono::steady_clock::now(),""};sink.start=sink.last=std::chrono::steady_clock::now();
+        Sink sink{this,hash,storage,directory,fd,offset,size,done,total,offset,RemoteWriteBuffer(fd),h.curl,offset?206L:200L,ExtractionEstimate{},std::chrono::steady_clock::now(),std::chrono::steady_clock::now(),""};sink.start=sink.last=std::chrono::steady_clock::now();
         setup(h,"/file/"+hash+"/"+std::to_string(file.at("index").get<unsigned>()));
         auto* escaped=curl_easy_escape(h.curl,name.string().c_str(),static_cast<int>(name.string().size()));if(!escaped)throw std::runtime_error("Cannot encode pinned remote member");
         const std::string nameHeader=std::string("X-Botty-File-Name: ")+escaped;curl_free(escaped);
         h.headers=curl_slist_append(h.headers,nameHeader.c_str());h.headers=curl_slist_append(h.headers,("X-Botty-File-Size: "+std::to_string(size)).c_str());curl_easy_setopt(h.curl,CURLOPT_HTTPHEADER,h.headers);
+        curl_easy_setopt(h.curl,CURLOPT_SOCKOPTFUNCTION,receiveSocket);
+        curl_easy_setopt(h.curl,CURLOPT_BUFFERSIZE,256L*1024);
         curl_easy_setopt(h.curl,CURLOPT_WRITEFUNCTION,writeFile);curl_easy_setopt(h.curl,CURLOPT_WRITEDATA,&sink);
         curl_easy_setopt(h.curl,CURLOPT_FAILONERROR,1L);
         curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_LIMIT,1L);curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_TIME,30L);
         curl_easy_setopt(h.curl,CURLOPT_XFERINFOFUNCTION,cancelled);curl_easy_setopt(h.curl,CURLOPT_XFERINFODATA,&sink);curl_easy_setopt(h.curl,CURLOPT_NOPROGRESS,0L);
         if(offset)curl_easy_setopt(h.curl,CURLOPT_RESUME_FROM_LARGE,static_cast<curl_off_t>(offset));
         const auto code=curl_easy_perform(h.curl);long status=0;curl_easy_getinfo(h.curl,CURLINFO_RESPONSE_CODE,&status);
+        // Keep a valid received prefix on pause or a truncated response. A crash may
+        // lose only the bounded in-memory tail; the next Range starts at file size.
+        if(sink.output.pending()){checkStorage_(storage,directory);sink.output.flush();}
         if(code!=CURLE_OK||status!=(offset?206:200)||sink.bytes!=size)throw std::runtime_error(sink.error.empty()?"HTTPS transfer interrupted; resume retains partial files":sink.error);
       }
       if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");done+=size;update(hash,{{"bytes",done}});
