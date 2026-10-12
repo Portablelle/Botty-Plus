@@ -530,3 +530,6 @@ publication. Each recorded range is file-synced first; completed members do not
 force unchanged ledger rewrites. A sudden power loss can retry uncheckpointed
 small-file bytes. Directory entry syncing is reused within each attempt except
 when creating new entries.
+
+Activity rows expose `remoteRetrying` for active, unpaused slot-contention
+backoff. Automation can wait for these retries without parsing diagnostic text.
