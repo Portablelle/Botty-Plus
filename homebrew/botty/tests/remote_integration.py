@@ -557,6 +557,51 @@ with tempfile.TemporaryDirectory() as tmp:
             wait(lambda: any(t['id'] == initial_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
             assert (data / 'downloads/complete' / initial / 'Game PS5/a space.RAR').read_bytes() == payload
 
+        # Recover the creation windows before a marker existed or was complete.
+        creation = '8' * 40
+        if creation not in rows:
+            rows[creation] = rows[game]
+            creation_id = api('/api/remote/import', {'hash': creation, 'automatic': False})['torrent-added']['id']
+            wait(lambda: any(t['id'] == creation_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+        for marker_kind in ('missing', 'partial', 'foreign-member'):
+            proc.terminate(); proc.wait(timeout=10)
+            creation_target = data / 'downloads/complete' / creation
+            creation_stage = creation_target.with_name('.remote2-' + creation + '.partial'); creation_target.rename(creation_stage)
+            for entry in list(creation_stage.iterdir()):
+                if entry.is_dir(): shutil.rmtree(entry)
+                else: entry.unlink()
+            saved = json.loads((data / 'remote-downloads.json').read_text()); saved[creation].update(phase='transfer', paused=False, publishing=False, segments={})
+            saved[creation].pop('stageIdentity'); saved[creation].pop('publishedIdentity', None)
+            token_ = saved[creation]['stageToken']; creation_id = saved[creation]['id']
+            if marker_kind == 'partial': (creation_stage / '.botty-remote-owner').write_text(token_[:11])
+            if marker_kind == 'foreign-member': (creation_stage / 'foreign.bin').write_bytes(b'original user bytes')
+            (data / 'remote-downloads.json').write_text(json.dumps(saved))
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+            if marker_kind == 'foreign-member':
+                wait(lambda: any(t['id'] == creation_id and 'unexpected files' in t.get('errorString', '') for t in api('/api/state')['torrents']))
+                try:
+                    api('/api/torrent', {'id': creation_id, 'action': 'remove-data', 'confirmed': True})
+                    raise RuntimeError('Unknown initialization contents were removed')
+                except AssertionError as error: assert 'unexpected files' in str(error)
+                assert (creation_stage / 'foreign.bin').read_bytes() == b'original user bytes'
+                (creation_stage / 'foreign.bin').unlink()  # Only the fixture actor's file.
+                api('/api/torrent', {'id': creation_id, 'action': 'resume'})
+            wait(lambda: any(t['id'] == creation_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+            assert (creation_target / '.botty-remote-owner').read_text() == token_
+            assert (creation_target / 'Game PS5/a space.RAR').read_bytes() == payload
+        # Intent persisted before rename: deletion resolves the owned legacy path.
+        migration = '7' * 40
+        proc.terminate(); proc.wait(timeout=10)
+        migration_target = data / 'downloads/complete' / migration
+        migration_stage = migration_target.with_name('.remote-' + migration + '.partial'); migration_target.rename(migration_stage)
+        saved = json.loads((data / 'remote-downloads.json').read_text()); saved[migration].update(phase='transfer', paused=True, publishing=False, stagingFormat=2)
+        for field in ('publishedIdentity', 'transferFormat', 'segments', 'stageToken'): saved[migration].pop(field, None)
+        migration_id = saved[migration]['id']; (data / 'remote-downloads.json').write_text(json.dumps(saved))
+        proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+        api('/api/torrent', {'id': migration_id, 'action': 'remove-data', 'confirmed': True})
+        assert not migration_stage.exists() and migration not in json.loads((data / 'remote-downloads.json').read_text())
+        assert (sources / 'Game PS5/a space.RAR').read_bytes() == payload
+
         # Huge pinned metadata is rejected before planning millions of ranges.
         huge = '5' * 40; rows[huge] = (rows[game][0], [{'name': 'Game PS5/a space.RAR', 'size': 2**63-1, 'index': 0}])
         huge_id = api('/api/remote/import', {'hash': huge, 'automatic': False})['torrent-added']['id']

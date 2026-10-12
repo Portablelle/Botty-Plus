@@ -39,7 +39,7 @@ build/progress-test: tests/progress-test.cpp src/progress.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
 REMOTE_BRIDGE := $(if $(wildcard deployment/botty-remote/server.py),deployment/botty-remote,../../deployment/botty-remote)
-build/remote-buffer-test: tests/remote-buffer-test.cpp src/remote-buffer.hpp
+build/remote-buffer-test: tests/remote-buffer-test.cpp src/remote-buffer.hpp src/remote-ledger.hpp src/remote-outcome.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
 test-remote: build/botty-native build/remote-buffer-test

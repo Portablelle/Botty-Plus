@@ -3,6 +3,8 @@
 #include "progress.hpp"
 #include "storage.hpp"
 #include "remote-buffer.hpp"
+#include "remote-ledger.hpp"
+#include "remote-outcome.hpp"
 #include <sys/socket.h>
 #include <curl/curl.h>
 #include <atomic>
@@ -122,10 +124,6 @@ class RemoteDownloads {
     if(values.contains("inventory")&&records_[hash].contains("snapshot"))records_[hash]["snapshot"].erase("files");
     if(durable||values.contains("snapshot")||values.contains("inventory")){try{save();}catch(...){records_[hash]=previous;throw;}}
   }
-  struct TransferError:std::runtime_error {
-    long status;
-    TransferError(long code,const std::string& message):std::runtime_error(message),status(code){}
-  };
   static constexpr uint64_t segmentSize=8ULL*1024*1024;
   static int connections(const json& args,int fallback=2){
     if(!args.contains("parallelConnections"))return fallback;
@@ -177,8 +175,8 @@ class RemoteDownloads {
     curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_LIMIT,1L);curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_TIME,30L);
     curl_easy_setopt(h.curl,CURLOPT_XFERINFOFUNCTION,cancelled);curl_easy_setopt(h.curl,CURLOPT_XFERINFODATA,&sink);curl_easy_setopt(h.curl,CURLOPT_NOPROGRESS,0L);
     const auto code=curl_easy_perform(h.curl);long status=0;curl_easy_getinfo(h.curl,CURLINFO_RESPONSE_CODE,&status);
-    if(status==416)throw TransferError(416,"Server rejected pinned byte range (416); pause and inspect the remote file");
-    if(status==429)throw TransferError(429,"Server transfer slots busy (429); retrying after bounded delay");
+    if(status==416)throw RemoteTransferError(416,"Server rejected pinned byte range (416); pause and inspect the remote file");
+    if(status==429)throw RemoteTransferError(429,"Server transfer slots busy (429); retrying after bounded delay");
     if(code!=CURLE_OK||status!=206||!sink.rangeValid||!sink.lengthValid||sink.bytes!=end-start)throw std::runtime_error(sink.error.empty()?"HTTPS segment interrupted; uncommitted range will be retried":sink.error);
     checkStorage_(storage,directory);sink.output.flush();
   }
@@ -198,7 +196,14 @@ class RemoteDownloads {
       return result;
     }catch(...){if(fd>=0)::close(fd);throw;}
   }
-  static fs::path stagingPath(const fs::path& directory,const std::string& hash,const json& r){return directory/((r.value("stagingFormat",1)==2?".remote2-":".remote-")+hash+".partial");}
+  static fs::path stagingPath(const fs::path& directory,const std::string& hash,const json& r){
+    const auto legacy=directory/(".remote-"+hash+".partial"),segmented=directory/(".remote2-"+hash+".partial");
+    if(r.value("stagingFormat",1)!=2)return legacy;
+    // Durable migration intent can precede rename. Resolve only the matching
+    // owned legacy path so references/removal retain it across that window.
+    if(!fs::exists(fs::symlink_status(segmented))&&r.contains("stageIdentity")&&fs::exists(fs::symlink_status(legacy))&&directoryIdentity(legacy)==r.at("stageIdentity"))return legacy;
+    return segmented;
+  }
   static json directoryIdentity(const fs::path& path) {
     struct stat st{};if(lstat(path.c_str(),&st)||!S_ISDIR(st.st_mode))throw std::runtime_error("Import directory is unavailable or unsafe");
     const auto marker=path/remoteOwnerFile;
@@ -227,6 +232,22 @@ class RemoteDownloads {
     const auto stage=stagingPath(r.at("directory").get<std::string>(),hash,r);
     if(!fs::exists(fs::symlink_status(stage)))return;
     const json intended={{"marker",r.at("stageToken")}};
+    const auto token=r.at("stageToken").get<std::string>();
+    if(!std::regex_match(token,std::regex("[a-f0-9]{32}")))throw std::runtime_error("Invalid staging ownership intent");
+    const auto marker=stage/remoteOwnerFile;const auto status=fs::symlink_status(marker);
+    if(!fs::exists(status)||(!fs::is_symlink(status)&&fs::is_regular_file(status)&&fs::file_size(marker)<32)){
+      containedExisting(r.at("directory").get<std::string>(),stage);
+      for(const auto& entry:fs::directory_iterator(stage))if(entry.path()!=marker)throw std::runtime_error("Incomplete staging initialization contains unexpected files; retained for inspection");
+      if(!fs::exists(status))markDirectory(stage,token);
+      else {
+        int fd=::open(marker.c_str(),O_RDWR|O_NOFOLLOW|O_NONBLOCK);if(fd<0)throw std::runtime_error("Cannot recover partial ownership marker");
+        struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};char prefix[32]{};
+        if(fstat(fd,&st)||!S_ISREG(st.st_mode)||st.st_nlink!=1||st.st_size<0||st.st_size>=32||::pread(fd,prefix,size_t(st.st_size),0)!=st.st_size||token.compare(0,size_t(st.st_size),prefix,size_t(st.st_size)))throw std::runtime_error("Partial ownership marker does not match creation intent");
+        if(ftruncate(fd,0)||lseek(fd,0,SEEK_SET)<0)throw std::runtime_error("Cannot recover partial ownership marker");
+        size_t at=0;while(at<token.size()){const auto n=::write(fd,token.data()+at,token.size()-at);if(n<0&&errno==EINTR)continue;if(n<=0)throw std::runtime_error("Cannot recover partial ownership marker");at+=size_t(n);}
+        if(fsync(fd))throw std::runtime_error("Cannot sync recovered ownership marker");
+      }
+    }
     if(directoryIdentity(stage)!=intended)throw std::runtime_error("Partial directory does not match persisted ownership intent");
     syncStagingDirectories(stage,r.at("directory").get<std::string>());
     update(hash,{{"stageIdentity",intended}},true);r["stageIdentity"]=intended;
@@ -303,11 +324,11 @@ class RemoteDownloads {
       for(const auto& file:inventory){
         if(stop_||cancel_)throw std::runtime_error("Transfer paused");
         const auto name=safeRelative(file.at("name").get<std::string>());const auto key=std::to_string(file.at("index").get<unsigned>());
-        ledger[key]=json::array();if(!fs::exists(fs::symlink_status(stage/name)))continue;
+        RemoteRangeLedger prefixes(file.at("size").get<uint64_t>());ledger[key]=prefixes.toJson();if(!fs::exists(fs::symlink_status(stage/name)))continue;
         const int fd=leaf(stage,name);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
         if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>file.at("size").get<uint64_t>())throw std::runtime_error("Legacy partial file size is invalid");
         if(fsync(fd))throw std::runtime_error("Cannot sync legacy partial file");
-        if(st.st_size)ledger[key].push_back({0,uint64_t(st.st_size)});
+        if(st.st_size)prefixes.commit({0,uint64_t(st.st_size)});ledger[key]=prefixes.toJson();
       }
       update(hash,{{"transferFormat",2},{"segments",ledger}},true);
     }
@@ -317,15 +338,8 @@ class RemoteDownloads {
       const auto name=safeRelative(file.at("name").get<std::string>());const uint64_t size=file.at("size");const auto key=std::to_string(file.at("index").get<unsigned>());
       int fd=leaf(stage,name);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
       if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>size)throw std::runtime_error("Partial file size is invalid");
-      if(!ledger.contains(key)){
-        ledger[key]=json::array();
-      }
-      uint64_t completed=0,previous=0;
-      for(const auto& interval:ledger.at(key)){
-        if(!interval.is_array()||interval.size()!=2||!interval[0].is_number_integer()||!interval[1].is_number_integer()||interval[0]<0||interval[1]<0)throw std::runtime_error("Invalid remote segment ledger");
-        const uint64_t start=interval[0],end=interval[1];if(start<previous||end<=start||end>size||end>uint64_t(st.st_size))throw std::runtime_error("Invalid remote segment bounds");
-        completed+=end-start;previous=end;
-      }
+      auto ranges=RemoteRangeLedger::fromJson(ledger.value(key,json::array()),size,uint64_t(st.st_size));
+      ledger[key]=ranges.toJson();const auto completed=ranges.completed();
       // This is a persistence barrier on EVERY attempt, even when RAM already had
       // a marker from an earlier save. A failed save prevents all sparse writes.
       update(hash,{{"transferFormat",2},{"segments",ledger}},true);
@@ -334,32 +348,24 @@ class RemoteDownloads {
       if(required&&(available<=reserve||required>available-reserve))throw std::runtime_error("Not enough space to import remote torrent");
       done+=completed;update(hash,{{"bytes",done}});
       std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
-      const auto committed=ledger.at(key);size_t intervalIndex=0;uint64_t cursor=0;
+      uint64_t cursor=0;
       while(cursor<size){
-        std::vector<std::pair<uint64_t,uint64_t>> missing;
-        while(cursor<size&&missing.size()<size_t(parallel)){
-          if(intervalIndex<committed.size()&&cursor==committed[intervalIndex][0].get<uint64_t>()){cursor=committed[intervalIndex++][1].get<uint64_t>();continue;}
-          const uint64_t gapEnd=intervalIndex<committed.size()?committed[intervalIndex][0].get<uint64_t>():size;
-          const auto end=std::min(gapEnd,cursor+segmentSize);missing.emplace_back(cursor,end);cursor=end;
-        }
-        if(missing.empty())break;
+        const auto missing=ranges.gaps(cursor,size_t(parallel),segmentSize);if(missing.empty())break;
         if(stop_||cancel_)throw std::runtime_error("Transfer paused");
-        const size_t count=missing.size();std::vector<std::thread> workers;std::vector<std::exception_ptr> errors(count);std::atomic<bool> abort{false};
-        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].first,missing[i].second,abort);}catch(const TransferError& e){errors[i]=std::current_exception();if(e.status!=429)abort=true;}catch(...){errors[i]=std::current_exception();abort=true;}});}
+        const size_t count=missing.size();std::vector<std::thread> workers;std::vector<RemoteBatchOutcome> outcomes(count);RemoteBatchOutcome outcome;std::atomic<bool> abort{false};
+        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].start,missing[i].end,abort);}catch(...){outcomes[i]=RemoteBatchOutcome::failure(std::current_exception());if(outcomes[i].cancelSiblings())abort=true;}});}
         catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
         for(auto& worker:workers)worker.join();
         if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
-        for(size_t i=0;i<count;++i)if(!errors[i]){const auto range=missing[i];ledger[key].push_back({range.first,range.second});const auto n=range.second-range.first;done+=n;received+=n;}
-        std::sort(ledger[key].begin(),ledger[key].end(),[](const json& a,const json& b){return a[0].get<uint64_t>()<b[0].get<uint64_t>();});
-        // Merge adjacent intervals to bound registry growth for large downloads.
-        json merged=json::array();for(const auto& range:ledger[key]){if(!merged.empty()&&merged.back()[1]==range[0])merged.back()[1]=range[1];else merged.push_back(range);}ledger[key]=merged;
+        for(size_t i=0;i<count;++i){
+          outcome.include(outcomes[i]);
+          if(outcomes[i].succeeded()){const auto range=missing[i];ranges.commit(range);const auto n=range.end-range.start;done+=n;received+=n;}
+        }
+        ledger[key]=ranges.toJson();
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
         update(hash,{{"segments",ledger},{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}},true);
-        // Fatal range rejection wins over temporary slot contention or sibling
-        // cancellation, regardless of which connection reported it first.
-        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const TransferError& e){if(e.status==416)throw;}catch(const std::exception&){}}
-        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const TransferError& e){if(e.status==429){update(hash,{{"effectiveConnections",std::max(1,parallel/2)}},true);throw;}}catch(const std::exception&){}}
-        for(const auto& error:errors)if(error)std::rethrow_exception(error);
+        if(outcome.busy())update(hash,{{"effectiveConnections",outcome.connectionsAfterFailure(parallel)}},true);
+        outcome.rethrow();
       }
       if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");
     }
@@ -423,7 +429,7 @@ class RemoteDownloads {
           update(hash,{{"snapshot",snapshot},{"error",""}});
           if(snapshot.at("complete").get<bool>())transfer(hash,r,snapshot);
           else update(hash,{{"phase","remote"},{"rate",0},{"eta",-1.0}});
-        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};const auto* transport=dynamic_cast<const TransferError*>(&e);if(transport&&transport->status==416)failure["paused"]=true;update(hash,failure,true);}catch(...){}}
+        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};if(RemoteBatchOutcome::failure(std::current_exception()).pause())failure["paused"]=true;update(hash,failure,true);}catch(...){}}
         {std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();}
       }
       std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});

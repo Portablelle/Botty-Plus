@@ -513,3 +513,10 @@ Staging creation records a durable ownership token before mkdir. A failed
 identity save can therefore recover the matching marker on resume or removal,
 while unrelated directories remain unowned. Legacy migration checks local-file
 sharing under both staging path spellings before renaming any directory.
+
+An interrupted migration still resolves its owned legacy directory until rename
+finishes, including for reference checks and local-only removal. Creation recovery
+repairs only an empty stage or a marker prefix matching its durable token; unknown
+contents and foreign markers are retained for inspection. Typed range ledgers
+validate bounds, count completion, plan gaps and merge checkpoints. A single
+batch outcome reduction prioritizes 416, then 429, then other failures.
