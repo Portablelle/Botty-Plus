@@ -12,6 +12,9 @@ struct Paths {
   explicit Paths(fs::path data = "/data/botty", fs::path games = "/data/homebrew")
     : root(std::move(data)), complete(root/"downloads/complete"), extracted(root/"extracted"), jobs(root/"jobs"), library(std::move(games)) {}
 };
+inline std::string asciiLower(std::string text){for(char& c:text)if(c>='A'&&c<='Z')c=char(c+32);return text;}
+int makeDirectoryRelative(int,const char*,unsigned);
+int openFileRelative(int,const char*,int,unsigned=0);
 std::string readText(const fs::path&, size_t limit = 1024*1024);
 void writeJson(const fs::path&, const json&);
 fs::path safeRelative(const std::string&);

@@ -110,6 +110,12 @@ class Rtorrent {
     if(out.empty()||out.size()>2*1024*1024)throw std::runtime_error("Invalid torrent size");return out;
   }
 public:
+  static std::string inputHash(const json& args) {
+    if(args.contains("metainfo"))return metadataHash(decode64(args.at("metainfo")));
+    const auto source=args.at("filename").get<std::string>();std::smatch match;
+    if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");
+    return lower(match[1]);
+  }
   json installationRpc(const std::string& method,const json& params=json::array({""})) {
     static const std::set<std::string> allowed={"system.pid","session.save","d.multicall","d.stop","d.start","d.resume","d.is_active","d.hashing","system.shutdown.normal"};
     if(!allowed.count(method))throw std::runtime_error("Unexpected installation engine method");

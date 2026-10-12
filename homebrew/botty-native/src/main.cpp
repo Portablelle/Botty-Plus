@@ -343,6 +343,8 @@ void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexce
     const auto status=std::string_view(e.status.data());const auto state=botty::activityState(e,torrent);
     if(state==botty::ActivityState::attention&&e.error[0]){std::snprintf(out,size,"%s",e.error.data());return;}
     if(torrent){
+        if(e.remoteCandidate){std::snprintf(out,size,"Available on server. Choose Import to PS5.");return;}
+        if(e.remote&&!e.complete){std::snprintf(out,size,"%s: %s of %s at %s/s",e.phase.data(),done,total,rate);return;}
         if(e.complete){if(e.upload>0){botty::formatBytes(e.upload,rate,sizeof(rate));std::snprintf(out,size,"Downloaded \xc2\xb7 %s \xc2\xb7 seeding at %s/s",total,rate);}else std::snprintf(out,size,"Downloaded \xc2\xb7 %s",total);return;}
         if(status=="Paused"){std::snprintf(out,size,"Paused \xc2\xb7 %s of %s",done,total);return;}
         if(e.download>0)std::snprintf(out,size,"%s of %s \xc2\xb7 %s/s%s%s%s",done,total,rate,left[0]?" \xc2\xb7 ":"",left,left[0]?" left":"");
@@ -391,6 +393,7 @@ const char* explain(Op op,const botty::Entry* e) noexcept {
     case Op::removeOriginal:return "Deletes the retained original without verification. The compressed copy, saves and archives are kept.";
     case Op::cancelCompression:return "Requests cancellation and keeps the original game. Wait until the compression worker stops.";
     case Op::removeLibrary:return e&&e->compressed?"Deletes the compressed game and its retained original. Saves, torrents and archives are kept.":"Deletes installed game files. Saves, torrents and archives are kept. Close the game first.";
+    case Op::importRemote:return "Copies this server candidate to the selected PS5 disk. Server originals are kept.";
     case Op::removeTorrent:return "Permanently deletes this torrent and its downloaded files, including archives. Library games are kept.";
     case Op::cancel:return "Stops extraction at the next safe point. Partial files and original archives are kept.";
     case Op::dismiss:{const auto status=e?std::string_view(e->status.data()):std::string_view{};return status=="failed"||status=="cancelled"||status=="interrupted"?"Removes this row and deletes its partial files. Original downloads and archives are kept.":"Hides this row from Activity. Files are kept; ready and moved content stays in Library.";}
@@ -1025,12 +1028,12 @@ void sheetFooter(Canvas& c,const char* primary,Glyph change,const char* back) no
     hint(c,x,Glyph::circle,back,false,1008);
 }
 const char* ctaLabel(Op op) noexcept {
-    switch(op){case Op::grab:case Op::exploreGrab:return "Get game";case Op::add:return "Start download";case Op::extract:return "Extract";case Op::transfer:return "Move";case Op::move:return "Move to Library";case Op::compress:return "Compress game";default:return "Continue";}
+    switch(op){case Op::importRemote:return "Import to PS5";case Op::grab:case Op::exploreGrab:return "Get game";case Op::add:return "Start download";case Op::extract:return "Extract";case Op::transfer:return "Move";case Op::move:return "Move to Library";case Op::compress:return "Compress game";default:return "Continue";}
 }
 void drawSheet(Canvas& c) noexcept {
     sheetFrame(c);
     const auto op=workflow.command.operation;const auto* target=workflow.target(catalog);
-    const bool download=op==Op::add||op==Op::grab||op==Op::exploreGrab;
+    const bool download=op==Op::add||op==Op::grab||op==Op::exploreGrab||op==Op::importRemote;
     char line1[192]{},size[48];
     std::array<char,96> cover{};
     const char* kicker=op==Op::add?"Add a magnet link":op==Op::extract?"Extract":op==Op::transfer?"Move to another disk":op==Op::move?"Move to Library":op==Op::compress?"Compress game":"Get game";
@@ -1049,10 +1052,11 @@ void drawSheet(Canvas& c) noexcept {
         else {char where[96];storageName(target->storage.data(),where,sizeof(where));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 now on %s",size,where);}
     }
     sheetHeader(c,cover,name,kicker,accent,line1,nullptr,false);
+    const auto layout=botty::sheetLayout(workflow.rowCount);
     for(unsigned r=0;r<workflow.rowCount;++r){
-        const unsigned y=320+r*130;const bool focus=workflow.focus==r;const auto row=workflow.rows[r];
-        if(focus)focusRing(c,1192,y,656,120,22,5,surface);
-        c.rounded(1192,y,656,120,14,raised);
+        const unsigned y=320+r*layout.pitch;const bool focus=workflow.focus==r;const auto row=workflow.rows[r];
+        if(focus)focusRing(c,1192,y,656,layout.height,22,5,surface);
+        c.rounded(1192,y,656,layout.height,14,raised);
         char label[64],value[512],sub[256];value[0]=sub[0]=0;unsigned index=0,count=0;bool showArrows=false;Color valueColor=ink;
         const char* tag=nullptr;Color tagColor=success;
         if(row==Row::source){
@@ -1069,6 +1073,11 @@ void drawSheet(Canvas& c) noexcept {
             std::snprintf(label,sizeof(label),"Magnet link");
             char used[24];grouped(static_cast<long long>(std::string_view(workflow.command.text.data()).size()),used,sizeof(used));
             std::snprintf(sub,sizeof(sub),"%s characters \xc2\xb7 select to edit",used);
+        }else if(row==Row::engine){
+            std::snprintf(label,sizeof(label),"Download on");
+            std::snprintf(value,sizeof(value),"%s",workflow.command.useRemote?"Dedicated server (qBittorrent)":"PS5 (rTorrent)");
+            std::snprintf(sub,sizeof(sub),"%s",workflow.command.useRemote?"Then import completed files to the selected PS5 disk":"Download directly to the selected PS5 disk");
+            index=workflow.command.useRemote?1:0;count=2;showArrows=true;
         }else if(row==Row::storage){
             std::snprintf(label,sizeof(label),"%s",download?"Install on":op==Op::extract?"Extract to":op==Op::transfer?"Move to":op==Op::move?"Library disk":"Compressed copy on");
             const auto id=std::string_view(workflow.command.storage.data());
@@ -1131,7 +1140,7 @@ void drawSheet(Canvas& c) noexcept {
             const char* edit=empty?"Enter":"Edit";hx-=width(c,edit,20);text(c,static_cast<int>(hx),static_cast<int>(y+48),edit,20,24,muted);hx-=28;glyph(c,Glyph::square,static_cast<float>(hx),static_cast<float>(y+49),muted,20.f/24,2.4f);
         }
     }
-    const unsigned cta=workflow.rowCount?320+workflow.rowCount*130+30:360;
+    const unsigned cta=layout.button;
     const bool ctaFocus=workflow.focus>=workflow.rowCount;
     if(ctaFocus)focusRing(c,1200,cta+8,640,84,20,5,surface);
     c.rounded(1200,cta+8,640,84,14,accent);
@@ -1139,7 +1148,7 @@ void drawSheet(Canvas& c) noexcept {
     glyph(c,Glyph::cross,static_cast<float>(lx),static_cast<float>(cta+37),accentInk,26.f/24,3.5f);
     middle(c,static_cast<int>(lx+42),static_cast<int>(cta+8),84,label,32,accentInk,bold);
     const char* note=workflow.notice[0]?workflow.notice.data():download?"Starts right away. Pause or remove it anytime in Activity.":explain(op,target);
-    wrap(c,1192,static_cast<int>(cta+120),note,20,30,656,3,workflow.notice[0]?warning:muted);
+    wrap(c,1192,static_cast<int>(layout.noteTop),note,20,30,656,3,workflow.notice[0]?warning:muted);
     const bool row=!ctaFocus&&workflow.focus<workflow.rowCount;
     const auto focusedRow=row?workflow.rows[workflow.focus]:Row::source;
     const Glyph change=!row?(workflow.rowCount?Glyph::updown:Glyph::none):focusedRow==Row::password||focusedRow==Row::magnet?Glyph::none:Glyph::arrows;
