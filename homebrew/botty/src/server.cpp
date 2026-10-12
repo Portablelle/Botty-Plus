@@ -274,7 +274,7 @@ json queueDownload(const std::string& method,const json& arguments,const std::st
 }
 void automaticDownloads(){
   while(!retiring){
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(backgroundPollInterval());
     try{
       {std::lock_guard<std::mutex> guard(lock);if(retiring||nativeUpdater->requested()||transferring||extracting||compressor.busy())continue;}
       auto entries=torrents();

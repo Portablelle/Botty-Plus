@@ -1,5 +1,7 @@
 #pragma once
 #include "json.hpp"
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -12,6 +14,14 @@ struct Paths {
   explicit Paths(fs::path data = "/data/botty", fs::path games = "/data/homebrew")
     : root(std::move(data)), complete(root/"downloads/complete"), extracted(root/"extracted"), jobs(root/"jobs"), library(std::move(games)) {}
 };
+// Host test builds may shorten the 5 s background polling with BOTTY_TEST_POLL_MS
+// (50..5000); PS5 builds always poll every 5 s.
+inline std::chrono::milliseconds backgroundPollInterval(){
+#ifndef __PS5__
+  if(const char* value=std::getenv("BOTTY_TEST_POLL_MS")){char* end=nullptr;const long ms=std::strtol(value,&end,10);if(end!=value&&!*end&&ms>=50&&ms<=5000)return std::chrono::milliseconds(ms);}
+#endif
+  return std::chrono::seconds(5);
+}
 inline std::string asciiLower(std::string text){for(char& c:text)if(c>='A'&&c<='Z')c=char(c+32);return text;}
 int makeDirectoryRelative(int,const char*,unsigned);
 int openFileRelative(int,const char*,int,unsigned=0);

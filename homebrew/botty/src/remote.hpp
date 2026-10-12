@@ -444,7 +444,7 @@ class RemoteDownloads {
           records_[it.key()]["snapshot"]=snapshot;save();
         }
       }catch(const std::exception&){}
-      std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});
+      std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,backgroundPollInterval(),[this]{return stop_.load();});
     }
   }
   void run() {
@@ -463,7 +463,7 @@ class RemoteDownloads {
         }catch(const std::exception& e){try{const auto outcome=RemoteBatchOutcome::failure(std::current_exception());json failure={{"error",e.what()},{"rate",0},{"eta",-1.0},{"retrying",outcome.busy()}};if(outcome.pause())failure["paused"]=true;update(hash,failure,true);}catch(...){}}
         {std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();}
       }
-      std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});
+      std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,backgroundPollInterval(),[this]{return stop_.load();});
     }
   }
 public:

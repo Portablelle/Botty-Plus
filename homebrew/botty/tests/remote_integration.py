@@ -22,6 +22,10 @@ spec = importlib.util.spec_from_file_location('remote_bridge', bridge_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
+# Shorten the service's 5 s background polling; inherited by every Botty process below.
+POLL_SECONDS = .25
+os.environ['BOTTY_TEST_POLL_MS'] = str(int(POLL_SECONDS * 1000))
+
 def wait(fn, timeout=45):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -311,7 +315,7 @@ with tempfile.TemporaryDirectory() as tmp:
         local_entries.append({'id': 1, 'hashString': folder, 'name': 'Local hash match', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': 5, 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': 'local-movie.mkv', 'length': 5, 'bytesCompleted': 5}]})
         folder_id = api('/api/remote/import', {'hash': folder, 'automatic': True})['torrent-added']['id']
         assert blocked_folder.wait(15)
-        time.sleep(6)  # Give automatic preparation a complete polling cycle.
+        time.sleep(POLL_SECONDS * 4)  # Give automatic preparation several complete polling cycles.
         task = json.loads((data / 'automatic' / ('remote-' + str(folder_id) + '.json')).read_text())
         assert task['status'] == 'waiting', task
         release_folder.set(); local_entries.clear()
@@ -630,7 +634,9 @@ with tempfile.TemporaryDirectory() as tmp:
         if Path('/proc/self/fd').exists():
             proc.terminate(); proc.wait(timeout=10)
             counter = root / 'registry-sync-count'
-            count_environment = dict(os.environ, LD_PRELOAD=str(library), BOTTY_COUNT_REGISTRY_SYNCS=str(counter))
+            # Keep production polling: idle discovery also saves the registry, so a
+            # shorter interval would make these sync bounds depend on runner speed.
+            count_environment = dict(os.environ, BOTTY_TEST_POLL_MS='5000', LD_PRELOAD=str(library), BOTTY_COUNT_REGISTRY_SYNCS=str(counter))
             proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=count_environment); token = ''; token = wait(bootstrap)
             many = 'ab' * 20; files = []
             for i in range(256):
