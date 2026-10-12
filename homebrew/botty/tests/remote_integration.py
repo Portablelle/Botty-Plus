@@ -456,7 +456,9 @@ with tempfile.TemporaryDirectory() as tmp:
         assert module.Handler.file_slots.acquire(blocking=False)
         try:
             contention_id = api('/api/remote/import', {'hash': contention, 'automatic': False, 'parallelConnections': 4})['torrent-added']['id']
-            wait(lambda: any(t['id'] == contention_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+            retrying = wait(lambda: next((t for t in api('/api/state')['torrents'] if t['id'] == contention_id and t.get('remoteRetrying')), None))
+            assert retrying['status'] != 0 and retrying['effectiveConnections'] <= 2
+            wait(lambda: any(t['id'] == contention_id and t['remotePhase'] == 'ready' and not t.get('remoteRetrying') for t in api('/api/state')['torrents']))
             saved_limit = json.loads((data / 'remote-downloads.json').read_text())[contention]
             assert saved_limit['parallelConnections'] == 4 and saved_limit['effectiveConnections'] <= 2
             assert peak_ranges[contention] == 3
