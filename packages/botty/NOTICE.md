@@ -1,4 +1,4 @@
-# Botty service 1.5.4
+# Botty service 1.6.0
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.5.4`; its installed marker is in the parent directory.
+`/data/botty/manager/1.6.0`; its installed marker is in the parent directory.
 
 ## Installation updates
 
@@ -63,6 +63,16 @@ Legacy worker/botty4 peers lack required process evidence and need Portal bootst
 in a deliberately restarted idle console session. The portal itself still stages
 service updates without replacing a running older daemon. Do not run Portal and
 the in-app updater concurrently.
+
+## Dedicated server downloads (1.6.0)
+
+Optional private `remote.json` enables a per-download choice between local rTorrent
+and dedicated qBittorrent, and offers existing PS5 candidates for explicit import. The default remains local. The server torrent
+and PS5 HTTPS import have distinct progress phases; all members must arrive before
+preparation. Local rTorrent jobs remain available. See the
+[bridge deployment guide](../../deployment/botty-remote/README.md).
+Authenticated multifile import to PS5 USB/exFAT passed a synthetic live test.
+Real-game preparation and updated native-interface acceptance remain pending.
 
 ## Capabilities
 

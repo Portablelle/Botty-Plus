@@ -1,0 +1,6 @@
+{
+  "url": "https://torrent.example.com/botty-remote",
+  "token": "REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS",
+  "caFile": "/data/botty/manager/1.6.0/cacert.pem",
+  "connectAddress": "203.0.113.10"
+}

@@ -4,6 +4,7 @@
 #include "operations.hpp"
 #include "search.hpp"
 #include "rtorrent.hpp"
+#include "remote.hpp"
 #include "rest-mode.hpp"
 #include "rest-companion.hpp"
 #include "rest-network.hpp"
@@ -30,7 +31,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.5.4/ui"
+#define BOTTY_UI "/data/botty/manager/1.6.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -68,6 +69,8 @@ public:
 std::atomic<bool> cancelExtraction{false}; std::string activeJob;
 Paths paths;
 Storage storage;
+std::unique_ptr<RemoteDownloads> remote;
+std::string remoteError;
 std::vector<fs::path> testMounts;
 std::atomic<bool> transferring{false};
 json transferState={{"status","idle"}};
@@ -91,8 +94,35 @@ std::string connectionUrl() {
   freeifaddrs(interfaces);
   return result;
 }
+Rtorrent& localBackend(){static Rtorrent backend(paths,rpcPort);return backend;}
+std::string selectedDownloadEngine(const json& arguments){
+  const auto engine=arguments.value("engine",std::string("rtorrent"));
+  if(engine!="rtorrent"&&engine!="qbittorrent")throw std::runtime_error("Choose rTorrent on PS5 or qBittorrent on the dedicated server");
+  if(engine=="qbittorrent"&&!remote)throw std::runtime_error(remoteError.empty()?"Dedicated server is not configured":remoteError);
+  return engine;
+}
 json rpc(const std::string& method, const json& arguments=json::object()) {
-  static Rtorrent backend(paths,rpcPort);
+  auto& backend=localBackend();
+  if(method=="torrent-get"&&remote){
+    json entries=json::array();try{entries=backend.request(method,arguments).at("torrents");}catch(...){}
+    const auto remoteRows=remote->list();json combined=json::array();
+    for(const auto& r:remoteRows)if(!r.value("remoteCandidate",false))combined.push_back(r);
+    for(const auto& r:entries)combined.push_back(r);
+    for(const auto& r:remoteRows)if(r.value("remoteCandidate",false))combined.push_back(r);
+    return {{"torrents",combined}};
+  }
+  if(method=="torrent-add"){
+    const auto engine=selectedDownloadEngine(arguments);
+    if(engine=="qbittorrent"){
+      if(!remote)throw std::runtime_error(remoteError.empty()?"Dedicated server is not configured":remoteError);
+      return remote->add(Rtorrent::inputHash(arguments),arguments);
+    }
+    auto local=arguments;local.erase("engine");return backend.request(method,local);
+  }
+  if(remote&&arguments.contains("ids")){
+    bool any=false,all=true;for(const auto& id:arguments.at("ids")){const bool owned=remote->contains(id);any|=owned;all&=owned;}
+    if(any){if(!all)throw std::runtime_error("Split local and remote torrent operations");return remote->action(method,arguments);}
+  }
   return backend.request(method,arguments);
 }
 json torrents() {
@@ -130,19 +160,23 @@ void recoverJobs() {
     }catch(...){/* Do not overwrite unknown or damaged state. */}
   }
 }
+struct PreparationBusy:std::runtime_error {using std::runtime_error::runtime_error;};
+struct PreparationPlan {
+  enum class Kind { rar, loose };
+  Kind kind;fs::path source;std::string password;
+  bool loose()const{return kind==Kind::loose;}
+};
 json startExtraction(const json& request, bool automatic=false) {
   const int id=request.at("id").get<int>();
-  const std::string name=request.at("archive").get<std::string>();
-  const std::string password=request.value("password","");
-  if(password.size()>1024)throw std::runtime_error("Password too long");
+  const std::string name=request.value("archive",std::string{});PreparationPlan plan{name.empty()?PreparationPlan::Kind::loose:PreparationPlan::Kind::rar,{},request.value("password",std::string{})};
+  if(plan.password.size()>1024)throw std::runtime_error("Password too long");
   std::lock_guard<std::mutex> guard(lock);
-  if(retiring)throw std::runtime_error("Botty is shutting down");
-  nativeUpdater->requireAdmission();
-  compressor.requireIdle();
-  if(transferring||extracting)throw std::runtime_error("Another extraction is running");
+  if(retiring)throw PreparationBusy("Botty is shutting down");
+  try{nativeUpdater->requireAdmission();compressor.requireIdle();}catch(const std::runtime_error& e){throw PreparationBusy(e.what());}
+  if(transferring||extracting)throw PreparationBusy("Another extraction is running");
   const auto torrent=getTorrent(id);
-  if(torrent.at("leftUntilDone").get<uint64_t>()!=0 || torrent.value("error",0)!=0 || torrent.value("status",0)==1 || torrent.value("status",0)==2)throw std::runtime_error("Wait until the torrent is complete and error-free");
-  const auto sourceStorage=storage.forDownload(torrent.at("downloadDir").get<std::string>());
+  if(torrent.at("leftUntilDone").get<uint64_t>()!=0 || torrent.value("error",0)!=0 || torrent.value("status",0)==1 || torrent.value("status",0)==2)throw PreparationBusy("Wait until the torrent is complete and error-free");
+  const auto sourceStorage=torrent.value("remote",false)?remote->published(id).at("storage").get<std::string>():storage.forDownload(torrent.at("downloadDir").get<std::string>());
   const auto targetStorage=request.value("storage",sourceStorage);
   const auto sourcePaths=storage.get(sourceStorage),selectedPaths=storage.get(targetStorage);
   bool found=false;
@@ -151,14 +185,20 @@ json startExtraction(const json& request, bool automatic=false) {
     if(file.at("bytesCompleted").get<uint64_t>()!=file.at("length").get<uint64_t>())throw std::runtime_error("Some torrent files are missing or incomplete");
     if(file.at("name")==name)found=true;
   }
-  if(!found || fs::path(name).extension()!=".rar")throw std::runtime_error("Select the first .rar volume from this torrent");
-  std::smatch part; if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase)) && std::stoul(part[1])!=1)throw std::runtime_error("Select part1.rar, not a continuation volume");
-  const auto archive=containedExisting(sourcePaths.complete,sourcePaths.complete/safeRelative(name));
-  if(!fs::is_regular_file(archive))throw std::runtime_error("Archive is not a regular file");
+  if(plan.loose()){
+    if(!torrent.value("remote",false)||torrent.value("remotePhase","")!="ready")throw std::runtime_error("Only fully imported loose content can be prepared");
+    plan.source=containedExisting(sourcePaths.complete,sourcePaths.complete/safeRelative(torrent.at("hashString").get<std::string>()));
+    const auto content=classify(plan.source);if(content.value("kind","")=="unsupported")throw std::runtime_error(content.at("reason").get<std::string>());
+  }else{
+    if(!found || asciiLower(fs::path(name).extension().string())!=".rar")throw std::runtime_error("Select the first .rar volume from this torrent");
+    std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)throw std::runtime_error("Select part1.rar, not a continuation volume");
+    plan.source=containedExisting(sourcePaths.complete,sourcePaths.complete/safeRelative(name));
+    if(!fs::is_regular_file(plan.source))throw std::runtime_error("Archive is not a regular file");
+  }
   // Check duplicate active or completed jobs; archives are never deleted by extraction.
   for(const auto& job:jobs)if(job.value("hash","")==torrent.at("hashString") && job.value("archive","")==name &&
       (job.value("status","")=="ready" || job.value("status","")=="moved"))throw std::runtime_error("This archive was already extracted");
-  json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},
+  json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},{"preparation",plan.loose()?"loose":"rar"},
     {"storage",targetStorage},{"archiveStorage",sourceStorage},{"automatic",automatic},{"status","extracting"},{"phase","Starting"},{"bytes",0},{"total",0},{"error",""}};
   bool resuming=false;
   for(const auto& old:jobs) {
@@ -170,22 +210,22 @@ json startExtraction(const json& request, bool automatic=false) {
     if(!fs::exists(fs::symlink_status(stage)))continue;
     if(resuming)throw std::runtime_error("Multiple partial extractions exist; choose which partial output to keep before retrying");
     if(old.value("storage","internal")!=targetStorage)throw std::runtime_error("Resume on the original disk, or remove the partial extraction first");
-    containedExisting(oldPaths.extracted,stage);job=old;resuming=true;
+    containedExisting(oldPaths.extracted,stage);if(plan.loose())throw std::runtime_error("Remove the interrupted preparation before trying again; downloads are kept");job=old;resuming=true;
   }
-  job["status"]="extracting";job["phase"]=resuming?"Verifying existing files for resume":"Starting";
+  job["torrentId"]=id;job["status"]="extracting";job["phase"]=resuming?"Verifying existing files for resume":"Starting";
   job["bytes"]=0;job["total"]=0;job["error"]="";job["extractionRate"]=0;job["eta"]=-1;
   writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);
   if(resuming){for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;break;}}else jobs.push_back(job);
   cancelExtraction=false;activeJob=job.at("id");extracting=true;
   try {
-    std::thread([job,archive,password,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths]()mutable{
+    std::thread([job,plan,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths]()mutable{
       const auto check=[&]{if(storage.get(sourceStorage,false).root!=sourcePaths.root || storage.get(targetStorage,false).root!=selectedPaths.root)throw std::runtime_error("Disk mount changed during extraction");};
       const auto stage=selectedPaths.extracted/(job.at("id").get<std::string>()+".working");
       const auto final=selectedPaths.extracted/job.at("id").get<std::string>();
       ProgressSchedule progressSchedule; ExtractionEstimate estimate;const auto started=std::chrono::steady_clock::now();
       std::string measuredPhase;
       try {
-        extractRar(archive,stage,[&](const Progress& progress){
+        const Reporter report=[&](const Progress& progress){
           check();const auto now=std::chrono::steady_clock::now();
           const auto decision=progressSchedule.update(now,progress.phase);
           if(!decision.publish)return;
@@ -195,9 +235,14 @@ json startExtraction(const json& request, bool automatic=false) {
           if(progress.total>0){estimate.update(now,progress.bytes,progress.total);}
           job["extractionRate"]=estimate.rate;job["eta"]=estimate.eta;
           publishJob(job,decision.checkpoint);
-        },password,[]{return cancelExtraction.load();},0,resuming);
-        if(cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
-        check();fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
+        };
+        if(plan.loose()){
+          copyChecked(plan.source,final,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");},[&](uint64_t bytes,uint64_t total,const std::string& file){report({"Preparing imported game",file,bytes,total});},stage);
+          if(fs::exists(fs::symlink_status(final/remoteOwnerFile)))fs::remove(containedExisting(final,final/remoteOwnerFile));
+        }
+        else extractRar(plan.source,stage,report,plan.password,[]{return cancelExtraction.load();},0,resuming);
+        if(!plan.loose()&&cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
+        check();if(!plan.loose())fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
         if(job.value("automatic",false)){
           publishJob(job);
           try{job=movePrepared(selectedPaths,job,nullptr,check);job["phase"]="Ready in Library";}
@@ -213,17 +258,18 @@ json startExtraction(const json& request, bool automatic=false) {
   return job;
 }
 // Only explicitly requested Prowlarr downloads enter this durable queue.
-json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true){
+fs::path automaticTaskPath(const std::string& hash,int id,bool isRemote){return paths.root/"automatic"/(isRemote?"remote-"+std::to_string(id)+".json":hash+".json");}
+json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true,const std::string& engine="rtorrent"){
   std::lock_guard<std::mutex> guard(lock);if(transferring||retiring)throw std::runtime_error("Wait for the storage transfer to finish");
   nativeUpdater->requireAdmission();
   const auto selectedPaths=storage.get(selected);
-  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();
+  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;
   auto result=rpc(method,args);
   auto torrent=result.contains("torrent-added")?result.at("torrent-added"):result.at("torrent-duplicate");
   auto hash=torrent.at("hashString").get<std::string>();
   if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))throw std::runtime_error("Invalid torrent confirmation");
-  auto file=paths.root/"automatic"/(hash+".json");
-  if(!result.contains("torrent-duplicate"))writeJson(file,{{"hash",hash},{"status",automatic?"waiting":"download-only"},{"storage",selected}});
+  const bool isRemote=remote&&remote->contains(torrent.at("id"));auto file=automaticTaskPath(hash,torrent.at("id"),isRemote);
+  if(!result.contains("torrent-duplicate"))writeJson(file,{{"torrentId",torrent.at("id")},{"remote",isRemote},{"hash",hash},{"status",automatic?"waiting":"download-only"},{"storage",selected}});
   return result;
 }
 void automaticDownloads(){
@@ -235,28 +281,54 @@ void automaticDownloads(){
       for(const auto& file:fs::directory_iterator(paths.root/"automatic")){
         if(file.path().extension()!=".json")continue;
         auto task=json::parse(readText(file.path()));if(task.value("status","")!="waiting")continue;
+        int sourceId=task.value("torrentId",-1);
+        if(sourceId<0)for(const auto& t:entries)if(t.at("hashString")==task.at("hash")&&t.value("remote",false)==task.value("remote",false)&&!t.value("remoteCandidate",false)){sourceId=t.at("id");break;}
         bool existing=false;
-        {std::lock_guard<std::mutex> guard(lock);for(const auto& job:jobs)if(job.value("automatic",false)&&job.at("hash")==task.at("hash"))existing=true;}
+        {std::lock_guard<std::mutex> guard(lock);for(const auto& job:jobs)if(job.value("automatic",false)&&job.at("hash")==task.at("hash")&&
+          (job.contains("torrentId")?job.at("torrentId")==sourceId:!task.value("remote",false)))existing=true;}
         if(existing){task["status"]="tracked";writeJson(file.path(),task);continue;}
         for(const auto& torrent:entries){
-          if(torrent.at("hashString")!=task.at("hash")||torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)!=0||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
+          if(torrent.at("id")!=sourceId||torrent.at("hashString")!=task.at("hash")||torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)!=0||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
           std::vector<std::string> archives;
           for(const auto& item:torrent.at("files")){
-            std::string name=item.at("name");if(fs::path(name).extension()!=".rar")continue;
+            std::string name=item.at("name");if(asciiLower(fs::path(name).extension().string())!=".rar")continue;
             std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)continue;
             archives.push_back(name);
           }
-          if(archives.size()!=1){
-            json job={{"id",randomId()},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",archives.empty()?"No supported RAR archive found. Automatic installation supports one RAR set containing an app folder or exFAT image.":"Multiple RAR sets found. Choose the archive manually from Torrents."}};
+          if(archives.size()!=1&&!(archives.empty()&&torrent.value("remote",false))){
+            json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",archives.empty()?"No supported RAR archive found. Automatic installation supports one RAR set containing an app folder or exFAT image.":"Multiple RAR sets found. Choose the archive manually from Torrents."}};
             publishJob(job);task["status"]="attention";writeJson(file.path(),task);break;
           }
-          auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives[0]},{"storage",task.value("storage","internal")}},true);
-          task["job"]=job.at("id");task["status"]="tracked";writeJson(file.path(),task);break;
+          try{const auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives.empty()?std::string{}:archives[0]},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
+          catch(const PreparationBusy&){continue;}
+          catch(const std::exception& e){json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",e.what()}};publishJob(job);task["status"]="attention";}
+          writeJson(file.path(),task);break;
         }
         {std::lock_guard<std::mutex> guard(lock);if(extracting)break;}
       }
     }catch(...){/* Service/rTorrent temporarily unavailable: retry without changing downloads. */}
   }
+}
+json inspectedLocalTorrents(bool allowEmptyOffline=true) {
+  try{return localBackend().request("torrent-get",json::object()).at("torrents");}
+  catch(...){
+    if(!allowEmptyOffline)throw std::runtime_error("Local torrents cannot be inspected; files kept");
+    const auto sessions=paths.root/"rtorrent/state/session";
+    if(fs::exists(fs::symlink_status(sessions))){
+      if(fs::is_symlink(fs::symlink_status(sessions))||!fs::is_directory(sessions))throw std::runtime_error("Local torrent sessions cannot be inspected; reconnect rTorrent before changing files");
+      for(const auto& e:fs::directory_iterator(sessions))if(e.path().filename().string().find(".torrent")!=std::string::npos)throw std::runtime_error("Local rTorrent is unavailable with saved torrents; reconnect it to check shared files before changing files");
+    }
+    return json::array();
+  }
+}
+std::set<fs::path> downloadReferences(const json& torrent,const std::vector<fs::path>& extra={}){
+  if(torrent.value("remote",false))return remote->references(torrent);
+  std::vector<fs::path> roots{fs::weakly_canonical(fs::path(torrent.at("downloadDir").get<std::string>()))};roots.insert(roots.end(),extra.begin(),extra.end());
+  std::set<fs::path> result;for(const auto& f:torrent.at("files"))for(const auto& suffix:{"", ".part"})for(const auto& root:roots)result.insert(root/fs::path(safeRelative(f.at("name").get<std::string>()).string()+suffix));
+  return result;
+}
+void requireUnsharedReferences(const std::set<fs::path>& selected,const json& references,int ignoredId,const std::vector<fs::path>& extra,const std::string& message){
+  for(const auto& other:references)if(other.at("id")!=ignoredId)for(const auto& member:downloadReferences(other,extra))if(selected.count(member))throw std::runtime_error(message);
 }
 json startTransfer(const json& body) {
   std::lock_guard<std::mutex> guard(lock);
@@ -266,10 +338,10 @@ json startTransfer(const json& body) {
   if(kind!="torrent"&&kind!="job"&&kind!="publish")throw std::runtime_error("Invalid transfer kind");
   const auto selected=body.at("storage").get<std::string>();
   const auto destination=storage.get(selected);
-  json job,torrent;
+  json job,torrent,ownership;
   std::string sourceId;
   if(kind=="torrent"){
-    torrent=getTorrent(body.at("id").get<int>());sourceId=storage.forDownload(torrent.at("downloadDir").get<std::string>());
+    torrent=getTorrent(body.at("id").get<int>());if(torrent.value("remote",false)&&torrent.value("remotePhase","")!="ready")throw std::runtime_error("Finish the remote import before moving it");if(torrent.value("remote",false)){ownership=remote->published(torrent.at("id"));sourceId=ownership.at("storage").get<std::string>();}else sourceId=storage.forDownload(torrent.at("downloadDir").get<std::string>());
     if(torrent.value("status",0)==1||torrent.value("status",0)==2)throw std::runtime_error("Wait for torrent verification");
   }else{
     job=findJob(body.at("id").get<std::string>());sourceId=job.value("storage","internal");
@@ -284,10 +356,10 @@ json startTransfer(const json& body) {
   transfers.start(body.at("id").is_string()?body.at("id").get<std::string>():std::to_string(body.at("id").get<int>()),kind=="torrent"?torrent.value("name","Torrent"):job.value("name","Game"),"transfer");
   transferState={{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying; source kept until completion"}};
   writeJson(paths.root/"transfer.json",transferState);transferring=true;
-  std::thread([kind,selected,sourceId,source,destination,job,torrent]()mutable{
+  std::thread([kind,selected,sourceId,source,destination,job,torrent,ownership]()mutable{
     bool changed=false;
     try {
-      const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");};
+      const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");if(!ownership.empty())RemoteDownloads::checkPublishedIdentity(source.complete/ownership.at("hash").get<std::string>(),ownership.at("identity"));};
       ExtractionEstimate estimate;uint64_t previousTotal=0;
       const auto copyProgress=[&](uint64_t bytes,uint64_t total,const std::string& file){if(total!=previousTotal){estimate=ExtractionEstimate{};previousTotal=total;}estimate.update(std::chrono::steady_clock::now(),bytes,total);transfers.progress({{"bytes",bytes},{"total",total},{"file",file},{"unit","bytes"},{"rate",estimate.rate},{"eta",estimate.eta},{"phase","Copying files; source kept until completion"}});};
       const auto remoteReport=[&](const json& task){
@@ -309,27 +381,32 @@ json startTransfer(const json& body) {
       };
       if(kind=="torrent"){
         const auto hash=torrent.at("hashString").get<std::string>();
-        rpc("torrent-close",{{"ids",{hash}}});
+        rpc("torrent-close",{{"ids",{torrent.at("id")}}});
         if(getTorrent(torrent.at("id")).value("status",-1)!=0)throw std::runtime_error("Torrent did not stop; no files moved");
         std::vector<fs::path> members;
         uint64_t total=0;
         for(const auto& f:torrent.at("files")){
           const auto name=safeRelative(f.at("name").get<std::string>());
-          if(!fs::exists(source.complete/name))continue;
+          if(!fs::exists(source.complete/name)){if(torrent.value("remote",false))throw std::runtime_error("Remote import member missing; source kept");continue;}
           containedExisting(source.complete,source.complete/name);
           if(fs::exists(fs::symlink_status(destination.complete/name)))throw std::runtime_error("Torrent destination already exists");
-          const auto bytes=fs::file_size(source.complete/name);if(bytes>UINT64_MAX-total)throw std::runtime_error("Torrent is too large");total+=bytes;members.push_back(name);
+          const auto bytes=fs::file_size(source.complete/name);if(torrent.value("remote",false)&&bytes!=f.at("length").get<uint64_t>())throw std::runtime_error("Remote import member size changed; source kept");if(bytes>UINT64_MAX-total)throw std::runtime_error("Torrent is too large");total+=bytes;members.push_back(name);
         }
         if(total>UINT64_MAX-536870912ULL||freeBytes(destination.complete)<total+536870912ULL)throw std::runtime_error("Not enough destination space");
-        // Refuse shared members before moving anything.
-        for(const auto& other:torrents())if(other.at("hashString")!=hash&&other.at("downloadDir")==torrent.at("downloadDir"))
-          for(const auto& f:other.at("files"))for(const auto& name:members)if(f.at("name")==name.string())throw std::runtime_error("Torrent files are shared with another torrent");
+        // Inspect local sessions before copying and again before source cleanup.
+        const auto requireUnshared=[&]{
+          auto references=inspectedLocalTorrents(torrent.value("remote",false));if(remote)for(const auto& r:remote->list())references.push_back(r);
+          std::set<fs::path> selectedPaths;for(const auto& member:members)selectedPaths.insert(source.complete/member);
+          requireUnsharedReferences(selectedPaths,references,torrent.at("id"),{},"Torrent files are shared with another torrent");
+        };
+        requireUnshared();
         for(const auto& name:members){check();auto parent=destination.complete;for(const auto& part:name.parent_path()){parent/=part;if(fs::is_symlink(fs::symlink_status(parent)))throw std::runtime_error("Unsafe transfer destination");fs::create_directories(parent);}copyChecked(source.complete/name,destination.complete/name,check,copyProgress);changed=true;}
-        check();rpc("torrent-set-location",{{"ids",{hash}},{"location",destination.complete.string()}});
+        check();rpc("torrent-set-location",{{"ids",{torrent.at("id")}},{"location",destination.complete.string()},{"storage",selected}});
         if(getTorrent(torrent.at("id")).at("downloadDir")!=destination.complete.string())throw std::runtime_error("Torrent location was not confirmed; both copies kept");
-        const auto queue=paths.root/"automatic"/(hash+".json");
+        const auto queue=automaticTaskPath(hash,torrent.at("id"),torrent.value("remote",false));
         if(fs::exists(queue)){auto task=json::parse(readText(queue));task["storage"]=selected;writeJson(queue,task);}
-        for(const auto& name:members){check();downloadedFiles(source.complete,{name},true);}
+        requireUnshared();for(const auto& name:members){check();downloadedFiles(source.complete,{name},true);}
+        if(torrent.value("remote",false)){check();removeEmptyRemoteRoot(source.complete,source.complete/hash);}
         // Remain paused: verification/resume is explicit and never races cleanup.
       }else if(kind=="publish"){
         changed=true;job["storage"]=selected;job=movePrepared(source,job,&destination,check);publishJob(job);
@@ -416,7 +493,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.5.4"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.6.0"}});
     NativeTransaction::Config nativeConfig;
 #ifndef __PS5__
     nativeConfig.nativeRoot=paths.root/"native-test/PPSA99071";
@@ -430,14 +507,22 @@ int main(int argc,char** argv) {
     updaterConfig.inspect=[]{installationAwaitHttpReady(httpReady,retiring);static Rtorrent engine(paths,rpcPort);return inspectInstallation(paths.root,engine);};
     updaterConfig.owns= [](const json& handoff){return installationHandoffOwned(paths.root,handoff,installationBootId());};
     updaterConfig.idle=[]{
-        {std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring)throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");search.requireInstallationIdle();explore.requireInstallationIdle();}
+        {std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||(remote&&remote->busy()))throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");search.requireInstallationIdle();explore.requireInstallationIdle();}
         compressor.confirmNativeUpdateIdle();
-        std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||compressor.busy())throw std::runtime_error("Waiting for all file operations to finish.");
+        std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Waiting for all file operations to finish.");
       };
     updaterConfig.stopped=[]{confirmNativeProcessesStopped();};
     updaterConfig.launch=[](const json&){launchEmbeddedServiceUpdater();};
     nativeUpdater=std::make_unique<InstallationUpdater>(*nativeTransaction,std::move(updaterConfig));
+    if(fs::exists(paths.root/"remote.json"))try{
+      remote=std::make_unique<RemoteDownloads>(paths,[](const std::string& id,const fs::path& directory){if(storage.get(id,false).complete!=directory)throw std::runtime_error("Remote destination storage changed");},[]{return !retiring&&!transferring&&nativeUpdater&&!nativeUpdater->requested();},[](const fs::path& stage,const fs::path& target,const json& inventory){
+        std::set<fs::path> selected;
+        for(const auto& f:inventory)for(const auto& root:{stage,target})selected.insert(root/safeRelative(f.at("name").get<std::string>()));
+        requireUnsharedReferences(selected,inspectedLocalTorrents(),-1,{},"Remote import files are shared with a local torrent; pause and relocate that torrent before importing");
+      });
+    }catch(const std::exception& e){remoteError=e.what();}
     nativeUpdater->start();
+    if(remote)remote->start();
     stage="creating HTTP server";
     RestCompanionAuthorization restAuthorization(paths.root);
     auto restDiagnostics=std::make_shared<RestModeDiagnostics>(paths.root);
@@ -475,17 +560,17 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.5.4"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.6.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/installation/status",[](const auto&,auto& res){
       const auto update=nativeUpdater->state();
-      reply(res,{{"app","Botty"},{"version","1.5.4"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
+      reply(res,{{"app","Botty"},{"version","1.6.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
     });
     server.Post("/api/installation/retire",[&](const auto& req,auto& res){
       const auto body=json::parse(req.body);
       if(!body.is_object()||body.size()!=1||!body.contains("transaction")||!installationRetireAuthorized(paths.root,body.at("transaction").template get<std::string>(),req.get_header_value("X-Botty-Update-Token")))throw std::runtime_error("Durable updater takeover authorization failed.");
       if(!nativeUpdater->finished())throw std::runtime_error("Updater handoff thread has not returned.");
       compressor.confirmNativeUpdateIdle();
-      {std::lock_guard<std::mutex> guard(lock);if(retiring||transferring||extracting||compressor.busy())throw std::runtime_error("Existing file operations must finish before manager retirement.");search.requireInstallationIdle();explore.requireInstallationIdle();retiring=true;}
+      {std::lock_guard<std::mutex> guard(lock);if(retiring||transferring||extracting||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Existing file operations must finish before manager retirement.");search.requireInstallationIdle();explore.requireInstallationIdle();retiring=true;}
       reply(res,{{"status","retiring"},{"pid",getpid()},{"transaction",body.at("transaction")}});
       serverThreads.stop();
     });
@@ -522,9 +607,10 @@ int main(int argc,char** argv) {
     });
     server.Get("/api/state",[&restState](const auto&,auto& res){
       json result={{"storage",storage.list()},{"storageSupported",true},{"search",search.state()},{"searchSupported",true},{"extractionControls",true},{"libraryDeletionSupported",true},{"freeBytes",freeBytes(paths.root)},{"library",paths.library.string()}};
-      try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]="rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
+      try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]=remote?"qbittorrent+rtorrent":"rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting||transferring;result["transfer"]=transferState;}
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
+      result["remoteDownloads"]=remote?remote->state():json{{"enabled",false},{"error",remoteError}};
       result["restMode"]=restState();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
       result["compression"]=compressor.state();
@@ -532,7 +618,7 @@ int main(int argc,char** argv) {
       for(auto& job:result["jobs"]){const auto c=compressor.game(job.value("id",""));job["compression"]=c;if(c.value("status","")=="ready"){job["destination"]=c.at("output");job["storage"]=c.value("storage","internal");job["content"]["kind"]="compressed";}}
       result["catalogArtworkSupported"]=true;
       std::set<std::string> owned;
-      for(const auto& item:result["torrents"])owned.insert(Search::gameKey(item.value("name","")));
+      for(const auto& item:result["torrents"])if(!item.value("remoteCandidate",false))owned.insert(Search::gameKey(item.value("name","")));
       for(const auto& item:result["jobs"])if(item.value("status","")=="ready"||item.value("status","")=="moved"||item.value("status","")=="extracting")owned.insert(Search::gameKey(item.value("name","")));
       // Read only native metadata: never recursively walk large game content.
       try{unsigned count=0;for(const auto& item:fs::directory_iterator(paths.library)){
@@ -553,9 +639,9 @@ int main(int argc,char** argv) {
       else res.set_content(data,"application/octet-stream");
     });
     server.Post("/api/explore",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
-    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
     server.Post("/api/search",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();search.start(paths,json::parse(req.body).at("query").template get<std::string>());reply(res,{{"ok",true}},202);});
-    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);search.add(paths,body.at("id").template get<std::string>(),[selected,automatic](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);search.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
     server.Post("/api/torrent",[](const auto& req,auto& res){
       auto body=json::parse(req.body);const auto action=body.at("action").template get<std::string>();
       if(action=="add") {
@@ -563,11 +649,11 @@ int main(int argc,char** argv) {
           if(body.contains("magnet"))throw std::runtime_error("Choose a magnet link or a torrent file");
           const auto metainfo=body.at("metainfo").template get<std::string>();
           if(metainfo.empty()||metainfo.size()>1398104)throw std::runtime_error("Torrent files must be between 1 byte and 1 MiB");
-          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false)));return;
+          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
         }
         const auto magnet=body.at("magnet").template get<std::string>();
         if(magnet.rfind("magnet:?",0)!=0 || magnet.size()>16384)throw std::runtime_error("Enter a valid magnet link");
-        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false)));return;
+        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
       }
       if(transferring)throw std::runtime_error("Wait for the storage transfer to finish");
       const int id=body.at("id").template get<int>();
@@ -579,6 +665,11 @@ int main(int argc,char** argv) {
         compressor.requireIdle();
         if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
         const auto torrent=getTorrent(id);
+        if(torrent.value("remote",false)){
+          const auto hash=torrent.at("hashString").template get<std::string>();
+          const auto selected=downloadReferences(torrent);
+          requireUnsharedReferences(selected,inspectedLocalTorrents(),-1,{},"Downloaded files are shared with another torrent; deletion refused");
+          writeJson(automaticTaskPath(hash,id,true),{{"torrentId",id},{"remote",true},{"hash",hash},{"status","deletion-requested"}});remote->removeData(id);reply(res,{{"ok",true}});return;}
         DeletionScope operation(operations,std::to_string(id),torrent.value("name","Download"));
         const auto downloadRoot=storage.get(storage.forDownload(torrent.at("downloadDir").template get<std::string>())).root/"downloads";
         const auto directory=containedExisting(downloadRoot,torrent.at("downloadDir").template get<std::string>());
@@ -597,21 +688,15 @@ int main(int argc,char** argv) {
         // torrent's files, including incomplete files in the shared directory.
         std::set<fs::path> selectedPaths;
         for(const auto& location:locations)for(const auto& member:members)selectedPaths.insert(location/member);
-        for(const auto& other:torrents())if(other.at("hashString")!=hash) {
-          std::vector<fs::path> otherLocations{fs::weakly_canonical(fs::path(other.at("downloadDir").template get<std::string>()))};
-          if(locations.size()>1)otherLocations.push_back(locations[1]);
-          for(const auto& file:other.at("files"))for(const auto& suffix:{"", ".part"}) {
-            const auto member=fs::path(safeRelative(file.at("name").template get<std::string>()).string()+suffix);
-            for(const auto& otherLocation:otherLocations)if(selectedPaths.count(otherLocation/member))
-                throw std::runtime_error("Downloaded files are shared with another torrent; deletion refused");
-          }
-        }
-        const auto queue=paths.root/"automatic"/(hash+".json");
+        auto references=inspectedLocalTorrents(false);if(remote)for(const auto& r:remote->list())references.push_back(r);
+        std::vector<fs::path> extra;if(locations.size()>1)extra.push_back(locations[1]);
+        requireUnsharedReferences(selectedPaths,references,torrent.at("id"),extra,"Downloaded files are shared with another torrent; deletion refused");
+        const auto queue=automaticTaskPath(hash,torrent.at("id"),torrent.value("remote",false));
         if(fs::exists(queue))writeJson(queue,{{"hash",hash},{"status","deletion-requested"}});
-        rpc("torrent-stop",{{"ids",{hash}}});
+        rpc("torrent-stop",{{"ids",{torrent.at("id")}}});
         bool stopped=false;
         for(int attempt=0;attempt<20;++attempt) {
-          for(const auto& item:torrents())if(item.at("hashString")==hash)stopped=item.value("status",-1)==0;
+          for(const auto& item:torrents())if(item.at("id")==torrent.at("id"))stopped=item.value("status",-1)==0;
           if(stopped)break;
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -621,13 +706,22 @@ int main(int argc,char** argv) {
         // so a filesystem failure leaves a paused torrent that can be retried.
         for(const auto& location:locations)downloadedFiles(location,members,false);
         for(const auto& location:locations)downloadedFiles(location,members,true,operation.reporter());
-        const auto removed=rpc("torrent-remove",{{"ids",{hash}},{"delete-local-data",false}});operation.complete();reply(res,removed);return;
+        const auto removed=rpc("torrent-remove",{{"ids",{torrent.at("id")}},{"delete-local-data",false}});operation.complete();reply(res,removed);return;
       }
       const std::map<std::string,std::string> methods={{"pause","torrent-stop"},{"resume","torrent-start"},{"verify","torrent-verify"}};
       const auto method=methods.find(action);if(method==methods.end())throw std::runtime_error("Unsupported torrent action");
       std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       if(action=="resume"||action=="verify")storage.get(storage.forDownload(getTorrent(id).at("downloadDir").template get<std::string>()));
       reply(res,rpc(method->second,{{"ids",{id}}}));
+    });
+    server.Post("/api/remote/import",[](const auto& req,auto& res){
+      auto body=json::parse(req.body);std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
+      if(!remote||transferring||retiring)throw std::runtime_error("Remote downloads unavailable or storage transfer active");
+      const auto hash=body.contains("hash")?body.at("hash").template get<std::string>():remote->candidateHash(body.at("id").template get<int>());if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))throw std::runtime_error("Invalid remote hash");
+      const auto selected=body.value("storage",std::string("internal"));auto selectedPaths=storage.get(selected);
+      const auto result=remote->add(hash,{{"download-dir",selectedPaths.complete.string()},{"storage",selected}},true);
+      if(result.contains("torrent-added"))writeJson(automaticTaskPath(hash,result.at("torrent-added").at("id"),true),{{"torrentId",result.at("torrent-added").at("id")},{"remote",true},{"hash",hash},{"status",body.value("automatic",true)?"waiting":"download-only"},{"storage",selected}});
+      reply(res,result,202);
     });
     server.Post("/api/extract",[](const auto& req,auto& res){reply(res,startExtraction(json::parse(req.body)),202);});
     server.Post("/api/move",[](const auto& req,auto& res){
@@ -749,6 +843,6 @@ int main(int argc,char** argv) {
       for(int n=0;n<seconds*10&&!retiring&&!server.listen_stop_requested();++n)std::this_thread::sleep_for(std::chrono::milliseconds(100));
       return !retiring&&!server.listen_stop_requested();
     },[](int error){httpReady=false;std::fprintf(stderr,"Botty HTTP listener interrupted (%d); rebinding while preserving background jobs\n",error);});
-    retiring=true;serverThreads.join();automaticThread.join();libraryThread.join();nativeUpdater.reset();return served?0:1;
+    retiring=true;serverThreads.join();automaticThread.join();libraryThread.join();remote.reset();nativeUpdater.reset();return served?0:1;
   }catch(const std::exception& error){retiring=true;std::cerr<<"Botty failed while "<<stage<<": "<<error.what()<<'\n';return 1;}
 }

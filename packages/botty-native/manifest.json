@@ -2,15 +2,15 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.007.000",
-  "releaseVersion": "1.7.0",
+  "version": "01.008.000",
+  "releaseVersion": "1.8.0",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
   "identityStatus": "provisional-until-console-inventory",
   "readOnly": false,
   "requires": {
-    "manager": "1.5.4",
+    "manager": "1.6.0",
     "worker": "1.3.1",
     "rtorrent": "0.16.24-botty5",
     "apiVersion": 1
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "223921251697aad6ba6f49711d8e9925f67aca2cbf4882f2706f13ef85002e6e"
+      "sha256": "471bc0dc93592019f70d30ad1075b3c8910dfb03f410f46ac99d5088c2d90881"
     },
     {
       "path": "assets/courier.rgba",
@@ -53,8 +53,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 25269564,
-      "sha256": "ac86944040813ecd8ad05600378e73103fb0c87e6a794f15b1cd066c663d7ca5"
+      "size": 25289324,
+      "sha256": "853bfd1263141de9a14f38001495ddfeebb256317db177d92cc31d99c48257a9"
     },
     {
       "path": "sce_module/libc.prx",
@@ -69,7 +69,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "5a40c0f5874756f731739028330babbb9526b6fea6d32b6c795585f5bca7fc7a"
+      "sha256": "9a3b9e7a6ae17ede4f35a2177b25eecdbe913c55f689b924632556ddeb32a580"
     },
     {
       "path": "sce_sys/pic0.dds",

@@ -9,7 +9,7 @@ APP_FLAGS := $(FLAGS) -Wall -Wextra -Werror
 UPDATER_HEADERS := $(wildcard src/*.hpp src/*.h) vendor/json.hpp vendor/httplib.h $(UNRAR)/sha256.hpp $(UNRAR)/rartypes.hpp
 RAR_FLAGS := -DRARDLL -DRAR_SMP -DSILENT -D_UNIX
 PS5_CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
-.PHONY: native ps5 test test-progress
+.PHONY: native ps5 test test-progress test-remote
 native: build/botty-native
 ps5: build/botty-manager.elf
 build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
@@ -38,6 +38,11 @@ build/core-test: tests/core-test.cpp build/host/core.o build/host/storage.o buil
 build/progress-test: tests/progress-test.cpp src/progress.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
+REMOTE_BRIDGE := $(if $(wildcard deployment/botty-remote/server.py),deployment/botty-remote,../../deployment/botty-remote)
+test-remote: build/botty-native
+	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 tests/remote_integration.py
+
 test-progress: build/progress-test
 	./build/progress-test
 test: build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test
@@ -55,6 +60,8 @@ test: build/rest-companion-test build/rest-network-test build/rest-http-test bui
 	./build/search-idle-test
 	python3 tests/integration.py
 	python3 tests/rtorrent_resume.py
+	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 tests/remote_integration.py
 	python3 tests/search_integration.py
 	./build/storage-test
 	python3 tests/storage_integration.py

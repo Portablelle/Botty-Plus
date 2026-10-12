@@ -13,6 +13,9 @@
 #include <unistd.h>
 #if defined(__PS5__) || defined(__APPLE__)
 #include <sys/mount.h>
+#ifdef __PS5__
+#include <sys/syscall.h>
+#endif
 #endif
 namespace botty {
 std::string readText(const fs::path& path, size_t limit) {
@@ -159,6 +162,20 @@ void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, b
     ++done;if(remove&&progress)progress(done,files.size(),relative.string());
   }
 }
+int makeDirectoryRelative(int fd,const char* name,unsigned mode) {
+#ifdef __PS5__
+  return int(relativeFileCall(SYS_mkdirat,fd,name,mode));
+#else
+  return mkdirat(fd,name,mode);
+#endif
+}
+int openFileRelative(int fd,const char* name,int flags,unsigned mode) {
+#ifdef __PS5__
+  return int(relativeFileCall(SYS_openat,fd,name,flags,mode));
+#else
+  return openat(fd,name,flags,mode);
+#endif
+}
 std::string randomId() {
   unsigned char bytes[16]; arc4random_buf(bytes, sizeof bytes);
   const char* hex = "0123456789abcdef"; std::string out;
@@ -180,7 +197,7 @@ json classify(const fs::path& root) {
       if (!std::regex_match(title, std::regex("PPSA[0-9]{5}"))) continue;
       auto app = path.parent_path().parent_path();
       candidates.push_back({{"kind","folder"},{"source",app.lexically_relative(root).string()},{"destination",title+"-app"},{"titleId",title}});
-    } else if (path.extension() == ".exfat") {
+    } else if (asciiLower(path.extension().string()) == ".exfat") {
       std::ifstream file(path, std::ios::binary); char header[11]{}; file.read(header, sizeof header);
       if (file.gcount() == sizeof header && std::string(header+3,8) == "EXFAT   ")
         candidates.push_back({{"kind","exfat"},{"source",path.lexically_relative(root).string()},{"destination",path.filename().string()}});

@@ -298,3 +298,15 @@ state before deleting only the original. Active file operations remain protected
 ## Prowlarr source chooser (01.003.006)
 
 Explore combines the configured torrent indexers. Select a game to compare tracker, release name, size, seeders, leechers, grabs and date before choosing storage, download mode and confirming. Circle cancels without adding a torrent. The source list is captured when opened so background polling cannot change the selected tracker.
+
+## Dedicated server imports (1.8.0)
+
+Activity shows PS5 candidates from the configured dedicated qBittorrent bridge.
+Each magnet, Search or Discover download offers **Download on**: **PS5 (rTorrent)**
+or **Dedicated server (qBittorrent)** when the bridge is configured. The default is
+PS5. The storage and after-download choices apply to the PS5 destination in both cases.
+Choose **Import to PS5** to choose storage and automatic preparation or download only.
+Server download and HTTPS import phases are displayed separately. Candidates are
+never enrolled automatically; server originals are preserved. See the
+[bridge guide](../../deployment/botty-remote/README.md) for detection limits and
+storage/mode selection. Hardware acceptance remains pending.

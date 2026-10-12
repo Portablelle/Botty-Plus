@@ -189,6 +189,7 @@ ActionResult performCommand(const Command& command) noexcept {
     result.status=ActionResult::Status::success;
     switch(command.operation){
     case Operation::explore:message("Explore updated.");break;
+    case Operation::importRemote:message("Import requested. Follow the server download and PS5 transfer in Activity.");break;
     case Operation::nativeUpdate:message("Installation update queued. Botty+ will close; reopen after the completion notification. File operations finish first.");break;
     case Operation::checkNativeUpdate:message("Checking for updates in the background.");break;
     case Operation::search:message("Search started. Results will appear in Discover.");break;

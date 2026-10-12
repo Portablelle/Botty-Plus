@@ -3,10 +3,10 @@
 #include "catalog.hpp"
 namespace botty {
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate };
+enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
 struct Command {
     Operation operation=Operation::none;
-    bool refresh=false,automatic=true,torrent=false;
+    bool refresh=false,automatic=true,torrent=false,useRemote=false;
     std::array<char,64> storage{};
     std::array<char,65> serviceVersion{};
     std::array<char,96> id{};
@@ -26,11 +26,19 @@ const char* unavailable(Operation,const Entry*,const Catalog&) noexcept;
 // Quick actions for one entry (0 download, 1 Activity job, 2 Library game),
 // destructive choices last. Followed tasks have none.
 unsigned quickActions(const Entry*,unsigned tab,const Catalog&,std::array<Operation,8>&) noexcept;
+// Vertical layout of a settings sheet. Four rows use a tighter pitch so the
+// button and a three-line note stay above the footer hints at y=1008.
+struct SheetLayout { unsigned pitch,height,button,noteTop; };
+constexpr SheetLayout sheetLayout(unsigned rows) noexcept {
+    if(rows>=4)return {120,110,320+3*120+110+20,320+3*120+110+126};
+    const unsigned button=rows?320+rows*130+30:360;
+    return {130,120,button,button+120};
+}
 struct Workflow {
     // menu: Quick actions with inline destructive confirmation. sheet: one settings
     // sheet for Get game, Extract and disk moves. keyboard: text entry.
     enum class Panel { closed, menu, sheet, keyboard } panel=Panel::closed;
-    enum class Row { source, magnet, storage, mode, archive, password };
+    enum class Row { source, magnet, engine, storage, mode, archive, password };
     unsigned selected=0,keyPage=0,revision=0,archiveIndex=0;
     // Sheet focus covers its rows, then the primary button, which starts focused.
     unsigned focus=0,rowCount=0,sourceIndex=0;

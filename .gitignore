@@ -18,3 +18,8 @@ api-key
 *.p12
 *.pfx
 /AGENTS.md
+# Private dedicated-server bridge configuration.
+remote.json
+remote-downloads.json
+
+remote-next-id.json

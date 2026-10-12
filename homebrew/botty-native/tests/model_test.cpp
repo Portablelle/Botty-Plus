@@ -254,7 +254,7 @@ int main() {
     reset("");failed=wire(R"({"error":"Access rejected"})");failed.replace(9,3,"403");responses={wire(boot),failed};assert(performCommand(command).status==ActionResult::Status::failed&&requests==2);
     reset("");connected=false;assert(performCommand(command).status==ActionResult::Status::failed&&requests==1);
     assert(firstArchive("a.rar")&&firstArchive("a.part01.rar")&&firstArchive("a.PaRt1.rar"));
-    assert(!firstArchive("a.part2.rar")&&!firstArchive("a.r00")&&!firstArchive("a.RAR"));
+    assert(!firstArchive("a.part2.rar")&&!firstArchive("a.r00")&&firstArchive("a.RAR"));
     assert(parseCatalog(R"({"freeBytes":0,"library":"/data/homebrew","transmissionReady":true,"torrents":[],"jobs":[{"id":"eta","name":"Extracting","status":"extracting","bytes":1000000000,"total":2000000000,"extractionRate":10000000,"eta":100}]})",catalog));
     assert(catalog.jobs[0].active&&catalog.jobs[0].bytes==1000000000&&catalog.jobs[0].download==10000000&&catalog.jobs[0].eta==100&&catalog.jobs[0].etaEstimated);
     assert(parseCatalog(R"({"freeBytes":0,"library":"/data/homebrew","transmissionReady":true,"torrents":[],"jobs":[{"id":"old","name":"Legacy","status":"extracting","bytes":100,"total":200}]})",catalog));
@@ -412,7 +412,7 @@ int main() {
         const auto finalState=scenario==3?std::string(R"({"freeBytes":1,"transmissionReady":true,"torrents":[],"jobs":[]})"):actionable;
         for(const auto& value:{health,boot,login,finalState})responses.push_back(wire(value));
         workerAllowed=true;auto deletingOwner=std::make_unique<Network>();auto& deleting=*deletingOwner;assert(deleting.start());catalog.revision=0;result=ActionResult{};
-        for(unsigned i=0;i<200;++i){deleting.read(snapshot,&catalog);if(snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+        for(unsigned i=0;i<200;++i){if(deleting.read(snapshot,&catalog)&&snapshot.status==Probe::ready)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
         command=Command{};command.operation=scenario==3?Operation::removeLibrary:Operation::removeTorrent;std::snprintf(command.id.data(),command.id.size(),"%s",scenario==3?"j3":"9");
         assert(deleting.submit(command));assert(deleting.busy());assert(!deleting.submit(command));
         if(lost){
@@ -618,6 +618,60 @@ int main() {
         for(auto op:{Operation::removeTorrent,Operation::removeLibrary,Operation::removeOriginal,Operation::restoreOriginal,Operation::remove,Operation::dismiss,Operation::cancel,Operation::cancelCompression})assert(Workflow::destructive(op)&&!Workflow::immediate(op));
         Command cmd;cmd.operation=Operation::transfer;cmd.torrent=true;std::snprintf(cmd.id.data(),cmd.id.size(),"42");cmd.storage=c.storage[1].id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).starts_with("{\"id\":42"));assert(std::string_view(body).find("\"kind\":\"torrent\"")!=std::string_view::npos);
         cmd.torrent=false;cmd.id=game.id;assert(encodeCommand(cmd,body,sizeof(body),n));assert(std::string_view(body).find("\"kind\":\"job\"")!=std::string_view::npos);
+    }
+
+    {
+        static Catalog remote;
+        assert(parseCatalog(R"({"freeBytes":0,"torrents":[{"id":1000000000,"name":"Game PS5","status":0,"leftUntilDone":100,"totalSize":100,"percentDone":0,"remote":true,"remoteCandidate":true,"phase":"Available on dedicated server","files":[]}],"jobs":[],"transmissionReady":true})",remote));
+        const auto& candidate=remote.torrents[0];assert(candidate.remote&&candidate.remoteCandidate&&!candidate.complete&&!candidate.extractable);
+        std::array<Operation,8> options{};assert(quickActions(&candidate,0,remote,options)==1&&options[0]==Operation::importRemote);
+        assert(!*unavailable(Operation::importRemote,&candidate,remote));assert(*unavailable(Operation::removeTorrent,&candidate,remote));
+        Workflow import;import.open(&candidate,0,remote);assert(!import.choose(Operation::importRemote,remote,false)&&import.panel==Workflow::Panel::sheet);
+        assert(import.press(Buttons::cross,remote,false));
+        char body[512];std::size_t count=0;assert(encodeCommand(import.command,body,sizeof(body),count));assert(std::string_view(body).find("resume")==std::string_view::npos);assert(std::string_view(actionPath(import.command.operation))=="/api/remote/import");
+        static Catalog upper;
+        assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":2,"name":"Uppercase archive","status":0,"leftUntilDone":0,"files":[{"name":"folder/GAME.PART01.RAR"},{"name":"folder/GAME.PART02.RAR"}]}],"jobs":[]})",upper));
+        assert(upper.torrents[0].archiveCount==1);
+        remote.torrents[0].remoteCandidate=false;
+        assert(*unavailable(Operation::verify,&remote.torrents[0],remote));
+        assert(*unavailable(Operation::transfer,&remote.torrents[0],remote));
+        std::string omitted=R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":3,"name":"Remote archive","remote":true,"status":0,"leftUntilDone":0,"files":[{"name":")";
+        omitted+=std::string(4100,'a')+R"(.rar"}]}],"jobs":[]})";
+        assert(parseCatalog(omitted,remote));
+        assert(remote.torrents[0].archivesOmitted&&remote.torrents[0].archiveCount==0);
+        assert(std::string_view(unavailable(Operation::extract,&remote.torrents[0],remote))=="Archive names exceed the display limit.");
+        std::string exhausted=R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":4,"name":"Many archives","status":0,"leftUntilDone":0,"files":[)";
+        for(unsigned i=0;i<512;++i){if(i)exhausted+=',';exhausted+="{\"name\":\""+std::to_string(i)+".rar\"}";}
+        exhausted+=R"(]},{"id":5,"name":"Remote archive","remote":true,"status":0,"leftUntilDone":0,"files":[{"name":"game.rar"}]}],"jobs":[]})";
+        assert(parseCatalog(exhausted,remote));assert(remote.torrents[1].archivesOmitted&&remote.torrents[1].archiveCount==0);
+        assert(*unavailable(Operation::extract,&remote.torrents[1],remote));
+        assert(parseCatalog(R"({"freeBytes":0,"transmissionReady":true,"torrents":[{"id":6,"name":"Loose import","remote":true,"remoteLoose":true,"status":0,"leftUntilDone":0,"files":[{"name":"app/sce_sys/param.json"}]}],"jobs":[]})",remote));
+        assert(remote.torrents[0].remoteLoose&&!remote.torrents[0].archivesOmitted);
+        assert(!*unavailable(Operation::extract,&remote.torrents[0],remote));
+        static Catalog engines;
+        assert(parseCatalog(R"({"freeBytes":1000000000,"transmissionReady":true,"storageSupported":true,"remoteDownloads":{"enabled":true},"storage":[{"id":"internal","label":"PS5","available":true,"freeBytes":1000000000}],"torrents":[],"jobs":[]})",engines));
+        Workflow download;download.add();download.acceptText("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",engines,false);
+        assert(download.hasRow(Workflow::Row::engine)&&download.rowCount==4&&!download.command.useRemote);
+        // A 3-line note must end above the footer hints (y=1008) and rows must not overlap.
+        for(unsigned rows=0;rows<=4;++rows){
+            const auto layout=sheetLayout(rows);
+            assert(layout.pitch>=layout.height+8);
+            assert(!rows||320+(rows-1)*layout.pitch+layout.height<=layout.button+8);
+            assert(layout.button+8+84<=layout.noteTop);
+            assert(layout.noteTop+3*30<=1008);
+        }
+        download.focus=1;download.press(Buttons::right,engines,false);assert(download.command.useRemote);
+        assert(encodeCommand(download.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\":\"qbittorrent\"")!=std::string_view::npos);
+        download.press(Buttons::left,engines,false);assert(!download.command.useRemote);
+        assert(encodeCommand(download.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\":\"rtorrent\"")!=std::string_view::npos);
+        download.press(Buttons::right,engines,false);engines.remoteEnabled=false;download.focus=download.rowCount;assert(!download.press(Buttons::cross,engines,false));
+        engines.remoteEnabled=true;
+        Workflow fixedImport;engines.torrents[0]=remote.torrents[0];engines.torrents[0].remoteCandidate=true;engines.torrentCount=1;fixedImport.open(&engines.torrents[0],0,engines);
+        fixedImport.choose(Operation::importRemote,engines,false);assert(!fixedImport.hasRow(Workflow::Row::engine)&&fixedImport.hasRow(Workflow::Row::mode));
+        assert(encodeCommand(fixedImport.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\"")==std::string_view::npos);
+        Entry result;std::snprintf(result.id.data(),result.id.size(),"%s","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");std::snprintf(result.name.data(),result.name.size(),"%s","PS5 game");
+        Workflow searched;searched.grab(result,engines);assert(searched.hasRow(Workflow::Row::engine)&&searched.rowCount==4);
+        Workflow discovered;discovered.chooseSources(result,engines,false);assert(discovered.hasRow(Workflow::Row::engine)&&discovered.rowCount==4);
     }
 
 }

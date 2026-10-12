@@ -96,7 +96,7 @@ bool responseObject(std::string_view body,std::array<char,512>& error) noexcept 
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
 }
 bool firstArchive(std::string_view name) noexcept {
- if(!name.ends_with(".rar"))return false;
+ if(name.size()<4||name[name.size()-4]!='.'||(name[name.size()-3]|32)!='r'||(name[name.size()-2]|32)!='a'||(name[name.size()-1]|32)!='r')return false;
  auto part=std::string_view::npos;for(std::size_t i=0;i+5<=name.size();++i)if(name[i]=='.'&&(name[i+1]|32)=='p'&&(name[i+2]|32)=='a'&&(name[i+3]|32)=='r'&&(name[i+4]|32)=='t')part=i;
  if(part==std::string_view::npos)return true;
  auto digits=slice(name,part+5,name.size()-part-9);if(digits.empty())return true;
@@ -106,7 +106,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     out.valid=false;out.stale=false;out.transmissionStale=false;JSON root{body};if(!root.value())return false;root.ws();if(root.p!=body.size())return false;
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
-    out.torrentCount=out.jobCount=out.archiveCount=0;out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    out.torrentCount=out.jobCount=out.archiveCount=0;out.remoteEnabled=field(field(body,"remoteDownloads"),"enabled")=="true";out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
     out.nativeUpdate=NativeUpdate{};
     const auto update=field(body,"nativeUpdate");
     if(field(update,"supported")=="true"){
@@ -167,7 +167,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
                 e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
-            }else{const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
+            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=e.remote&&field(obj,"remoteLoose")=="true";e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
                 const char* label=status==0?"Paused":status==1||status==2?"Verifying":e.complete?"Completed":status==3?"Queued":"Downloading";
                 std::snprintf(e.status.data(),e.status.size(),"%s",label);decode(field(obj,"errorString"),e.error);e.total=number(field(obj,"totalSize"));e.download=number(field(obj,"rateDownload"));e.upload=number(field(obj,"rateUpload"));e.progress=number(field(obj,"percentDone"));
                 const auto count=[&](std::string_view key){const auto value=field(obj,key);const double n=value.empty()?-1:number(value);return n>=0&&n<=2147483647?static_cast<int>(n):-1;};
