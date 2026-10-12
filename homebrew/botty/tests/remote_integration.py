@@ -59,6 +59,13 @@ with tempfile.TemporaryDirectory() as tmp:
         t, files = rows[h]
         return dict(t, amount_left=1 if paused.get(h) else 0, progress=0 if paused.get(h) else 1, state='pausedDL' if paused.get(h) else 'uploading', dlspeed=0, upspeed=20, num_seeds=3, num_leechs=0), [dict(f, progress=0 if paused.get(h) else 1) for f in files], not paused.get(h, False)
     bridge.info = info
+    legacy_bridge = [False]
+    original_snapshot = bridge.snapshot
+    def snapshot(*args, **kwargs):
+        result = original_snapshot(*args, **kwargs)
+        if legacy_bridge[0]: result.pop('capabilities', None)
+        return result
+    bridge.snapshot = snapshot
     def qb(route, fields=None):
         if fields is not None:
             if route == 'torrents/add':
@@ -601,6 +608,50 @@ with tempfile.TemporaryDirectory() as tmp:
         api('/api/torrent', {'id': migration_id, 'action': 'remove-data', 'confirmed': True})
         assert not migration_stage.exists() and migration not in json.loads((data / 'remote-downloads.json').read_text())
         assert (sources / 'Game PS5/a space.RAR').read_bytes() == payload
+
+        # Legacy bridge detection precedes touching partial files and does not
+        # misclassify the bridge upgrade as a pinned-file 416/pause.
+        compatibility = '6' * 40; rows[compatibility] = rows[game]
+        legacy_bridge[0] = True
+        compatibility_id = api('/api/remote/import', {'hash': compatibility, 'automatic': False})['torrent-added']['id']
+        compatibility_row = wait(lambda: next((t for t in api('/api/state')['torrents'] if t['id'] == compatibility_id and 'Update the dedicated-server bridge' in t.get('errorString', '')), None))
+        assert compatibility_row['status'] != 0
+        assert not (data / 'downloads/complete' / ('.remote2-' + compatibility + '.partial')).exists()
+        assert not any(path.startswith('/file/' + compatibility + '/') for path, _ in member_requests)
+        legacy_bridge[0] = False
+        wait(lambda: any(t['id'] == compatibility_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+        assert (data / 'downloads/complete' / compatibility / 'Game PS5/a space.RAR').read_bytes() == payload
+
+        # A loose/many-member import must not rewrite the full registry for every
+        # member, including empty files and already-complete members on restart.
+        if Path('/proc/self/fd').exists():
+            proc.terminate(); proc.wait(timeout=10)
+            counter = root / 'registry-sync-count'
+            count_environment = dict(os.environ, LD_PRELOAD=str(library), BOTTY_COUNT_REGISTRY_SYNCS=str(counter))
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=count_environment); token = ''; token = wait(bootstrap)
+            many = 'ab' * 20; files = []
+            for i in range(256):
+                name = 'Many PS5/' + ('game.rar' if i == 0 else f'file-{i}.bin')
+                path = sources / name; path.parent.mkdir(exist_ok=True); path.write_bytes(bytes([i]) if i % 4 else b'')
+                files.append({'index': i, 'name': name, 'size': path.stat().st_size})
+            rows[many] = ({'name': 'Many PS5', 'save_path': str(sources) + '/'}, files)
+            # Make the first RAR non-empty, preserving the candidate contract.
+            (sources / files[0]['name']).write_bytes(b'fixture'); files[0]['size'] = 7
+            counter.write_bytes(b'')
+            many_id = api('/api/remote/import', {'hash': many, 'automatic': False})['torrent-added']['id']
+            wait(lambda: any(t['id'] == many_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']), 90)
+            assert counter.stat().st_size < 40, counter.stat().st_size
+            many_target = data / 'downloads/complete' / many
+            for file in files: assert (many_target / file['name']).read_bytes() == (sources / file['name']).read_bytes()
+            proc.terminate(); proc.wait(timeout=10)
+            many_target.rename(many_target.with_name('.remote2-' + many + '.partial'))
+            saved = json.loads((data / 'remote-downloads.json').read_text()); saved[many].update(phase='transfer', paused=False, publishing=False); saved[many].pop('publishedIdentity', None)
+            (data / 'remote-downloads.json').write_text(json.dumps(saved))
+            previous_requests = len(member_requests); counter.write_bytes(b'')
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=count_environment); token = ''; token = wait(bootstrap)
+            wait(lambda: any(t['id'] == many_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+            assert not any(path.startswith('/file/' + many + '/') for path, _ in member_requests[previous_requests:])
+            assert counter.stat().st_size < 15, counter.stat().st_size
 
         # Huge pinned metadata is rejected before planning millions of ranges.
         huge = '5' * 40; rows[huge] = (rows[game][0], [{'name': 'Game PS5/a space.RAR', 'size': 2**63-1, 'index': 0}])
