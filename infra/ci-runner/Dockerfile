@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates curl git gnupg jq openssh-client python3 python3-pil clang libcurl4-openssl-dev unzip xz-utils zstd \
+    build-essential ca-certificates ccache curl git gnupg jq openssh-client python3 python3-pil clang libcurl4-openssl-dev unzip xz-utils zstd \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" \
     > /etc/apt/sources.list.d/github-cli.list \

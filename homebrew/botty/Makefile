@@ -21,6 +21,14 @@ build/host/%.o: src/%.cpp
 	@mkdir -p build/host
 	$(NATIVE_CXX) $(APP_FLAGS) -MMD -MP -c $< -o $@
 -include $(wildcard build/host/*.d build/native/*.d)
+# Test sources compile separately from linking so ccache can reuse their objects.
+TEST_FLAGS := $(APP_FLAGS)
+build/tests/core-test.o: TEST_FLAGS := $(FLAGS)
+build/tests/notification-test.o: TEST_FLAGS := $(APP_FLAGS) -D__PS5__
+build/tests/%.o: tests/%.cpp
+	@mkdir -p build/tests
+	$(NATIVE_CXX) $(TEST_FLAGS) -MMD -MP -c $< -o $@
+-include $(wildcard build/tests/*.d)
 build/native/sha1.o build/ps5/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
@@ -33,15 +41,15 @@ build/service-updater.elf: src/service-updater.cpp $(UPDATER_HEADERS) build/ps5/
 	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/service-updater-embedded.hpp: build/service-updater.elf tools/embed-service-updater.py
 	python3 tools/embed-service-updater.py $< $@
-build/core-test: tests/core-test.cpp build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/progress-test: tests/progress-test.cpp src/progress.hpp
+build/core-test: build/tests/core-test.o build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+build/progress-test: build/tests/progress-test.o src/progress.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 REMOTE_BRIDGE := $(if $(wildcard deployment/botty-remote/server.py),deployment/botty-remote,../../deployment/botty-remote)
-build/remote-buffer-test: tests/remote-buffer-test.cpp src/remote-buffer.hpp
+build/remote-buffer-test: build/tests/remote-buffer-test.o src/remote-buffer.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 test-remote: build/botty-native build/remote-buffer-test
 	./build/remote-buffer-test
 	python3 $(REMOTE_BRIDGE)/test_server.py
@@ -72,66 +80,66 @@ test: build/rest-companion-test build/rest-network-test build/rest-http-test bui
 	python3 tests/storage_integration.py
 	python3 tests/background_storage_integration.py
 
-build/compressor-test: tests/compressor-test.cpp build/host/core.o build/host/storage.o src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
+build/compressor-test: build/tests/compressor-test.o build/host/core.o build/host/storage.o src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl
 .PHONY: test-compressor
 test-compressor: build/compressor-test
 	./build/compressor-test
 
-build/native-transaction-test: tests/native-transaction-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
+build/native-transaction-test: build/tests/native-transaction-test.o $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
-build/native-update-test: tests/native-update-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@
+build/native-update-test: build/tests/native-update-test.o $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@ -lcurl
-build/native-idle-test: tests/native-idle-test.cpp build/host/core.o build/host/storage.o $(UPDATER_HEADERS)
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl
+build/native-idle-test: build/tests/native-idle-test.o build/host/core.o build/host/storage.o $(UPDATER_HEADERS)
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl
 .PHONY: test-native-update
 test-native-update: build/native-transaction-test build/native-update-test build/native-idle-test
 	./build/native-transaction-test
 	./build/native-update-test
 	./build/native-idle-test
 
-build/installation-update-test: tests/installation-update-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
+build/installation-update-test: build/tests/installation-update-test.o $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
 .PHONY: test-installation-update
 test-installation-update: build/installation-update-test
 	./build/installation-update-test
 
-build/installation-runtime-test: tests/installation-runtime-test.cpp $(UPDATER_HEADERS) build/native/sha256.o
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/search-idle-test: tests/search-idle-test.cpp src/search.hpp src/core.hpp vendor/json.hpp
+build/installation-runtime-test: build/tests/installation-runtime-test.o $(UPDATER_HEADERS) build/native/sha256.o
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+build/search-idle-test: build/tests/search-idle-test.o src/search.hpp src/core.hpp vendor/json.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 .PHONY: test-installation-runtime
 test-installation-runtime: build/installation-runtime-test build/search-idle-test
 	./build/installation-runtime-test
 	./build/search-idle-test
 
-build/rtorrent-resume-client: tests/rtorrent-resume-client.cpp build/host/core.o build/host/storage.o build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
+build/rtorrent-resume-client: build/tests/rtorrent-resume-client.o build/host/core.o build/host/storage.o build/native/sha1.o src/rtorrent.hpp src/core.hpp src/storage.hpp $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@
 
 .PHONY: test-rtorrent-resume
 test-rtorrent-resume: build/rtorrent-resume-client
 	python3 tests/rtorrent_resume.py
 
-build/compression-library-test: tests/compression-library-test.cpp build/host/core.o build/host/storage.o src/storage.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
+build/compression-library-test: build/tests/compression-library-test.o build/host/core.o build/host/storage.o src/storage.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@
 .PHONY: test-compression-library
 test-compression-library: build/compression-library-test
 	./build/compression-library-test
 
-build/notification-test: tests/notification-test.cpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror -D__PS5__ $< -o $@
+build/notification-test: build/tests/notification-test.o src/notification.hpp
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 .PHONY: test-notification
 test-notification: build/notification-test
 	./build/notification-test
 
-build/storage-test: tests/storage-test.cpp build/host/core.o build/host/storage.o src/storage.hpp
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $(filter %.cpp %.o,$^) -o $@
+build/storage-test: build/tests/storage-test.o build/host/core.o build/host/storage.o src/storage.hpp
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@
 .PHONY: test-storage
 test-storage: build/storage-test build/botty-native
 	./build/storage-test
@@ -139,22 +147,22 @@ test-storage: build/storage-test build/botty-native
 	python3 tests/background_storage_integration.py
 
 .PHONY: test-rest-mode
-build/rest-mode-test: tests/rest-mode-test.cpp src/rest-mode.hpp
+build/rest-mode-test: build/tests/rest-mode-test.o src/rest-mode.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) -Wall -Wextra -Werror $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 test-rest-mode: build/rest-mode-test
 	./build/rest-mode-test
 
-build/rest-network-test: tests/rest-network-test.cpp src/rest-network.hpp
+build/rest-network-test: build/tests/rest-network-test.o src/rest-network.hpp
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 .PHONY: test-rest-network
-build/rest-http-test: tests/rest-http-test.cpp src/rest-network.hpp vendor/httplib.h
+build/rest-http-test: build/tests/rest-http-test.o src/rest-network.hpp vendor/httplib.h
 	@mkdir -p build
-	$(NATIVE_CXX) $(APP_FLAGS) $< -o $@
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
 test-rest-network: build/rest-network-test build/rest-http-test
 	./build/rest-network-test
 	./build/rest-http-test
 
-build/rest-companion-test: tests/rest-companion-test.cpp src/rest-companion.hpp src/rest-companion-protocol.h build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ)
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
+build/rest-companion-test: build/tests/rest-companion-test.o src/rest-companion.hpp src/rest-companion-protocol.h build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ)
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz

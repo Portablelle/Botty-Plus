@@ -111,3 +111,39 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             info['state'] = 'closed'
             (root / 'response').write_text(json.dumps(info))
             self.assertNotEqual(run().returncode, 0)
+
+    def test_changed_file_list_is_published_only_when_the_diff_succeeds(self):
+        body = step("List the PR's changed files", '\n      # Restore only:')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')
+            def git(*args):
+                return subprocess.run(['git', *args], cwd=root, env=env, check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git('init', '-q')
+            git('config', 'user.email', 'fixture@example.test')
+            git('config', 'user.name', 'Fixture')
+            (root / 'kept.md').write_text('base\n')
+            (root / 'deleted.cpp').write_text('base\n')
+            git('add', '.')
+            git('commit', '-qm', 'Base')
+            base = git('rev-parse', 'HEAD')
+            (root / 'kept.md').write_text('head\n')
+            git('rm', '-q', 'deleted.cpp')
+            (root / 'added.py').write_text('head\n')
+            git('add', '.')
+            git('commit', '-qm', 'Head')
+            env.update(BASE=base, HEAD=git('rev-parse', 'HEAD'), RUNNER_TEMP=temp, GITHUB_ENV=str(root / 'env'))
+            result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sorted((root / 'changed-files').read_text().split()), ['added.py', 'deleted.cpp', 'kept.md'])
+            self.assertIn('BOTTY_CHANGED_FILES=' + str(root / 'changed-files'), (root / 'env').read_text())
+            (root / 'env').unlink()
+            (root / 'changed-files').unlink()
+            env['HEAD'] = 'f' * 40
+            result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / 'env').exists(), 'A failed diff must leave every suite enabled')
+            self.assertFalse((root / 'changed-files').exists())
