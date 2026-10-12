@@ -20,6 +20,22 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 scripts/botty-packages.py --check
 ```
 
+`bash scripts/botty-host-checks.sh` runs the full Linux suite used by CI and the
+pre-push loop. It compiles through ccache whenever `ccache` is on `PATH`, so a
+local cache makes repeated runs much faster:
+
+```sh
+sudo apt-get install ccache    # or: brew install ccache
+bash scripts/botty-host-checks.sh
+```
+
+The script caps the cache at `CCACHE_MAXSIZE` (default 1G) and keeps the default
+cache directory unless `CCACHE_DIR` is set. When the checks run in a throwaway
+container, mount a persistent volume there, for example `docker run -v botty-ccache:/ccache -e CCACHE_DIR=/ccache ...`. The script
+sets `CCACHE_BASEDIR` to the checkout, so entries are shared between worktrees.
+`BOTTY_CHANGED_FILES` may name a file listing changed paths, one per line, to skip
+the compiled suites those paths cannot affect, as PR checks do.
+
 macOS renderer preview: `make -C homebrew/botty-native preview` (requires `sips`).
 PS5 builds use the component Dockerfiles and pinned SDKs; host tests do not prove
 hardware compatibility. See the component READMEs and native VALIDATION.md.
