@@ -14,7 +14,7 @@ REQUIRED = ('CLAUDE.md', '.claude/commands/review-pr.md', '.claude/review/histor
 class ClaudeReviewPolicyTests(unittest.TestCase):
     def loaders(self):
         steps = []
-        for workflow, count in [('claude-code-review.yml', 2), ('claude.yml', 1)]:
+        for workflow, count in [('claude-code-review.yml', 1)]:
             source = (ROOT / '.github/workflows' / workflow).read_text()
             loaders = re.findall(r'      - name: Load trusted review policy\n(.*?)(?=\n      - )',
                                  source, re.DOTALL)
@@ -58,7 +58,7 @@ class ClaudeReviewPolicyTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((root / 'env').exists())
 
-    def test_review_autofix_and_manual_load_base_policy_without_agents(self):
+    def test_review_loads_base_policy_without_agents(self):
         for body in self.loaders():
             self.run_loader(body)
 
