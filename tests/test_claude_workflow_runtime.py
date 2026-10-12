@@ -162,6 +162,7 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             ({'packages/botty-release.json': '{}\n'}, 'claude-opus-5-5', 'high'),
             ({'.github/\u00e9.yml': 'on: push\n'}, 'claude-opus-5-5', 'high'),
             ({'homebrew/botty/icon.png': b'\x00\x01binary'}, 'claude-opus-5-5', 'high'),
+            ({'docs/screenshots/new.png': b'\x00\x01binary'}, 'claude-opus-5-5', 'high'),
             ({}, 'claude-opus-5-5', 'high'),
         ]
         for files, model, effort in cases:
@@ -210,3 +211,13 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / 'output').read_text().split(), ['model=claude-opus-5-5', 'effort=high'])
+
+    def test_failed_announcement_still_lets_the_verdict_publish(self):
+        source = WORKFLOW.read_text()
+        context = source.split('\n  context:', 1)[1].split('\n  host-checks:', 1)[0]
+        announce = context.split('      - name: Announce the review', 1)[1]
+        checkout = context.split('      - uses: actions/checkout@', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('continue-on-error: true', announce.split('        run: |', 1)[0])
+        self.assertIn('continue-on-error: true', checkout)
+        verdict = source.split('\n  verdict:', 1)[1]
+        self.assertIn("needs.context.result == 'success'", verdict)
