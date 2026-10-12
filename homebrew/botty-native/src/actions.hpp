@@ -30,7 +30,7 @@ unsigned quickActions(const Entry*,unsigned tab,const Catalog&,std::array<Operat
 // button and a three-line note stay above the footer hints at y=1008.
 struct SheetLayout { unsigned pitch,height,button,noteTop; };
 constexpr SheetLayout sheetLayout(unsigned rows) noexcept {
-    if(rows>=4)return {118,112,320+3*118+112+20,320+3*118+112+126};
+    if(rows>=4)return {120,110,320+3*120+110+20,320+3*120+110+126};
     const unsigned button=rows?320+rows*130+30:360;
     return {130,120,button,button+120};
 }
