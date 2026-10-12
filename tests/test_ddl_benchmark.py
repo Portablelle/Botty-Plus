@@ -9,7 +9,10 @@ spec.loader.exec_module(benchmark)
 
 class BenchmarkTests(unittest.TestCase):
     def test_slot_contention_waits_for_manager_retry(self):
-        row = {'remotePhase': 'transfer', 'status': 4, 'errorString': 'Server transfer slots busy (429); retrying after bounded delay'}
+        row = {'remotePhase': 'transfer', 'status': 4, 'remoteRetrying': True,
+               'errorString': 'Temporary server contention'}
+        self.assertEqual(benchmark.import_error(row), '')
+        row['errorString'] = 'Another diagnostic wording'
         self.assertEqual(benchmark.import_error(row), '')
         row['errorString'] = ''
         row['remotePhase'] = 'ready'
@@ -19,4 +22,4 @@ class BenchmarkTests(unittest.TestCase):
         for error in ['Server rejected pinned byte range (416); pause and inspect the remote file', 'Storage unavailable']:
             self.assertEqual(benchmark.import_error({'remotePhase': 'transfer', 'status': 4, 'errorString': error}), error)
         error = 'Server transfer slots busy (429); retrying after bounded delay'
-        self.assertEqual(benchmark.import_error({'remotePhase': 'transfer', 'status': 0, 'errorString': error}), error)
+        self.assertEqual(benchmark.import_error({'remotePhase': 'transfer', 'status': 0, 'remoteRetrying': True, 'errorString': error}), error)

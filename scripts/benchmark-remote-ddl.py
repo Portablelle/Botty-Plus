@@ -19,7 +19,7 @@ import urllib.request
 def import_error(row):
     error = row.get('errorString', '')
     if (row.get('remotePhase') == 'transfer' and row.get('status') != 0
-            and error == 'Server transfer slots busy (429); retrying after bounded delay'):
+            and row.get('remoteRetrying', False)):
         return ''  # The manager reduces concurrency and retries within the timeout.
     return error
 

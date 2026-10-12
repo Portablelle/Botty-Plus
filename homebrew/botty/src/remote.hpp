@@ -111,7 +111,7 @@ class RemoteDownloads {
     const bool paused=r.value("paused",false)||(phase=="remote"&&snapshot.value("paused",false));
     bool archive=false,loose=false;for(const auto& f:r.value("inventory",json::array())){const fs::path name=asciiLower(f.at("name").get<std::string>());archive=archive||name.extension()==".rar";loose=loose||name.extension()==".exfat"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
     return {{"id",r.at("id")},{"hashString",hash},{"name",snapshot.value("name",r.value("name",std::string("Remote torrent")))},{"status",paused?0:ready?6:4},
-      {"remote",true},{"parallelConnections",r.value("parallelConnections",2)},{"effectiveConnections",r.value("effectiveConnections",r.value("parallelConnections",2))},{"remoteLoose",ready&&loose&&!archive},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
+      {"remote",true},{"parallelConnections",r.value("parallelConnections",2)},{"effectiveConnections",r.value("effectiveConnections",r.value("parallelConnections",2))},{"remoteLoose",ready&&loose&&!archive},{"remoteRetrying",phase=="transfer"&&!paused&&!error.empty()&&r.value("retrying",false)},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
       {"rateDownload",phase=="transfer"?r.value("rate",uint64_t(0)):ready?uint64_t(0):snapshot.value("rate",uint64_t(0))},{"rateUpload",phase=="remote"?snapshot.value("upload",uint64_t(0)):uint64_t(0)},{"eta",r.value("eta",-1.0)},
       {"downloadDir",r.at("directory")},{"storage",r.at("storage")},{"files",files},{"error",error.empty()?0:1},{"errorString",error},{"peersConnected",snapshot.value("peers",0)},{"peersSendingToUs",0},{"peersGettingFromUs",0}};
   }
@@ -455,10 +455,10 @@ class RemoteDownloads {
         try{
           if(recoverPublished(hash,r)){std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();continue;}
           auto snapshot=snapshotFor(hash);
-          update(hash,{{"snapshot",snapshot},{"error",""}});
+          update(hash,{{"snapshot",snapshot},{"error",""},{"retrying",false}});
           if(snapshot.at("complete").get<bool>())transfer(hash,r,snapshot);
           else update(hash,{{"phase","remote"},{"rate",0},{"eta",-1.0}});
-        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};if(RemoteBatchOutcome::failure(std::current_exception()).pause())failure["paused"]=true;update(hash,failure,true);}catch(...){}}
+        }catch(const std::exception& e){try{const auto outcome=RemoteBatchOutcome::failure(std::current_exception());json failure={{"error",e.what()},{"rate",0},{"eta",-1.0},{"retrying",outcome.busy()}};if(outcome.pause())failure["paused"]=true;update(hash,failure,true);}catch(...){}}
         {std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();}
       }
       std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});
