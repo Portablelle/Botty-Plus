@@ -655,7 +655,7 @@ int main() {
         // A 3-line note must end above the footer hints (y=1008) and rows must not overlap.
         for(unsigned rows=0;rows<=4;++rows){
             const auto layout=sheetLayout(rows);
-            assert(layout.pitch>=layout.height);
+            assert(layout.pitch>=layout.height+8);
             assert(!rows||320+(rows-1)*layout.pitch+layout.height<=layout.button+8);
             assert(layout.button+8+84<=layout.noteTop);
             assert(layout.noteTop+3*30<=1008);
