@@ -1,4 +1,4 @@
-# Botty service 1.6.1
+# Botty service 1.7.0
 
 Botty is the C++17 background service for **Botty+**. It listens on
 port `8088`, controls the separate rTorrent process over loopback SCGI and manages extraction,
@@ -9,7 +9,7 @@ application is `PPSA99071`.
 Use the repository's root README and `deployment/README.md` for installation.
 The portal's **LAUNCH** action installs/starts the service after preparing the
 native title and rTorrent. The service package lives under
-`/data/botty/manager/1.6.1`; its installed marker is in the parent directory.
+`/data/botty/manager/1.7.0`; its installed marker is in the parent directory.
 
 ## Installation updates
 
@@ -470,3 +470,66 @@ actual file size. Files remain sequential, pinned and verified before publicatio
 The PS5 baseline was about 4.2 MiB/s on Ethernet to the internal SSD. Host tests
 verify write coalescing, short writes, interruption and Range recovery; they do
 not establish the throughput improvement on PS5. Measure that after installation.
+
+### Parallel HTTPS imports (1.7.0)
+
+Remote imports transfer one file at a time in bounded 8 MiB ranges, using two
+connections by default. POST `/api/remote/import` accepts `parallelConnections`
+with values 1, 2 or 4. To change a paused import without restarting the manager,
+POST `/api/torrent` with its `id`, `action: "resume"` and `parallelConnections`.
+The range ledger is independent of connection count. Fully received ranges
+become resumable only after member-directory entries, file data and registry
+state are durably synced. Sparse
+file length never establishes completion. Space admission accounts for allocated
+uncommitted ranges, so an interrupted copy can overwrite those blocks without
+reserving their space twice; block allocation is never counted as progress. Legacy append-only partials migrate
+after syncing and committing every member prefix together; interrupted new ranges are downloaded again.
+The client verifies status 206, Content-Range and Content-Length before writes.
+HTTP 416 pauses the import for inspection; HTTP 429 keeps admitted completed
+ranges, halves effective concurrency (4 to 2 to 1) and retries after the manager's
+five-second delay. Explicitly setting parallelConnections on resume resets this
+adaptive limit. The bridge retains a global limit of four simultaneous file
+responses across consoles. Four connections can contend with another console.
+
+`scripts/benchmark-remote-ddl.py` prepares/runs the controlled 1/2/4 comparison
+against the same remote member, records elapsed time and MiB/s, and requires
+matching SHA-256 for every downloaded copy. Default invocation prints an offline plan. After explicit approval to install
+1.7.0 and test, `--execute --config <private-json>` uses the manager import API
+and FTP to verify each copy. Connection config contains no credentials; the
+script reads existing console credentials into memory. It refuses existing fixture tracking and removes
+only the new local fixture copies between trials. Results include scheduling,
+file fsync and publication; FTP hash verification is outside the timed interval.
+No PS5 speedup is claimed before those measurements.
+
+Format 2 staging uses `.remote2-<hash>.partial`, distinct from the 1.6.x
+append-only staging path. Owned legacy partials migrate via a durable rename
+intent before any segmented write. Returning to 1.6.x cannot interpret these
+sparse partials as complete prefixes. Pause incomplete imports before a downgrade;
+keep their format 2 directories for resumption with 1.7.0. Older managers can
+start a separate fresh legacy copy, so avoid resuming those records until 1.7.0
+is restored. Preserve both copies if a downgrade was already used.
+
+Staging creation records a durable ownership token before mkdir. A failed
+identity save can therefore recover the matching marker on resume or removal,
+while unrelated directories remain unowned. Legacy migration checks local-file
+sharing under both staging path spellings before renaming any directory.
+
+An interrupted migration still resolves its owned legacy directory until rename
+finishes, including for reference checks and local-only removal. Creation recovery
+repairs only an empty stage or a marker prefix matching its durable token; unknown
+contents and foreign markers are retained for inspection. Typed range ledgers
+validate bounds, count completion, plan gaps and merge checkpoints. A single
+batch outcome reduction prioritizes 416, then 429, then other failures.
+
+Parallel imports require the updated dedicated-server bridge advertising
+`capabilities.boundedRanges`; update/restart it before upgrading the manager to
+1.7.0. An older bridge produces an explicit upgrade error before any local writes.
+Sparse-write format is committed once per attempt. Completed small-file ledgers
+are checkpointed together after 8 MiB or five seconds, and on pause, errors and
+publication. Each recorded range is file-synced first; completed members do not
+force unchanged ledger rewrites. A sudden power loss can retry uncheckpointed
+small-file bytes. Directory entry syncing is reused within each attempt except
+when creating new entries.
+
+Activity rows expose `remoteRetrying` for active, unpaused slot-contention
+backoff. Automation can wait for these retries without parsing diagnostic text.

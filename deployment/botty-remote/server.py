@@ -220,7 +220,7 @@ class Bridge:
             raise ValueError('Torrent location changed; import again explicitly')
         if require_owned and self.owned[hash].get('pending') and t.get('category') != 'botty-ps5':
             raise ValueError('Pending add does not match the Botty category')
-        return {'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
+        return {'capabilities': {'boundedRanges': True}, 'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
                 'total': sum(f['size'] for f in files), 'done': sum(int(f['size'] * f['progress']) for f in files),
                 'rate': t['dlspeed'], 'upload': t['upspeed'], 'peers': t['num_seeds'] + t['num_leechs'],
                 'files': [{'index': f['index'], 'name': f['name'], 'size': f['size']} for f in files]}
@@ -453,22 +453,24 @@ class Handler(BaseHTTPRequestHandler):
                         if os.fstat(source.fileno()).st_size != file['size']:
                             raise ValueError('File size changed')
                         start = 0
+                        end = file['size'] - 1
                         range_header = self.headers.get('Range')
                         if range_header:
-                            m = re.fullmatch(r'bytes=(\d+)-', range_header)
-                            if not m or int(m[1]) >= file['size']:
+                            m = re.fullmatch(r'bytes=(\d+)-(\d*)', range_header)
+                            if not m or int(m[1]) >= file['size'] or (m[2] and (int(m[2]) < int(m[1]) or int(m[2]) >= file['size'])):
                                 return self.reply(416, {'error': 'Invalid range'})
                             start = int(m[1])
+                            if m[2]: end = int(m[2])
                         streaming = True
-                        self.send_response(206 if start else 200)
+                        self.send_response(206 if range_header else 200)
                         self.send_header('Content-Type', 'application/octet-stream')
                         self.send_header('Accept-Ranges', 'bytes')
-                        self.send_header('Content-Length', str(file['size'] - start))
-                        if start:
-                            self.send_header('Content-Range', f"bytes {start}-{file['size']-1}/{file['size']}")
+                        self.send_header('Content-Length', str(end - start + 1))
+                        if range_header:
+                            self.send_header('Content-Range', f"bytes {start}-{end}/{file['size']}")
                         self.end_headers()
                         source.seek(start)
-                        left = file['size'] - start
+                        left = end - start + 1
                         while left:
                             chunk = source.read(min(left, 1024 * 1024))
                             if not chunk:
