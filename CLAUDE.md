@@ -65,6 +65,12 @@ routing job reads the publisher marker from the exact trusted base workflow; old
 bases and API failures keep standalone verification, including this rollout PR.
 PRs changing `scripts/botty-host-checks.sh` or `.github/workflows/botty-checks.yml`
 also keep standalone `verify`, so the head's entry point runs before merge.
+The trusted job lists the PR's changed files (`git diff` from base to head) and
+the host-check script skips compiled suites (service, native, rTorrent) that no
+changed path can affect; fast checks always run, and unknown paths or a failed
+diff keep the full suite. Compilation goes through ccache when the image has it.
+Only default-branch pushes of `Botty+ checks` save the `ccache-host-` Actions
+cache; PR jobs restore it but never save, so PR code cannot poison it.
 The routing job compares file hashes at the exact base and head SHAs; deleted,
 unreadable or malformed content responses fall back to standalone verification.
 The review summary in parallel mode reports code findings only, and never claims tests passed or merge
