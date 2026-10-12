@@ -2,7 +2,7 @@
 # Whether Claude's review clears pull request $1 at its head. Prints the reason (one markdown sentence, no
 # call to action: the callers add it) and exits:
 #   0  cleared: the review's verdict=pass is on the head, or a current-head maintainer review authorizes the claude-review-override label;
-#   1  blocked by concrete open findings that autofix may address;
+#   1  blocked by concrete open findings;
 #   2  blocked by checks without a concrete finding, or without a verdict on the head:
 #      review running or failed, fork PR, a PR that changes the
 #      review workflow (the action skips those), or a review from before verdicts existed.
