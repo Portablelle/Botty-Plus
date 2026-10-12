@@ -475,6 +475,11 @@ with tempfile.TemporaryDirectory() as tmp:
             migrated = data / 'downloads/complete' / ('.remote2-' + trial + '.partial')
             assert (migrated / 'Game PS5/a space.RAR').read_bytes() == payload[:16384]
             assert not trial_target.exists()
+            # A later leaf-parent sync failure also precedes sparse writes and
+            # completion records for that member's directory entry.
+            fault.write_text(str(migrated / 'Game PS5'))
+            wait(lambda: any(t['hashString'] == trial and 'Cannot sync download member entry' in t.get('errorString', '') for t in api('/api/state')['torrents']))
+            assert (migrated / 'Game PS5/a space.RAR').read_bytes() == payload[:16384]
             fault.unlink()
         wait(lambda: any(t['hashString'] == trial and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
         assert not legacy_stage.exists()

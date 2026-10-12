@@ -122,6 +122,10 @@ class RemoteDownloads {
     if(values.contains("inventory")&&records_[hash].contains("snapshot"))records_[hash]["snapshot"].erase("files");
     if(durable||values.contains("snapshot")||values.contains("inventory")){try{save();}catch(...){records_[hash]=previous;throw;}}
   }
+  struct TransferError:std::runtime_error {
+    long status;
+    TransferError(long code,const std::string& message):std::runtime_error(message),status(code){}
+  };
   static constexpr uint64_t segmentSize=8ULL*1024*1024;
   static int connections(const json& args,int fallback=2){
     if(!args.contains("parallelConnections"))return fallback;
@@ -173,8 +177,8 @@ class RemoteDownloads {
     curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_LIMIT,1L);curl_easy_setopt(h.curl,CURLOPT_LOW_SPEED_TIME,30L);
     curl_easy_setopt(h.curl,CURLOPT_XFERINFOFUNCTION,cancelled);curl_easy_setopt(h.curl,CURLOPT_XFERINFODATA,&sink);curl_easy_setopt(h.curl,CURLOPT_NOPROGRESS,0L);
     const auto code=curl_easy_perform(h.curl);long status=0;curl_easy_getinfo(h.curl,CURLINFO_RESPONSE_CODE,&status);
-    if(status==416)throw std::runtime_error("Server rejected pinned byte range (416); pause and inspect the remote file");
-    if(status==429)throw std::runtime_error("Server transfer slots busy (429); retrying after bounded delay");
+    if(status==416)throw TransferError(416,"Server rejected pinned byte range (416); pause and inspect the remote file");
+    if(status==429)throw TransferError(429,"Server transfer slots busy (429); retrying after bounded delay");
     if(code!=CURLE_OK||status!=206||!sink.rangeValid||!sink.lengthValid||sink.bytes!=end-start)throw std::runtime_error(sink.error.empty()?"HTTPS segment interrupted; uncommitted range will be retried":sink.error);
     checkStorage_(storage,directory);sink.output.flush();
   }
@@ -183,9 +187,12 @@ class RemoteDownloads {
     try{
       for(const auto& part:relative.parent_path()){
         if(makeDirectoryRelative(fd,part.c_str(),0700)&&errno!=EEXIST)throw std::runtime_error("Cannot create download folder");
-        int next=openFileRelative(fd,part.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(next<0)throw std::runtime_error("Unsafe download folder");::close(fd);fd=next;
+        int next=openFileRelative(fd,part.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(next<0)throw std::runtime_error("Unsafe download folder");
+        if(fsync(fd)){::close(next);throw std::runtime_error("Cannot sync download folder entry");}::close(fd);fd=next;
       }
-      int result=openFileRelative(fd,relative.filename().c_str(),O_RDWR|O_CREAT|O_NOFOLLOW|O_NONBLOCK,0600);::close(fd);fd=-1;
+      int result=openFileRelative(fd,relative.filename().c_str(),O_RDWR|O_CREAT|O_NOFOLLOW|O_NONBLOCK,0600);
+      // Durable ledger ranges must never outlive their file/directory entries.
+      if(result>=0&&fsync(fd)){::close(result);throw std::runtime_error("Cannot sync download member entry");}::close(fd);fd=-1;
       if(result<0)throw std::runtime_error("Cannot open partial download");
       struct stat st{};if(fstat(result,&st)||!S_ISREG(st.st_mode)||st.st_nlink!=1){::close(result);throw std::runtime_error("Unsafe partial download");}
       return result;
@@ -306,7 +313,7 @@ class RemoteDownloads {
         if(missing.empty())break;
         if(stop_||cancel_)throw std::runtime_error("Transfer paused");
         const size_t count=missing.size();std::vector<std::thread> workers;std::vector<std::exception_ptr> errors(count);std::atomic<bool> abort{false};
-        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].first,missing[i].second,abort);}catch(const std::exception& e){errors[i]=std::current_exception();if(std::string(e.what()).find("(429)")==std::string::npos)abort=true;}catch(...){errors[i]=std::current_exception();abort=true;}});}
+        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].first,missing[i].second,abort);}catch(const TransferError& e){errors[i]=std::current_exception();if(e.status!=429)abort=true;}catch(...){errors[i]=std::current_exception();abort=true;}});}
         catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
         for(auto& worker:workers)worker.join();
         if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
@@ -316,7 +323,10 @@ class RemoteDownloads {
         json merged=json::array();for(const auto& range:ledger[key]){if(!merged.empty()&&merged.back()[1]==range[0])merged.back()[1]=range[1];else merged.push_back(range);}ledger[key]=merged;
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
         update(hash,{{"segments",ledger},{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}},true);
-        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const std::exception& e){if(std::string(e.what()).find("(429)")!=std::string::npos){update(hash,{{"effectiveConnections",std::max(1,parallel/2)}},true);throw;}if(std::string(e.what()).find("(416)")!=std::string::npos)throw;}}
+        // Fatal range rejection wins over temporary slot contention or sibling
+        // cancellation, regardless of which connection reported it first.
+        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const TransferError& e){if(e.status==416)throw;}catch(const std::exception&){}}
+        for(const auto& error:errors)if(error){try{std::rethrow_exception(error);}catch(const TransferError& e){if(e.status==429){update(hash,{{"effectiveConnections",std::max(1,parallel/2)}},true);throw;}}catch(const std::exception&){}}
         for(const auto& error:errors)if(error)std::rethrow_exception(error);
       }
       if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");
@@ -381,7 +391,7 @@ class RemoteDownloads {
           update(hash,{{"snapshot",snapshot},{"error",""}});
           if(snapshot.at("complete").get<bool>())transfer(hash,r,snapshot);
           else update(hash,{{"phase","remote"},{"rate",0},{"eta",-1.0}});
-        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};if(std::string(e.what()).find("(416)")!=std::string::npos)failure["paused"]=true;update(hash,failure,true);}catch(...){}}
+        }catch(const std::exception& e){try{json failure={{"error",e.what()},{"rate",0},{"eta",-1.0}};const auto* transport=dynamic_cast<const TransferError*>(&e);if(transport&&transport->status==416)failure["paused"]=true;update(hash,failure,true);}catch(...){}}
         {std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();}
       }
       std::unique_lock<std::mutex> g(mutex_);wake_.wait_for(g,std::chrono::seconds(5),[this]{return stop_.load();});
