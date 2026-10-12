@@ -4,6 +4,15 @@
 #include <string>
 using botty::RemoteWriteBuffer;
 int main(){
+  constexpr uint64_t MiB=1024*1024;
+  // Near the reserve, physical uncommitted ranges can be overwritten without
+  // allocating their bytes twice. A full-sized sparse file still needs space.
+  assert(botty::remoteAdditionalAllocation(32*MiB,0,16*MiB/512)==16*MiB);
+  assert(botty::remoteAdditionalAllocation(32*MiB,0,0)==32*MiB);
+  assert(botty::remoteAdditionalAllocation(32*MiB,8*MiB,0)==24*MiB);
+  assert(botty::remoteAdditionalAllocation(32*MiB,0,UINT64_MAX)==0);
+  assert(botty::remoteAdditionalAllocation(73,0,1)==0);
+  assert(botty::remoteAdditionalAllocation(0,0,0)==0);
   std::string input(2*RemoteWriteBuffer::capacity+73,'x');
   for(size_t i=0;i<input.size();++i)input[i]=static_cast<char>(i%251);
   std::string output;size_t calls=0;

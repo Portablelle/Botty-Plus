@@ -480,7 +480,9 @@ POST `/api/torrent` with its `id`, `action: "resume"` and `parallelConnections`.
 The range ledger is independent of connection count. Fully received ranges
 become resumable only after member-directory entries, file data and registry
 state are durably synced. Sparse
-file length never establishes completion. Legacy append-only partials migrate
+file length never establishes completion. Space admission accounts for allocated
+uncommitted ranges, so an interrupted copy can overwrite those blocks without
+reserving their space twice; block allocation is never counted as progress. Legacy append-only partials migrate
 after syncing their existing prefix; interrupted new ranges are downloaded again.
 The client verifies status 206, Content-Range and Content-Length before writes.
 HTTP 416 pauses the import for inspection; HTTP 429 keeps admitted completed
