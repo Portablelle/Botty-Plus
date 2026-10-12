@@ -93,7 +93,7 @@ Local rTorrent jobs stay visible alongside enrolled remote jobs.
 ## Transfer/recovery behavior
 
 The joined worker checks completion of **all** torrent members, including skipped
-files, before importing. Downloads use `.remote-<hash>.partial` staging on the
+files, before importing. Downloads use `.remote2-<hash>.partial` staging on the
 selected Botty disk, a pinned file manifest, no-follow file opens, bounded response
 sizes, a storage identity check, a 512 MiB reserve and flushed files. An interrupted
 HTTPS stream resumes with HTTP Range; a changed manifest is refused. Files are
@@ -127,3 +127,13 @@ an interrupted stream and HTTP Range recovery, exact bytes, loose-folder
 publication, disk moves and reimport after local deletion, preserving the server
 source. It also checks that failed imports preserve pre-existing destinations and
 that deletion refuses members shared with a local torrent.
+
+## Bounded parallel ranges
+
+Manager 1.7.0 requests `Range: bytes=start-end` in 8 MiB segments, with
+1, 2 or 4 connections per import (default 2). The bridge returns 206 and exact
+Content-Range/Content-Length for every range, including ranges starting at zero.
+Legacy unbounded `bytes=start-` clients remain supported; requests without
+Range return 200. Malformed, reversed and out-of-file ranges return 416.
+The four file slots remain global across consoles; exhausted slots return 429.
+No slot or metadata admission limit is raised by parallel imports.
