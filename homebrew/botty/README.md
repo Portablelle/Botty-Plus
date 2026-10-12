@@ -478,7 +478,8 @@ connections by default. POST `/api/remote/import` accepts `parallelConnections`
 with values 1, 2 or 4. To change a paused import without restarting the manager,
 POST `/api/torrent` with its `id`, `action: "resume"` and `parallelConnections`.
 The range ledger is independent of connection count. Fully received ranges
-become resumable only after file fsync and durable registry persistence. Sparse
+become resumable only after member-directory entries, file data and registry
+state are durably synced. Sparse
 file length never establishes completion. Legacy append-only partials migrate
 after syncing their existing prefix; interrupted new ranges are downloaded again.
 The client verifies status 206, Content-Range and Content-Length before writes.
