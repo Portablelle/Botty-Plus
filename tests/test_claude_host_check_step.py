@@ -58,8 +58,7 @@ class ClaudeHostCheckStepTests(unittest.TestCase):
         source = WORKFLOW.read_text()
         start = source.index("      - name: Check the review's verdict")
         start = source.index('        run: |\n', start) + len('        run: |\n')
-        end = source.index('\n  autofix:', start)
-        template = textwrap.dedent(source[start:end])
+        template = textwrap.dedent(source[start:])
         for host, review in [('cancelled', 'skipped'), ('success', 'cancelled')]:
             for replacement in [None, 'head', 'run']:
                 with self.subTest(host=host, review=review, replacement=replacement), tempfile.TemporaryDirectory() as temp:
@@ -111,16 +110,15 @@ elif '-X' not in sys.argv or 'POST' not in sys.argv:
                             self.assertIn('repos/Portablelle/Botty-Plus/statuses/' + 'a' * 40, args)
                         self.assertIn('re-run the review', (root / 'comment').read_text())
                         self.assertNotIn('Wait:', (root / 'comment').read_text())
-                    self.assertFalse((root / 'output').exists(), 'Cancellation must never start autofix')
+                    self.assertFalse((root / 'output').exists(), 'Cancellation must not write job outputs')
 
     def test_older_same_head_verdict_cannot_replace_newer_announcement(self):
         source = WORKFLOW.read_text()
         start = source.index("      - name: Check the review's verdict")
         start = source.index('        run: |\n', start) + len('        run: |\n')
-        end = source.index('\n  autofix:', start)
         body = re.sub(r'\$\{\{(.*?)\}\}',
                       lambda m: 'success' if m.group(1).strip().startswith('needs.') else 'reopened',
-                      textwrap.dedent(source[start:end]))
+                      textwrap.dedent(source[start:]))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             calls = root / 'calls'
@@ -194,7 +192,7 @@ if '/pulls/' in sys.argv[2]:
         source = WORKFLOW.read_text()
         start = source.index("      - name: Check the review's verdict")
         start = source.index('        run: |\n', start) + len('        run: |\n')
-        template = textwrap.dedent(source[start:source.index('\n  autofix:', start)])
+        template = textwrap.dedent(source[start:])
         for host, fork, code in [('success', False, 0), ('failure', False, 2), ('skipped', True, 2)]:
             with self.subTest(host=host, fork=fork), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
@@ -238,7 +236,7 @@ elif '/commits/' in sys.argv[2]:
                 self.assertEqual(len(verify), 0 if fork else 1)
                 if verify:
                     self.assertIn('state=' + ('success' if host == 'success' else 'failure'), verify[0])
-                self.assertFalse((root / 'output').exists(), 'A check failure cannot start autofix')
+                self.assertFalse((root / 'output').exists(), 'The verdict must not write job outputs')
 
     def test_standalone_checks_skip_only_when_the_trusted_base_has_a_publisher(self):
         source = (WORKFLOW.parent / 'botty-checks.yml').read_text()
@@ -305,7 +303,7 @@ else:
         self.assertNotIn('needs.host-checks', review)
         self.assertIn('CLAUDE_HOST_CHECK_RESULT: pending', review)
         self.assertNotIn('Load completed host-check result', review)
-        verdict = source.split('\n  verdict:', 1)[1].split('\n  autofix:', 1)[0]
+        verdict = source.split('\n  verdict:', 1)[1]
         self.assertIn('needs: [context, host-checks, claude-review]', verdict)
         self.assertIn("for context in 'verify' 'Claude host checks'", verdict)
 
