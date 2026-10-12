@@ -57,7 +57,11 @@ test-remote: build/botty-native build/remote-buffer-test
 
 test-progress: build/progress-test
 	./build/progress-test
-test: build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
+TEST_BINARIES := build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
+.PHONY: test-build
+# Compiles every `test` prerequisite without running it (warms ccache).
+test-build: $(TEST_BINARIES)
+test: $(TEST_BINARIES)
 	./build/remote-buffer-test
 	./build/progress-test
 	./build/core-test

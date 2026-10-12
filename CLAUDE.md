@@ -75,6 +75,10 @@ changed path can affect; fast checks always run, and unknown paths or a failed
 diff keep the full suite. Compilation goes through ccache when the image has it.
 Only default-branch pushes of `Botty+ checks` save the `ccache-host-` Actions
 cache; PR jobs restore it but never save, so PR code cannot poison it.
+When a default-branch commit has exactly the tree of its merged same-repo PR head and
+that head's `Claude host checks` status from `github-actions[bot]` succeeded, the push
+compiles every suite (keeping the cache warm) without re-running tests
+(`BOTTY_HOST_CHECK_BUILD_ONLY=1`); any mismatch or API failure runs the full suite.
 The routing job compares file hashes at the exact base and head SHAs; deleted,
 unreadable or malformed content responses fall back to standalone verification.
 The review summary in parallel mode reports code findings only, and never claims tests passed or merge
