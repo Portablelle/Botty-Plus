@@ -64,6 +64,37 @@ class BridgeTests(unittest.TestCase):
             finally:
                 server.shutdown(); server.server_close(); worker.join()
 
+    def test_bounded_and_legacy_ranges(self):
+        import contextlib
+        import http.client
+        import threading
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
+            Path(tmp, 'file').write_bytes(b'0123456789')
+            b = bridge.Bridge.__new__(bridge.Bridge); b.c = {'token': 'a' * 64}
+            b.request_operation = contextlib.nullcontext
+            b.file_member = lambda *args: (tmp, {'name': 'file', 'size': 10})
+            server = bridge.BoundedHTTPServer(('127.0.0.1', 0), bridge.Handler); server.bridge = b
+            worker = threading.Thread(target=server.serve_forever); worker.start()
+            try:
+                for range_, status, body, content_range in [
+                    (None, 200, b'0123456789', None), ('bytes=3-', 206, b'3456789', 'bytes 3-9/10'),
+                    ('bytes=0-3', 206, b'0123', 'bytes 0-3/10'), ('bytes=9-9', 206, b'9', 'bytes 9-9/10'),
+                    ('bytes=3-2', 416, None, None), ('bytes=0-10', 416, None, None),
+                    ('bytes=10-', 416, None, None), ('bytes=-3', 416, None, None), ('bytes=0-1,3-4', 416, None, None)]:
+                    client = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+                    headers = {'Authorization': 'Bearer ' + b.c['token'], 'X-Botty-File-Name': 'file', 'X-Botty-File-Size': '10'}
+                    if range_: headers['Range'] = range_
+                    client.request('GET', '/file/' + 'a' * 40 + '/0', headers=headers)
+                    response = client.getresponse(); data = response.read()
+                    self.assertEqual(response.status, status)
+                    if body is not None:
+                        self.assertEqual(data, body); self.assertEqual(int(response.getheader('Content-Length')), len(body))
+                        self.assertEqual(response.getheader('Content-Range'), content_range)
+                    client.close()
+            finally:
+                server.shutdown(); server.server_close(); worker.join()
+
     def test_metadata_hash(self):
         import hashlib
         info = b'd6:lengthi0e4:name4:test12:piece lengthi16384e6:pieces0:e'
