@@ -15,14 +15,15 @@ int fsync(int fd) {
   if (control) {
     FILE *input = fopen(control, "r");
     if (input) {
-      char expected[4096], actual[4096], link[64];
+      char expected[4096], actual[4096], prerequisite[4096] = {0}, link[64];
       if (fgets(expected, sizeof expected, input)) {
         expected[strcspn(expected, "\n")] = 0;
+        if (fgets(prerequisite, sizeof prerequisite, input)) prerequisite[strcspn(prerequisite, "\n")] = 0;
         snprintf(link, sizeof link, "/proc/self/fd/%d", fd);
         ssize_t n = readlink(link, actual, sizeof actual - 1);
         if (n >= 0) {
           actual[n] = 0;
-          if (!strcmp(expected, actual)) { fclose(input); errno = EIO; return -1; }
+          if (!strcmp(expected, actual) && (!prerequisite[0] || !access(prerequisite, F_OK))) { fclose(input); errno = EIO; return -1; }
         }
       }
       fclose(input);

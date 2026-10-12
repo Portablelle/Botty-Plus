@@ -3,12 +3,13 @@
 
 Default is an offline plan. --execute creates, hashes and deletes ONLY fresh
 fixture imports; the dedicated-server original is preserved. Credentials remain
-in the supplied private JSON file, never in result output.
+in memory after reading the existing console credential file, never in output.
 """
 import argparse
 import base64
 import ftplib
 import hashlib
+import io
 import json
 from pathlib import Path
 import time
@@ -21,7 +22,7 @@ def main():
     p.add_argument('--member', required=True)
     p.add_argument('--size', required=True, type=int)
     p.add_argument('--expected-sha256', required=True)
-    p.add_argument('--config', type=Path, help='Private JSON: url, username, password, ftpHost, optional ftpPort')
+    p.add_argument('--config', type=Path, help='Connection JSON: url, ftpHost, optional ftpPort and credentialsPath')
     p.add_argument('--output', type=Path, default=Path('ddl-benchmark.json'))
     p.add_argument('--execute', action='store_true', help='Use only after PS5 installation/test approval')
     a = p.parse_args()
@@ -32,7 +33,15 @@ def main():
         return
     if not a.config: p.error('--config is required with --execute')
     c = json.loads(a.config.read_text())
-    headers = {'Content-Type': 'application/json', 'Authorization': 'Basic ' + base64.b64encode((c['username'] + ':' + c['password']).encode()).decode()}
+    credential_bytes = io.BytesIO()
+    ftp = ftplib.FTP(); ftp.connect(c['ftpHost'], c.get('ftpPort', 2121), timeout=30); ftp.login(); ftp.set_pasv(True)
+    def collect_credentials(data):
+        if credential_bytes.tell() + len(data) > 16384: raise RuntimeError('Credential record exceeds the bound')
+        credential_bytes.write(data)
+    try: ftp.retrbinary('RETR ' + c.get('credentialsPath', '/data/botty/rtorrent/state/botty-credentials.json'), collect_credentials)
+    finally: ftp.close()
+    credentials = json.loads(credential_bytes.getvalue())
+    headers = {'Content-Type': 'application/json', 'Authorization': 'Basic ' + base64.b64encode((credentials['username'] + ':' + credentials['password']).encode()).decode()}
     def api(path, body=None):
         request = urllib.request.Request(c['url'].rstrip('/') + path, None if body is None else json.dumps(body).encode(), headers)
         with urllib.request.urlopen(request, timeout=45) as response: return json.load(response)
