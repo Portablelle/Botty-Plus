@@ -55,7 +55,7 @@ struct Catalog {
     NativeUpdate nativeUpdate;
     std::array<char,512> transferPhase{},transferError{};
     bool transferring=false;
-    bool storageSupported=false;
+    bool storageSupported=false,remoteEnabled=false;
     unsigned storageCount=0;
     std::array<StorageDevice,9> storage{};
     std::array<Entry,256> torrents{}, jobs{};

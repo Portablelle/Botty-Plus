@@ -43,6 +43,7 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
   else if(cmd.operation!=Operation::importRemote&&cmd.operation!=Operation::transfer&&cmd.operation!=Operation::cancelCompression&&cmd.operation!=Operation::move&&cmd.operation!=Operation::remove&&cmd.operation!=Operation::cancel&&cmd.operation!=Operation::dismiss){append(",\"action\":");if(cmd.operation==Operation::removeTorrent){quote("remove-data");append(",\"confirmed\":true");}else quote(cmd.operation==Operation::pause?"pause":cmd.operation==Operation::resume?"resume":"verify");}
  }
  if(cmd.storage[0]&&cmd.operation!=Operation::nativeUpdate&&cmd.operation!=Operation::checkNativeUpdate){append(",\"storage\":");quote(cmd.storage.data());}
+ if(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab){append(",\"engine\":");quote(cmd.useRemote?"qbittorrent":"rtorrent");}
  if(cmd.operation==Operation::transfer){append(",\"kind\":");quote(cmd.torrent?"torrent":"job");}
  if(cmd.storage[0]&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab||cmd.operation==Operation::importRemote))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
  append("}");if(length<capacity)out[length]=0;return ok;
@@ -157,6 +158,7 @@ void Workflow::openSheet(const Catalog& c) noexcept {
  if(op==Operation::exploreGrab||op==Operation::grab)rows[rowCount++]=Row::source;
  if(op==Operation::add)rows[rowCount++]=Row::magnet;
  if(op==Operation::extract&&(!e||e->archiveCount)){rows[rowCount++]=Row::archive;rows[rowCount++]=Row::password;}
+ if((op==Operation::add||op==Operation::grab||op==Operation::exploreGrab)&&c.remoteEnabled)rows[rowCount++]=Row::engine;
  if(c.storageSupported||op==Operation::transfer)rows[rowCount++]=Row::storage;
  const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab||op==Operation::importRemote;
  if(download&&c.storageSupported){rows[rowCount++]=Row::mode;command.automatic=lastAutomatic;}
@@ -172,7 +174,8 @@ void Workflow::change(Row row,bool forward,const Catalog& c) noexcept {
  if(row==Row::source&&sourceCount){
   if(forward&&sourceIndex+1<sourceCount)++sourceIndex;else if(!forward&&sourceIndex)--sourceIndex;
   command.id=sources[sourceIndex].id;targetName=sources[sourceIndex].name;
- }else if(row==Row::mode)command.automatic=!forward;
+ }else if(row==Row::engine)command.useRemote=forward&&c.remoteEnabled;
+ else if(row==Row::mode)command.automatic=!forward;
  else if(row==Row::archive&&e&&e->archiveCount){
   const int at=archivePosition(c,*e,command.archive);if(at>=0)archiveIndex=static_cast<unsigned>(at);else archiveIndex=0;
   if(at>=0&&forward&&archiveIndex+1<e->archiveCount)++archiveIndex;else if(at>=0&&!forward&&archiveIndex)--archiveIndex;
@@ -207,6 +210,7 @@ bool Workflow::submit(const Catalog& c,bool busy) noexcept {
   }
   archiveIndex=static_cast<unsigned>(at);
  }
+ if((op==Operation::add||op==Operation::grab||op==Operation::exploreGrab)&&command.useRemote&&!c.remoteEnabled){std::snprintf(notice.data(),notice.size(),"Dedicated server is no longer configured. Choose PS5 or reconnect it.");return false;}
  if(hasRow(Row::storage)){
   if(!storageReady(c,command.storage.data())){std::snprintf(notice.data(),notice.size(),"Connect the selected disk, or choose another one.");return false;}
   if(op==Operation::transfer&&e&&command.storage==e->storage){std::snprintf(notice.data(),notice.size(),"Choose a different disk.");return false;}

@@ -15,8 +15,9 @@ function button(text,id,callback,disabled=false){const result=node('button',text
 function modal(title,text,confirm,callback,field){$('storage-options').replaceChildren();$('confirm').disabled=false;modalOpened=performance.now();lastFocus=document.activeElement;$('modal-title').textContent=title;$('modal-text').textContent=text;$('confirm').textContent=confirm;$('field-label').hidden=!field;$('field').value='';$('field').type=field&&field.type||'text';$('field-name').textContent=field&&field.name||'';modalAction=callback;$('modal').hidden=false;(field?$('field'):$('confirm')).focus();}
 function closeModal(){$('modal').hidden=true;modalAction=null;if(lastFocus&&lastFocus.isConnected)lastFocus.focus();else $('tab-'+tab).focus();}
 $('cancel').onclick=closeModal;$('confirm').onclick=()=>{if(performance.now()-modalOpened<250)return;const fn=modalAction,value=$('field').value;closeModal();if(fn)fn(value);};
-function chooseStorage(current,adding,next,transfer=false){
- modal(adding?'Where should this game go?':'Choose destination storage','Choose a disk using its available space. '+(adding?'Full auto keeps download, extraction and Library on that disk.':'Existing files are never overwritten.'),'Continue',()=>next({storage:$('storage-choice').value,...(adding?{automatic:$('process-choice').value==='auto'}:{})}));
+function chooseStorage(current,adding,next,transfer=false,engineChoice=true){
+ modal(adding?'Where should this game go?':'Choose destination storage','Choose a disk using its available space. '+(adding?'Full auto keeps download, extraction and Library on that disk.':'Existing files are never overwritten.'),'Continue',()=>next({storage:$('storage-choice').value,...(adding?{automatic:$('process-choice').value==='auto',...(engineChoice?{engine:$('engine-choice').value}:{})}:{})}));
+ if(adding&&engineChoice){const label=node('label','Download on'),engine=node('select');engine.id='engine-choice';for(const [value,text] of [['rtorrent','PS5 (rTorrent)'],['qbittorrent','Dedicated server (qBittorrent)']]){const option=node('option',text);option.value=value;option.disabled=value==='qbittorrent'&&!state.remoteDownloads?.enabled;engine.appendChild(option);}label.appendChild(engine);$('storage-options').appendChild(label);}
  const label=node('label','Storage'),select=node('select');select.id='storage-choice';
  for(const disk of state.storage||[]){const option=node('option',disk.label+' — '+(disk.available?size(disk.freeBytes)+' free':'Disconnected')+(disk.id===current?' (current disk)':''));option.value=disk.id;option.disabled=!disk.available||(transfer&&disk.id===current);select.appendChild(option);}
  if(!transfer)select.value=current||'internal';else select.value=Array.from(select.options).find(o=>!o.disabled)?.value||'';label.appendChild(select);$('storage-options').appendChild(label);
@@ -30,7 +31,7 @@ function torrentCard(torrent){
  const card=node('article',undefined,'card'),completed=torrent.leftUntilDone===0,paused=torrent.status===0;
  card.appendChild(node('span',torrent.remoteCandidate?'AVAILABLE ON SERVER':torrent.error?'NEEDS ATTENTION':completed?'COMPLETED':paused?'PAUSED':torrent.remotePhase==='transfer'?'IMPORTING TO PS5':torrent.remote?'SERVER DOWNLOAD':'DOWNLOADING','badge'));
  card.appendChild(node('h2',torrent.name));if(torrent.phase)card.appendChild(node('p',torrent.phase,'muted'));
- if(torrent.remoteCandidate){card.appendChild(node('p','PS5 content candidate. Archive contents are checked after extraction. Originals stay on the dedicated server.'));card.appendChild(button('Import to PS5','torrent-'+torrent.id+'-import',()=>chooseStorage('internal',true,choice=>action('/api/remote/import',{hash:torrent.hashString,...choice},'Import queued.'))));return card;}card.appendChild(node('p',storageLabel(torrent.storage),'muted'));
+ if(torrent.remoteCandidate){card.appendChild(node('p','PS5 content candidate. Archive contents are checked after extraction. Originals stay on the dedicated server.'));card.appendChild(button('Import to PS5','torrent-'+torrent.id+'-import',()=>chooseStorage('internal',true,choice=>action('/api/remote/import',{hash:torrent.hashString,...choice},'Import queued.'),false,false)));return card;}card.appendChild(node('p',storageLabel(torrent.storage),'muted'));
  const progress=node('progress');progress.max=1;progress.value=torrent.percentDone||0;progress.setAttribute('aria-label','Download progress');card.appendChild(progress);
  card.appendChild(node('p',Math.round((torrent.percentDone||0)*100)+'% · '+size(torrent.totalSize)+' · ↓ '+size(torrent.rateDownload)+'/s · ↑ '+size(torrent.rateUpload)+'/s'));
  if(torrent.errorString)card.appendChild(node('p',torrent.errorString,'error'));
@@ -87,7 +88,7 @@ async function refreshProcessing(){
 }
 async function refresh(){try{if(!token)token=(await api('/api/bootstrap')).token;state=await api('/api/state');if($('modal').hidden)render();}catch(error){$('rest-mode').textContent='Rest-mode status unavailable. Keep your PS5 awake.';$('connection').hidden=false;$('connection').textContent=error.message+' If the PS5 was restarted, start a session from the Botty portal.';}}
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>{tab=element.dataset.tab;render();};
-$('refresh').onclick=refresh;$('add').onclick=()=>modal('Add a download','Paste a magnet link. Files will download directly onto this PS5.','Add magnet',magnet=>chooseStorage('internal',true,choice=>action('/api/torrent',{action:'add',magnet:magnet.trim(),...choice},'Torrent added.')),{name:'Magnet link'});
+$('refresh').onclick=refresh;$('add').onclick=()=>modal('Add a download','Paste a magnet link, then choose PS5 or dedicated server.','Add magnet',magnet=>chooseStorage('internal',true,choice=>action('/api/torrent',{action:'add',magnet:magnet.trim(),...choice},'Torrent added.')),{name:'Magnet link'});
 $('upload').onclick=()=>{if(!busy){$('torrent-file').value='';$('torrent-file').click();}};
 $('torrent-file').onchange=async()=>{
  const file=$('torrent-file').files[0];if(!file||busy)return;
@@ -101,7 +102,7 @@ $('torrent-file').onchange=async()=>{
   // Refresh disks before offering a destination; external storage may have changed.
   state=await api('/api/state');busy=false;
   const add=choice=>action('/api/torrent',{action:'add',metainfo,...choice},'Torrent added.');
-  if((state.storage||[]).some(d=>d.id!=='internal'&&d.available))chooseStorage('internal',true,add);
+  if(state.storageSupported)chooseStorage('internal',true,add);
   else await add({storage:'internal',automatic:false});
  }catch(error){say(error.message);}finally{busy=false;$('upload').disabled=false;}
 };

@@ -302,6 +302,9 @@ Explore combines the configured torrent indexers. Select a game to compare track
 ## Dedicated server imports (1.8.0)
 
 Activity shows PS5 candidates from the configured dedicated qBittorrent bridge.
+Each magnet, Search or Discover download offers **Download on**: **PS5 (rTorrent)**
+or **Dedicated server (qBittorrent)** when the bridge is configured. The default is
+PS5. The storage and after-download choices apply to the PS5 destination in both cases.
 Choose **Import to PS5** to choose storage and automatic preparation or download only.
 Server download and HTTPS import phases are displayed separately. Candidates are
 never enrolled automatically; server originals are preserved. See the

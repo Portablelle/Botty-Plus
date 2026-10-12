@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory() as tmp:
     (sources / 'bad/sce_sys/param.json').write_text('null')
     rows[movie][1].append({'name': 'bad/sce_sys/param.json', 'size': 4, 'index': 1})
     bridge = module.Bridge.__new__(module.Bridge)
-    bridge.c = {'token': 'd' * 64}
+    bridge.c = {'token': 'd' * 64, 'downloads': str(sources)}
     bridge.file_cache = {}; bridge.lock = threading.RLock(); bridge.owned = {}; bridge.registry = root / 'registry.json'
     paused = {game: True}
     def info(h):
@@ -59,8 +59,16 @@ with tempfile.TemporaryDirectory() as tmp:
     bridge.info = info
     def qb(route, fields=None):
         if fields is not None:
+            if route == 'torrents/add':
+                h = fields['urls'].split('urn:btih:', 1)[1].split('&', 1)[0]
+                rows[h] = ({'name': 'Engine choice PS5', 'save_path': fields['savepath'], 'category': fields['category']}, [{'name': 'game.rar', 'size': 32, 'index': 0}])
+                paused[h] = True
+                return b'Ok.'
             paused[fields['hashes']] = route.endswith('pause')
             return b'Ok.'
+        if 'info?hashes=' in route:
+            h = route.split('hashes=', 1)[1]
+            return json.dumps([dict(rows[h][0], hash=h)] if h in rows else []).encode()
         return json.dumps([dict(t, hash=h) for h, (t, f) in rows.items()]).encode()
     bridge.qb = qb
     ranges = []; rejected = []; interrupted = []; blocked_copy = threading.Event(); release_copy = threading.Event(); blocked_folder = threading.Event(); release_folder = threading.Event()
@@ -142,6 +150,28 @@ with tempfile.TemporaryDirectory() as tmp:
         assert {c['hash'] for c in state['remoteDownloads']['candidates']} == {game, folder}
         assert movie not in bridge.owned
         assert not (data / 'downloads/complete' / game).exists()
+        choice_hash = '1' * 40; magnet = 'magnet:?xt=urn:btih:' + choice_hash
+        owned_before = dict(bridge.owned)
+        local_choice = api('/api/torrent', {'action': 'add', 'magnet': magnet, 'automatic': False})['torrent-added']['id']
+        assert local_choice < 1000000000 and bridge.owned == owned_before
+        assert any(c['method'] == 'load.start' and c['params'][1] == magnet for c in rpc.calls)
+        local_entries.append({'id': 1, 'hashString': choice_hash, 'name': 'Local engine choice', 'status': 0, 'leftUntilDone': 1, 'totalSize': 32, 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': 'game.rar', 'length': 32, 'bytesCompleted': 0}]})
+        assert api('/api/torrent', {'action': 'add', 'magnet': magnet, 'engine': 'rtorrent', 'automatic': False})['torrent-duplicate']['id'] == local_choice
+        remote_choice = api('/api/torrent', {'action': 'add', 'magnet': magnet, 'engine': 'qbittorrent', 'automatic': False})['torrent-added']['id']
+        assert remote_choice >= 1000000000 and choice_hash in bridge.owned
+        assert json.loads((data / 'automatic' / (choice_hash + '.json')).read_text())['remote'] is False
+        assert json.loads((data / 'automatic' / ('remote-' + str(remote_choice) + '.json')).read_text())['remote'] is True
+        api('/api/torrent', {'id': remote_choice, 'action': 'remove-data', 'confirmed': True})
+        local_entries.clear(); rows.pop(choice_hash); paused.pop(choice_hash); bridge.owned.pop(choice_hash)
+        for engine in ['unexpected', 'rtorrent']:
+            backend_offline[0] = engine == 'rtorrent'
+            before = dict(bridge.owned)
+            try:
+                api('/api/torrent', {'action': 'add', 'magnet': 'magnet:?xt=urn:btih:' + '2' * 40, 'engine': engine})
+                raise RuntimeError('Invalid/unavailable selected engine was accepted')
+            except AssertionError: pass
+            assert bridge.owned == before
+        backend_offline[0] = False
         # A discovered candidate must not intercept operations on a local hash match.
         local_file = data / 'downloads/complete/local-copy.rar'; local_file.write_bytes(b'local copy')
         local_entries.append({'id': 1, 'hashString': game, 'name': 'Local copy', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': 10, 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': 'local-copy.rar', 'length': 10, 'bytesCompleted': 10}]})

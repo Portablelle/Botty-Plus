@@ -1072,6 +1072,11 @@ void drawSheet(Canvas& c) noexcept {
             std::snprintf(label,sizeof(label),"Magnet link");
             char used[24];grouped(static_cast<long long>(std::string_view(workflow.command.text.data()).size()),used,sizeof(used));
             std::snprintf(sub,sizeof(sub),"%s characters \xc2\xb7 select to edit",used);
+        }else if(row==Row::engine){
+            std::snprintf(label,sizeof(label),"Download on");
+            std::snprintf(value,sizeof(value),"%s",workflow.command.useRemote?"Dedicated server (qBittorrent)":"PS5 (rTorrent)");
+            std::snprintf(sub,sizeof(sub),"%s",workflow.command.useRemote?"Then import completed files to the selected PS5 disk":"Download directly to the selected PS5 disk");
+            index=workflow.command.useRemote?1:0;count=2;showArrows=true;
         }else if(row==Row::storage){
             std::snprintf(label,sizeof(label),"%s",download?"Install on":op==Op::extract?"Extract to":op==Op::transfer?"Move to":op==Op::move?"Library disk":"Compressed copy on");
             const auto id=std::string_view(workflow.command.storage.data());
