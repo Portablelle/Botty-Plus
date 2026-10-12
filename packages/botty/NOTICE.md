@@ -483,7 +483,7 @@ state are durably synced. Sparse
 file length never establishes completion. Space admission accounts for allocated
 uncommitted ranges, so an interrupted copy can overwrite those blocks without
 reserving their space twice; block allocation is never counted as progress. Legacy append-only partials migrate
-after syncing their existing prefix; interrupted new ranges are downloaded again.
+after syncing and committing every member prefix together; interrupted new ranges are downloaded again.
 The client verifies status 206, Content-Range and Content-Length before writes.
 HTTP 416 pauses the import for inspection; HTTP 429 keeps admitted completed
 ranges, halves effective concurrency (4 to 2 to 1) and retries after the manager's
@@ -495,7 +495,8 @@ responses across consoles. Four connections can contend with another console.
 against the same remote member, records elapsed time and MiB/s, and requires
 matching SHA-256 for every downloaded copy. Default invocation prints an offline plan. After explicit approval to install
 1.7.0 and test, `--execute --config <private-json>` uses the manager import API
-and FTP to verify each copy. It refuses existing fixture tracking and removes
+and FTP to verify each copy. Connection config contains no credentials; the
+script reads existing console credentials into memory. It refuses existing fixture tracking and removes
 only the new local fixture copies between trials. Results include scheduling,
 file fsync and publication; FTP hash verification is outside the timed interval.
 No PS5 speedup is claimed before those measurements.
@@ -507,3 +508,8 @@ sparse partials as complete prefixes. Pause incomplete imports before a downgrad
 keep their format 2 directories for resumption with 1.7.0. Older managers can
 start a separate fresh legacy copy, so avoid resuming those records until 1.7.0
 is restored. Preserve both copies if a downgrade was already used.
+
+Staging creation records a durable ownership token before mkdir. A failed
+identity save can therefore recover the matching marker on resume or removal,
+while unrelated directories remain unowned. Legacy migration checks local-file
+sharing under both staging path spellings before renaming any directory.

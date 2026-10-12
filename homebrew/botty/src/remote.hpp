@@ -210,11 +210,26 @@ class RemoteDownloads {
     }
     return {{"device",uint64_t(st.st_dev)},{"inode",uint64_t(st.st_ino)}};
   }
-  static json markDirectory(const fs::path& path){
-    const auto token=randomId();int fd=::open((path/remoteOwnerFile).c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+  static json markDirectory(const fs::path& path,const std::string& token=randomId()){
+    int fd=::open((path/remoteOwnerFile).c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
     if(fd<0)throw std::runtime_error("Cannot create import ownership marker");struct Close{int fd;~Close(){::close(fd);}} close{fd};
     if(::write(fd,token.data(),token.size())!=static_cast<ssize_t>(token.size())||fsync(fd))throw std::runtime_error("Cannot flush import ownership marker");
     return directoryIdentity(path);
+  }
+  static void syncStagingDirectories(const fs::path& stage,const fs::path& directory){
+    for(const auto& path:{stage,directory}){
+      int parent=::open(path.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(parent<0)throw std::runtime_error("Cannot sync segmented staging directory");
+      const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync segmented staging directory");
+    }
+  }
+  void recoverStagingIdentity(const std::string& hash,json& r){
+    if(r.contains("stageIdentity")||!r.contains("stageToken"))return;
+    const auto stage=stagingPath(r.at("directory").get<std::string>(),hash,r);
+    if(!fs::exists(fs::symlink_status(stage)))return;
+    const json intended={{"marker",r.at("stageToken")}};
+    if(directoryIdentity(stage)!=intended)throw std::runtime_error("Partial directory does not match persisted ownership intent");
+    syncStagingDirectories(stage,r.at("directory").get<std::string>());
+    update(hash,{{"stageIdentity",intended}},true);r["stageIdentity"]=intended;
   }
   enum class PublicationState { none, reservation, renamed };
   static PublicationState publicationState(const std::string& hash,const json& r) {
@@ -256,29 +271,46 @@ class RemoteDownloads {
     const auto oldStage=directory/(".remote-"+hash+".partial"),newStage=directory/(".remote2-"+hash+".partial");
     if(fs::exists(fs::symlink_status(oldStage))&&!fs::exists(fs::symlink_status(newStage))&&r.contains("stageIdentity")){
       if(directoryIdentity(oldStage)!=r.at("stageIdentity"))throw std::runtime_error("Legacy partial directory is not owned by this import");
+      // Check both path spellings before rename; local torrents can still own
+      // files beneath the legacy name even though the import marker matches.
+      checkMembers_(oldStage,target,inventory);checkMembers_(newStage,target,inventory);
       update(hash,{{"stagingFormat",2}},true);r["stagingFormat"]=2;fs::rename(oldStage,newStage);
       int parent=::open(directory.c_str(),O_RDONLY|O_DIRECTORY);if(parent<0)throw std::runtime_error("Cannot sync staging migration");const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync staging migration");
     }else if(r.value("stagingFormat",1)!=2){update(hash,{{"stagingFormat",2}},true);r["stagingFormat"]=2;}
-    stage=stagingPath(directory,hash,r);
+    stage=stagingPath(directory,hash,r);recoverStagingIdentity(hash,r);
     if(fs::exists(fs::symlink_status(stage))&&!r.contains("stageIdentity")){
       throw std::runtime_error("Unowned partial directory exists; retained for inspection");
     }
     if(!fs::exists(fs::symlink_status(stage))){
+      if(!r.contains("stageToken")){const auto token=randomId();update(hash,{{"stageToken",token}},true);r["stageToken"]=token;}
       if(!fs::create_directory(stage))throw std::runtime_error("Partial import directory appeared; files kept");
-      r["stageIdentity"]=markDirectory(stage);update(hash,{{"stageIdentity",r.at("stageIdentity")}},true);
+      r["stageIdentity"]=markDirectory(stage,r.at("stageToken").get<std::string>());syncStagingDirectories(stage,directory);update(hash,{{"stageIdentity",r.at("stageIdentity")}},true);
     }else if(!r.contains("stageIdentity")||directoryIdentity(stage)!=r.at("stageIdentity"))throw std::runtime_error("Partial directory is not owned by this import");
     containedExisting(directory,stage);
-    // Repeat this barrier even when a prior rename/create succeeded but its
-    // directory fsync failed. No sparse write can precede a durable new name.
-    for(const auto& path:{stage,directory}){
-      int parent=::open(path.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(parent<0)throw std::runtime_error("Cannot sync segmented staging directory");
-      const int synced=fsync(parent);::close(parent);if(synced)throw std::runtime_error("Cannot sync segmented staging directory");
-    }
+    // Repeat the name/marker barrier on every attempt, including recovery after
+    // an earlier directory fsync or ownership save failure, before sparse writes.
+    syncStagingDirectories(stage,directory);
     checkMembers_(stage,target,inventory);uint64_t done=0;
     // Older managers exclusively appended a sequential prefix. New imports always
     // persist format 2 before pwrite can create holes; file length is never progress.
     json ledger=r.value("segments",json::object());const bool legacy=!r.contains("transferFormat");
     if(!ledger.is_object()||(!legacy&&r.at("transferFormat")!=2))throw std::runtime_error("Unsupported remote transfer ledger");
+    if(legacy){
+      // Commit every append-only prefix together before format 2 is persisted.
+      // A pause/failure during this scan leaves the record legacy and retries the
+      // scan; later members never lose their retained progress after a restart.
+      ledger=json::object();
+      for(const auto& file:inventory){
+        if(stop_||cancel_)throw std::runtime_error("Transfer paused");
+        const auto name=safeRelative(file.at("name").get<std::string>());const auto key=std::to_string(file.at("index").get<unsigned>());
+        ledger[key]=json::array();if(!fs::exists(fs::symlink_status(stage/name)))continue;
+        const int fd=leaf(stage,name);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
+        if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>file.at("size").get<uint64_t>())throw std::runtime_error("Legacy partial file size is invalid");
+        if(fsync(fd))throw std::runtime_error("Cannot sync legacy partial file");
+        if(st.st_size)ledger[key].push_back({0,uint64_t(st.st_size)});
+      }
+      update(hash,{{"transferFormat",2},{"segments",ledger}},true);
+    }
     const int parallel=std::min(connections(r),connections(json{{"parallelConnections",r.value("effectiveConnections",connections(r))}}));const auto started=std::chrono::steady_clock::now();uint64_t received=0;
     for(const auto& file:inventory){
       checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
@@ -287,7 +319,6 @@ class RemoteDownloads {
       if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>size)throw std::runtime_error("Partial file size is invalid");
       if(!ledger.contains(key)){
         ledger[key]=json::array();
-        if(legacy&&st.st_size){if(fsync(fd))throw std::runtime_error("Cannot sync legacy partial file");ledger[key].push_back({0,uint64_t(st.st_size)});}
       }
       uint64_t completed=0,previous=0;
       for(const auto& interval:ledger.at(key)){
@@ -449,6 +480,8 @@ public:
     json r;std::string hash;{std::lock_guard<std::mutex> g(mutex_);for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id){hash=it.key();r=it.value();}}
     if(hash.empty()||r.value("phase","")=="available")throw std::runtime_error("Only imported torrents can be removed");
     const fs::path directory=r.at("directory").get<std::string>();checkStorage_(r.at("storage"),directory);
+    const bool recovering=!r.contains("stageIdentity");recoverStagingIdentity(hash,r);
+    if(recovering&&r.contains("stageIdentity"))checkMembers_(stagingPath(directory,hash,r),directory/hash,r.value("inventory",json::array()));
     std::vector<fs::path> members;for(const auto& f:r.value("inventory",json::array()))members.push_back(safeRelative(f.at("name")));
     for(const auto& folder:{directory/hash,stagingPath(directory,hash,r)})if(fs::exists(fs::symlink_status(folder))){
       const auto identity=folder==directory/hash?"publishedIdentity":"stageIdentity";

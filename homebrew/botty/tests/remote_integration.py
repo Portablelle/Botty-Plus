@@ -74,7 +74,8 @@ with tempfile.TemporaryDirectory() as tmp:
         return json.dumps([dict(t, hash=h) for h, (t, f) in rows.items()]).encode()
     bridge.qb = qb
     ranges = []; rejected = []; interrupted = []; blocked_copy = threading.Event(); release_copy = threading.Event(); blocked_folder = threading.Event(); release_folder = threading.Event()
-    active_ranges = {}; peak_ranges = {}; ranges_lock = threading.Lock()
+    active_ranges = {}; peak_ranges = {}; ranges_lock = threading.Lock(); member_requests = []
+    legacy_copy_blocked = threading.Event(); legacy_copy_release = threading.Event(); legacy_copy_release.set()
     class Handler(module.Handler):
         @contextlib.contextmanager
         def file_transfer(self):
@@ -91,6 +92,10 @@ with tempfile.TemporaryDirectory() as tmp:
                 finally:
                     with ranges_lock: active_ranges[hash_] -= 1
         def do_GET(self):
+            if self.path.startswith('/file/'):
+                member_requests.append((self.path, self.headers.get('Range')))
+            if self.path == '/file/' + '1' * 40 + '/0' and not legacy_copy_release.is_set():
+                legacy_copy_blocked.set(); legacy_copy_release.wait(40)
             if self.path == '/file/' + folder + '/0' and not release_folder.is_set():
                 blocked_folder.set(); release_folder.wait(20)
             if self.path == '/file/' + game + '/0':
@@ -458,7 +463,7 @@ with tempfile.TemporaryDirectory() as tmp:
         legacy_stage = trial_target.with_name('.remote-' + trial + '.partial'); trial_target.rename(legacy_stage)
         with (legacy_stage / 'Game PS5/a space.RAR').open('r+b') as out: out.truncate(16384)
         saved = json.loads((data / 'remote-downloads.json').read_text())
-        for key in ('stagingFormat', 'transferFormat', 'segments', 'publishedIdentity'): saved[trial].pop(key, None)
+        for key in ('stagingFormat', 'transferFormat', 'segments', 'publishedIdentity', 'stageToken'): saved[trial].pop(key, None)
         saved[trial].update(phase='transfer', paused=False, publishing=False)
         (data / 'remote-downloads.json').write_text(json.dumps(saved))
         # Fail the migration rename's directory fsync and its next attempt.
@@ -468,7 +473,12 @@ with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(['clang', '-shared', '-fPIC', str(HERE / 'fsync-fault.c'), '-o', str(library), '-ldl'], check=True)
             fault.write_text(str(data / 'downloads/complete'))
             environment.update(LD_PRELOAD=str(library), BOTTY_FAIL_DIRECTORY_SYNC=str(fault))
+        local_entries.append({'id': 22, 'hashString': '9' * 40, 'name': 'Shared legacy staging', 'status': 0, 'error': 0, 'leftUntilDone': 1, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': '.remote-' + trial + '.partial/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': 16384}]})
         proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=environment); token = ''; token = wait(bootstrap)
+        wait(lambda: any(t['hashString'] == trial and 'shared with a local torrent' in t.get('errorString', '') for t in api('/api/state')['torrents']))
+        assert legacy_stage.exists() and not legacy_stage.with_name('.remote2-' + trial + '.partial').exists()
+        assert (legacy_stage / 'Game PS5/a space.RAR').read_bytes() == payload[:16384]
+        local_entries.clear()
         if fault.exists():
             wait(lambda: any(t['hashString'] == trial and 'Cannot sync staging migration' in t.get('errorString', '') for t in api('/api/state')['torrents']))
             wait(lambda: any(t['hashString'] == trial and 'Cannot sync segmented staging directory' in t.get('errorString', '') for t in api('/api/state')['torrents']))
@@ -480,10 +490,73 @@ with tempfile.TemporaryDirectory() as tmp:
             fault.write_text(str(migrated / 'Game PS5'))
             wait(lambda: any(t['hashString'] == trial and 'Cannot sync download member entry' in t.get('errorString', '') for t in api('/api/state')['torrents']))
             assert (migrated / 'Game PS5/a space.RAR').read_bytes() == payload[:16384]
+            legacy_copy_release.clear()
             fault.unlink()
+            assert legacy_copy_blocked.wait(15)
+            durable = json.loads((data / 'remote-downloads.json').read_text())[trial]
+            assert durable['transferFormat'] == 2 and durable['segments']['1'] == [[0, 6]]
+            second_requests = sum(path == '/file/' + trial + '/1' for path, range_ in member_requests)
+            trial_id = durable['id']; api('/api/torrent', {'id': trial_id, 'action': 'pause'})
+            proc.terminate(); proc.wait(timeout=10); legacy_copy_release.set()
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+            api('/api/torrent', {'id': trial_id, 'action': 'resume'})
         wait(lambda: any(t['hashString'] == trial and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
         assert not legacy_stage.exists()
         assert (trial_target / 'Game PS5/a space.RAR').read_bytes() == payload
+        if Path('/proc/self/fd').exists():
+            assert sum(path == '/file/' + trial + '/1' for path, range_ in member_requests) == second_requests
+        # Simulate the durable ownership intent surviving a failed identity save.
+        # Recovery must work for both resume and local-only deletion.
+        for remove in (False, True):
+            trial = '2' * 40
+            proc.terminate(); proc.wait(timeout=10)
+            recovery_target = data / 'downloads/complete' / trial
+            recovery_stage = recovery_target.with_name('.remote2-' + trial + '.partial'); recovery_target.rename(recovery_stage)
+            saved = json.loads((data / 'remote-downloads.json').read_text())
+            saved[trial].update(phase='transfer', paused=True, publishing=False)
+            assert saved[trial]['stageToken'] == saved[trial]['stageIdentity']['marker']
+            saved[trial].pop('stageIdentity'); saved[trial].pop('publishedIdentity', None)
+            (data / 'remote-downloads.json').write_text(json.dumps(saved))
+            recovery_id = saved[trial]['id']; proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+            if remove:
+                local_entries.append({'id': 23, 'hashString': '9' * 40, 'name': 'Shared pending identity', 'status': 0, 'error': 0, 'leftUntilDone': 1, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': '.remote2-' + trial + '.partial/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': len(payload)}]})
+                try:
+                    api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+                    raise RuntimeError('Recovered identity bypassed local-sharing protection')
+                except AssertionError as error:
+                    assert 'shared with a local torrent' in str(error)
+                assert (recovery_stage / 'Game PS5/a space.RAR').read_bytes() == payload
+                local_entries.clear()
+                api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+                assert not recovery_stage.exists() and not recovery_target.exists()
+            else:
+                api('/api/torrent', {'id': recovery_id, 'action': 'resume'})
+                wait(lambda: any(t['id'] == recovery_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+                assert (recovery_target / 'Game PS5/a space.RAR').read_bytes() == payload
+        assert (sources / 'Game PS5/a space.RAR').read_bytes() == payload
+
+        if Path('/proc/self/fd').exists():
+            # Real fsync failure on the registry temp file only AFTER the new
+            # ownership marker exists: stageToken saves succeed, stageIdentity
+            # saves fail. A restart must recover that persisted creation intent.
+            initial = '8' * 40; rows[initial] = rows[game]
+            initial_stage = data / 'downloads/complete' / ('.remote2-' + initial + '.partial')
+            proc.terminate(); proc.wait(timeout=10)
+            fault.write_text(str(data / 'remote-downloads.json.tmp') + '\n' + str(initial_stage / '.botty-remote-owner') + '\n')
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=environment); token = ''; token = wait(bootstrap)
+            initial_id = api('/api/remote/import', {'hash': initial, 'automatic': False})['torrent-added']['id']
+            def pending_initial_identity():
+                if not (initial_stage / '.botty-remote-owner').is_file(): return False
+                record = json.loads((data / 'remote-downloads.json').read_text()).get(initial, {})
+                return record.get('stageToken') == (initial_stage / '.botty-remote-owner').read_text() and 'stageIdentity' not in record
+            wait(pending_initial_identity)
+            proc.terminate(); proc.wait(timeout=10)
+            proc = subprocess.Popen(proc.args, stdout=log, stderr=log, env=environment); token = ''; token = wait(bootstrap)
+            assert pending_initial_identity() and list(initial_stage.iterdir()) == [initial_stage / '.botty-remote-owner']
+            fault.unlink()
+            wait(lambda: any(t['id'] == initial_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+            assert (data / 'downloads/complete' / initial / 'Game PS5/a space.RAR').read_bytes() == payload
+
         # Huge pinned metadata is rejected before planning millions of ranges.
         huge = '5' * 40; rows[huge] = (rows[game][0], [{'name': 'Game PS5/a space.RAR', 'size': 2**63-1, 'index': 0}])
         huge_id = api('/api/remote/import', {'hash': huge, 'automatic': False})['torrent-added']['id']
