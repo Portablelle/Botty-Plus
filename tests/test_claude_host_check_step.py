@@ -147,6 +147,43 @@ else:
             self.assertEqual(len(calls.read_text().splitlines()), 2)
             self.assertNotIn('-X POST', calls.read_text())
 
+    def test_failed_announcement_without_statuses_fails_visibly(self):
+        source = WORKFLOW.read_text()
+        start = source.index("      - name: Check the review's verdict")
+        start = source.index('        run: |\n', start) + len('        run: |\n')
+        for announce, code in [('failure', 2), ('success', 0), ('skipped', 0)]:
+            def value(match):
+                expression = match.group(1).strip()
+                if expression == 'needs.context.outputs.announce':
+                    return announce
+                return 'success' if expression.startswith('needs.') else 'reopened'
+            body = re.sub(r'\$\{\{(.*?)\}\}', value, textwrap.dedent(source[start:]))
+            with self.subTest(announce=announce), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                calls = root / 'calls'
+                gh = root / 'gh'
+                gh.write_text("""#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['GH_CALLS'], 'a') as f:
+    f.write(json.dumps(sys.argv[1:]) + '\\n')
+if '/pulls/' in sys.argv[2]:
+    print(os.environ['HEAD'])
+elif '/statuses?' in sys.argv[2]:
+    print('[]')
+else:
+    sys.exit(42)
+""")
+                gh.chmod(0o755)
+                env = dict(os.environ, PATH=temp + os.pathsep + os.environ['PATH'],
+                           GH_CALLS=str(calls), HEAD='a' * 40, REPO='Portablelle/Botty-Plus', PR='20',
+                           FORK='false', REVIEW_RUN='https://example.test/runs/100')
+                result = subprocess.run(['bash', '-e', '-c', body], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertNotIn('-X POST', calls.read_text())
+                if code:
+                    self.assertIn('announcement failed', result.stdout)
+
     def test_new_run_invalidates_all_evidence_on_the_same_head(self):
         source = WORKFLOW.read_text()
         start = source.index('      - name: Announce the review')
