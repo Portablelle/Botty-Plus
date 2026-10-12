@@ -299,7 +299,8 @@ class RemoteDownloads {
       // a marker from an earlier save. A failed save prevents all sparse writes.
       update(hash,{{"transferFormat",2},{"segments",ledger}},true);
       const uint64_t available=freeBytes(directory),reserve=512ULL*1024*1024;
-      if(available<=reserve||size-completed>available-reserve)throw std::runtime_error("Not enough space to import remote torrent");
+      const auto required=remoteAdditionalAllocation(size,completed,st.st_blocks>0?uint64_t(st.st_blocks):0);
+      if(required&&(available<=reserve||required>available-reserve))throw std::runtime_error("Not enough space to import remote torrent");
       done+=completed;update(hash,{{"bytes",done}});
       std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
       const auto committed=ledger.at(key);size_t intervalIndex=0;uint64_t cursor=0;

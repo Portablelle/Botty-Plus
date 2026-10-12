@@ -10,6 +10,14 @@
 #include <unistd.h>
 
 namespace botty {
+// Allocation budget only: neither blocks nor sparse file length are progress.
+// st_blocks uses 512-byte units. Avoid multiplication overflow and allow reuse
+// of already allocated, uncommitted bytes after an interrupted transfer.
+inline uint64_t remoteAdditionalAllocation(uint64_t size,uint64_t committed,uint64_t blocks){
+  const uint64_t allocated=blocks>size/512?size:blocks*512;
+  return size-std::max(std::min(size,committed),allocated);
+}
+
 // Coalesce curl's small callbacks; only written bytes become resume progress.
 class RemoteWriteBuffer {
 public:
