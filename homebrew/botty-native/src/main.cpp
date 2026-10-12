@@ -1052,10 +1052,11 @@ void drawSheet(Canvas& c) noexcept {
         else {char where[96];storageName(target->storage.data(),where,sizeof(where));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 now on %s",size,where);}
     }
     sheetHeader(c,cover,name,kicker,accent,line1,nullptr,false);
+    const auto layout=botty::sheetLayout(workflow.rowCount);
     for(unsigned r=0;r<workflow.rowCount;++r){
-        const unsigned y=320+r*130;const bool focus=workflow.focus==r;const auto row=workflow.rows[r];
-        if(focus)focusRing(c,1192,y,656,120,22,5,surface);
-        c.rounded(1192,y,656,120,14,raised);
+        const unsigned y=320+r*layout.pitch;const bool focus=workflow.focus==r;const auto row=workflow.rows[r];
+        if(focus)focusRing(c,1192,y,656,layout.height,22,5,surface);
+        c.rounded(1192,y,656,layout.height,14,raised);
         char label[64],value[512],sub[256];value[0]=sub[0]=0;unsigned index=0,count=0;bool showArrows=false;Color valueColor=ink;
         const char* tag=nullptr;Color tagColor=success;
         if(row==Row::source){
@@ -1139,7 +1140,7 @@ void drawSheet(Canvas& c) noexcept {
             const char* edit=empty?"Enter":"Edit";hx-=width(c,edit,20);text(c,static_cast<int>(hx),static_cast<int>(y+48),edit,20,24,muted);hx-=28;glyph(c,Glyph::square,static_cast<float>(hx),static_cast<float>(y+49),muted,20.f/24,2.4f);
         }
     }
-    const unsigned cta=workflow.rowCount?320+workflow.rowCount*130+30:360;
+    const unsigned cta=layout.button;
     const bool ctaFocus=workflow.focus>=workflow.rowCount;
     if(ctaFocus)focusRing(c,1200,cta+8,640,84,20,5,surface);
     c.rounded(1200,cta+8,640,84,14,accent);
@@ -1147,7 +1148,7 @@ void drawSheet(Canvas& c) noexcept {
     glyph(c,Glyph::cross,static_cast<float>(lx),static_cast<float>(cta+37),accentInk,26.f/24,3.5f);
     middle(c,static_cast<int>(lx+42),static_cast<int>(cta+8),84,label,32,accentInk,bold);
     const char* note=workflow.notice[0]?workflow.notice.data():download?"Starts right away. Pause or remove it anytime in Activity.":explain(op,target);
-    wrap(c,1192,static_cast<int>(cta+120),note,20,30,656,3,workflow.notice[0]?warning:muted);
+    wrap(c,1192,static_cast<int>(layout.noteTop),note,20,30,656,3,workflow.notice[0]?warning:muted);
     const bool row=!ctaFocus&&workflow.focus<workflow.rowCount;
     const auto focusedRow=row?workflow.rows[workflow.focus]:Row::source;
     const Glyph change=!row?(workflow.rowCount?Glyph::updown:Glyph::none):focusedRow==Row::password||focusedRow==Row::magnet?Glyph::none:Glyph::arrows;

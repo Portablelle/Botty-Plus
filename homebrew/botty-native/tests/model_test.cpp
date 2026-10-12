@@ -652,6 +652,14 @@ int main() {
         assert(parseCatalog(R"({"freeBytes":1000000000,"transmissionReady":true,"storageSupported":true,"remoteDownloads":{"enabled":true},"storage":[{"id":"internal","label":"PS5","available":true,"freeBytes":1000000000}],"torrents":[],"jobs":[]})",engines));
         Workflow download;download.add();download.acceptText("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",engines,false);
         assert(download.hasRow(Workflow::Row::engine)&&download.rowCount==4&&!download.command.useRemote);
+        // A 3-line note must end above the footer hints (y=1008) and rows must not overlap.
+        for(unsigned rows=0;rows<=4;++rows){
+            const auto layout=sheetLayout(rows);
+            assert(layout.pitch>=layout.height);
+            assert(!rows||320+(rows-1)*layout.pitch+layout.height<=layout.button+8);
+            assert(layout.button+8+84<=layout.noteTop);
+            assert(layout.noteTop+3*30<=1008);
+        }
         download.focus=1;download.press(Buttons::right,engines,false);assert(download.command.useRemote);
         assert(encodeCommand(download.command,body,sizeof(body),count));assert(std::string_view(body).find("\"engine\":\"qbittorrent\"")!=std::string_view::npos);
         download.press(Buttons::left,engines,false);assert(!download.command.useRemote);

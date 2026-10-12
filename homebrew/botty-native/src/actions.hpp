@@ -26,6 +26,14 @@ const char* unavailable(Operation,const Entry*,const Catalog&) noexcept;
 // Quick actions for one entry (0 download, 1 Activity job, 2 Library game),
 // destructive choices last. Followed tasks have none.
 unsigned quickActions(const Entry*,unsigned tab,const Catalog&,std::array<Operation,8>&) noexcept;
+// Vertical layout of a settings sheet. Four rows use a tighter pitch so the
+// button and a three-line note stay above the footer hints at y=1008.
+struct SheetLayout { unsigned pitch,height,button,noteTop; };
+constexpr SheetLayout sheetLayout(unsigned rows) noexcept {
+    if(rows>=4)return {118,112,320+3*118+112+20,320+3*118+112+126};
+    const unsigned button=rows?320+rows*130+30:360;
+    return {130,120,button,button+120};
+}
 struct Workflow {
     // menu: Quick actions with inline destructive confirmation. sheet: one settings
     // sheet for Get game, Extract and disk moves. keyboard: text entry.
