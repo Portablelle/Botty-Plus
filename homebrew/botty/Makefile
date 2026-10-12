@@ -75,8 +75,10 @@ $(INTEGRATION_RUNS): integration-%:
 integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
 TEST_JOBS ?= 1
+# GNU Make 4+ keeps each parallel test's output together; 3.81 (macOS) interleaves it.
+TEST_SYNC := $(if $(filter-out 1,$(TEST_JOBS)),$(if $(filter 3.%,$(MAKE_VERSION)),,--output-sync=target))
 test: $(TEST_BINARIES)
-	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(if $(filter-out 1,$(TEST_JOBS)),--output-sync=target) $(INTEGRATION_RUNS) integration-remote-bridge $(UNIT_RUNS)
+	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(TEST_SYNC) $(INTEGRATION_RUNS) integration-remote-bridge $(UNIT_RUNS)
 
 build/compressor-test: build/tests/compressor-test.o build/host/core.o build/host/storage.o src/storage.hpp src/compressor.hpp src/progress.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
 	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl
