@@ -73,11 +73,11 @@ run_check "Archive fixtures" python3 homebrew/botty/tests/make_fixtures.py
 run_check "Rest companion protocol" make -C homebrew/rest-mode-companion test
 run_check "Service UI" node homebrew/botty/tests/ui-test.js
 # Bound compilation rather than using the host CPU count from nproc.
-# Build prerequisites can run in parallel; the test recipe stays sequential.
+# Build prerequisites and independent service tests run four at a time.
 if [ "$service" = true ] && [ "$build_only" = true ]; then
   run_check "Service build" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" test-build
 elif [ "$service" = true ]; then
-  run_check "Service build and tests" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" test
+  run_check "Service build and tests" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" TEST_JOBS=4 test
 else
   skip_check "Service build and tests"
 fi
