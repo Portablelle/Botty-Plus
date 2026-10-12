@@ -35,6 +35,8 @@ container, mount a persistent volume there, for example `docker run -v botty-cca
 sets `CCACHE_BASEDIR` to the checkout, so entries are shared between worktrees.
 `BOTTY_CHANGED_FILES` may name a file listing changed paths, one per line, to skip
 the compiled suites those paths cannot affect, as PR checks do.
+`BOTTY_HOST_CHECK_BUILD_ONLY=1` compiles the selected suites without running their
+tests; default-branch checks use it for merges whose tree was already validated.
 
 macOS renderer preview: `make -C homebrew/botty-native preview` (requires `sips`).
 PS5 builds use the component Dockerfiles and pinned SDKs; host tests do not prove

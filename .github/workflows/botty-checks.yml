@@ -60,6 +60,10 @@ jobs:
     if: always() && !cancelled() && needs.route.outputs.trusted-verify != 'true'
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -71,6 +75,29 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-host-${{ github.sha }}
           restore-keys: ccache-host-
+      - name: Detect an already validated merge
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Compile without re-running tests only when this commit's tree is exactly
+          # the head of its merged same-repo PR and that head's isolated host checks
+          # passed. Any doubt or API failure keeps the full suite.
+          tree=$(git rev-parse "$SHA^{tree}")
+          if pr=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq \
+                "[.[] | select(.merge_commit_sha == \"$SHA\" and .merged_at != null)] | if length == 1 then .[0] else empty end") &&
+             [ -n "$pr" ] &&
+             [ "$(jq -r .head.repo.full_name <<< "$pr")" = "$REPO" ] &&
+             head=$(jq -er '.head.sha | select(test("^[0-9a-f]{40}$"))' <<< "$pr") &&
+             head_tree=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha) &&
+             [ "$head_tree" = "$tree" ] &&
+             state=$(HEAD=$head bash .github/scripts/claude-status.sh 'Claude host checks' state) &&
+             [ "$state" = success ]; then
+            echo "BOTTY_HOST_CHECK_BUILD_ONLY=1" >> "$GITHUB_ENV"
+            echo "::notice::$SHA has the tree of validated PR head ${head::7}; compiling without re-running tests."
+          fi
       - name: Run host checks
         run: bash scripts/botty-host-checks.sh
       - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
