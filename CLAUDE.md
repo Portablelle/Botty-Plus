@@ -44,7 +44,11 @@ the language of the request.
 ## GitHub review setup
 
 Add a long-lived token from `claude setup-token` as the Actions secret
-`CLAUDE_CODE_OAUTH_TOKEN`. Automatic PR reviews use Opus 5.5 with high effort.
+`CLAUDE_CODE_OAUTH_TOKEN`. Automatic PR reviews use Opus 5.5 with high effort,
+except Sonnet 5.5 for documentation-only diffs (`docs/` and root Markdown; component
+READMEs ship in release archives) and Opus medium effort for diffs of at most 50 changed
+lines. Agent policy files at any depth, workflow, script, infra and package paths,
+binary changes and diff failures always keep Opus high.
 There is no `@claude` workflow and no autofix: Claude never pushes to a PR.
 Findings are fixed by a human push, which starts a new review. Reviews publish inline
 findings and a verdict for the current PR head; forks require a local review.
