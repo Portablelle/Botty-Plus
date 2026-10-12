@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "botty-manager.elf",
-      "size": 16247024,
-      "sha256": "9c89db1b393a51df6d95f4aa61348bacb9ac79d00547d22e25856816203d5aa0"
+      "size": 16209152,
+      "sha256": "91f46c8cd10a6f4814506a95564549fb1bee74744e08dd5e5e91c5f978648cdb"
     },
     {
       "path": "icon0.png",

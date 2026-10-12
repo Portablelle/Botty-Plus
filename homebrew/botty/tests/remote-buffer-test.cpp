@@ -1,9 +1,32 @@
 #include "remote-buffer.hpp"
+#include "remote-ledger.hpp"
+#include "remote-outcome.hpp"
 #include <cassert>
 #include <iostream>
 #include <string>
 using botty::RemoteWriteBuffer;
 int main(){
+  using botty::RemoteRangeLedger;using botty::RemoteBatchOutcome;using botty::RemoteTransferError;
+  auto ledger=RemoteRangeLedger::fromJson(nlohmann::json::array(),100,100);
+  assert(ledger.completed()==0);uint64_t cursor=0;
+  auto gaps=ledger.gaps(cursor,2,30);assert(gaps.size()==2&&gaps[0].start==0&&gaps[0].end==30&&gaps[1].start==30&&gaps[1].end==60);
+  ledger.commit({30,60});ledger.commit({0,30});ledger.commit({60,70});
+  assert(ledger.completed()==70&&ledger.toJson()==nlohmann::json({{0,70}}));
+  ledger.commit({80,100});cursor=0;gaps=ledger.gaps(cursor,4,8);
+  assert(gaps.size()==2&&gaps[0].start==70&&gaps[0].end==78&&gaps[1].start==78&&gaps[1].end==80);
+  auto roundtrip=RemoteRangeLedger::fromJson(ledger.toJson(),100,100);assert(roundtrip.completed()==90);
+  for(const auto& bad:{nlohmann::json({{0,101}}),nlohmann::json({{0,40},{30,50}}),nlohmann::json({{-1,4}}),nlohmann::json({{0.5,4}})}){try{RemoteRangeLedger::fromJson(bad,100,100);assert(false);}catch(const std::runtime_error&){}}
+  try{RemoteRangeLedger::fromJson(nlohmann::json({{0,20}}),100,10);assert(false);}catch(const std::runtime_error&){}
+  try{ledger.commit({1,2});assert(false);}catch(const std::runtime_error&){}
+  auto failure=[](long status){try{throw RemoteTransferError(status,"typed transport failure");}catch(...){return RemoteBatchOutcome::failure(std::current_exception());}};
+  const auto busy=failure(429),fatal=failure(416),other=failure(500);
+  assert(!busy.cancelSiblings()&&busy.busy()&&busy.connectionsAfterFailure(4)==2);
+  assert(fatal.cancelSiblings()&&fatal.pause()&&!fatal.busy());
+  for(bool reverse:{false,true}){
+    RemoteBatchOutcome summary;summary.include(other);summary.include(reverse?fatal:busy);summary.include(reverse?busy:fatal);
+    assert(summary.pause());try{summary.rethrow();assert(false);}catch(const RemoteTransferError& e){assert(e.status==416);}
+  }
+
   constexpr uint64_t MiB=1024*1024;
   // Near the reserve, physical uncommitted ranges can be overwritten without
   // allocating their bytes twice. A full-sized sparse file still needs space.
