@@ -520,3 +520,13 @@ repairs only an empty stage or a marker prefix matching its durable token; unkno
 contents and foreign markers are retained for inspection. Typed range ledgers
 validate bounds, count completion, plan gaps and merge checkpoints. A single
 batch outcome reduction prioritizes 416, then 429, then other failures.
+
+Parallel imports require the updated dedicated-server bridge advertising
+`capabilities.boundedRanges`; update/restart it before upgrading the manager to
+1.7.0. An older bridge produces an explicit upgrade error before any local writes.
+Sparse-write format is committed once per attempt. Completed small-file ledgers
+are checkpointed together after 8 MiB or five seconds, and on pause, errors and
+publication. Each recorded range is file-synced first; completed members do not
+force unchanged ledger rewrites. A sudden power loss can retry uncheckpointed
+small-file bytes. Directory entry syncing is reused within each attempt except
+when creating new entries.

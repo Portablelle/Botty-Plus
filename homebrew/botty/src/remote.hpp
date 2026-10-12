@@ -119,10 +119,11 @@ class RemoteDownloads {
     std::lock_guard<std::mutex> g(mutex_);if(!records_.contains(hash))return;
     auto values=changes;
     if(values.contains("snapshot")&&records_[hash].contains("inventory"))values["snapshot"].erase("files");
-    const auto previous=records_[hash];
+    const bool persist=durable||values.contains("snapshot")||values.contains("inventory");
+    const auto previous=persist?records_[hash]:json();
     records_[hash].update(values);
     if(values.contains("inventory")&&records_[hash].contains("snapshot"))records_[hash]["snapshot"].erase("files");
-    if(durable||values.contains("snapshot")||values.contains("inventory")){try{save();}catch(...){records_[hash]=previous;throw;}}
+    if(persist){try{save();}catch(...){records_[hash]=previous;throw;}}
   }
   static constexpr uint64_t segmentSize=8ULL*1024*1024;
   static int connections(const json& args,int fallback=2){
@@ -180,17 +181,23 @@ class RemoteDownloads {
     if(code!=CURLE_OK||status!=206||!sink.rangeValid||!sink.lengthValid||sink.bytes!=end-start)throw std::runtime_error(sink.error.empty()?"HTTPS segment interrupted; uncommitted range will be retried":sink.error);
     checkStorage_(storage,directory);sink.output.flush();
   }
-  static int leaf(const fs::path& root,const fs::path& relative) {
+  static int leaf(const fs::path& root,const fs::path& relative,std::set<fs::path>* synced=nullptr) {
     int fd=::open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(fd<0)throw std::runtime_error("Download storage unavailable");
     try{
+      fs::path parentPath=root;
       for(const auto& part:relative.parent_path()){
-        if(makeDirectoryRelative(fd,part.c_str(),0700)&&errno!=EEXIST)throw std::runtime_error("Cannot create download folder");
+        const bool created=makeDirectoryRelative(fd,part.c_str(),0700)==0;
+        if(!created&&errno!=EEXIST)throw std::runtime_error("Cannot create download folder");
         int next=openFileRelative(fd,part.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(next<0)throw std::runtime_error("Unsafe download folder");
-        if(fsync(fd)){::close(next);throw std::runtime_error("Cannot sync download folder entry");}::close(fd);fd=next;
+        if((created||!synced||!synced->count(parentPath))&&fsync(fd)){::close(next);throw std::runtime_error("Cannot sync download folder entry");}
+        if(synced)synced->insert(parentPath);::close(fd);fd=next;parentPath/=part;
       }
-      int result=openFileRelative(fd,relative.filename().c_str(),O_RDWR|O_CREAT|O_NOFOLLOW|O_NONBLOCK,0600);
+      int result=openFileRelative(fd,relative.filename().c_str(),O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_NONBLOCK,0600);
+      const bool created=result>=0;
+      if(result<0&&errno==EEXIST)result=openFileRelative(fd,relative.filename().c_str(),O_RDWR|O_NOFOLLOW|O_NONBLOCK,0600);
       // Durable ledger ranges must never outlive their file/directory entries.
-      if(result>=0&&fsync(fd)){::close(result);throw std::runtime_error("Cannot sync download member entry");}::close(fd);fd=-1;
+      if(result>=0&&(created||!synced||!synced->count(parentPath))&&fsync(fd)){::close(result);throw std::runtime_error("Cannot sync download member entry");}
+      if(result>=0&&synced)synced->insert(parentPath);::close(fd);fd=-1;
       if(result<0)throw std::runtime_error("Cannot open partial download");
       struct stat st{};if(fstat(result,&st)||!S_ISREG(st.st_mode)||st.st_nlink!=1){::close(result);throw std::runtime_error("Unsafe partial download");}
       return result;
@@ -272,6 +279,8 @@ class RemoteDownloads {
   void transfer(const std::string& hash,json r,const json& snapshot) {
     const fs::path directory=r.at("directory").get<std::string>();const std::string storage=r.at("storage");
     checkStorage_(storage,directory);
+    if(!snapshot.value("capabilities",json::object()).value("boundedRanges",false))
+      throw std::runtime_error("Update the dedicated-server bridge before importing with manager 1.7.0 (bounded HTTP ranges required)");
     auto stage=stagingPath(directory,hash,r);const auto target=directory/hash;
     json inventory=json::array();std::set<fs::path> seen;std::set<unsigned> indexes;uint64_t total=0;
     for(const auto& f:snapshot.at("files")){
@@ -332,17 +341,25 @@ class RemoteDownloads {
       }
       update(hash,{{"transferFormat",2},{"segments",ledger}},true);
     }
+    // Persist the sparse-write format barrier once per attempt, not per member.
+    if(!legacy)update(hash,{{"transferFormat",2},{"segments",ledger}},true);
+    bool dirty=false;uint64_t checkpointBytes=0;std::set<fs::path> syncedEntries;
+    auto checkpointAt=std::chrono::steady_clock::now();
+    auto checkpoint=[&](bool force){
+      if(!dirty)return;
+      const auto now=std::chrono::steady_clock::now();
+      if(!force&&checkpointBytes<segmentSize&&now-checkpointAt<std::chrono::seconds(5))return;
+      update(hash,{{"segments",ledger},{"bytes",done}},true);
+      dirty=false;checkpointBytes=0;checkpointAt=now;
+    };
     const int parallel=std::min(connections(r),connections(json{{"parallelConnections",r.value("effectiveConnections",connections(r))}}));const auto started=std::chrono::steady_clock::now();uint64_t received=0;
-    for(const auto& file:inventory){
+    try{for(const auto& file:inventory){
       checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
       const auto name=safeRelative(file.at("name").get<std::string>());const uint64_t size=file.at("size");const auto key=std::to_string(file.at("index").get<unsigned>());
-      int fd=leaf(stage,name);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
+      int fd=leaf(stage,name,&syncedEntries);struct Close{int fd;~Close(){::close(fd);}} close{fd};struct stat st{};
       if(fstat(fd,&st)||st.st_size<0||uint64_t(st.st_size)>size)throw std::runtime_error("Partial file size is invalid");
       auto ranges=RemoteRangeLedger::fromJson(ledger.value(key,json::array()),size,uint64_t(st.st_size));
-      ledger[key]=ranges.toJson();const auto completed=ranges.completed();
-      // This is a persistence barrier on EVERY attempt, even when RAM already had
-      // a marker from an earlier save. A failed save prevents all sparse writes.
-      update(hash,{{"transferFormat",2},{"segments",ledger}},true);
+      const auto completed=ranges.completed();
       const uint64_t available=freeBytes(directory),reserve=512ULL*1024*1024;
       const auto required=remoteAdditionalAllocation(size,completed,st.st_blocks>0?uint64_t(st.st_blocks):0);
       if(required&&(available<=reserve||required>available-reserve))throw std::runtime_error("Not enough space to import remote torrent");
@@ -357,18 +374,21 @@ class RemoteDownloads {
         catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
         for(auto& worker:workers)worker.join();
         if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
+        uint64_t batchBytes=0;
         for(size_t i=0;i<count;++i){
           outcome.include(outcomes[i]);
-          if(outcomes[i].succeeded()){const auto range=missing[i];ranges.commit(range);const auto n=range.end-range.start;done+=n;received+=n;}
+          if(outcomes[i].succeeded()){const auto range=missing[i];ranges.commit(range);const auto n=range.end-range.start;done+=n;received+=n;batchBytes+=n;}
         }
-        ledger[key]=ranges.toJson();
+        if(batchBytes){ledger[key]=ranges.toJson();dirty=true;checkpointBytes+=batchBytes;}
+        checkpoint(!outcome.succeeded());
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
-        update(hash,{{"segments",ledger},{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}},true);
+        update(hash,{{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}});
         if(outcome.busy())update(hash,{{"effectiveConnections",outcome.connectionsAfterFailure(parallel)}},true);
         outcome.rethrow();
       }
       if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");
-    }
+    }checkpoint(true);
+    }catch(...){const auto error=std::current_exception();checkpoint(true);std::rethrow_exception(error);}
     validateTree(stage,inventory);checkStorage_(storage,directory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");
     checkMembers_(stage,target,inventory);if(stop_||cancel_)throw std::runtime_error("Transfer paused");update(hash,{{"publishing",true}},true);
     publishExclusive(stage,target,[&](uint64_t device,uint64_t inode){update(hash,{{"reservationIdentity",{{"device",device},{"inode",inode}}}},true);});

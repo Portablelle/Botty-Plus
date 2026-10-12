@@ -11,6 +11,21 @@
 int fsync(int fd) {
   static int (*real_fsync)(int);
   if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, "fsync");
+  const char *counter = getenv("BOTTY_COUNT_REGISTRY_SYNCS");
+  if (counter) {
+    char link[64], actual[4096];
+    snprintf(link, sizeof link, "/proc/self/fd/%d", fd);
+    ssize_t n = readlink(link, actual, sizeof actual - 1);
+    if (n >= 0) {
+      actual[n] = 0;
+      const char *suffix = "/remote-downloads.json.tmp";
+      size_t length = strlen(actual), suffix_length = strlen(suffix);
+      if (length >= suffix_length && !strcmp(actual + length - suffix_length, suffix)) {
+        int log = open(counter, O_WRONLY|O_CREAT|O_APPEND, 0600);
+        if (log >= 0) { (void)write(log, "x", 1); close(log); }
+      }
+    }
+  }
   const char *control = getenv("BOTTY_FAIL_DIRECTORY_SYNC");
   if (control) {
     FILE *input = fopen(control, "r");

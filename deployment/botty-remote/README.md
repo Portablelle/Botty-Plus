@@ -54,6 +54,16 @@ games, regenerated on disk moves, and removed only with the owned import.
 Empty publication reservations retain an inode guard: an unrecognized reservation
 is left intact rather than adopted after a reconnect.
 
+## Upgrading to parallel imports
+
+Update `/opt/botty-remote/server.py` and restart the bridge while its transfers are
+idle **before** updating the PS5 manager to 1.7.0. Keep the private configuration,
+registry and server downloads. The bridge advertises `capabilities.boundedRanges`
+in torrent snapshots. Older managers can still use its open-ended ranges.
+Manager 1.7.0 checks that capability before touching partial files; an older bridge
+produces an explicit "Update the dedicated-server bridge" error rather than a
+misleading file-range fault. Imports retry after the bridge is updated.
+
 ## Private provisioning
 
 1. Install `server.py` in `/opt/botty-remote` and the systemd unit in

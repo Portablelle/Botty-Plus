@@ -220,7 +220,7 @@ class Bridge:
             raise ValueError('Torrent location changed; import again explicitly')
         if require_owned and self.owned[hash].get('pending') and t.get('category') != 'botty-ps5':
             raise ValueError('Pending add does not match the Botty category')
-        return {'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
+        return {'capabilities': {'boundedRanges': True}, 'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
                 'total': sum(f['size'] for f in files), 'done': sum(int(f['size'] * f['progress']) for f in files),
                 'rate': t['dlspeed'], 'upload': t['upspeed'], 'peers': t['num_seeds'] + t['num_leechs'],
                 'files': [{'index': f['index'], 'name': f['name'], 'size': f['size']} for f in files]}
