@@ -181,6 +181,29 @@ class RemoteDownloads {
     if(code!=CURLE_OK||status!=206||!sink.rangeValid||!sink.lengthValid||sink.bytes!=end-start)throw std::runtime_error(sink.error.empty()?"HTTPS segment interrupted; uncommitted range will be retried":sink.error);
     checkStorage_(storage,directory);sink.output.flush();
   }
+  // File-local coordinator: all threads finish before fsync, and only synced
+  // successful ranges enter the ledger. Lifecycle/persistence stays with caller.
+  RemoteBatchOutcome copyFileSegments(const std::string& hash,const json& file,const std::string& storage,const fs::path& directory,int fd,int parallel,RemoteRangeLedger& ranges,const std::function<void(uint64_t,bool)>& committed){
+    std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
+    uint64_t cursor=0;const uint64_t size=file.at("size");
+    while(cursor<size){
+      const auto missing=ranges.gaps(cursor,size_t(parallel),segmentSize);if(missing.empty())break;
+      if(stop_||cancel_)throw std::runtime_error("Transfer paused");
+      const size_t count=missing.size();std::vector<std::thread> workers;std::vector<RemoteBatchOutcome> outcomes(count);RemoteBatchOutcome outcome;std::atomic<bool> abort{false};
+      try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].start,missing[i].end,abort);}catch(...){outcomes[i]=RemoteBatchOutcome::failure(std::current_exception());if(outcomes[i].cancelSiblings())abort=true;}});}
+      catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
+      for(auto& worker:workers)worker.join();
+      if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
+      uint64_t bytes=0;
+      for(size_t i=0;i<count;++i){
+        outcome.include(outcomes[i]);
+        if(outcomes[i].succeeded()){ranges.commit(missing[i]);bytes+=missing[i].end-missing[i].start;}
+      }
+      committed(bytes,!outcome.succeeded());
+      if(!outcome.succeeded())return outcome;
+    }
+    return {};
+  }
   static int leaf(const fs::path& root,const fs::path& relative,std::set<fs::path>* synced=nullptr) {
     int fd=::open(root.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(fd<0)throw std::runtime_error("Download storage unavailable");
     try{
@@ -364,28 +387,14 @@ class RemoteDownloads {
       const auto required=remoteAdditionalAllocation(size,completed,st.st_blocks>0?uint64_t(st.st_blocks):0);
       if(required&&(available<=reserve||required>available-reserve))throw std::runtime_error("Not enough space to import remote torrent");
       done+=completed;update(hash,{{"bytes",done}});
-      std::vector<std::unique_ptr<Handle>> handles;for(int i=0;i<parallel;++i)handles.push_back(std::make_unique<Handle>());
-      uint64_t cursor=0;
-      while(cursor<size){
-        const auto missing=ranges.gaps(cursor,size_t(parallel),segmentSize);if(missing.empty())break;
-        if(stop_||cancel_)throw std::runtime_error("Transfer paused");
-        const size_t count=missing.size();std::vector<std::thread> workers;std::vector<RemoteBatchOutcome> outcomes(count);RemoteBatchOutcome outcome;std::atomic<bool> abort{false};
-        try{for(size_t i=0;i<count;++i)workers.emplace_back([&,i]{try{segment(*handles[i],hash,file,storage,directory,fd,missing[i].start,missing[i].end,abort);}catch(...){outcomes[i]=RemoteBatchOutcome::failure(std::current_exception());if(outcomes[i].cancelSiblings())abort=true;}});}
-        catch(...){abort=true;for(auto& worker:workers)worker.join();throw;}
-        for(auto& worker:workers)worker.join();
-        if(fsync(fd))throw std::runtime_error("Cannot sync downloaded segments");
-        uint64_t batchBytes=0;
-        for(size_t i=0;i<count;++i){
-          outcome.include(outcomes[i]);
-          if(outcomes[i].succeeded()){const auto range=missing[i];ranges.commit(range);const auto n=range.end-range.start;done+=n;received+=n;batchBytes+=n;}
-        }
-        if(batchBytes){ledger[key]=ranges.toJson();dirty=true;checkpointBytes+=batchBytes;}
-        checkpoint(!outcome.succeeded());
+      const auto outcome=copyFileSegments(hash,file,storage,directory,fd,parallel,ranges,[&](uint64_t bytes,bool force){
+        if(bytes){ledger[key]=ranges.toJson();dirty=true;checkpointBytes+=bytes;done+=bytes;received+=bytes;}
+        checkpoint(force);
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
         update(hash,{{"bytes",done},{"rate",seconds>0?uint64_t(received/seconds):uint64_t(0)},{"eta",received?double(total-done)*seconds/double(received):-1.0}});
-        if(outcome.busy())update(hash,{{"effectiveConnections",outcome.connectionsAfterFailure(parallel)}},true);
-        outcome.rethrow();
-      }
+      });
+      if(outcome.busy())update(hash,{{"effectiveConnections",outcome.connectionsAfterFailure(parallel)}},true);
+      outcome.rethrow();
       if(fsync(fd))throw std::runtime_error("Cannot flush downloaded file");
     }checkpoint(true);
     }catch(...){const auto error=std::current_exception();checkpoint(true);std::rethrow_exception(error);}

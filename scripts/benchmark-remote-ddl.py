@@ -16,6 +16,14 @@ import time
 import urllib.request
 
 
+def import_error(row):
+    error = row.get('errorString', '')
+    if (row.get('remotePhase') == 'transfer' and row.get('status') != 0
+            and error == 'Server transfer slots busy (429); retrying after bounded delay'):
+        return ''  # The manager reduces concurrency and retries within the timeout.
+    return error
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--hash', required=True)
@@ -52,10 +60,12 @@ def main():
     results = []
     for connections in (1, 2, 4):
         added = api('/api/remote/import', {'hash': a.hash, 'automatic': False, 'parallelConnections': connections})
-        id_ = added['torrent-added']['id']; begin = time.monotonic()
+        id_ = added['torrent-added']['id']; begin = time.monotonic(); contention = False
         while True:
             row = next(r for r in rows() if r['id'] == id_)
-            if row.get('errorString'): raise RuntimeError('Fixture import stopped: ' + row['errorString'])
+            error = import_error(row)
+            if error: raise RuntimeError('Fixture import stopped: ' + error)
+            contention = contention or bool(row.get('errorString'))
             if row['totalSize'] != a.size or len(row['files']) != 1 or row['files'][0]['name'] != a.hash + '/' + a.member: raise RuntimeError('Benchmark requires the same single-file fixture')
             if row['remotePhase'] == 'ready': break
             if time.monotonic() - begin > 1800: raise RuntimeError('Fixture import timed out')
@@ -66,7 +76,7 @@ def main():
         try: ftp.retrbinary('RETR ' + row['downloadDir'].rstrip('/') + '/' + a.hash + '/' + a.member, digest.update, blocksize=1024*1024)
         finally: ftp.close()
         if digest.hexdigest() != a.expected_sha256: raise RuntimeError('Fixture SHA-256 mismatch; retained for inspection')
-        results.append({'connections': connections, 'seconds': round(elapsed, 3), 'MiBPerSecond': round(a.size / elapsed / 1048576, 3), 'sha256': digest.hexdigest()})
+        results.append({'connections': connections, 'seconds': round(elapsed, 3), 'MiBPerSecond': round(a.size / elapsed / 1048576, 3), 'sha256': digest.hexdigest(), 'contentionObserved': contention, 'effectiveConnectionsAtCompletion': row.get('effectiveConnections', connections)})
         a.output.write_text(json.dumps({'fixture': a.hash, 'member': a.member, 'size': a.size, 'measure': 'end-to-end import including scheduling/fsync/publication; hash read excluded', 'results': results}, indent=2) + '\n')
         api('/api/torrent', {'id': id_, 'action': 'pause'})
         api('/api/torrent', {'id': id_, 'action': 'remove-data', 'confirmed': True})
