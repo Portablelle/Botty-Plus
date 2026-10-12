@@ -81,7 +81,7 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             self.assertIn(str(exported), (root / 'env').read_text())
 
     def test_dispatch_resolves_current_head_while_native_event_retains_snapshot(self):
-        body = step('Resolve the pull request', '\n  announce:')
+        body = step('Resolve the pull request', '\n      - uses: actions/checkout@')
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             gh = root / 'gh'
@@ -147,3 +147,66 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((root / 'env').exists(), 'A failed diff must leave every suite enabled')
             self.assertFalse((root / 'changed-files').exists())
+
+    def test_reviewer_is_lighter_only_for_docs_or_small_ordinary_code(self):
+        body = step('Choose the reviewer', '\n      - uses: actions/setup-node@')
+        cases = [
+            ({'README.md': 'more\n', 'docs/guide.md': 'new\n'}, 'claude-sonnet-5-5', 'high'),
+            ({'homebrew/botty/src/a.cpp': 'x\n' * 30}, 'claude-opus-5-5', 'medium'),
+            ({'homebrew/botty/src/a.cpp': 'x\n' * 51}, 'claude-opus-5-5', 'high'),
+            ({'README.md': 'more\n', 'homebrew/botty/src/a.cpp': 'x\n'}, 'claude-opus-5-5', 'medium'),
+            ({'CLAUDE.md': 'policy\n'}, 'claude-opus-5-5', 'high'),
+            ({'.claude/commands/review-pr.md': 'policy\n'}, 'claude-opus-5-5', 'high'),
+            ({'.github/workflows/x.yml': 'on: push\n'}, 'claude-opus-5-5', 'high'),
+            ({'scripts/botty-host-checks.sh': 'exit 0\n'}, 'claude-opus-5-5', 'high'),
+            ({'packages/botty-release.json': '{}\n'}, 'claude-opus-5-5', 'high'),
+            ({'.github/\u00e9.yml': 'on: push\n'}, 'claude-opus-5-5', 'high'),
+            ({'homebrew/botty/icon.png': b'\x00\x01binary'}, 'claude-opus-5-5', 'high'),
+            ({}, 'claude-opus-5-5', 'high'),
+        ]
+        for files, model, effort in cases:
+            with self.subTest(files=list(files)), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')
+                def git(*args):
+                    return subprocess.run(['git', *args], cwd=root, env=env, check=True,
+                                          capture_output=True, text=True).stdout.strip()
+                git('init', '-q')
+                git('config', 'user.email', 'fixture@example.test')
+                git('config', 'user.name', 'Fixture')
+                (root / 'README.md').write_text('base\n')
+                git('add', '.')
+                git('commit', '-qm', 'Base')
+                base = git('rev-parse', 'HEAD')
+                git('remote', 'add', 'origin', str(root))
+                for name, content in files.items():
+                    path = root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    if isinstance(content, bytes):
+                        path.write_bytes(content)
+                    else:
+                        path.write_text(content)
+                git('add', '.')
+                git('commit', '-qm', 'Head', '--allow-empty')
+                env.update(BASE=base, HEAD=git('rev-parse', 'HEAD'),
+                           GITHUB_OUTPUT=str(root.parent / (root.name + '.output')),
+                           GITHUB_STEP_SUMMARY=os.devnull)
+                result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = Path(env['GITHUB_OUTPUT'])
+                self.assertEqual(output.read_text().split(), ['model=' + model, 'effort=' + effort])
+                output.unlink()
+
+    def test_reviewer_keeps_opus_high_when_the_head_is_unavailable(self):
+        body = step('Choose the reviewer', '\n      - uses: actions/setup-node@')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1',
+                       BASE='a' * 40, HEAD='b' * 40, GITHUB_OUTPUT=str(root / 'output'),
+                       GITHUB_STEP_SUMMARY=os.devnull)
+            subprocess.run(['git', 'init', '-q'], cwd=root, env=env, check=True)
+            result = subprocess.run(['bash', '-e', '-c', body], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / 'output').read_text().split(), ['model=claude-opus-5-5', 'effort=high'])
