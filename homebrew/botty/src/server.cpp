@@ -721,7 +721,7 @@ int main(int argc,char** argv) {
         if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
         const auto torrent=getTorrent(id);
         if(torrent.value("remote",false)){
-          if(torrent.value("adopted",false))for(const auto& job:jobs)if(job.value("remote",false)&&job.value("torrentId",-1)==id&&job.value("status","")!="moved")throw std::runtime_error("Publish the imported game to Library before removing its tracking record");
+          if(torrent.value("adopted",false))for(const auto& job:jobs)if(job.value("remote",false)&&job.value("torrentId",-1)==id&&job.value("adoptedImport",false)&&job.value("status","")!="moved")throw std::runtime_error("Publish the imported game to Library before removing its tracking record");
           const auto hash=torrent.at("hashString").template get<std::string>();
           const auto selected=downloadReferences(torrent);
           requireUnsharedReferences(selected,inspectedLocalTorrents(),-1,{},"Downloaded files are shared with another torrent; deletion refused");
