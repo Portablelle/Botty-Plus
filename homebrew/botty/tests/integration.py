@@ -62,8 +62,9 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         process.terminate();process.wait(timeout=5)
     def wait_job(job_id):
         for _ in range(100):
-            job=next(j for j in request('/api/state')['jobs'] if j['id']==job_id)
-            if job['status']!='extracting':return job
+            state=request('/api/state')
+            job=next(j for j in state['jobs'] if j['id']==job_id)
+            if not state['extracting'] and job['status']!='extracting':return job
             time.sleep(.05)
         raise AssertionError('Extraction did not finish')
     try:
@@ -242,6 +243,38 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert not (root/'test-library/PPSA12345-app').exists()
         assert (complete/'bad.rar').exists() and (complete/'resume.rar').exists()
         assert not any(j['id']==job['id'] for j in request('/api/state')['jobs'])
+        # A completed local image is prepared without archive UI or a second move request.
+        image = complete/'PPSA54321.exfat'; image.write_bytes(b'xxxEXFAT   '+bytes(512))
+        entries.append(dict(id=9,hashString='9'*40,name='PS5 image',status=6,percentDone=1,leftUntilDone=0,totalSize=image.stat().st_size,downloadDir=str(complete),error=0,errorString='',files=[dict(name=image.name,length=image.stat().st_size,bytesCompleted=image.stat().st_size)]))
+        image_torrent=next(t for t in request('/api/state')['torrents'] if t['hashString']=='9'*40)
+        assert image_torrent['looseContent']
+        prepared=request('/api/extract',{'id':image_torrent['id'],'archive':'','automatic':True},expected=202)
+        prepared=wait_job(prepared['id']);assert prepared['status']=='moved',prepared
+        assert prepared['libraryStatus']=='pending' and 'home screen' in prepared['phase']
+        assert image.read_bytes()==(root/'test-library'/image.name).read_bytes()
+        # A retained adopted import remains resumable, but cannot be discarded
+        # as an extraction copy before it reaches Library, including after restart.
+        retained_id='fe'*16; retained=root/'extracted'/retained_id
+        retained.mkdir(); retained_image=retained/'PPSA77777.exfat'; retained_image.write_bytes(image.read_bytes())
+        (root/'jobs'/(retained_id+'.json')).write_text(json.dumps(dict(id=retained_id,name='Recovered import',status='extracting',storage='internal',remote=True,adoptedImport=True,automatic=False)))
+        offline_retained=root/'offline-retained'; retained.rename(offline_retained)
+        stop(); start()
+        recovered=next(j for j in request('/api/state')['jobs'] if j['id']==retained_id)
+        assert recovered['status']=='ready' and recovered['adoptedImport']
+        offline_retained.rename(retained) # Simulate the disk/output becoming available again.
+        request('/api/delete-extraction',{'id':retained_id},expected=400)
+        request('/api/dismiss-extraction',{'id':retained_id},expected=400)
+        assert retained_image.exists()
+        assert request('/api/move',{'id':retained_id})['status']=='moved'
+        assert (root/'test-library/PPSA77777.exfat').read_bytes()==image.read_bytes()
+        # An FPKG member blocks local resume, even without a format in the title.
+        entries.append(dict(id=10,hashString='ab'*20,name='Unknown PS5 release',status=6,leftUntilDone=0,totalSize=3,downloadDir=str(complete),error=0,files=[dict(name='game.pkg',length=3,bytesCompleted=3)]))
+        for _ in range(300):
+            blocked=next(t for t in request('/api/state')['torrents'] if t['hashString']=='ab'*20)
+            if blocked['status']==0: break
+            time.sleep(.05)
+        assert blocked['status']==0 and 'Server' in blocked['errorString'], (blocked, rpc.errors)
+        request('/api/torrent',{'id':blocked['id'],'action':'resume'},expected=400)
         rpc.assert_clean()
         assert request('/api/beta/shutdown',{'confirmed':True})['ok'] is True
         assert process.wait(timeout=15)==0

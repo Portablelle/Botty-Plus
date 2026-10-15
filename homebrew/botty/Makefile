@@ -53,6 +53,7 @@ build/remote-buffer-test: build/tests/remote-buffer-test.o src/remote-buffer.hpp
 test-remote: build/botty-native build/remote-buffer-test
 	./build/remote-buffer-test
 	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_forge.py
 	python3 tests/remote_integration.py
 
 test-progress: build/progress-test
@@ -74,6 +75,7 @@ $(INTEGRATION_RUNS): integration-%:
 	python3 tests/$*.py
 integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_forge.py
 TEST_JOBS ?= 1
 # GNU Make 4+ keeps each parallel test's output together; 3.81 (macOS) interleaves it.
 TEST_SYNC := $(if $(filter-out 1,$(TEST_JOBS)),$(if $(filter 3.%,$(MAKE_VERSION)),,--output-sync=target))

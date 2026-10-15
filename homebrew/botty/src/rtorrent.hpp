@@ -1,5 +1,6 @@
 #pragma once
 #include "core.hpp"
+#include "content.hpp"
 #include "rartypes.hpp"
 #include "sha1.hpp"
 #include "progress.hpp"
@@ -83,7 +84,8 @@ class Rtorrent {
       }
       int receiving=0,sending=0;
       for(const auto& peer:call("p.multicall",{hash,"","p.down_rate=","p.up_rate="})){receiving+=peer[0].get<uint64_t>()>0;sending+=peer[1].get<uint64_t>()>0;}
-      const auto error=row[12].get<std::string>();
+      auto error=row[12].get<std::string>();
+      if(packageTorrent({{"name",name},{"files",files}}))error=packagePolicyMessage();
       result.push_back({{"id",identity(hash)},{"hashString",hash},{"name",name},{"status",status},{"percentDone",total?double(total-left)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},{"eta",eta},{"downloadDir",base.string()},{"rateDownload",rate},{"rateUpload",row[7]},{"error",error.empty()?0:1},{"errorString",error},{"files",files},{"peersConnected",row[13]},{"peersSendingToUs",receiving},{"peersGettingFromUs",sending}});
     }
     for(auto it=estimates_.begin();it!=estimates_.end();)if(!present.count(it->first))it=estimates_.erase(it);else ++it;
@@ -116,6 +118,13 @@ public:
     if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");
     return lower(match[1]);
   }
+  void enforcePackagePolicy(const json& items) {
+    std::lock_guard<std::mutex> guard(mutex_);applyPolicy();
+    for(const auto& item:items)if(!item.value("remote",false)&&item.value("status",0)!=0&&packageTorrent(item)){
+      // One failed stop must not hide other torrents or block remote preparation.
+      try{call("d.stop",json::array({item.at("hashString")}));}catch(...){}
+    }
+  }
   json installationRpc(const std::string& method,const json& params=json::array({""})) {
     static const std::set<std::string> allowed={"system.pid","session.save","d.multicall","d.stop","d.start","d.resume","d.is_active","d.hashing","system.shutdown.normal"};
     if(!allowed.count(method))throw std::runtime_error("Unexpected installation engine method");
@@ -130,10 +139,12 @@ public:
     if(method=="torrent-add") {
       std::string hash,source;
       if(args.contains("metainfo")) {
-        auto data=decode64(args.at("metainfo"));hash=metadataHash(data);auto path=paths_.root/"rtorrent/state/incoming"/(hash+".torrent");
+        auto data=decode64(args.at("metainfo"));hash=metadataHash(data);size_t at=0;const auto info=bdecode(data,at).at("info");
+        if(packageName(info.value("name",std::string{}))||packageName(info.value("name.utf-8",std::string{})))throw std::runtime_error(packagePolicyMessage());
+        for(const auto& f:info.value("files",json::array()))for(const auto* key:{"path","path.utf-8"})for(const auto& part:f.value(key,json::array()))if(packageName(part.get<std::string>()))throw std::runtime_error(packagePolicyMessage());auto path=paths_.root/"rtorrent/state/incoming"/(hash+".torrent");
         std::ofstream output(path,std::ios::binary|std::ios::trunc);output.write(data.data(),data.size());output.close();if(!output)throw std::runtime_error("Cannot save torrent metadata");source=path.string();
       } else {
-        source=args.at("filename").get<std::string>();std::smatch match;
+        source=args.at("filename").get<std::string>();if(packageName(source))throw std::runtime_error(packagePolicyMessage());std::smatch match;
         if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");hash=lower(match[1]);
       }
       bool duplicate=false;for(const auto& item:list())if(item.at("hashString")==hash)duplicate=true;
@@ -150,6 +161,7 @@ public:
       std::string hash;
       for(const auto& item:items)if((id.is_number_integer()&&item.at("id")==id)||(id.is_string()&&item.at("hashString")==lower(id.get<std::string>())))hash=item.at("hashString");
       if(hash.empty())throw std::runtime_error("Torrent no longer exists");
+      if(method=="torrent-start"||method=="torrent-start-now")for(const auto& item:items)if(item.at("hashString")==hash&&packageTorrent(item))throw std::runtime_error(packagePolicyMessage());
       if(method=="torrent-stop")call("d.stop",{hash});
       else if(method=="torrent-start"||method=="torrent-start-now") {
         call("d.start",{hash});

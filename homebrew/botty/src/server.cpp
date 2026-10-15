@@ -31,7 +31,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.7.0/ui"
+#define BOTTY_UI "/data/botty/manager/1.8.0/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -72,7 +72,8 @@ Storage storage;
 std::unique_ptr<RemoteDownloads> remote;
 std::string remoteError;
 std::vector<fs::path> testMounts;
-std::atomic<bool> transferring{false};
+std::atomic<bool> transferring{false},registeringLibrary{false};
+void requireLibraryIdle(){if(registeringLibrary)throw std::runtime_error("Library registration is running; retry shortly");}
 json transferState={{"status","idle"}};
 std::string uiDir=BOTTY_UI;
 std::string token;
@@ -153,12 +154,30 @@ void recoverJobs() {
       const std::string id=job.at("id");
       if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || entry.path().stem()!=id)continue;
       if(job.value("status","")=="extracting" || job.value("status","")=="moving") {
+        const bool preparing=job.value("status","")=="extracting",wasAutomatic=job.value("automatic",false);
         job["extractionRate"]=0;job["eta"]=-1;job["elapsed"]=0;job["status"]="interrupted";job["error"]="Previous session ended during this operation. Extract the same archive again to verify and resume supported partial output.";
+        if(preparing&&job.value("adoptedImport",false)){job["status"]="ready";job["automatic"]=false;job["error"]="Imported files are protected. Reconnect their disk and choose Move to Library to resume.";job["phase"]="Imported preparation needs resuming";}
+        if(preparing)try{
+          const auto disk=storage.get(job.value("storage","internal"),false);
+          const auto final=disk.extracted/id;
+          if(fs::is_directory(final)&&!fs::is_symlink(fs::symlink_status(final))){
+            const auto content=classify(final);if(content.value("kind","")!="unsupported"){job["content"]=content;job["status"]="ready";job["error"]="";job["phase"]="Prepared output recovered; waiting for Library publication";job["automatic"]=wasAutomatic;}
+          }
+        }catch(...){}
         writeJson(entry.path(),job);
       }
       jobs.push_back(job);
     }catch(...){/* Do not overwrite unknown or damaged state. */}
   }
+}
+void resumeAdoptedOutput(const Paths& disk,const json& job,const std::function<void()>& check={}){
+  if(!job.value("adoptedImport",false)||job.value("status","")!="ready"||job.contains("destination"))return;
+  const auto final=disk.extracted/job.at("id").get<std::string>();
+  if(!fs::exists(fs::symlink_status(final))||(fs::is_directory(fs::symlink_status(final))&&fs::is_empty(final))){
+    if(!remote)throw std::runtime_error("Reconnect the dedicated server to resume this imported preparation");
+    remote->adopt(job.at("torrentId"),final,job.at("id"),[&]{if(check)check();},true);
+  }
+  if(fs::exists(fs::symlink_status(final/remoteOwnerFile)))fs::remove(containedExisting(final,final/remoteOwnerFile));
 }
 struct PreparationBusy:std::runtime_error {using std::runtime_error::runtime_error;};
 struct PreparationPlan {
@@ -172,8 +191,8 @@ json startExtraction(const json& request, bool automatic=false) {
   if(plan.password.size()>1024)throw std::runtime_error("Password too long");
   std::lock_guard<std::mutex> guard(lock);
   if(retiring)throw PreparationBusy("Botty is shutting down");
-  try{nativeUpdater->requireAdmission();compressor.requireIdle();}catch(const std::runtime_error& e){throw PreparationBusy(e.what());}
-  if(transferring||extracting)throw PreparationBusy("Another extraction is running");
+  try{nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();}catch(const std::runtime_error& e){throw PreparationBusy(e.what());}
+  if(registeringLibrary||transferring||extracting)throw PreparationBusy("Another extraction is running");
   const auto torrent=getTorrent(id);
   if(torrent.at("leftUntilDone").get<uint64_t>()!=0 || torrent.value("error",0)!=0 || torrent.value("status",0)==1 || torrent.value("status",0)==2)throw PreparationBusy("Wait until the torrent is complete and error-free");
   const auto sourceStorage=torrent.value("remote",false)?remote->published(id).at("storage").get<std::string>():storage.forDownload(torrent.at("downloadDir").get<std::string>());
@@ -186,9 +205,10 @@ json startExtraction(const json& request, bool automatic=false) {
     if(file.at("name")==name)found=true;
   }
   if(plan.loose()){
-    if(!torrent.value("remote",false)||torrent.value("remotePhase","")!="ready")throw std::runtime_error("Only fully imported loose content can be prepared");
-    plan.source=containedExisting(sourcePaths.complete,sourcePaths.complete/safeRelative(torrent.at("hashString").get<std::string>()));
-    const auto content=classify(plan.source);if(content.value("kind","")=="unsupported")throw std::runtime_error(content.at("reason").get<std::string>());
+    if(!torrent.value("remote",false)&&packageTorrent(torrent))throw std::runtime_error(packagePolicyMessage());
+    const auto content=classifyDownload(sourcePaths.complete,torrent.at("files"),torrent.value("remote",false)?remoteOwnerFile:std::string{});
+    if(content.value("kind","")=="unsupported")throw std::runtime_error(content.at("reason").get<std::string>());
+    plan.source=containedExisting(sourcePaths.complete,sourcePaths.complete/fs::path(content.at("source").get<std::string>()));
   }else{
     if(!found || asciiLower(fs::path(name).extension().string())!=".rar")throw std::runtime_error("Select the first .rar volume from this torrent");
     std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)throw std::runtime_error("Select part1.rar, not a continuation volume");
@@ -198,7 +218,7 @@ json startExtraction(const json& request, bool automatic=false) {
   // Check duplicate active or completed jobs; archives are never deleted by extraction.
   for(const auto& job:jobs)if(job.value("hash","")==torrent.at("hashString") && job.value("archive","")==name &&
       (job.value("status","")=="ready" || job.value("status","")=="moved"))throw std::runtime_error("This archive was already extracted");
-  json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},{"preparation",plan.loose()?"loose":"rar"},
+  json job={{"id",randomId()},{"name",torrent.at("name")},{"hash",torrent.at("hashString")},{"archive",name},{"preparation",plan.loose()?"loose":"rar"},{"remote",torrent.value("remote",false)},{"adoptedImport",plan.loose()&&torrent.value("remote",false)&&sourceStorage==targetStorage},
     {"storage",targetStorage},{"archiveStorage",sourceStorage},{"automatic",automatic},{"status","extracting"},{"phase","Starting"},{"bytes",0},{"total",0},{"error",""}};
   bool resuming=false;
   for(const auto& old:jobs) {
@@ -218,7 +238,7 @@ json startExtraction(const json& request, bool automatic=false) {
   if(resuming){for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;break;}}else jobs.push_back(job);
   cancelExtraction=false;activeJob=job.at("id");extracting=true;
   try {
-    std::thread([job,plan,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths]()mutable{
+    std::thread([job,plan,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths,torrent]()mutable{
       const auto check=[&]{if(storage.get(sourceStorage,false).root!=sourcePaths.root || storage.get(targetStorage,false).root!=selectedPaths.root)throw std::runtime_error("Disk mount changed during extraction");};
       const auto stage=selectedPaths.extracted/(job.at("id").get<std::string>()+".working");
       const auto final=selectedPaths.extracted/job.at("id").get<std::string>();
@@ -237,18 +257,42 @@ json startExtraction(const json& request, bool automatic=false) {
           publishJob(job,decision.checkpoint);
         };
         if(plan.loose()){
-          copyChecked(plan.source,final,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");},[&](uint64_t bytes,uint64_t total,const std::string& file){report({"Preparing imported game",file,bytes,total});},stage);
-          if(fs::exists(fs::symlink_status(final/remoteOwnerFile)))fs::remove(containedExisting(final,final/remoteOwnerFile));
+          if(torrent.value("remote",false)&&sourceStorage==targetStorage){
+            remote->adopt(torrent.at("id"),final,job.at("id"),[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");});
+            if(fs::exists(fs::symlink_status(final/remoteOwnerFile)))fs::remove(containedExisting(final,final/remoteOwnerFile));
+            report({"Preparing downloaded game","",0,0});
+          }else{
+            if(!fs::create_directory(stage))throw std::runtime_error("Preparation staging already exists");
+            const auto name=fs::is_directory(plan.source)?fs::path("game"):plan.source.filename();
+            copyChecked(plan.source,stage/name,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");},[&](uint64_t bytes,uint64_t total,const std::string& file){report({"Preparing game; torrent kept for seeding",file,bytes,total});});
+            publishExclusive(stage,final);
+          }
         }
         else extractRar(plan.source,stage,report,plan.password,[]{return cancelExtraction.load();},0,resuming);
-        if(!plan.loose()&&cancelExtraction.load())throw std::runtime_error("Extraction cancelled");
+        if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");
         check();if(!plan.loose())fs::rename(stage,final);job["content"]=classify(final);job["status"]="ready";job["phase"]="Extraction verified";
-        if(job.value("automatic",false)){
+        if(job.value("automatic",false)||plan.loose()){
+          if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");
           publishJob(job);
-          try{job=movePrepared(selectedPaths,job,nullptr,check);job["phase"]="Ready in Library";}
+          try{job=movePrepared(selectedPaths,job,nullptr,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");});}
           catch(const std::exception& failure){job=json::parse(readText(paths.jobs/(job.at("id").get<std::string>()+".json")));job["error"]=failure.what();job["phase"]="Needs attention";}
         }
-      }catch(const std::exception& error){job["status"]=cancelExtraction.load()?"cancelled":"failed";job["error"]=cancelExtraction.load()?"":error.what();if(cancelExtraction.load())job["phase"]="Cancelled; partial files kept";}
+      }catch(const std::exception& error){
+        job["status"]=cancelExtraction.load()?"cancelled":"failed";job["error"]=error.what();
+        if(cancelExtraction.load())job["phase"]="Cancelled; partial files kept";
+        std::error_code finalError;const auto finalStatus=fs::symlink_status(final,finalError);
+        const bool adopted=plan.loose()&&torrent.value("remote",false)&&sourceStorage==targetStorage&&remote->adoptedBy(torrent.at("id"),job.at("id"));
+        if(!adopted)job["adoptedImport"]=false;
+        if(adopted||cancelExtraction.load()){
+          // Adoption may already have moved the only PS5 copy. Never expose it
+          // as disposable failed output, even when retirement or I/O failed.
+          if(adopted){job["status"]="move-error";job["automatic"]=false;job["phase"]="Imported files kept; publication needs recovery";}
+          if(fs::is_directory(finalStatus)&&!fs::is_symlink(finalStatus))try{
+            job["content"]=classify(final);job["automatic"]=false;job["error"]=std::string(error.what())+"; prepared files kept";
+            if(job["content"].value("kind","")!="unsupported"){job["status"]="ready";job["phase"]="Move to Library to finish";}
+          }catch(...){}
+        }
+      }
       job["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
       job["extractionRate"]=0;job["eta"]=job["status"]=="ready"?0:-1;
       try{publishJob(job);}catch(const std::exception& error){std::cerr<<"Job state save failed: "<<error.what()<<'\n';}
@@ -263,7 +307,7 @@ json queueDownload(const std::string& method,const json& arguments,const std::st
   std::lock_guard<std::mutex> guard(lock);if(transferring||retiring)throw std::runtime_error("Wait for the storage transfer to finish");
   nativeUpdater->requireAdmission();
   const auto selectedPaths=storage.get(selected);
-  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;
+  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;args["automatic"]=automatic;
   auto result=rpc(method,args);
   auto torrent=result.contains("torrent-added")?result.at("torrent-added"):result.at("torrent-duplicate");
   auto hash=torrent.at("hashString").get<std::string>();
@@ -276,8 +320,9 @@ void automaticDownloads(){
   while(!retiring){
     std::this_thread::sleep_for(backgroundPollInterval());
     try{
-      {std::lock_guard<std::mutex> guard(lock);if(retiring||nativeUpdater->requested()||transferring||extracting||compressor.busy())continue;}
       auto entries=torrents();
+      try{localBackend().enforcePackagePolicy(entries);}catch(...){}
+      {std::lock_guard<std::mutex> guard(lock);if(retiring||registeringLibrary||nativeUpdater->requested()||transferring||extracting||compressor.busy())continue;}
       for(const auto& file:fs::directory_iterator(paths.root/"automatic")){
         if(file.path().extension()!=".json")continue;
         auto task=json::parse(readText(file.path()));if(task.value("status","")!="waiting")continue;
@@ -289,14 +334,9 @@ void automaticDownloads(){
         if(existing){task["status"]="tracked";writeJson(file.path(),task);continue;}
         for(const auto& torrent:entries){
           if(torrent.at("id")!=sourceId||torrent.at("hashString")!=task.at("hash")||torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)!=0||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
-          std::vector<std::string> archives;
-          for(const auto& item:torrent.at("files")){
-            std::string name=item.at("name");if(asciiLower(fs::path(name).extension().string())!=".rar")continue;
-            std::smatch part;if(std::regex_search(name,part,std::regex("\\.part([0-9]+)\\.rar$",std::regex::icase))&&std::stoul(part[1])!=1)continue;
-            archives.push_back(name);
-          }
-          if(archives.size()!=1&&!(archives.empty()&&torrent.value("remote",false))){
-            json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",archives.empty()?"No supported RAR archive found. Automatic installation supports one RAR set containing an app folder or exFAT image.":"Multiple RAR sets found. Choose the archive manually from Torrents."}};
+          const auto archives=archiveSets(torrent);
+          if(archives.size()>1){
+            json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"remote",torrent.value("remote",false)},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error","Multiple RAR sets found. Choose the archive to prepare."}};
             publishJob(job);task["status"]="attention";writeJson(file.path(),task);break;
           }
           try{const auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives.empty()?std::string{}:archives[0]},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
@@ -333,7 +373,7 @@ void requireUnsharedReferences(const std::set<fs::path>& selected,const json& re
 json startTransfer(const json& body) {
   std::lock_guard<std::mutex> guard(lock);
   nativeUpdater->requireAdmission();
-  compressor.requireIdle();if(extracting||transferring)throw std::runtime_error("Wait for the current file operation");
+  compressor.requireIdle();requireLibraryIdle();if(registeringLibrary||extracting||transferring)throw std::runtime_error("Wait for the current file operation");
   const auto kind=body.value("kind","job");
   if(kind!="torrent"&&kind!="job"&&kind!="publish")throw std::runtime_error("Invalid transfer kind");
   const auto selected=body.at("storage").get<std::string>();
@@ -409,7 +449,7 @@ json startTransfer(const json& body) {
         if(torrent.value("remote",false)){check();removeEmptyRemoteRoot(source.complete,source.complete/hash);}
         // Remain paused: verification/resume is explicit and never races cleanup.
       }else if(kind=="publish"){
-        changed=true;job["storage"]=selected;job=movePrepared(source,job,&destination,check);publishJob(job);
+        resumeAdoptedOutput(source,job,check);changed=true;job["storage"]=selected;job=movePrepared(source,job,&destination,check);publishJob(job);
       }else if(compressor.game(job.at("id").get<std::string>()).value("status","")=="ready"){
         if(!BackgroundStorage(shadowPort).supported())waitForGame(job.at("content").value("titleId",""));
         changed=true;compressor.relocate(job.at("id").get<std::string>(),selected,check,remoteReport);
@@ -493,7 +533,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.7.0"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.8.0"}});
     NativeTransaction::Config nativeConfig;
 #ifndef __PS5__
     nativeConfig.nativeRoot=paths.root/"native-test/PPSA99071";
@@ -507,9 +547,9 @@ int main(int argc,char** argv) {
     updaterConfig.inspect=[]{installationAwaitHttpReady(httpReady,retiring);static Rtorrent engine(paths,rpcPort);return inspectInstallation(paths.root,engine);};
     updaterConfig.owns= [](const json& handoff){return installationHandoffOwned(paths.root,handoff,installationBootId());};
     updaterConfig.idle=[]{
-        {std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||(remote&&remote->busy()))throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");search.requireInstallationIdle();explore.requireInstallationIdle();}
+        {std::lock_guard<std::mutex> guard(lock);if(retiring||registeringLibrary||extracting||transferring||(remote&&remote->busy()))throw std::runtime_error("Waiting for extraction, transfer or deletion to finish.");search.requireInstallationIdle();explore.requireInstallationIdle();}
         compressor.confirmNativeUpdateIdle();
-        std::lock_guard<std::mutex> guard(lock);if(retiring||extracting||transferring||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Waiting for all file operations to finish.");
+        std::lock_guard<std::mutex> guard(lock);if(retiring||registeringLibrary||extracting||transferring||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Waiting for all file operations to finish.");
       };
     updaterConfig.stopped=[]{confirmNativeProcessesStopped();};
     updaterConfig.launch=[](const json&){launchEmbeddedServiceUpdater();};
@@ -560,17 +600,17 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.7.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.8.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/installation/status",[](const auto&,auto& res){
       const auto update=nativeUpdater->state();
-      reply(res,{{"app","Botty"},{"version","1.7.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
+      reply(res,{{"app","Botty"},{"version","1.8.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
     });
     server.Post("/api/installation/retire",[&](const auto& req,auto& res){
       const auto body=json::parse(req.body);
       if(!body.is_object()||body.size()!=1||!body.contains("transaction")||!installationRetireAuthorized(paths.root,body.at("transaction").template get<std::string>(),req.get_header_value("X-Botty-Update-Token")))throw std::runtime_error("Durable updater takeover authorization failed.");
       if(!nativeUpdater->finished())throw std::runtime_error("Updater handoff thread has not returned.");
       compressor.confirmNativeUpdateIdle();
-      {std::lock_guard<std::mutex> guard(lock);if(retiring||transferring||extracting||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Existing file operations must finish before manager retirement.");search.requireInstallationIdle();explore.requireInstallationIdle();retiring=true;}
+      {std::lock_guard<std::mutex> guard(lock);if(retiring||registeringLibrary||transferring||extracting||(remote&&remote->busy())||compressor.busy())throw std::runtime_error("Existing file operations must finish before manager retirement.");search.requireInstallationIdle();explore.requireInstallationIdle();retiring=true;}
       reply(res,{{"status","retiring"},{"pid",getpid()},{"transaction",body.at("transaction")}});
       serverThreads.stop();
     });
@@ -610,6 +650,20 @@ int main(int argc,char** argv) {
       try{result["torrents"]=torrents();result["transmissionReady"]=true;result["torrentEngine"]=remote?"qbittorrent+rtorrent":"rtorrent";}catch(const std::exception& error){result["torrents"]=json::array();result["transmissionReady"]=false;result["error"]=error.what();}
       {std::lock_guard<std::mutex> guard(lock);result["jobs"]=jobs;result["extracting"]=extracting||transferring;result["transfer"]=transferState;}
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
+      result["preparationSupported"]=true;
+      for(auto& torrent:result["torrents"]){
+        bool loose=false;for(const auto& f:torrent.value("files",json::array())){const fs::path name=f.at("name").get<std::string>();const auto ext=asciiLower(name.extension().string());loose|=ext==".exfat"||ext==".ffpkg"||ext==".ffpfs"||ext==".ffpfsc"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
+        torrent["looseContent"]=loose&&archiveSets(torrent).empty()&&(!packageTorrent(torrent)||torrent.value("remote",false));
+        std::string notes;
+        if(torrent.value("leftUntilDone",uint64_t(1))==0&&!torrent.value("adopted",false))try{
+          const auto selected=storage.get(torrent.value("storage",std::string("internal")),false);
+          for(const auto& f:torrent.value("files",json::array()))if(asciiLower(fs::path(f.at("name").get<std::string>()).extension().string())==".nfo"){
+            const auto member=containedExisting(selected.complete,selected.complete/safeRelative(f.at("name")));
+            notes=readText(member,65536);break;
+          }
+        }catch(...){}
+        torrent["formatHint"]=releaseFormatHint(torrent.value("name",std::string{}),notes);
+      }
       result["remoteDownloads"]=remote?remote->state():json{{"enabled",false},{"error",remoteError}};
       result["restMode"]=restState();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
@@ -662,8 +716,8 @@ int main(int argc,char** argv) {
         if(!body.value("confirmed",false))throw std::runtime_error("Confirm deletion of the torrent and downloaded files");
         std::lock_guard<std::mutex> guard(lock);
         nativeUpdater->requireAdmission();
-        compressor.requireIdle();
-        if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
+        compressor.requireIdle();requireLibraryIdle();
+        if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
         const auto torrent=getTorrent(id);
         if(torrent.value("remote",false)){
           const auto hash=torrent.at("hashString").template get<std::string>();
@@ -719,15 +773,26 @@ int main(int argc,char** argv) {
       if(!remote||transferring||retiring)throw std::runtime_error("Remote downloads unavailable or storage transfer active");
       const auto hash=body.contains("hash")?body.at("hash").template get<std::string>():remote->candidateHash(body.at("id").template get<int>());if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))throw std::runtime_error("Invalid remote hash");
       const auto selected=body.value("storage",std::string("internal"));auto selectedPaths=storage.get(selected);
-      json arguments={{"download-dir",selectedPaths.complete.string()},{"storage",selected}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");
+      json arguments={{"download-dir",selectedPaths.complete.string()},{"storage",selected},{"automatic",body.value("automatic",true)}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");
       const auto result=remote->add(hash,arguments,true);
       if(result.contains("torrent-added"))writeJson(automaticTaskPath(hash,result.at("torrent-added").at("id"),true),{{"torrentId",result.at("torrent-added").at("id")},{"remote",true},{"hash",hash},{"status",body.value("automatic",true)?"waiting":"download-only"},{"storage",selected}});
       reply(res,result,202);
     });
-    server.Post("/api/extract",[](const auto& req,auto& res){reply(res,startExtraction(json::parse(req.body)),202);});
+    server.Post("/api/extract",[](const auto& req,auto& res){
+      const auto body=json::parse(req.body);const auto torrent=getTorrent(body.at("id"));
+      if(torrent.value("remote",false)&&torrent.value("remotePhase","")=="remote"&&torrent.contains("remotePreparation")){
+        std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
+        const auto selected=body.value("storage",torrent.value("storage",std::string("internal")));
+        if(selected!=torrent.value("storage",std::string("internal")))throw std::runtime_error("Keep the import destination chosen at download time");
+        rpc("torrent-prepare",{{"ids",{torrent.at("id")}},{"package",body.value("archive",std::string{})}});
+        writeJson(automaticTaskPath(torrent.at("hashString"),torrent.at("id"),true),{{"torrentId",torrent.at("id")},{"remote",true},{"hash",torrent.at("hashString")},{"status","waiting"},{"storage",selected}});
+        reply(res,{{"ok",true}},202);return;
+      }
+      reply(res,startExtraction(body,body.value("automatic",false)),202);
+    });
     server.Post("/api/move",[](const auto& req,auto& res){
       auto body=json::parse(req.body);
-      if(!body.contains("storage")){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(extracting||transferring)throw std::runtime_error("Wait for the active file operation");auto job=findJob(body.at("id").template get<std::string>());const auto selected=storage.get(job.value("storage","internal"));job=movePrepared(selected,job);for(auto& old:jobs)if(old.at("id")==job.at("id"))old=job;reply(res,job);return;}
+      if(!body.contains("storage")){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();if(registeringLibrary||extracting||transferring)throw std::runtime_error("Wait for the active file operation");auto job=findJob(body.at("id").template get<std::string>());const auto selected=storage.get(job.value("storage","internal"));resumeAdoptedOutput(selected,job);job=movePrepared(selected,job);for(auto& old:jobs)if(old.at("id")==job.at("id"))old=job;reply(res,job);return;}
       body["kind"]="publish";reply(res,startTransfer(body),202);
     });
     server.Post("/api/transfer",[](const auto& req,auto& res){reply(res,startTransfer(json::parse(req.body)),202);});
@@ -739,7 +804,8 @@ int main(int argc,char** argv) {
     });
     server.Post("/api/dismiss-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring)throw std::runtime_error("Wait for the transfer to finish");auto job=findJob(id);const auto status=job.value("status","");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();requireLibraryIdle();if(extracting||transferring)throw std::runtime_error("Wait for the current file operation to finish");auto job=findJob(id);const auto status=job.value("status","");
+      if(status!="moved"&&job.value("adoptedImport",false))throw std::runtime_error("Publish the imported game to Library before removing its preparation record");
       if(status!="ready"&&status!="moved"&&status!="failed"&&status!="cancelled"&&status!="interrupted")throw std::runtime_error("Only finished extractions can be removed from the list");
       if(status=="failed"||status=="cancelled"||status=="interrupted"){
         DeletionScope operation(operations,id,job.value("name","Partial extraction"));
@@ -754,7 +820,7 @@ int main(int argc,char** argv) {
       if(!json::parse(req.body).value("confirmed",false))throw std::runtime_error("Confirm beta shutdown");
       std::lock_guard<std::mutex> guard(lock);
       nativeUpdater->requireAdmission();
-      if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       compressor.stopWorker();retiring=true;reply(res,{{"ok",true}});
       serverThreads.stop();
     });
@@ -763,23 +829,23 @@ int main(int argc,char** argv) {
       if(!body.value("confirmed",false))throw std::runtime_error("Confirm creating a separate compressed copy");
       std::lock_guard<std::mutex> guard(lock);
       nativeUpdater->requireAdmission();
-      if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       reply(res,compressor.start(findJob(body.at("id").template get<std::string>()),body.value("storage","")),202);
     });
     server.Post("/api/restore-uncompressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);if(!body.value("confirmed",false))throw std::runtime_error("Confirm restoring the original game");
-      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestRestore(id),202);
     });
     server.Post("/api/delete-uncompressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);if(!body.value("confirmed",false))throw std::runtime_error("Confirm that you tested the compressed game before deleting its original");
-      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestOriginalDeletion(id),202);
     });
     server.Post("/api/verify-compressed",[](const auto& req,auto& res){
       const auto body=json::parse(req.body);std::lock_guard<std::mutex> guard(lock);
       nativeUpdater->requireAdmission();
-      if(extracting||transferring)throw std::runtime_error("Wait for the current file operation");
+      if(registeringLibrary||extracting||transferring)throw std::runtime_error("Wait for the current file operation");
       const auto id=body.at("id").template get<std::string>();findJob(id);reply(res,compressor.requestVerification(id),202);
     });
     server.Post("/api/skip-verification",[](const auto& req,auto& res){reply(res,compressor.skipVerification(json::parse(req.body).at("id").template get<std::string>()),202);});
@@ -788,7 +854,7 @@ int main(int argc,char** argv) {
       const auto request=json::parse(req.body);
       if(!request.value("confirmed",false))throw std::runtime_error("Confirm deletion of the installed game; archives are kept");
       const auto id=request.at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
       auto job=findJob(id);
       for(const auto& other:jobs)if(other.at("id")!=id&&other.value("destination","")==job.value("destination","")&&other.value("status","")=="moved")
         throw std::runtime_error("Another job uses this library destination; manual review required");
@@ -796,14 +862,16 @@ int main(int argc,char** argv) {
       const auto selected=storage.get(job.value("storage","internal"));
       // Validate the recorded identity before dispatch; the worker rechecks source selection.
       const auto title=job.at("content").value("titleId","");
-      if(job.value("status","")!="moved"||job.at("content").value("kind","")!="folder"||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||job.value("destination","")!=(selected.library/(title+"-app")).string())throw std::runtime_error("Invalid tracked Library game");
+      const auto kind=job.at("content").value("kind",std::string{});
+      const auto name=safeRelative(job.at("content").value("destination",std::string{}));
+      if(job.value("status","")!="moved"||(kind!="folder"&&kind!="image"&&kind!="exfat")||!std::regex_match(title,std::regex("PPSA[0-9]{5}"))||title=="PPSA99071"||name.has_parent_path()||(kind=="folder"&&name!=title+"-app")||job.value("destination","")!=(selected.library/name).string())throw std::runtime_error("Invalid tracked Library game");
       operations.start(id,job.value("name","Game"));transferState={{"status","running"},{"kind","deletion"},{"id",id},{"phase","Preparing deletion"}};writeJson(paths.root/"transfer.json",transferState);transferring=true;
       try {std::thread([job,id,title,selected]{
         bool dispatched=false;
         try {
           BackgroundStorage background(shadowPort);
           if(background.supported()){dispatched=true;background.run("delete",title,job.at("destination").template get<std::string>(),{},[](const json& task){const auto progress=backgroundProgress(task);operations.progress(progress);std::lock_guard<std::mutex> g(lock);transferState.update(progress);writeJson(paths.root/"transfer.json",transferState);});}
-          else {dispatched=true;deleteLibraryGame(selected,job,[](uint64_t done,uint64_t total,const std::string& file){operations.update(done,total,file);});}
+          else {if(job.at("content").value("kind","")!="folder")throw std::runtime_error("Image deletion requires ShadowMount background storage support; no files removed");dispatched=true;deleteLibraryGame(selected,job,[](uint64_t done,uint64_t total,const std::string& file){operations.update(done,total,file);});}
           std::lock_guard<std::mutex> g(lock);
           fs::remove(paths.jobs/(id+".json"));for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}
           transferState["status"]="complete";transferState["phase"]="Deletion completed";writeJson(paths.root/"transfer.json",transferState);operations.finish(true);transferring=false;try{notifySystem("Botty+: Game deletion completed. Saves and archives kept.");}catch(...){}
@@ -813,8 +881,9 @@ int main(int argc,char** argv) {
     });
     server.Post("/api/delete-extraction",[](const auto& req,auto& res){
       const auto id=json::parse(req.body).at("id").template get<std::string>();
-      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();if(transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
-      auto job=findJob(id);if(job.value("status","")=="moved" || job.value("status","")=="moving" || job.value("status","")=="move-error")throw std::runtime_error("Moved or uncertain library files require manual review");
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
+      auto job=findJob(id);if(job.value("status","")!="moved"&&job.value("adoptedImport",false))throw std::runtime_error("Publish the imported game to Library before deleting it");
+      if(job.value("status","")=="moved" || job.value("status","")=="moving" || job.value("status","")=="move-error")throw std::runtime_error("Moved or uncertain library files require manual review");
       DeletionScope operation(operations,id,job.value("name","Extraction"));
       for(const auto& suffix:{"", ".working"}) {const auto selected=storage.get(job.value("storage","internal"));const auto path=selected.extracted/(id+suffix);if(fs::exists(fs::symlink_status(path)))deleteGameDirectory(selected.extracted,path.filename(),operation.reporter());}
       operation.complete();fs::remove(paths.jobs/(id+".json"));for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}
@@ -829,8 +898,53 @@ int main(int argc,char** argv) {
     serverThreads.watchReady();
     restMode.start();
     std::thread automaticThread(automaticDownloads);
-    std::thread libraryThread([]{while(!retiring){
-      std::this_thread::sleep_for(std::chrono::seconds(2));if(retiring)break;compressor.poll();
+    const auto registerPrepared=[] {
+      static size_t cursor=0;json job;
+      {
+        std::lock_guard<std::mutex> guard(lock);
+        if(retiring||extracting||transferring||registeringLibrary||nativeUpdater->requested()||compressor.busy())return;
+        json eligible=json::array();
+        for(const auto& candidate:jobs){
+          if((candidate.value("status","")=="moved"&&candidate.value("libraryStatus","")=="pending")||
+             (candidate.value("status","")=="ready"&&candidate.value("automatic",false)&&candidate.value("error",std::string{}).empty()))eligible.push_back(candidate);
+        }
+        if(eligible.empty())return;job=eligible[cursor++%eligible.size()];
+        registeringLibrary=true;
+      }
+      struct Lease {~Lease(){registeringLibrary=false;}} lease;
+      // Keep admission reserved for file mutations, but never hold the catalog
+      // mutex across filesystem work or a ShadowMount network timeout.
+      try{
+        const auto disk=storage.get(job.value("storage","internal"),false);
+        if(job.value("status","")=="ready")try{resumeAdoptedOutput(disk,job);job=movePrepared(disk,job);}catch(...){
+          // Preserve the publication journal when a rename/copy had an uncertain outcome.
+          job=json::parse(readText(paths.jobs/(job.at("id").get<std::string>()+".json")));throw;
+        }
+        bool stopped=false;try{confirmNativeProcessesStopped();stopped=true;}catch(...){}
+        if(stopped){
+          const auto target=containedExisting(disk.library,fs::path(job.at("destination").get<std::string>()));
+          CompressionLibrary library(disk,shadowPort);
+          if(!job.value("librarySubmitted",false)){library.api("manual/add",{{"path",target.string()}});job["librarySubmitted"]=true;}
+          confirmNativeProcessesStopped();
+          const auto catalog=library.api("games",{{"include_size",false}});bool found=false;
+          for(const auto& game:catalog.at("games"))if(game.value("path","")==target.string()){
+            const auto title=game.value("title_id",std::string{});
+            if(std::regex_match(title,std::regex("PPSA[0-9]{5}"))){job["content"]["titleId"]=title;found=true;break;}
+          }
+          job["libraryStatus"]=found?"ready":"pending";job["error"]="";
+          job["phase"]=found?"Ready in Library":"Waiting for ShadowMount; stay on the home screen";
+        }
+      }catch(const std::exception& e){job["error"]=e.what();job["phase"]=job.value("status","")=="moved"?"Close Botty+ and games, then return to the home screen to finish":"Publication needs attention; files kept";}
+      try{
+        std::lock_guard<std::mutex> guard(lock);
+        for(auto& current:jobs)if(current.at("id")==job.at("id")){
+          job["dismissed"]=current.value("dismissed",false);
+          if(current!=job){writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);current=job;}break;
+        }
+      }catch(const std::exception& e){std::cerr<<"Library registration checkpoint failed: "<<e.what()<<'\n';}
+    };
+    std::thread libraryThread([&]{while(!retiring){
+      std::this_thread::sleep_for(std::chrono::seconds(2));if(retiring)break;compressor.poll();registerPrepared();
       std::lock_guard<std::mutex> guard(lock);
       for(auto it=jobs.begin();it!=jobs.end();){
         const auto id=it->at("id").get<std::string>();

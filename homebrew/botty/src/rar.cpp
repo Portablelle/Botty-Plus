@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "content.hpp"
 #define _UNIX
 #include "dll.hpp"
 #include <algorithm>
@@ -78,6 +79,7 @@ struct Archive {
 };
 void checkHeader(const RARHeaderDataEx& header) {
   safeRelative(nameOf(header));
+  if(packageName(nameOf(header)))throw std::runtime_error(packagePolicyMessage());
   if (header.RedirType || (header.HostOS==3 && (header.FileAttr&0170000)==0120000)) throw std::runtime_error("Archive links are rejected");
 }
 void checkCode(int code, const Context& context) {

@@ -1,4 +1,7 @@
 #include "core.hpp"
+#include "content.hpp"
+#include <set>
+#include <algorithm>
 #include "storage.hpp"
 #include <cerrno>
 #include <cstdlib>
@@ -182,34 +185,64 @@ std::string randomId() {
   for (auto b : bytes) { out += hex[b >> 4]; out += hex[b & 15]; }
   return out;
 }
-json classify(const fs::path& root) {
+namespace {
+json classifyMembers(const fs::path& root,const std::vector<fs::path>& members) {
   std::vector<json> candidates;
-  size_t count = 0;
-  for (const auto& entry : fs::recursive_directory_iterator(root)) {
-    if (++count > 200000) throw std::runtime_error("Too many extracted entries");
-    if (entry.is_symlink()) throw std::runtime_error("Extracted links are not allowed");
-    if (!entry.is_regular_file()) continue;
-    const auto path = entry.path();
-    if (path.filename() == "param.json" && path.parent_path().filename() == "sce_sys") {
-      auto param = json::parse(readText(path));
-      std::string title;
-      for (const char* key : {"titleId", "title_id", "TITLE_ID"}) if (param.contains(key) && param[key].is_string()) title = param[key].get<std::string>();
-      if (!std::regex_match(title, std::regex("PPSA[0-9]{5}"))) continue;
-      auto app = path.parent_path().parent_path();
-      candidates.push_back({{"kind","folder"},{"source",app.lexically_relative(root).string()},{"destination",title+"-app"},{"titleId",title}});
-    } else if (asciiLower(path.extension().string()) == ".exfat") {
-      std::ifstream file(path, std::ios::binary); char header[11]{}; file.read(header, sizeof header);
-      if (file.gcount() == sizeof header && std::string(header+3,8) == "EXFAT   ")
-        candidates.push_back({{"kind","exfat"},{"source",path.lexically_relative(root).string()},{"destination",path.filename().string()}});
+  for(const auto& relative:members) {
+    const auto path=containedExisting(root,root/relative);
+    if(!fs::is_regular_file(path))throw std::runtime_error("Content is not a regular file");
+    if(path.filename()=="param.json"&&path.parent_path().filename()=="sce_sys") {
+      const auto param=json::parse(readText(path,65536));std::string title;
+      for(const char* key:{"titleId","title_id","TITLE_ID"})if(param.contains(key)&&param[key].is_string())title=param[key].get<std::string>();
+      if(std::regex_match(title,std::regex("PPSA[0-9]{5}"))&&std::find(members.begin(),members.end(),(path.parent_path().parent_path()/"eboot.bin").lexically_relative(root))!=members.end())candidates.push_back({{"kind","folder"},{"source",path.parent_path().parent_path().lexically_relative(root).string()},{"destination",title+"-app"},{"titleId",title}});
+    } else {
+      const auto ext=asciiLower(path.extension().string());
+      if(ext!=".exfat"&&ext!=".ffpkg"&&ext!=".ffpfs"&&ext!=".ffpfsc")continue;
+      std::ifstream file(path,std::ios::binary);unsigned char h[64]{};file.read(reinterpret_cast<char*>(h),sizeof h);const auto read=file.gcount();
+      const auto le=[&](unsigned at,unsigned n){uint64_t value=0;for(unsigned i=0;i<n;++i)value|=uint64_t(h[at+i])<<(8*i);return value;};
+      bool recognized=ext==".exfat"&&read>=11&&std::string(reinterpret_cast<char*>(h)+3,8)=="EXFAT   ";
+      if((ext==".ffpfs"||ext==".ffpfsc")&&read==64)recognized=(le(0,8)==1||le(0,8)==2)&&le(8,8)==20130315&&le(32,4)>=4096&&le(32,4)<=65536&&(le(32,4)&(le(32,4)-1))==0;
+      if(ext==".ffpkg") {file.clear();file.seekg(65536+1372);file.read(reinterpret_cast<char*>(h),4);recognized=file.gcount()==4&&le(0,4)==0x19540119;}
+      if(recognized)candidates.push_back({{"kind",ext==".exfat"?"exfat":"image"},{"format",ext.substr(1)},{"source",relative.string()},{"destination",path.filename().string()}});
     }
   }
-  if (candidates.size() != 1) return {{"kind","unsupported"},{"reason",candidates.empty()?"No supported app folder or exFAT image found. PKG installation is not included.":"Multiple app/image candidates found. Manual selection is required."}};
+  if(candidates.size()!=1)return {{"kind","unsupported"},{"reason",candidates.empty()?"No standalone PS5 folder (param.json + eboot.bin) or supported image found. PKG/FPKG requires conversion on Server.":"Multiple games or images found. Choose one source before preparing."}};
   return candidates.front();
+}
+}
+json classify(const fs::path& root) {
+  std::vector<fs::path> members;size_t count=0;
+  for(const auto& entry:fs::recursive_directory_iterator(root)){
+    if(++count>200000)throw std::runtime_error("Too many content entries");
+    if(entry.is_symlink()||(!entry.is_directory()&&!entry.is_regular_file()))throw std::runtime_error("Content contains a link or special file");
+    if(entry.is_regular_file())members.push_back(entry.path().lexically_relative(root));
+  }
+  return classifyMembers(root,members);
+}
+json classifyDownload(const fs::path& root,const json& files,const std::string& marker) {
+  std::vector<fs::path> members;std::set<fs::path> expected;
+  for(const auto& f:files){
+    if(members.size()>=200000)throw std::runtime_error("Too many torrent members");
+    const auto relative=safeRelative(f.at("name").get<std::string>());
+    const auto path=containedExisting(root,root/relative);
+    if(!fs::is_regular_file(path)||fs::file_size(path)!=f.at("length").get<uint64_t>())throw std::runtime_error("Torrent member changed or is incomplete");
+    if(!expected.insert(relative).second)throw std::runtime_error("Duplicate torrent member");members.push_back(relative);
+  }
+  const auto content=classifyMembers(root,members);
+  if(content.value("kind","")=="folder"){
+    const auto folder=root/fs::path(content.at("source").get<std::string>());
+    size_t count=0;for(const auto& e:fs::recursive_directory_iterator(folder)){
+      if(++count>200000)throw std::runtime_error("Too many game entries");
+      if(e.is_symlink()||(!e.is_directory()&&!e.is_regular_file())||(e.is_regular_file()&&!expected.count(e.path().lexically_relative(root))&&(marker.empty()||e.path()!=folder/marker)))throw std::runtime_error("Game directory contains files outside this torrent");
+    }
+  }
+  return content;
 }
 // Extraction stays private; only verified content being published becomes readable
 // by the game sandbox. Refuse links and special files, and never follow a leaf link.
-void prepareLibraryPermissions(const fs::path& source) {
-  const auto prepare=[](const fs::path& path) {
+void prepareLibraryPermissions(const fs::path& source,const std::function<void()>& check) {
+  const auto prepare=[&](const fs::path& path) {
+    if(check)check();
     int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK);
     if(fd<0)throw std::runtime_error("Cannot open library content for permission preparation");
     struct stat info{};
@@ -244,18 +277,23 @@ json movePrepared(const Paths& paths, json job, const Paths* destination, const 
   if (fs::is_symlink(fs::symlink_status(targetPaths.library))) throw std::runtime_error("Library directory is a symbolic link");
   const auto target = targetPaths.library/name;
   if (fs::exists(fs::symlink_status(target))) throw std::runtime_error("Destination already exists; nothing was replaced");
-  prepareLibraryPermissions(source);
+  prepareLibraryPermissions(source,check);
   // Journal the move before it starts, so a crash is reported as uncertain on restart.
   job["status"]="moving"; job["destination"]=target.string(); writeJson(paths.jobs/(id+".json"),job);
   try {
     struct stat src{},dst{};
     if(stat(source.c_str(),&src)||stat(target.parent_path().c_str(),&dst))throw std::runtime_error("Cannot inspect publication disks");
-    if(src.st_dev!=dst.st_dev){copyChecked(source,target,check);prepareLibraryPermissions(target);}
+    if(src.st_dev!=dst.st_dev){
+      copyChecked(source,target,check);
+      // Publication committed: finish making that destination usable even if a
+      // cancellation arrives now. Source cleanup remains cancellable below.
+      prepareLibraryPermissions(target);
+    }
     else {if(check)check();publishExclusive(source,target);}
   } catch (const std::exception& error) {
     job["status"]="move-error"; job["error"]=error.what(); writeJson(paths.jobs/(id+".json"),job); throw;
   }
-  job["status"]="moved"; job["content"]=content; writeJson(paths.jobs/(id+".json"),job);
+  job["status"]="moved"; job["content"]=content; job["libraryStatus"]="pending"; job["phase"]="Close Botty+ and games, then return to the home screen to finish"; writeJson(paths.jobs/(id+".json"),job);
   if(fs::exists(source)){if(check)check();removeTransferred(source);}
   return job;
 }
