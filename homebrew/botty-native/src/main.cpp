@@ -332,9 +332,10 @@ Stage stageOf(const botty::Entry& e,bool torrent) noexcept {
         return {label,state==botty::ActivityState::running?accent:muted,-1};
     }
     // Ready content is extracted but not yet moved into the Library.
+    if(status=="moved")return {"Library",success,2};
     if(status=="ready")return {"Ready",success,1};
     if(status=="moving")return {"Library",accent,2};
-    if(status=="extracting")return {"Extract",accent,1};
+    if(status=="extracting")return {"Prepare",accent,1};
     return {status=="cancelled"?"Cancelled":"Extract",muted,1};
 }
 void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexcept {
@@ -358,6 +359,7 @@ void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexce
         else std::snprintf(out,size,"%s \xc2\xb7 %.0f s elapsed",phase,e.elapsed);
         return;
     }
+    if(e.libraryPending){std::snprintf(out,size,"%s",e.phase[0]?e.phase.data():"Close Botty+ and return to the home screen");return;}
     if(status=="extracting"){std::snprintf(out,size,"%s \xc2\xb7 %s/s%s%s%s",e.phase[0]?e.phase.data():"Extracting",rate,left[0]?" \xc2\xb7 ":"",left,left[0]?" left":"");return;}
     if(status=="ready"){std::snprintf(out,size,"Extracted \xc2\xb7 move it to Library from Quick actions");return;}
     if(status=="moving"){std::snprintf(out,size,"Moving to Library");return;}
@@ -365,7 +367,7 @@ void describe(const botty::Entry& e,bool torrent,char* out,unsigned size) noexce
 }
 // finished marks the current step complete, such as a download waiting to be extracted.
 void pipeline(Canvas& c,int x,int box,unsigned size,unsigned lineHeight,unsigned dot,unsigned connector,int step,double value,bool percent,bool finished=false) noexcept {
-    const char* names[]={"Download","Extract","Library"};
+    const char* names[]={"Download","Prepare","Library"};
     for(int i=0;i<3;++i){
         const unsigned dy=static_cast<unsigned>(box)+(lineHeight-dot)/2;
         if(i==step&&!finished){c.rounded(static_cast<unsigned>(x),dy,dot,dot,dot/2,accent);}
@@ -385,7 +387,7 @@ const char* explain(Op op,const botty::Entry* e) noexcept {
     case Op::pause:return "Pauses this download. Resume it at any time.";
     case Op::resume:return "Resumes this download where it stopped.";
     case Op::verify:return "rTorrent rechecks downloaded pieces. Extraction waits until verification finishes.";
-    case Op::extract:return "Original archives are kept for seeding. Follow progress in Activity.";
+    case Op::extract:return "Ready images skip extraction. Archives are extracted once on the selected disk. Torrent sources are kept for seeding.";
     case Op::transfer:return "Source removal follows a successful copy; torrents stay paused. Follow progress in Activity.";
     case Op::move:return "Moves verified content. Existing files are not replaced. ShadowMount may need a scan.";
     case Op::compress:return "Creates a compressed copy and keeps the original. Close Botty+ when prompted. APR games need an existing index.";
@@ -700,7 +702,7 @@ void drawEmpty(Canvas& c,unsigned y,const char* title,const char* body) noexcept
 void drawActivity(Canvas& c,const char* detail) noexcept {
     text(c,96,148,"Activity",60,66,ink,bold,-2);
     unsigned running=0;double rate=0;
-    for(unsigned i=0;;++i){const auto item=botty::activityAt(catalog,1,i);if(!item.entry)break;++running;if(!item.entry->items)rate+=item.entry->download;}
+    for(unsigned i=0;;++i){const auto item=botty::activityAt(catalog,0,i);if(!item.entry)break;++running;if(!item.entry->items)rate+=item.entry->download;}
     char subtitle[160],speed[48];botty::formatBytes(rate,speed,sizeof(speed));
     std::snprintf(subtitle,sizeof(subtitle),"%u running \xc2\xb7 %s/s \xc2\xb7 keeps going when you close Botty+",running,speed);
     const bool live=catalog.valid||catalog.processing.count;
@@ -720,12 +722,12 @@ void drawActivity(Canvas& c,const char* detail) noexcept {
             x+=348;
         }
     }
-    const char* names[]={"All","Running","Needs you","Done"};
+    const char* names[]={"In progress","Needs you","History","Seeding","On server"};
     unsigned x=96;
-    for(unsigned f=0;f<4;++f){char count[16];std::snprintf(count,sizeof(count),"%u",live?botty::activityCount(catalog,f):0);x+=chip(c,x,282,names[f],model.filter==f,count,f==2?warning:Color{})+12;}
+    for(unsigned f=0;f<5;++f){char count[16];std::snprintf(count,sizeof(count),"%u",live?botty::activityCount(catalog,f):0);x+=chip(c,x,282,names[f],model.filter==f,count,f==1?warning:Color{})+12;}
     glyph(c,Glyph::arrows,static_cast<float>(x+12),294,faint);text(c,static_cast<int>(x+60),294,"Filter",20,24,faint);
     if(!live){drawEmpty(c,356,connection.status==botty::Probe::checking?"Syncing your downloads":"Your session is offline",detail);}
-    else if(!model.count)drawEmpty(c,356,model.filter==2?"Nothing needs you.":model.filter==3?"Nothing finished yet.":"Nothing running.","Find a game in Discover, or add a magnet link with Square. Downloads and extractions appear here.");
+    else if(!model.count)drawEmpty(c,356,model.filter==1?"Nothing needs you.":model.filter==2?"Nothing finished yet.":model.filter==3?"No retained downloads.":model.filter==4?"No server candidates.":"Nothing running.","Find a game in Discover, or add a magnet link with Square. Downloads and extractions appear here.");
     const unsigned first=(model.selected/5)*5;unsigned y=350;
     for(unsigned i=first;i<model.count&&i<first+5;++i){
         const auto item=botty::activityAt(catalog,model.filter,i);if(!item.entry)break;
@@ -1079,7 +1081,7 @@ void drawSheet(Canvas& c) noexcept {
             std::snprintf(sub,sizeof(sub),"%s",workflow.command.useRemote?"Then import completed files to the selected PS5 disk":"Download directly to the selected PS5 disk");
             index=workflow.command.useRemote?1:0;count=2;showArrows=true;
         }else if(row==Row::storage){
-            std::snprintf(label,sizeof(label),"%s",download?"Install on":op==Op::extract?"Extract to":op==Op::transfer?"Move to":op==Op::move?"Library disk":"Compressed copy on");
+            std::snprintf(label,sizeof(label),"%s",download?"Install on":op==Op::extract?"Prepare on":op==Op::transfer?"Move to":op==Op::move?"Library disk":"Compressed copy on");
             const auto id=std::string_view(workflow.command.storage.data());
             for(unsigned i=0;i<catalog.storageCount;++i){const auto& d=catalog.storage[i];
                 if(!d.available||(op==Op::transfer&&target&&d.id==target->storage))continue;
@@ -1087,7 +1089,7 @@ void drawSheet(Canvas& c) noexcept {
                     storageName(d.id.data(),value,sizeof(value));
                     // Magnet sizes are unknown until rTorrent reads the metadata.
                     const double needed=(op==Op::grab||op==Op::exploreGrab)&&workflow.sourceIndex<workflow.sourceCount?workflow.sources[workflow.sourceIndex].size:0;
-                    if(download&&needed>0&&d.freeBytes>needed){char after[48];botty::formatBytes(d.freeBytes-needed,after,sizeof(after));std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 %s left after",free,after);}
+                    if(download&&needed>0&&d.freeBytes>needed){char after[48];botty::formatBytes(d.freeBytes-needed,after,sizeof(after));std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 %s after download; preparation extra",free,after);}
                     else if(download&&needed>0)std::snprintf(sub,sizeof(sub),"%s free \xc2\xb7 not enough space",free);
                     else if(op==Op::extract&&target&&d.id==target->storage)std::snprintf(sub,sizeof(sub),"Same disk as the download \xc2\xb7 %s free",free);
                     else std::snprintf(sub,sizeof(sub),"%s free",free);}
@@ -1097,11 +1099,11 @@ void drawSheet(Canvas& c) noexcept {
             showArrows=count>0;
         }else if(row==Row::mode){
             std::snprintf(label,sizeof(label),"After download");
-            std::snprintf(value,sizeof(value),"%s",workflow.command.automatic?"Extract and add to Library":"Keep the download only");
-            std::snprintf(sub,sizeof(sub),"%s",workflow.command.automatic?"Archives are kept for seeding":"Extract it later from Activity");
+            std::snprintf(value,sizeof(value),"%s",workflow.command.automatic?"Prepare and add to Library":"Keep the download only");
+            std::snprintf(sub,sizeof(sub),"%s",workflow.command.automatic?"Detect format, prepare, then add to Library":"Prepare it later from Activity");
             index=workflow.command.automatic?0:1;count=2;showArrows=true;
         }else if(row==Row::archive){
-            std::snprintf(label,sizeof(label),"Archive");
+            std::snprintf(label,sizeof(label),"%s",target&&target->remotePreparation?"Server package":"Archive");
             // Show the archive the sheet will submit, wherever a refresh moved it.
             int at=-1;
             for(unsigned i=0;target&&i<target->archiveCount&&target->archiveStart+i<catalog.archiveCount;++i)if(catalog.archives[target->archiveStart+i]==workflow.command.archive){at=static_cast<int>(i);break;}
@@ -1147,7 +1149,7 @@ void drawSheet(Canvas& c) noexcept {
     const char* label=ctaLabel(op);const unsigned lw=26+16+width(c,label,32,bold),lx=1200+(640-lw)/2;
     glyph(c,Glyph::cross,static_cast<float>(lx),static_cast<float>(cta+37),accentInk,26.f/24,3.5f);
     middle(c,static_cast<int>(lx+42),static_cast<int>(cta+8),84,label,32,accentInk,bold);
-    const char* note=workflow.notice[0]?workflow.notice.data():download?"Starts right away. Pause or remove it anytime in Activity.":explain(op,target);
+    const char* note=workflow.notice[0]?workflow.notice.data():target&&target->remotePreparation?"Server conversion uses the disk selected for this download.":target&&target->formatHint[0]?target->formatHint.data():download&&workflow.sourceIndex<workflow.sourceCount&&botty::packageHint(workflow.sources[workflow.sourceIndex].name.data())?"FPKG announced: choose Server for conversion to exFAT. Multiple packages require a choice.":download?"Format checked from files. FPKG needs Server. Preparation space is additional.":explain(op,target);
     wrap(c,1192,static_cast<int>(layout.noteTop),note,20,30,656,3,workflow.notice[0]?warning:muted);
     const bool row=!ctaFocus&&workflow.focus<workflow.rowCount;
     const auto focusedRow=row?workflow.rows[workflow.focus]:Row::source;
