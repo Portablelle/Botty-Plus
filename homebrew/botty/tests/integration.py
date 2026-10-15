@@ -275,6 +275,12 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
             time.sleep(.05)
         assert blocked['status']==0 and 'Server' in blocked['errorString'], (blocked, rpc.errors)
         request('/api/torrent',{'id':blocked['id'],'action':'resume'},expected=400)
+        magnet='magnet:?xt=urn:btih:'+'7'*40
+        for suffix in ['&tr=https://fpkg.example/announce', '&dn=Folder+dump&tr=https://fpkg.example/announce', '&xs=https://example.test/game.fpkg', '&dn=Game.ffpkg']:
+            request('/api/torrent',{'action':'add','magnet':magnet+suffix,'automatic':False})
+        for suffix in ['&dn=Game.FPKG', '&dn=Game%2E%46%50%4b%47', '&dn=Game.pkg', '&dn=Folder&dn=Game+FPKG']:
+            request('/api/torrent',{'action':'add','magnet':magnet+suffix,'automatic':False},expected=400)
+
         rpc.assert_clean()
         assert request('/api/beta/shutdown',{'confirmed':True})['ok'] is True
         assert process.wait(timeout=15)==0
