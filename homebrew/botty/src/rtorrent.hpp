@@ -106,6 +106,24 @@ class Rtorrent {
     sha1_context context;uint32 digest[5];sha1_init(&context);sha1_process(&context,reinterpret_cast<const byte*>(data.data()+start),end-start);sha1_done(&context,digest);
     char hash[41];for(int i=0;i<5;++i)snprintf(hash+8*i,9,"%08x",digest[i]);return hash;
   }
+  static bool packageMagnetName(const std::string& uri) {
+    const auto query=uri.find('?');if(query==std::string::npos)return false;
+    const auto fragment=uri.find('#',query+1),end=fragment==std::string::npos?uri.size():fragment;
+    const auto hex=[](char c)->int {if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;};
+    for(size_t at=query+1;at<end;){
+      auto next=uri.find('&',at);if(next==std::string::npos||next>end)next=end;
+      if(uri.compare(at,3,"dn=")==0){
+        std::string name;
+        for(size_t i=at+3;i<next;++i){
+          if(uri[i]=='%'&&i+2<next&&hex(uri[i+1])>=0&&hex(uri[i+2])>=0){name+=char(hex(uri[i+1])*16+hex(uri[i+2]));i+=2;}
+          else name+=uri[i]=='+'?' ':uri[i];
+        }
+        if(packageName(name))return true;
+      }
+      at=next+1;
+    }
+    return false;
+  }
   static std::string decode64(const std::string& text) {
     const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;unsigned value=0,bits=0;bool padding=false;
     for(unsigned char c:text){if(c=='='){padding=true;continue;}auto digit=alphabet.find(c);if(digit==std::string::npos||padding)throw std::runtime_error("Invalid torrent encoding");value=(value<<6)|digit;bits+=6;if(bits>=8){bits-=8;out+=char((value>>bits)&255);}}
@@ -144,8 +162,9 @@ public:
         for(const auto& f:info.value("files",json::array()))for(const auto* key:{"path","path.utf-8"})for(const auto& part:f.value(key,json::array()))if(packageName(part.get<std::string>()))throw std::runtime_error(packagePolicyMessage());auto path=paths_.root/"rtorrent/state/incoming"/(hash+".torrent");
         std::ofstream output(path,std::ios::binary|std::ios::trunc);output.write(data.data(),data.size());output.close();if(!output)throw std::runtime_error("Cannot save torrent metadata");source=path.string();
       } else {
-        source=args.at("filename").get<std::string>();if(packageName(source))throw std::runtime_error(packagePolicyMessage());std::smatch match;
+        source=args.at("filename").get<std::string>();std::smatch match;
         if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");hash=lower(match[1]);
+        if(packageMagnetName(source))throw std::runtime_error(packagePolicyMessage());
       }
       bool duplicate=false;for(const auto& item:list())if(item.at("hashString")==hash)duplicate=true;
       if(!duplicate){
