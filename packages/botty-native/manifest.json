@@ -2,8 +2,8 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.008.000",
-  "releaseVersion": "1.8.0",
+  "version": "01.009.000",
+  "releaseVersion": "1.9.0",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "471bc0dc93592019f70d30ad1075b3c8910dfb03f410f46ac99d5088c2d90881"
+      "sha256": "c29f8f055bda464be03f67ecbb209d2e1541556fc0ef42ba6f86e3e8b96e70b2"
     },
     {
       "path": "assets/courier.rgba",
@@ -53,8 +53,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 25289324,
-      "sha256": "853bfd1263141de9a14f38001495ddfeebb256317db177d92cc31d99c48257a9"
+      "size": 26555260,
+      "sha256": "303c5d9726f533a6f80a49fd24a42412003cd235221d51faf4bed97102d29240"
     },
     {
       "path": "sce_module/libc.prx",
@@ -69,7 +69,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 842,
-      "sha256": "9a3b9e7a6ae17ede4f35a2177b25eecdbe913c55f689b924632556ddeb32a580"
+      "sha256": "e7d51de3560dd54e8f82c25ecaaf5db3bc09a2423332b0d12df591777dd591bc"
     },
     {
       "path": "sce_sys/pic0.dds",

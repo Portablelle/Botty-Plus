@@ -137,7 +137,7 @@ struct Model {
         }else {
             if(edge&Buttons::square)return Action::add;
             if(edge&Buttons::triangle)return Action::retry;
-            if(edge&(Buttons::left|Buttons::right)){filter=(filter+((edge&Buttons::right)?1:3))%4;selected=0;}
+            if(edge&(Buttons::left|Buttons::right)){filter=(filter+((edge&Buttons::right)?1:4))%5;selected=0;}
             if((edge&Buttons::down)&&selected+1<count)++selected;
             if((edge&Buttons::up)&&selected)--selected;
         }

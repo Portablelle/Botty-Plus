@@ -56,7 +56,7 @@ is left intact rather than adopted after a reconnect.
 
 ## Upgrading to parallel imports
 
-Update `/opt/botty-remote/server.py` and restart the bridge while its transfers are
+Update `/opt/botty-remote/server.py` and `/opt/botty-remote/forge.py`, then restart the bridge while its transfers are
 idle **before** updating the PS5 manager to 1.7.0. Keep the private configuration,
 registry and server downloads. The bridge advertises `capabilities.boundedRanges`
 in torrent snapshots. Older managers can still use its open-ended ranges.
@@ -66,7 +66,7 @@ misleading file-range fault. Imports retry after the bridge is updated.
 
 ## Private provisioning
 
-1. Install `server.py` in `/opt/botty-remote` and the systemd unit in
+1. Install both `server.py` and `forge.py` in `/opt/botty-remote` (the module is required even when conversion is disabled), and the systemd unit in
    `/etc/systemd/system`. The supplied unit runs as the existing `ubuntu` account;
    adapt that account and paths for another installation.
 2. Create private `/etc/botty-remote/config.json` with fields `qbUrl`
@@ -147,3 +147,36 @@ Legacy unbounded `bytes=start-` clients remain supported; requests without
 Range return 200. Malformed, reversed and out-of-file ranges return 416.
 The four file slots remain global across consoles; exhausted slots return 429.
 No slot or metadata admission limit is raised by parallel imports.
+
+## Optional server-only package preparation
+
+Copy `forge.py` alongside `server.py` when upgrading. To prepare PKG/FPKG,
+install [PS5 Dump Forge](https://github.com/quer3q/ps5-dump-forge) on the server
+and set `forgeBinary` in the private bridge configuration to its absolute CLI
+path, for example `/opt/ps5-dump-forge/ps5-dump-forge`. The CLI contract inspected
+for this integration is commit `9f59894ffd55869f6ff99e48c6747956a43a3df4`:
+
+```
+ps5-dump-forge inspect /path/to/game.pkg --json
+ps5-dump-forge convert /path/to/game.pkg --to exfat -o /private/output/game.exfat
+```
+
+The bridge passes arguments directly, never through a shell. It requires a PS5
+title and `eboot.bin`, and checks the output title. No backport/fakelib removal
+flags are added. Existing originals remain read-only. Conversion journals and
+outputs live in `conversions/<hash>/` next to the registry; allow space there for
+the image plus overhead. Only one conversion starts at a time per bridge.
+A process lock prevents a restarted bridge from racing a surviving converter.
+
+Full auto converts a single package; multiple variants enter Needs you for an
+explicit choice. Download only keeps packages on the server. `/prepare` accepts
+an imported hash and an optional exact `package` member name to choose/retry.
+Update the supplied nginx public-route map to allow this authenticated route.
+The PS5 never receives the package itself. Pausing the torrent or import does
+not suspend an already running conversion. Converted output is kept for retry;
+an incomplete private output is not overwritten automatically.
+
+Run `python3 test_server.py` and `python3 test_forge.py` before deploying. These
+changes do not install Forge, change your running service or modify any torrent.
+See [the preparation design](../../docs/game-preparation.md) for storage,
+ShadowMount/home-screen admission and the supported-format boundaries.

@@ -30,8 +30,8 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   return result.stdout
  def job():
   for _ in range(100):
-   jobs=get('/api/state')['jobs']
-   if jobs and jobs[-1]['status']!='extracting':return jobs[-1]
+   state=get('/api/state');jobs=state['jobs']
+   if jobs and not state['extracting'] and jobs[-1]['status']!='extracting':return jobs[-1]
    time.sleep(.05)
   raise AssertionError('Extraction did not finish')
  try:
@@ -49,8 +49,9 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   entries[0]['status']=6
   magnet='magnet:?xt=urn:btih:'+'a'*40+'&dn=Native%20fixture'
   action(4,text=magnet);assert next(c for c in calls if c['method']=='load.start')['params'][1]==magnet
-  action(5,1,'sample.rar');ready=job();assert ready['status']=='ready'
-  action(6,ready['id']);assert get('/api/state')['jobs'][0]['status']=='moved'
+  action(5,1,'sample.rar');ready=job();assert ready['status']=='moved'
+  assert ready['libraryStatus']=='pending' # Host cannot confirm PS5 home-screen admission.
+  action(6,ready['id'],success=False) # Publication was already completed automatically.
   action(7,ready['id'],success=False) # Moved library files are protected.
   assert (root/'test-library/PPSA12345-app/eboot.bin').is_file()
   action(5,2,'broken.rar');failed=job();assert failed['status']=='failed'

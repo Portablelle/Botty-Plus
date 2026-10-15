@@ -36,7 +36,7 @@ void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, b
 std::string randomId();
 json classify(const fs::path& extracted);
 json movePrepared(const Paths&, json job, const Paths* destination = nullptr, const std::function<void()>& check = {});
-void prepareLibraryPermissions(const fs::path&);
+void prepareLibraryPermissions(const fs::path&,const std::function<void()>& check={});
 void deleteGameDirectory(const fs::path& root,const fs::path& name, const DeleteProgress& progress = {});
 void deleteLibraryGame(const Paths&, const json& job, const DeleteProgress& progress = {});
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };

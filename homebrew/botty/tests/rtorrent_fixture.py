@@ -100,7 +100,7 @@ class Handler(socketserver.StreamRequestHandler):
             request = json.loads(body)
             response = {'jsonrpc': '2.0', 'id': request['id'], 'result': self.server.dispatch(request)}
         except Exception as exc:
-            self.server.errors.append(repr(exc))
+            self.server.errors.append(repr(exc) + " for " + repr(request))
             response = {'jsonrpc': '2.0', 'id': request.get('id', 1), 'error': {'code': -32603, 'message': str(exc)}}
         data = json.dumps(response).encode()
         self.wfile.write(b'Status: 200 OK\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(data)).encode() + b'\r\n\r\n' + data)

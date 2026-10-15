@@ -160,14 +160,15 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
             if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};
             auto id=field(obj,"id");if(id.empty()||field(obj,"name").empty())return false;
             if(type)decode(id,e.id);else std::snprintf(e.id.data(),e.id.size(),"%.0f",number(id));
-            decode(field(obj,"name"),e.name);if(!decode(field(obj,"storage"),e.storage)||!e.storage[0])std::snprintf(e.storage.data(),e.storage.size(),"internal");
-            if(type){const auto compressed=field(obj,"compression");decode(field(compressed,"sourceStorage"),e.sourceStorage);decode(field(compressed,"storage"),e.compressedStorage);decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);
+            decode(field(obj,type?"hash":"hashString"),e.hash);if(type&&!field(obj,"torrentId").empty())e.torrentId=static_cast<int>(number(field(obj,"torrentId")));
+            decode(field(obj,"formatHint"),e.formatHint);decode(field(obj,"name"),e.name);if(!decode(field(obj,"storage"),e.storage)||!e.storage[0])std::snprintf(e.storage.data(),e.storage.size(),"internal");
+            if(type){e.adoptedImport=field(obj,"adoptedImport")=="true";e.libraryPending=field(obj,"libraryStatus")=="\"pending\"";const auto compressed=field(obj,"compression");decode(field(compressed,"sourceStorage"),e.sourceStorage);decode(field(compressed,"storage"),e.compressedStorage);decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);
                 auto content=field(obj,"content");decode(field(content,"kind"),e.kind);decode(field(content,"titleId"),e.titleId);if(!e.error[0])decode(field(content,"reason"),e.error);
                 decode(field(obj,"destination"),e.destination);if(!e.destination[0])decode(field(content,"destination"),e.destination);
                 e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
-            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=e.remote&&field(obj,"remoteLoose")=="true";e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
+            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=field(obj,"looseContent")=="true"||(e.remote&&field(obj,"remoteLoose")=="true");e.adopted=field(obj,"adopted")=="true";const auto preparation=field(obj,"remotePreparation");e.remotePreparation=e.remote&&(field(preparation,"status")=="\"download-only\""||field(preparation,"status")=="\"failed\"");e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
                 const char* label=status==0?"Paused":status==1||status==2?"Verifying":e.complete?"Completed":status==3?"Queued":"Downloading";
                 std::snprintf(e.status.data(),e.status.size(),"%s",label);decode(field(obj,"errorString"),e.error);e.total=number(field(obj,"totalSize"));e.download=number(field(obj,"rateDownload"));e.upload=number(field(obj,"rateUpload"));e.progress=number(field(obj,"percentDone"));
                 const auto count=[&](std::string_view key){const auto value=field(obj,key);const double n=value.empty()?-1:number(value);return n>=0&&n<=2147483647?static_cast<int>(n):-1;};
@@ -179,15 +180,21 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
                 if(!eta.empty())e.eta=number(eta);
                 else if(status==4&&e.download>0){e.eta=remaining/e.download;e.etaEstimated=true;}
                 if(status!=4)e.eta=-1;
-                e.extractable=e.complete&&status!=1&&status!=2&&number(field(obj,"error"))==0&&!e.error[0];
+                e.extractable=e.remotePreparation||(e.complete&&status!=1&&status!=2&&number(field(obj,"error"))==0&&!e.error[0]);
                 e.archiveStart=out.archiveCount;
+                if(e.remotePreparation){
+                    const auto list=field(preparation,"packages");JSON choices{list};
+                    if(choices.take('[')&&!choices.take(']'))do {choices.ws();const auto begin=choices.p;if(!choices.value())return false;
+                        std::array<char,4096> package{};if(decode(slice(list,begin,choices.p-begin),package,true)&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=package;++e.archiveCount;}else e.archivesOmitted=true;
+                    }while(choices.take(','));
+                }
                 auto files=field(obj,"files");JSON f{files};unsigned used=0;
                 if(f.take('[')&&!f.take(']'))do {f.ws();auto begin=f.p;if(!f.value())return false;++e.fileCount;
                     std::array<char,512> name{};decode(field(slice(files,begin,f.p-begin),"name"),name);
                     std::array<char,4096> archive{};
                     const bool exact=decode(field(slice(files,begin,f.p-begin),"name"),archive,true);
                     if(!exact)e.archivesOmitted=true;
-                    if(firstArchive(archive.data())){if(exact&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=archive;++e.archiveCount;}else e.archivesOmitted=true;}
+                    if(!e.remotePreparation&&firstArchive(archive.data())){if(exact&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=archive;++e.archiveCount;}else e.archivesOmitted=true;}
                     const auto length=std::string_view(name.data()).size();
                     if(used+length+2<e.files.size()){for(char ch:std::string_view(name.data()))e.files[used++]=ch;e.files[used++]='\n';}
                     else if(used+5<e.files.size()){for(char ch:std::string_view("...\n"))e.files[used++]=ch;}
@@ -244,11 +251,12 @@ unsigned entryCount(const Catalog& s,unsigned tab,unsigned filter) noexcept {uns
 ActivityState activityState(const Entry& e,bool torrent) noexcept {
     const auto status=std::string_view(e.status.data());
     if(torrent){
-        if(e.error[0])return ActivityState::attention;
+        if(e.error[0]||e.remotePreparation)return ActivityState::attention;
         if(status=="Verifying")return ActivityState::running;
         if(e.complete)return ActivityState::done;
         return e.active&&status!="Queued"?ActivityState::running:ActivityState::waiting;
     }
+    if(e.libraryPending)return ActivityState::attention;
     if(e.task){
         if(status=="waiting-close"||status=="failed"||status=="uncertain")return ActivityState::attention;
         // A cancelled task is finished: its worker keeps or cleans its own files.
@@ -259,26 +267,38 @@ ActivityState activityState(const Entry& e,bool torrent) noexcept {
     if(status=="extracting"||status=="moving")return ActivityState::running;
     // Cancelled extractions keep partial files until removed or retried.
     if(status=="failed"||status=="interrupted"||status=="move-error"||status=="cancelled"||e.error[0])return ActivityState::attention;
-    return status=="ready"?ActivityState::done:ActivityState::waiting;
+    return status=="ready"||status=="moved"?ActivityState::done:ActivityState::waiting;
 }
 namespace {
-bool replacedJob(const Catalog& s,const Entry& e) noexcept {for(unsigned t=0;t<s.processing.count;++t)if(s.processing.tasks[t].id==e.id)return true;return false;}
-// Visits Activity rows in display order: running, attention, waiting, then done.
+bool replacedJob(const Catalog& s,const Entry& e) noexcept {for(unsigned t=0;t<s.processing.count;++t){const auto& task=s.processing.tasks[t];const auto status=std::string_view(task.status.data());if(task.id==e.id&&!task.complete&&status!="cancelled"&&status!="failed")return true;}return false;}
+bool finishedTaskHasJob(const Catalog& s,const Entry& task) noexcept {if(!task.complete&&std::string_view(task.status.data())!="cancelled")return false;for(unsigned j=0;j<s.jobCount;++j)if(!s.jobs[j].dismissed&&s.jobs[j].id==task.id)return true;return false;}
+bool preparedTorrent(const Catalog& s,const Entry& torrent) noexcept {
+    if(torrent.adopted)return true;
+    for(unsigned i=0;i<s.jobCount;++i){const auto& job=s.jobs[i];
+        if(job.dismissed||std::string_view(job.status.data())=="failed"||std::string_view(job.status.data())=="cancelled"||std::string_view(job.status.data())=="interrupted"||!job.hash[0]||job.hash!=torrent.hash||job.torrentId<0)continue;
+        char id[32];std::snprintf(id,sizeof(id),"%d",job.torrentId);
+        if(std::string_view(torrent.id.data())==id)return true;
+    }
+    return false;
+}
 template<class Visit> bool visitActivity(const Catalog& s,unsigned filter,Visit visit) noexcept {
-    constexpr ActivityState groups[]={ActivityState::running,ActivityState::attention,ActivityState::waiting,ActivityState::done};
-    for(unsigned group=0;group<4;++group){
-        if(filter==1&&group!=0)continue;
-        if(filter==2&&group!=1)continue;
-        if(filter==3&&group!=3)continue;
-        const auto state=groups[group];
-        for(bool downloading:{true,false})for(unsigned i=0;i<s.torrentCount;++i){
-            const auto& e=s.torrents[i];
-            if(e.downloading==downloading&&activityState(e,true)==state&&visit(ActivityItem{&e,true}))return true;
+    if(filter>=3){
+        for(unsigned i=0;i<s.torrentCount;++i){const auto& e=s.torrents[i];
+            if((filter==4?e.remoteCandidate:!e.remoteCandidate&&!e.adopted&&e.complete)&&visit(ActivityItem{&e,true}))return true;
         }
-        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;}
-        for(unsigned i=0;i<s.jobCount;++i){
-            const auto& e=s.jobs[i];
-            if(e.dismissed||std::string_view(e.status.data())=="moved"||replacedJob(s,e))continue;
+        return false;
+    }
+    const auto matches=[&](ActivityState state){return filter==0?(state==ActivityState::running||state==ActivityState::waiting):filter==1?state==ActivityState::attention:state==ActivityState::done;};
+    constexpr ActivityState groups[]={ActivityState::running,ActivityState::attention,ActivityState::waiting,ActivityState::done};
+    for(const auto state:groups){
+        if(!matches(state))continue;
+        for(unsigned i=0;i<s.torrentCount;++i){const auto& e=s.torrents[i];
+            if(e.remoteCandidate||preparedTorrent(s,e))continue;
+            if(activityState(e,true)==state&&visit(ActivityItem{&e,true}))return true;
+        }
+        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(!finishedTaskHasJob(s,e)&&activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;}
+        for(unsigned i=0;i<s.jobCount;++i){const auto& e=s.jobs[i];
+            if(e.dismissed||replacedJob(s,e))continue;
             if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;
         }
     }
@@ -318,7 +338,7 @@ unsigned libraryCopies(const Entry& e,std::array<LibraryCopy,2>& copies) noexcep
         copies[0]={"Compressed",target};
         if(e.originalKept){copies[1]={"Uncompressed",source};return 2;}
     }else{
-        copies[0]={kind=="folder"||kind=="exfat"?"Uncompressed":"Format unknown",e.storage.data()};
+        copies[0]={kind=="image"?"Game image":kind=="folder"||kind=="exfat"?"Uncompressed":"Format unknown",e.storage.data()};
         if(restored){copies[1]={"Compressed",target,true};return 2;}
     }
     return 1;
