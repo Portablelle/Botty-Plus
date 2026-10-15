@@ -153,8 +153,9 @@ void recoverJobs() {
       auto job=json::parse(readText(entry.path()));
       const std::string id=job.at("id");
       if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || entry.path().stem()!=id)continue;
-      if(job.value("status","")=="extracting" || job.value("status","")=="moving") {
-        const bool preparing=job.value("status","")=="extracting",wasAutomatic=job.value("automatic",false);
+      const bool retainedBeforePublication=job.value("status","")=="move-error"&&job.value("adoptedImport",false)&&!job.contains("destination");
+      if(job.value("status","")=="extracting" || job.value("status","")=="moving" || retainedBeforePublication) {
+        const bool preparing=job.value("status","")=="extracting"||retainedBeforePublication,wasAutomatic=job.value("automatic",false);
         job["extractionRate"]=0;job["eta"]=-1;job["elapsed"]=0;job["status"]="interrupted";job["error"]="Previous session ended during this operation. Extract the same archive again to verify and resume supported partial output.";
         if(preparing&&job.value("adoptedImport",false)){job["status"]="ready";job["automatic"]=false;job["error"]="Imported files are protected. Reconnect their disk and choose Move to Library to resume.";job["phase"]="Imported preparation needs resuming";}
         if(preparing)try{
@@ -286,7 +287,7 @@ json startExtraction(const json& request, bool automatic=false) {
         if(adopted||cancelExtraction.load()){
           // Adoption may already have moved the only PS5 copy. Never expose it
           // as disposable failed output, even when retirement or I/O failed.
-          if(adopted){job["status"]="move-error";job["automatic"]=false;job["phase"]="Imported files kept; publication needs recovery";}
+          if(adopted){job["status"]=job.contains("destination")?"move-error":"ready";job["automatic"]=false;job["phase"]="Imported files kept; reconnect the disk and move to Library to finish";}
           if(fs::is_directory(finalStatus)&&!fs::is_symlink(finalStatus))try{
             job["content"]=classify(final);job["automatic"]=false;job["error"]=std::string(error.what())+"; prepared files kept";
             if(job["content"].value("kind","")!="unsupported"){job["status"]="ready";job["phase"]="Move to Library to finish";}
@@ -720,6 +721,7 @@ int main(int argc,char** argv) {
         if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for extraction to finish before deleting archives");
         const auto torrent=getTorrent(id);
         if(torrent.value("remote",false)){
+          if(torrent.value("adopted",false))for(const auto& job:jobs)if(job.value("remote",false)&&job.value("torrentId",-1)==id&&job.value("status","")!="moved")throw std::runtime_error("Publish the imported game to Library before removing its tracking record");
           const auto hash=torrent.at("hashString").template get<std::string>();
           const auto selected=downloadReferences(torrent);
           requireUnsharedReferences(selected,inspectedLocalTorrents(),-1,{},"Downloaded files are shared with another torrent; deletion refused");

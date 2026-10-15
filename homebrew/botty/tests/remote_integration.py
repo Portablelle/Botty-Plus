@@ -339,7 +339,17 @@ with tempfile.TemporaryDirectory() as tmp:
         (data / 'remote-downloads.json').write_text(json.dumps(saved))
         (data / 'jobs' / (recovery_job + '.json')).write_text(json.dumps(dict(id=recovery_job, torrentId=recovery_id, name='Recovered reservation', status='extracting', storage='internal', remote=True, adoptedImport=True, automatic=False)))
         shutil.rmtree(data / 'test-library/PPSA12345-app')
+        recovery_source = data / 'downloads/complete' / recovery_hash
+        disconnected_source = recovery_source.with_name(recovery_hash + '-offline')
+        recovery_source.rename(disconnected_source) # Unavailable during startup recovery.
         proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+        assert json.loads((data / 'remote-downloads.json').read_text())[recovery_hash]['phase'] == 'adopted'
+        disconnected_source.rename(recovery_source) # Reconnect without restarting the manager.
+        try:
+            api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+            raise RuntimeError('Unpublished adoption tracking was removed')
+        except AssertionError: pass
+
         # A nonempty destination is never removed during recovery.
         sentinel = recovery_dest / 'keep.txt'; sentinel.write_text('keep')
         try:
@@ -351,6 +361,14 @@ with tempfile.TemporaryDirectory() as tmp:
         assert api('/api/move', {'id': recovery_job})['status'] == 'moved'
         assert (data / 'test-library/PPSA12345-app/eboot.bin').read_bytes() == b'fixture app'
         assert not (data / 'downloads/complete' / recovery_hash).exists()
+        api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+        assert (data / 'test-library/PPSA12345-app/eboot.bin').read_bytes() == b'fixture app'
+        reimport = api('/api/remote/import', {'hash': recovery_hash, 'automatic': False})
+        assert 'torrent-added' in reimport
+        reimport_id = reimport['torrent-added']['id']
+        wait(lambda: any(t['id'] == reimport_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+        api('/api/torrent', {'id': reimport_id, 'action': 'remove-data', 'confirmed': True})
+
         member = {'name': game + '/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': len(payload)}
         local_entries.append({'id': 1, 'hashString': game, 'name': 'Shared local torrent', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [member]})
         try:

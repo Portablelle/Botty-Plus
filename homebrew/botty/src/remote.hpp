@@ -531,6 +531,10 @@ public:
       out.push_back(row(it.key(),it.value()));}return out;}
   std::string candidateHash(int id){std::lock_guard<std::mutex> g(mutex_);for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id&&it.value().value("phase","")=="available")return it.key();return "";}
   void removeData(int id){
+    bool adopted=false;{std::lock_guard<std::mutex> g(mutex_);for(const auto& r:records_)if(r.at("id")==id)adopted=r.value("phase","")=="adopted";}
+    // Ownership has moved to the preparation job. Forget only the tracking
+    // record; never traverse either the old import or its Library destination.
+    if(adopted){action("torrent-remove",{{"ids",{id}}});return;}
     action("torrent-close",{{"ids",{id}}});
     json r;std::string hash;{std::lock_guard<std::mutex> g(mutex_);for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id){hash=it.key();r=it.value();}}
     if(hash.empty()||r.value("phase","")=="available")throw std::runtime_error("Only imported torrents can be removed");
@@ -561,7 +565,10 @@ public:
     std::lock_guard<std::mutex> serial(requests_);std::lock_guard<std::mutex> g(mutex_);
     for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id){
       auto& r=it.value();const fs::path directory=r.at("directory").get<std::string>();
-      if(r.value("phase","")!="ready")throw std::runtime_error("Import is not ready for preparation");
+      const bool interrupted=resumeEmpty&&r.value("phase","")=="adopted"&&r.value("preparationJob","")==job&&r.value("adoptionDestination","")==destination.string();
+      if(r.value("phase","")!="ready"&&!interrupted)throw std::runtime_error("Import is not ready for preparation");
+      // A disk can reconnect after constructor recovery. The retained source
+      // must pass the same identity, inventory and shared-reference checks.
       checkStorage_(r.at("storage"),directory);checkPublishedIdentity(directory/it.key(),r.at("publishedIdentity"));
       validateTree(directory/it.key(),r.at("inventory"));
       checkMembers_(directory/it.key(),destination,r.at("inventory"));check();
