@@ -332,6 +332,10 @@ with tempfile.TemporaryDirectory() as tmp:
         recovery_id = api('/api/remote/import', {'hash': recovery_hash, 'automatic': False})['torrent-added']['id']
         wait(lambda: any(t['id'] == recovery_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
         proc.terminate(); proc.wait(timeout=10)
+        # A cancelled attempt never owned this import. Its dismissed journal
+        # must not block removing the later successful adoption's tracking.
+        cancelled_job = 'ac' * 16
+        (data / 'jobs' / (cancelled_job + '.json')).write_text(json.dumps(dict(id=cancelled_job, torrentId=recovery_id, name='Cancelled before adoption', status='cancelled', storage='internal', remote=True, adoptedImport=False, automatic=False)))
         recovery_job = 'ab' * 16; recovery_dest = data / 'extracted' / recovery_job
         recovery_dest.mkdir()
         saved = json.loads((data / 'remote-downloads.json').read_text())
@@ -345,6 +349,10 @@ with tempfile.TemporaryDirectory() as tmp:
         proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
         assert json.loads((data / 'remote-downloads.json').read_text())[recovery_hash]['phase'] == 'adopted'
         disconnected_source.rename(recovery_source) # Reconnect without restarting the manager.
+        api('/api/dismiss-extraction', {'id': cancelled_job})
+        dismissed = json.loads((data / 'jobs' / (cancelled_job + '.json')).read_text())
+        assert dismissed['dismissed'] and not dismissed['adoptedImport']
+
         try:
             api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
             raise RuntimeError('Unpublished adoption tracking was removed')
