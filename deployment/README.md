@@ -39,7 +39,10 @@ narrow reverse proxy and a console client, not a Prowlarr installation.
    rather than adding counts. Separate editions/releases remain separate.
    Special ranking indexers and `exploreIndexers` mappings are no longer required;
    legacy mappings are ignored. Refresh Discover (R3 on saved results) after changing
-   providers to bypass its ten-minute cache.
+   providers to bypass its ten-minute cache. App launch always fetches fresh
+   results, even with a recent cache. Discover revalidates on entry, after
+   resume and every minute while open; expired rankings refresh automatically
+   while the saved list remains visible.
 4. Copy `botty-prowlarr.nginx` to `/etc/nginx/snippets/botty-prowlarr.conf`, enable
    its include in the portal's TLS block and run `nginx -t` before reloading.
    The proxy accepts positive numeric indexer download routes without exposing

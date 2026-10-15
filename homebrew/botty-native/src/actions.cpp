@@ -225,7 +225,8 @@ bool Workflow::submit(const Catalog& c,bool busy) noexcept {
   if(!storageReady(c,command.storage.data())){std::snprintf(notice.data(),notice.size(),"Connect the selected disk, or choose another one.");return false;}
   if(op==Operation::transfer&&e&&command.storage==e->storage){std::snprintf(notice.data(),notice.size(),"Choose a different disk.");return false;}
  }
- if(download&&op!=Operation::importRemote&&!command.useRemote&&packageHint(op==Operation::add?std::string_view(command.text.data()):sourceIndex<sourceCount?std::string_view(sources[sourceIndex].name.data()):std::string_view{})){
+ // Magnet display-name decoding and policy belong to the service; tracker URLs are not format hints.
+ if(download&&op!=Operation::add&&op!=Operation::importRemote&&!command.useRemote&&packageHint(sourceIndex<sourceCount?std::string_view(sources[sourceIndex].name.data()):std::string_view{})){
   std::snprintf(notice.data(),notice.size(),"FPKG requires conversion on Server. Choose Server, or another release; local PS5 downloads are not supported.");return false;
  }
  if(download){lastStorage=command.storage;lastAutomatic=command.automatic;}

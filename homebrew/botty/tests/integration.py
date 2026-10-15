@@ -253,10 +253,11 @@ with tempfile.TemporaryDirectory(prefix='botty-integration-') as directory:
         assert prepared['libraryStatus']=='pending' and 'home screen' in prepared['phase']
         assert image.read_bytes()==(root/'test-library'/image.name).read_bytes()
         # A retained adopted import remains resumable, but cannot be discarded
-        # as an extraction copy before it reaches Library, including after restart.
+        # as an extraction copy before Library, including an old pre-publication
+        # move-error journal recovered while the output disk is unavailable.
         retained_id='fe'*16; retained=root/'extracted'/retained_id
         retained.mkdir(); retained_image=retained/'PPSA77777.exfat'; retained_image.write_bytes(image.read_bytes())
-        (root/'jobs'/(retained_id+'.json')).write_text(json.dumps(dict(id=retained_id,name='Recovered import',status='extracting',storage='internal',remote=True,adoptedImport=True,automatic=False)))
+        (root/'jobs'/(retained_id+'.json')).write_text(json.dumps(dict(id=retained_id,name='Recovered import',status='move-error',storage='internal',remote=True,adoptedImport=True,automatic=False)))
         offline_retained=root/'offline-retained'; retained.rename(offline_retained)
         stop(); start()
         recovered=next(j for j in request('/api/state')['jobs'] if j['id']==retained_id)
