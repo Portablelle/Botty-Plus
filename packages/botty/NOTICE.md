@@ -148,8 +148,11 @@ RAR5 may use UnRAR's internal decoder threads. Each member has a single owner an
 all workers join before terminal publication. Sample benchmarks are not a promise
 of full-archive throughput.
 
-Explore rankings cache for ten minutes and covers for thirty days. Stale rankings
-can display while refreshing; Square requests a refresh. Cover requests accept
+Explore rankings cache for ten minutes and covers for thirty days. Discover
+always fetches fresh results on app launch, even with a recent cache, then
+revalidates on entry, after resume and every minute while open. Expired rankings
+refresh automatically while saved results remain visible; R3 bypasses the cache.
+Cover requests accept
 known result/torrent/job IDs, not arbitrary URLs. Unknown artwork remains a
 placeholder. See `deployment/README.md` for the private configuration contract.
 
