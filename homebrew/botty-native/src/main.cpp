@@ -1263,11 +1263,12 @@ void submitWorkflow() noexcept {
 
 bool draw(Canvas& c) noexcept {
     const auto now=botty::platform::now();
+    static botty::ExploreRefresh explore;
     if(c.take_resumed()) {
         input.reset();discardPadBatch=true;network.retry();
+        explore.request();
         botty::platform::log("VideoOut resumed - refreshing local service");
     }
-    static bool exploreRequested=false,exploreRefresh=false,exploreVisited=false;
     // The worker publishes result and busy under one gate. Consume that snapshot
     // before dispatching deferred input, so a toast reflects the finished request.
     const auto resultRevision=actionResult.revision;
@@ -1277,7 +1278,6 @@ bool draw(Canvas& c) noexcept {
     if(receivedResult.revision!=resultRevision)consume(receivedResult);
     if(exitRequested)return false;
     if(toast.visible&&toast.kind!=Toast::Kind::error&&now>=toast.until){toast.visible=false;++displayRevision;}
-    const unsigned oldTab=model.tab;
     const bool keyboardWasActive=nativeKeyboard.active();
     const auto keyboardResult=nativeKeyboard.poll();
     unsigned edge=pollPad(now);
@@ -1360,8 +1360,8 @@ bool draw(Canvas& c) noexcept {
                 }
             }else if(exploreCurrent()&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog,action==Action::compare);
         }
-        if(action==Action::explore){exploreRequested=true;exploreRefresh=false;}
-        if(model.tab==Model::discover&&!model.searchResults&&(edge&r3Button)){exploreRequested=true;exploreRefresh=true;}
+        if(action==Action::explore)explore.request();
+        if(model.tab==Model::discover&&!model.searchResults&&(edge&r3Button))explore.request(true);
         if(action==Action::menu){
             const auto f=focused();
             if(f.entry){workflow.open(f.entry,workflowTab(f),catalog);if(workflow.panel==Panel::closed)notify(Toast::Kind::notice,"No quick actions",f.entry->task?"This task is followed in Activity until it finishes.":"Nothing can be changed here right now.");}
@@ -1411,6 +1411,7 @@ bool draw(Canvas& c) noexcept {
     // Processing refreshes reorder Activity independently of the catalog.
     const bool changed=previousRevision!=catalog.revision||processingChanged;
     if(previousRevision!=catalog.revision)++displayRevision;
+    explore.update(model.tab==Model::discover&&!model.searchResults,now);
     if(model.tab==Model::activity){
         model.count=(catalog.valid||catalog.processing.count)?botty::activityCount(catalog,model.filter):0;
         if(changed&&focusedId[0]){
@@ -1426,11 +1427,9 @@ bool draw(Canvas& c) noexcept {
             if(!found)model.details=false;
         }
     }else if(model.tab==Model::discover){
-        if((!exploreVisited||oldTab!=Model::discover)&&!exploreCurrent()){exploreRequested=true;exploreRefresh=false;}
-        exploreVisited=true;
-        if(exploreRequested&&catalog.valid&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==Panel::closed){
-            botty::Command command;command.operation=Op::explore;command.refresh=exploreRefresh;std::snprintf(command.text.data(),command.text.size(),"%s",Model::exploreSorts[model.exploreSort]);
-            if(collectResult()&&network.submit(command)){exploreRequested=false;quietRequest=true;sentOperation=Op::explore;}
+        if(!model.searchResults&&explore.requested&&catalog.valid&&!catalog.stale&&catalog.exploreSupported&&!catalog.exploreBusy&&!catalog.exploreAdding&&!network.busy()&&workflow.panel==Panel::closed){
+            botty::Command command;command.operation=Op::explore;command.refresh=explore.force;std::snprintf(command.text.data(),command.text.size(),"%s",Model::exploreSorts[model.exploreSort]);
+            if(collectResult()&&network.submit(command)){explore.submitted(now);quietRequest=true;sentOperation=Op::explore;++displayRevision;}
         }
         if(model.searchResults){
             model.count=catalog.resultCount;
@@ -1502,8 +1501,8 @@ bool draw(Canvas& c) noexcept {
         else if(model.tab==Model::discover){
             if(model.searchResults)drawSearch(c);
             else {
-                const char* exploreState=!catalog.exploreSupported?"Update the Botty service to enable Discover.":catalog.exploreBusy||exploreRequested?"Loading this ranking\xe2\x80\xa6":catalog.exploreError[0]?catalog.exploreError.data():"No new PS5 games found for this ranking.";
-                drawDiscover(c,exploreRequested||quietRequest,catalog.valid?exploreState:detail);
+                const char* exploreState=!catalog.exploreSupported?"Update the Botty service to enable Discover.":catalog.exploreBusy||explore.requested?"Loading this ranking\xe2\x80\xa6":catalog.exploreError[0]?catalog.exploreError.data():"No new PS5 games found for this ranking.";
+                drawDiscover(c,explore.requested||quietRequest,catalog.valid?exploreState:detail);
             }
         }else if(model.tab==Model::system)drawSystem(c,online,managerOnline,updateStale,detail);
         else if(model.details)drawDetails(c,focused());

@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  size=(complete/'sample.rar').stat().st_size
  torrent=dict(id=1,hashString=hashlib.sha1(b'd4:name7:fixturee').hexdigest(),name='Original homebrew fixture',status=4,error=0,leftUntilDone=size,totalSize=size,downloadDir=str(complete),files=[dict(name='sample.rar',length=size,bytesCompleted=0)])
  calls=[]; queries=[]; cover_calls=[]; remote_calls=[]; remote_rows={}; remote_payload=None
- refresh_started=threading.Event();refresh_release=threading.Event();delayed_refresh=False
+ refresh_started=threading.Event();refresh_release=threading.Event();delayed_refresh=False;remove_demo=False;new_arrival=False;fail_refresh=False
  def rpc_hook(method, params):
   if method=='load.start':
    assert pathlib.Path(params[1]).read_bytes()==b'd4:infod4:name7:fixtureee'
@@ -22,10 +22,13 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  entries=[dict(torrent,hashString='a'*40)]
  class Indexer(BaseHTTPRequestHandler):
   def log_message(self,*args): pass
-  def reply(self,obj):
+  def reply(self,obj,explore=False):
+   if fail_refresh and isinstance(obj,list):
+    self.send_error(503);return
    if delayed_refresh and isinstance(obj,list):
     refresh_started.set();assert refresh_release.wait(10)
-    obj=[r for r in obj if r.get('title')!='Demo PS5']
+    if remove_demo:obj=[r for r in obj if r.get('title')!='Demo PS5']
+   if explore and new_arrival:obj.append(dict(obj[0],title='New arrival PS5',publishDate='2026-10-15T00:00:00Z'))
    data=json.dumps(obj).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
   def do_GET(self):
    if self.path.startswith('/remote/'):
@@ -41,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
     assert q['indexerIds']==['-2'] and q['categories']==['1000']
     other=dict(row,indexer='Tracker Eight',indexerId=8,downloadUrl='https://untrusted.invalid/8/download?apikey='+('c'*32)+'&link=fixture',categories=[{'id':1180}])
     if q['query']==['PS5']:
-     self.reply([dict(row,title='Demo PS5',seeders=10,grabs=3,publishDate='2026-09-01T00:00:00Z'),dict(row,title='Second PS5',seeders=2,grabs=50,publishDate='2026-10-01T00:00:00Z'),dict(other,title='Third PS5',seeders=8,grabs=90,publishDate='2026-10-02T00:00:00Z'),dict(other,title='Demo PS5',seeders=9,grabs=5),dict(other,title='Demo PS5 Deluxe',size=size*2,seeders=7,grabs=12,downloadUrl='https://untrusted.invalid/8/download?link=deluxe'),dict(other,title='Null counts PS5',seeders=None,grabs=None,infoHash=None,publishDate=None),dict(other,title='Malformed PS5',indexerId='oops'),dict(row,title='Original homebrew fixture PS5'),dict(row,title='Installed Game PS5'),dict(row,title='Wrong PS4'),dict(row,title='False XPS5suffix'),dict(row,title='Foreign PS5',indexerId=99),dict(other,title='Wrong category PS5',categories=[{'id':2000}]),dict(other,title='Usenet PS5',protocol='usenet')])
+     self.reply([dict(row,title='Demo PS5',seeders=10,grabs=3,publishDate='2026-09-01T00:00:00Z'),dict(row,title='Second PS5',seeders=2,grabs=50,publishDate='2026-10-01T00:00:00Z'),dict(other,title='Third PS5',seeders=8,grabs=90,publishDate='2026-10-02T00:00:00Z'),dict(other,title='Demo PS5',seeders=9,grabs=5),dict(other,title='Demo PS5 Deluxe',size=size*2,seeders=7,grabs=12,downloadUrl='https://untrusted.invalid/8/download?link=deluxe'),dict(other,title='Null counts PS5',seeders=None,grabs=None,infoHash=None,publishDate=None),dict(other,title='Malformed PS5',indexerId='oops'),dict(row,title='Original homebrew fixture PS5'),dict(row,title='Installed Game PS5'),dict(row,title='Wrong PS4'),dict(row,title='False XPS5suffix'),dict(row,title='Foreign PS5',indexerId=99),dict(other,title='Wrong category PS5',categories=[{'id':2000}]),dict(other,title='Usenet PS5',protocol='usenet')],explore=True)
     else:self.reply([dict(row,indexerId=2),dict(row,categories=[{'id':2000}]),row,dict(other,title='Other homebrew PS5 fixture',seeders=6),dict(row,title='Original homebrew PS5 fixture',grabs=4)])
    elif url.path=='/artwork':
     cover_calls.append(self.path)
@@ -111,12 +114,41 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    assert queries[-1]['indexerIds']==['-2'] and queries[-1]['categories']==['1000']
    assert request('/api/state')['search']['results']==results
   stale_cache=root/'cache/explore-newest.json'
-  saved=json.loads(stale_cache.read_text());saved['saved']=int(time.time())-3600;stale_cache.write_text(json.dumps(saved))
+  # Fresh cache avoids an indexer call. Expired and future-dated caches are
+  # shown immediately while automatically fetching a replacement.
   query_count=len(queries)
   request('/api/explore',{'sort':'newest'})
   cached=request('/api/state')['explore'];assert not cached['busy'] and cached['results']==browse['results']
-  assert 'outdated' in cached['notice']
   assert len(queries)==query_count
+  new_arrival=True
+  for timestamp in [int(time.time())-3600,int(time.time())+3600]:
+   saved=json.loads(stale_cache.read_text());saved['saved']=timestamp;stale_cache.write_text(json.dumps(saved))
+   delayed_refresh=True;refresh_started.clear();refresh_release.clear()
+   request('/api/explore',{'sort':'newest'});assert refresh_started.wait(5)
+   refreshing=request('/api/state')['explore'];assert refreshing['busy'] and refreshing['results']==cached['results']
+   refresh_release.set()
+   refreshed=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
+   assert refreshed['results'][0]['name']=='New arrival PS5' and not refreshed['error']
+   assert all(any(r['id']==old['id'] for r in refreshed['results']) for old in cached['results'])
+   cached=refreshed
+   assert abs(json.loads(stale_cache.read_text())['saved']-int(time.time()))<10
+   delayed_refresh=False
+  query_count+=2;assert len(queries)==query_count
+  # A failed automatic refresh preserves the list and expired timestamp, then
+  # recovers on the next revalidation without a forced refresh or restart.
+  saved=json.loads(stale_cache.read_text());saved['saved']=int(time.time())-3600;stale_cache.write_text(json.dumps(saved))
+  fail_refresh=True
+  request('/api/explore',{'sort':'newest'})
+  failed=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
+  assert failed['error'] and failed['results']==cached['results']
+  assert json.loads(stale_cache.read_text())['saved']==saved['saved']
+  fail_refresh=False
+  request('/api/explore',{'sort':'newest'})
+  cached=until(lambda:(e if not e['busy'] else None) if (e:=request('/api/state')['explore']) else None)
+  assert not cached['error'] and cached['results']==failed['results']
+  query_count+=2;assert len(queries)==query_count
+  browse=cached
+  refresh_started.clear();refresh_release.clear()
   (root/'prowlarr.json').write_text('{broken json')
   request('/api/explore',{'sort':'newest'})
   assert request('/api/state')['explore']['results']==[]
@@ -154,7 +186,7 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   assert all(source['id']!=demo['id'] for source in demo['sources'])
   selected=next(source['id'] for source in demo['sources'] if source['tracker']=='Tracker Eight' and source['size']==size)
   assert selected!=demo['id']
-  delayed_refresh=True
+  delayed_refresh=True;remove_demo=True
   request('/api/explore',{'sort':'newest','refresh':True});assert refresh_started.wait(5)
   refreshing=request('/api/state')['explore'];assert refreshing['busy'] and refreshing['results']==browse['results']
   refresh_release.set()

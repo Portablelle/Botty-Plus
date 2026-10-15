@@ -66,6 +66,24 @@ bool startWorker(void* (*fn)(void*),void* context,void** handle) noexcept {
 void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(handle);pthread_join(worker->thread,nullptr);delete worker;}
 }
 int main() {
+    {
+        botty::ExploreRefresh refresh;
+        refresh.update(false,0);assert(!refresh.requested&&refresh.force);
+        refresh.update(true,0);assert(refresh.requested&&refresh.force);
+        // Startup must bypass even a fresh cache; deferred frames retain it.
+        refresh.update(true,1);assert(refresh.requested&&refresh.force);
+        refresh.submitted(0);
+        refresh.update(true,59999999);assert(!refresh.requested);
+        refresh.update(true,60000000);assert(refresh.requested&&!refresh.force);
+        // A busy network or open sheet may defer submission across frames.
+        refresh.update(true,61000000);assert(refresh.requested);
+        refresh.request(true);refresh.request();assert(refresh.force);
+        refresh.submitted(61000000);assert(!refresh.requested&&!refresh.force);
+        refresh.update(false,62000000);assert(!refresh.requested);
+        refresh.update(true,63000000);assert(refresh.requested); // Return to Explore.
+        refresh.submitted(63000000);
+        refresh.request();assert(refresh.requested&&!refresh.force); // Resume.
+    }
     using namespace botty;
     // Each Network owns a full catalog. Keep test instances off the main stack;
     // the app uses global storage and the Processing worker still has 64 KiB.

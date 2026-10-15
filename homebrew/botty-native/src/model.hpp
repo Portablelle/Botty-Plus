@@ -53,6 +53,18 @@ struct InputEvents {
         return input.update(buttons,connected,now);
     }
 };
+// Fetch fresh results on launch, then revalidate while browsing, on entry and
+// after resume. Startup and explicit refreshes bypass the service cache.
+struct ExploreRefresh {
+    bool active=false, requested=false, force=true;
+    std::uint64_t nextCheck=0;
+    void request(bool refresh=false) noexcept {requested=true;force=force||refresh;}
+    void update(bool visible,std::uint64_t now) noexcept {
+        if(visible&&(!active||now>=nextCheck))request();
+        active=visible;
+    }
+    void submitted(std::uint64_t now) noexcept {requested=force=false;nextCheck=now+60000000;}
+};
 struct Model {
     // Display order of the Discover ranking chips.
     static constexpr std::array<const char*,3> exploreSorts{"newest","seeders","completed"};
