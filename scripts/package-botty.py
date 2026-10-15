@@ -48,7 +48,7 @@ def main():
             else: shutil.copy2(source/name, assembled/name)
         bridge = assembled / 'deployment/botty-remote'
         bridge.mkdir(parents=True)
-        for name in ['server.py', 'test_server.py', 'README.md']:
+        for name in ['server.py', 'forge.py', 'test_server.py', 'test_forge.py', 'README.md']:
             shutil.copy2(project/'deployment/botty-remote'/name, bridge/name)
         source_archive(assembled, out / 'botty-source.tar.gz', names + ['deployment'])
     shutil.copyfile(source / 'README.md', out / 'NOTICE.md')

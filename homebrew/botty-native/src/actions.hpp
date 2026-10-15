@@ -2,6 +2,7 @@
 #pragma once
 #include "catalog.hpp"
 namespace botty {
+bool packageHint(std::string_view name) noexcept;
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
 enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
 struct Command {
