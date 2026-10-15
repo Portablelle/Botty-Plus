@@ -326,7 +326,7 @@ void* Network::worker(void* context) noexcept {
             self.deletion_.store(Deletion::idle);self.busy_.store(false);
             self.gate_.clear(std::memory_order_release);
         }
-        const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale?10:50;
+        const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale||next.exploreBusy?10:50;
         for(unsigned i=0;i<delay&&!self.stop_.load()&&!self.retry_.load()&&!self.queued_.load();++i)platform::sleep(100000);
     }
     return nullptr;
