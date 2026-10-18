@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <set>
 #include <vector>
 namespace botty {
 namespace fs = std::filesystem;
@@ -42,5 +43,5 @@ void deleteLibraryGame(const Paths&, const json& job, const DeleteProgress& prog
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };
 using Reporter = std::function<void(const Progress&)>;
 // Progress callbacks are serialized; cancellation may be queried concurrently.
-void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0, bool resume = false);
+void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0, bool resume = false, const std::set<fs::path>& volumes = {});
 }

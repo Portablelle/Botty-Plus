@@ -13,8 +13,8 @@ int main() {
   try {
     umask(0077);signal(SIGPIPE,SIG_IGN);
     if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw std::runtime_error("Cannot initialize updater transport.");
-    auto handoff=installationRecord(handoffPath,256*1024);
-    const auto request=installationRecord(root/"installation/request.json",65536);
+    auto handoff=installationRecord(handoffPath,2*1024*1024);
+    const auto request=installationRecord(root/"installation/request.json",2*1024*1024);
     if(request.at("transaction")!=handoff.at("transaction")||request.at("hash")!=handoff.at("bundle").at("hash")||request.at("status")!="handoff")throw std::runtime_error("Untrusted installation handoff.");
     if(handoff.at("capability")!=nativeHash(handoff.at("transaction").get<std::string>()+nativeRead(root/"installation/secret",128)))throw std::runtime_error("Invalid updater handoff capability.");
     lock=::open((root/"installation/updater.lock").c_str(),O_RDWR|O_CREAT|O_NOFOLLOW,0600);
@@ -30,7 +30,7 @@ int main() {
       if(worker.at("ok")!=true||!worker.at("busy").is_boolean()||worker.at("busy").get<bool>())throw std::runtime_error("Worker idle state is not confirmed.");
       const auto health=installationHttp(8088,"/api/installation/status");
       if(health.at("updateTransaction")!=handoff.at("transaction")||health.at("updateQueued")!=true)throw std::runtime_error("Manager is not gating file work for this transaction.");
-      const auto durable=installationRecord(handoffPath,256*1024);
+      const auto durable=installationRecord(handoffPath,2*1024*1024);
       if(inspect()!=durable.value("selectedRunning",durable.at("running")))throw std::runtime_error("Service identities changed at the publication gate.");
       confirmNativeProcessesStopped(health.at("pid").get<int>());
     };
@@ -50,7 +50,7 @@ int main() {
       throw std::runtime_error("Torrent pause was not confirmed. Keep its durable intent for recovery.");
     };
     io.resume=[&](const std::string& hash) {
-      const auto durable=installationRecord(handoffPath,256*1024);
+      const auto durable=installationRecord(handoffPath,2*1024*1024);
       if(engine.installationRpc("system.pid")!=durable.at("selectedRunning").at("engine").at("pid"))throw std::runtime_error("Engine identity changed before restoring updater-paused torrents.");
       engine.installationRpc("d.start",{hash});
       if(!engine.installationRpc("d.is_active",{hash}).get<int>()&&!engine.installationRpc("d.hashing",{hash}).get<int>())engine.installationRpc("d.resume",{hash});

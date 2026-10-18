@@ -186,6 +186,9 @@ ActionResult performCommand(const Command& command) noexcept {
         result.status=ActionResult::Status::uncertain;message("Update confirmation was incomplete. Keep Botty+ open and check its update status before retrying.");return result;
         }
     }
+    if((command.operation==Operation::emulationLaunch||command.operation==Operation::emulationConfigure)&&!emulationLaunchResponse(response.view(),result.launchPath)){
+        message("Invalid emulator launch confirmation. Refresh and try again.");return result;
+    }
     result.status=ActionResult::Status::success;
     switch(command.operation){
     case Operation::explore:message("Explore updated.");break;

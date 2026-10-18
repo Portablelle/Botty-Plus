@@ -61,6 +61,24 @@ async function render(task){
  vm.runInContext("torrentCard({id:78,name:'Remote RAR',remote:true,status:6,leftUntilDone:0,files:[{name:'game.rar'}],remotePreparation:{}});",context);
  assert(elements.get('torrent-78-extract-0'));
  assert(!elements.get('torrent-78-extract-0').disabled);
+ vm.runInContext("torrentCard({id:79,name:'Imported RAR',remote:true,status:6,leftUntilDone:0,files:[{name:'game.rar'}],remotePreparation:{status:'complete'}});",context);
+ assert(elements.get('torrent-79-extract-0'));
+ assert(!elements.get('torrent-79-extract-0').disabled);
+ vm.runInContext("torrentCard({id:80,name:'Switch download only',status:6,leftUntilDone:0,emulationContent:true,files:[{name:'Game.nsp'}]});",context);
+ assert(elements.get('torrent-80-prepare'));
+ vm.runInContext("state={jobs:[{id:'compression-failed',status:'moved',compression:{status:'failed',error:'Compression disk full'}}]};processingTasks=[{id:'compression-failed',status:'failed',error:'Compression disk full'}];tab='jobs';",context);
+ assert.equal(vm.runInContext('activityRows().length',context),1);
+ assert.equal(vm.runInContext('activityRows()[0].value.error',context),'Compression disk full');
+ assert.equal(vm.runInContext('reconcileActivity().tasks.length',context),0);
+ vm.runInContext("state.storageSupported=true;jobCard({id:'switch-transfer',platform:'switch',status:'moved'});",context);
+ assert(!elements.get('job-switch-transfer-transfer'));
+ vm.runInContext("state={jobs:[{id:'hidden',status:'moved',dismissed:true}]};processingTasks=[{id:'hidden',status:'complete'}];tab='complete';",context);
+ assert.equal(vm.runInContext('activityRows().length',context),0);
+ assert.equal(vm.runInContext('reconcileActivity().tasks.length',context),0);
+ vm.runInContext("processingTasks[0].status='running';",context);
+ assert.equal(vm.runInContext('reconcileActivity().tasks.length',context),1);
+
+
  vm.runInContext("jobCard({id:'retained',status:'ready',adoptedImport:true,content:{kind:'folder'}});",context);
  assert(elements.get('job-retained-move'));
  assert(!elements.get('job-retained-delete')&&!elements.get('job-retained-dismiss'));
@@ -70,15 +88,15 @@ async function render(task){
   assert.equal(vm.runInContext('replacesJob({status:terminalStatus})',context),false);
  }
  vm.runInContext("tab='all';processingTasks=[];",context);
- vm.runInContext("state={storage:[{id:'internal',label:'PS5',available:true,freeBytes:1e9}],remoteDownloads:{enabled:true}};chooseStorage('internal',true,choice=>{selectedChoice=choice;});",context);
+ vm.runInContext("state={storage:[{id:'internal',label:'PS5',available:true,freeBytes:1e9}],remoteDownloads:{enabled:true}};chooseStorage('internal','download',choice=>{selectedChoice=choice;});",context);
  assert.equal(elements.get('engine-choice').options.length,2);
  elements.get('engine-choice').value='qbittorrent';vm.runInContext('modalAction()',context);
  assert.equal(context.selectedChoice.engine,'qbittorrent');
- vm.runInContext("chooseStorage('internal',true,choice=>{selectedChoice=choice;});modalAction();",context);
+ vm.runInContext("chooseStorage('internal','download',choice=>{selectedChoice=choice;});modalAction();",context);
  assert.equal(context.selectedChoice.engine,'rtorrent');
- vm.runInContext("chooseStorage('internal',true,choice=>{selectedChoice=choice;},false,false);modalAction();",context);
+ vm.runInContext("chooseStorage('internal','import',choice=>{selectedChoice=choice;});modalAction();",context);
  assert(!('engine' in context.selectedChoice));
- vm.runInContext("state.remoteDownloads.enabled=false;chooseStorage('internal',true,()=>{});",context);
+ vm.runInContext("state.remoteDownloads.enabled=false;chooseStorage('internal','download',()=>{});",context);
  assert(elements.get('engine-choice').options.find(option=>option.value==='qbittorrent').disabled);
  console.log('Processing UI ETA tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -21,3 +21,8 @@
   Vendored font SHA-256: `3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6`.
   Source and license are in `manrope/`; the license is also included in the title.
   Native alpha masks are baked using Pillow 12.0.0 by `tools/build-font.py`.
+
+Embedded Switch engine: ProsperoEden (GPL-3.0-or-later), commit 8f392248f7d49fc2be47f60ad7764ac5a392b1fe.
+Complete corresponding sources are distributed as checked parts in source/.
+botty-native-source.tar.gz contains their index and restore.py; run it against this package folder to reconstruct the complete archive, including build/emulation-source.tar.gz.
+https://github.com/blackbearreloaded/ProsperoEden

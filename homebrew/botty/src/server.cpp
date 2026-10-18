@@ -13,6 +13,9 @@
 #include "compressor.hpp"
 #include "native-update.hpp"
 #include "native-process.hpp"
+#include "emulation.hpp"
+#include "switch-preparation.hpp"
+#include "switch-source-settlement.hpp"
 #include "installation-update.hpp"
 #include "service-updater-embedded.hpp"
 #include <chrono>
@@ -31,7 +34,7 @@
 #include <net/if.h>
 using namespace botty;
 #ifndef BOTTY_UI
-#define BOTTY_UI "/data/botty/manager/1.8.0/ui"
+#define BOTTY_UI "/data/botty/manager/1.10.2/ui"
 #endif
 #ifdef __PS5__
 // Run before C++ globals so loader/initialization failures leave a useful boundary.
@@ -45,6 +48,8 @@ __attribute__((constructor(101))) static void startupLog() {
 #endif
 namespace {
 Search search,explore;
+Emulation emulation;
+Emulation legacyEmulation("/data/prosperoeden","/data/homebrew/PPSA99008");
 Compressor compressor;
 std::unique_ptr<NativeTransaction> nativeTransaction;
 std::unique_ptr<InstallationUpdater> nativeUpdater;
@@ -118,7 +123,7 @@ json rpc(const std::string& method, const json& arguments=json::object()) {
       if(!remote)throw std::runtime_error(remoteError.empty()?"Dedicated server is not configured":remoteError);
       return remote->add(Rtorrent::inputHash(arguments),arguments);
     }
-    auto local=arguments;local.erase("engine");return backend.request(method,local);
+    auto local=arguments;local.erase("engine");local.erase("platform");return backend.request(method,local);
   }
   if(remote&&arguments.contains("ids")){
     bool any=false,all=true;for(const auto& id:arguments.at("ids")){const bool owned=remote->contains(id);any|=owned;all&=owned;}
@@ -146,6 +151,68 @@ json findJob(const std::string& id) {
   for(const auto& job:jobs)if(job.at("id")==id)return job;
   throw std::runtime_error("Job not found");
 }
+// One coordinator owns admission, work, terminal state and restart recovery.
+class SwitchPreparationCoordinator {
+  SwitchSourceSettlement settlement_;
+  static void completed(json& job,const json& receipt,const fs::path& root,const std::string& phase){
+    job["status"]="moved";job["publicationPending"]=false;job["libraryStatus"]="emulation";
+    job["destination"]=root.string();job["content"]["files"]=receipt.at("files");job["error"]="";job["phase"]=phase;
+  }
+public:
+  bool publishedIntact(const json& job,const fs::path& root) const {
+    try{
+      if(job.value("emulationRoot",root.string())!=root.string())return false;
+      const std::string id=job.at("id");
+      const auto record=json::parse(readText(containedExisting(root,root/"imports"/(id+".json")),1024*1024));
+      if(record.at("status")!="complete"||record.at("receipt").at("files")!=job.at("content").at("files"))return false;
+      for(const auto& file:record.at("receipt").at("files")){
+        const auto relative=safeRelative(file.at("name"));const auto kind=relative.begin()->string();
+        if(kind!="roms"&&kind!="updates")return false;
+        const auto path=containedExisting(root,root/kind/(".botty-batch-"+id)/relative.filename());
+        if(json(Emulation::sourceIdentity(path))!=file.at("identity"))return false;
+        if(Emulation::supported(path))Emulation::entry(root,path,kind);
+      }
+      return true;
+    }catch(const std::exception&){return false;}
+  }
+  bool retained(const json& job) const {
+    if(job.value("publicationPending",false))return true;
+    const fs::path root=job.value("emulationRoot",emulation.root().string());
+    const auto id=job.at("id").get<std::string>();
+    return fs::exists(root/"imports"/(id+".json"))||fs::exists(root/".botty-preparation"/(id+".working")/"prepared.json");
+  }
+  void removePartial(const json& job) const {
+    if(retained(job))throw std::runtime_error("Switch publication needs recovery; restart Botty before retrying or removing this preparation");
+    const auto root=emulation.root();
+    if(job.value("emulationRoot",root.string())!=root.string())throw std::runtime_error("Reconnect the original emulator folder before removing partial files");
+    const auto parent=root/".botty-preparation";const auto name=job.at("id").get<std::string>()+".working";
+    if(fs::exists(parent/name))deleteGameDirectory(parent,name);
+  }
+  json start(const json& request,bool automatic=true);
+  void recover(json& job){
+        const std::string id=job.at("id");
+        const auto before=job;
+        try{
+          const auto root=emulation.root();
+          if(job.value("emulationRoot",root.string())!=root.string())throw std::runtime_error("Reconnect the original emulator folder to resume Switch publication");
+          const auto stage=root/".botty-preparation"/(id+".working");
+          const auto record=root/"imports"/(id+".json");
+          const bool retained=fs::exists(stage/"prepared.json")||fs::exists(record)||job.value("publicationPending",false);
+          if(retained){
+            job["publicationPending"]=true;
+            const auto receipt=publishSwitchBatch(stage,root,id);
+            completed(job,receipt,root,"Verified Switch batch recovered in Emulation");
+          }else if(job.value("status","")=="extracting"||job.value("status","")=="moving"){
+            job["status"]="interrupted";job["error"]="Switch preparation interrupted; sources and partial output retained";
+          }
+        }catch(const std::exception& error){
+          job["status"]="interrupted";job["error"]=error.what();job["phase"]="Switch publication retained; reconnect its disk and restart Botty to resume";
+        }
+        job["extractionRate"]=0;job["eta"]=-1;job["elapsed"]=0;
+        if(job!=before)writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);
+  }
+};
+SwitchPreparationCoordinator switchPreparation;
 void recoverJobs() {
   for(const auto& entry:fs::directory_iterator(paths.jobs)) {
     if(!entry.is_regular_file() || entry.path().extension()!=".json")continue;
@@ -153,12 +220,15 @@ void recoverJobs() {
       auto job=json::parse(readText(entry.path()));
       const std::string id=job.at("id");
       if(!std::regex_match(id,std::regex("[a-f0-9]{32}")) || entry.path().stem()!=id)continue;
+      if(job.value("platform",std::string{})=="switch"&&!job.value("dismissed",false)&&job.value("status","")!="moved"){
+        switchPreparation.recover(job);jobs.push_back(job);continue;
+      }
       const bool retainedBeforePublication=job.value("status","")=="move-error"&&job.value("adoptedImport",false)&&!job.contains("destination");
       if(job.value("status","")=="extracting" || job.value("status","")=="moving" || retainedBeforePublication) {
         const bool preparing=job.value("status","")=="extracting"||retainedBeforePublication,wasAutomatic=job.value("automatic",false);
         job["extractionRate"]=0;job["eta"]=-1;job["elapsed"]=0;job["status"]="interrupted";job["error"]="Previous session ended during this operation. Extract the same archive again to verify and resume supported partial output.";
         if(preparing&&job.value("adoptedImport",false)){job["status"]="ready";job["automatic"]=false;job["error"]="Imported files are protected. Reconnect their disk and choose Move to Library to resume.";job["phase"]="Imported preparation needs resuming";}
-        if(preparing)try{
+        if(preparing&&job.value("platform",std::string("ps5"))!="switch")try{
           const auto disk=storage.get(job.value("storage","internal"),false);
           const auto final=disk.extracted/id;
           if(fs::is_directory(final)&&!fs::is_symlink(fs::symlink_status(final))){
@@ -186,14 +256,51 @@ struct PreparationPlan {
   Kind kind;fs::path source;std::string password;
   bool loose()const{return kind==Kind::loose;}
 };
+void requirePreparationAdmission(){
+  if(retiring)throw PreparationBusy("Botty is shutting down");
+  try{nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();}catch(const std::runtime_error& e){throw PreparationBusy(e.what());}
+  if(registeringLibrary||transferring||extracting)throw PreparationBusy("Wait for the active file operation");
+}
+// All formats share durable admission, worker ownership, progress and cleanup.
+// Only source validation, preparation/publication and error recovery vary.
+template<class Work,class Failure>
+json startPreparationWorker(json job,Work work,Failure failure){
+  writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);
+  const int directory=::open(paths.jobs.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+  if(directory<0)throw std::runtime_error("Cannot open preparation journal directory");
+  const int flushed=::fsync(directory);::close(directory);
+  if(flushed)throw std::runtime_error("Cannot persist preparation journal directory");
+  bool replaced=false;for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;replaced=true;break;}
+  if(!replaced)jobs.push_back(job);
+  cancelExtraction=false;activeJob=job.at("id");extracting=true;
+  try{std::thread([job,work=std::move(work),failure=std::move(failure)]()mutable{
+    const auto began=std::chrono::steady_clock::now();ProgressSchedule schedule;ExtractionEstimate estimate;std::string phase;
+    const Reporter report=[&](const Progress& p){
+      const auto now=std::chrono::steady_clock::now();const auto decision=schedule.update(now,p.phase);if(!decision.publish)return;
+      if(phase!=p.phase){phase=p.phase;estimate=ExtractionEstimate{};}if(p.total)estimate.update(now,p.bytes,p.total);
+      job["phase"]=p.phase;job["file"]=p.file;job["bytes"]=p.bytes;job["total"]=p.total;
+      job["elapsed"]=std::chrono::duration<double>(now-began).count();job["extractionRate"]=estimate.rate;job["eta"]=estimate.eta;
+      publishJob(job,decision.checkpoint);
+    };
+    try{work(job,report);}catch(const std::exception& error){failure(job,error);}
+    job["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();
+    job["extractionRate"]=0;job["eta"]=job.value("status",std::string{})=="ready"?0:-1;
+    try{publishJob(job);}catch(const std::exception& error){std::cerr<<"Preparation checkpoint failed: "<<error.what()<<'\n';}
+    std::lock_guard<std::mutex> guard(lock);extracting=false;activeJob.clear();
+  }).detach();}catch(...){
+    extracting=false;activeJob.clear();job["status"]="failed";job["error"]="Cannot start preparation worker; sources and partial output retained";
+    try{writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);}catch(...){}
+    for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;break;}
+    throw;
+  }
+  return job;
+}
 json startExtraction(const json& request, bool automatic=false) {
   const int id=request.at("id").get<int>();
   const std::string name=request.value("archive",std::string{});PreparationPlan plan{name.empty()?PreparationPlan::Kind::loose:PreparationPlan::Kind::rar,{},request.value("password",std::string{})};
   if(plan.password.size()>1024)throw std::runtime_error("Password too long");
   std::lock_guard<std::mutex> guard(lock);
-  if(retiring)throw PreparationBusy("Botty is shutting down");
-  try{nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();}catch(const std::runtime_error& e){throw PreparationBusy(e.what());}
-  if(registeringLibrary||transferring||extracting)throw PreparationBusy("Another extraction is running");
+  requirePreparationAdmission();
   const auto torrent=getTorrent(id);
   if(torrent.at("leftUntilDone").get<uint64_t>()!=0 || torrent.value("error",0)!=0 || torrent.value("status",0)==1 || torrent.value("status",0)==2)throw PreparationBusy("Wait until the torrent is complete and error-free");
   const auto sourceStorage=torrent.value("remote",false)?remote->published(id).at("storage").get<std::string>():storage.forDownload(torrent.at("downloadDir").get<std::string>());
@@ -235,28 +342,12 @@ json startExtraction(const json& request, bool automatic=false) {
   }
   job["torrentId"]=id;job["status"]="extracting";job["phase"]=resuming?"Verifying existing files for resume":"Starting";
   job["bytes"]=0;job["total"]=0;job["error"]="";job["extractionRate"]=0;job["eta"]=-1;
-  writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),job);
-  if(resuming){for(auto& old:jobs)if(old.at("id")==job.at("id")){old=job;break;}}else jobs.push_back(job);
-  cancelExtraction=false;activeJob=job.at("id");extracting=true;
-  try {
-    std::thread([job,plan,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths,torrent]()mutable{
+  return startPreparationWorker(job,
+    [plan,resuming,sourceStorage,targetStorage,sourcePaths,selectedPaths,torrent](json& job,const Reporter& progress){
       const auto check=[&]{if(storage.get(sourceStorage,false).root!=sourcePaths.root || storage.get(targetStorage,false).root!=selectedPaths.root)throw std::runtime_error("Disk mount changed during extraction");};
+      const Reporter report=[&](const Progress& p){check();progress(p);};
       const auto stage=selectedPaths.extracted/(job.at("id").get<std::string>()+".working");
       const auto final=selectedPaths.extracted/job.at("id").get<std::string>();
-      ProgressSchedule progressSchedule; ExtractionEstimate estimate;const auto started=std::chrono::steady_clock::now();
-      std::string measuredPhase;
-      try {
-        const Reporter report=[&](const Progress& progress){
-          check();const auto now=std::chrono::steady_clock::now();
-          const auto decision=progressSchedule.update(now,progress.phase);
-          if(!decision.publish)return;
-          job["elapsed"]=std::chrono::duration<double>(now-started).count();
-          if(measuredPhase!=progress.phase){estimate=ExtractionEstimate{};measuredPhase=progress.phase;}
-          job["phase"]=progress.phase;job["bytes"]=progress.bytes;job["total"]=progress.total;job["file"]=progress.file;
-          if(progress.total>0){estimate.update(now,progress.bytes,progress.total);}
-          job["extractionRate"]=estimate.rate;job["eta"]=estimate.eta;
-          publishJob(job,decision.checkpoint);
-        };
         if(plan.loose()){
           if(torrent.value("remote",false)&&sourceStorage==targetStorage){
             remote->adopt(torrent.at("id"),final,job.at("id"),[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");});
@@ -278,7 +369,9 @@ json startExtraction(const json& request, bool automatic=false) {
           try{job=movePrepared(selectedPaths,job,nullptr,[&]{check();if(cancelExtraction||retiring)throw std::runtime_error("Preparation cancelled");});}
           catch(const std::exception& failure){job=json::parse(readText(paths.jobs/(job.at("id").get<std::string>()+".json")));job["error"]=failure.what();job["phase"]="Needs attention";}
         }
-      }catch(const std::exception& error){
+    },
+    [plan,torrent,sourceStorage,targetStorage,selectedPaths](json& job,const std::exception& error){
+      const auto final=selectedPaths.extracted/job.at("id").get<std::string>();
         job["status"]=cancelExtraction.load()?"cancelled":"failed";job["error"]=error.what();
         if(cancelExtraction.load())job["phase"]="Cancelled; partial files kept";
         std::error_code finalError;const auto finalStatus=fs::symlink_status(final,finalError);
@@ -293,28 +386,143 @@ json startExtraction(const json& request, bool automatic=false) {
             if(job["content"].value("kind","")!="unsupported"){job["status"]="ready";job["phase"]="Move to Library to finish";}
           }catch(...){}
         }
+    });
+}
+// Switch jobs share PS5 admission/progress/recovery but publish into Eden, never
+// into ShadowMount's PS5 Library. Every container is identified before import.
+json emulationState(const json& downloads);
+bool switchTorrent(const json& torrent){
+ if(torrent.value("emulationContent",false)||torrent.value("platform",std::string{})=="switch")return true;
+ for(const auto& file:torrent.value("files",json::array()))if(Emulation::supported(fs::path(file.at("name").get<std::string>())))return true;
+ const auto hash=torrent.value("hashString",std::string{});if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))return false;
+ try{const auto file=paths.root/"automatic"/(torrent.value("remote",false)?"remote-"+std::to_string(torrent.at("id").get<int>())+".json":hash+".json");return json::parse(readText(file,16384)).value("platform",std::string{})=="switch";}catch(...){return false;}
+}
+json SwitchPreparationCoordinator::start(const json& request,bool automatic){
+ std::lock_guard<std::mutex> guard(lock);requirePreparationAdmission();
+ struct Source {
+  fs::path root,mountRoot;json files=json::array(),torrentId=nullptr;
+  std::string storageId,hash,name;bool remote=false;
+ } source;
+ json torrent;
+ if(request.contains("entry")){
+  const auto snapshot=emulationState(torrents());json selected;
+  for(const auto& item:snapshot.at("entries"))if(item.at("id")==request.at("entry")&&item.at("kind")=="download"){selected=item;break;}
+  if(selected.is_null())throw std::runtime_error("Switch file is no longer available");
+  if(selected.contains("torrentId"))torrent=getTorrent(selected.at("torrentId"));
+  else{
+   const fs::path file=selected.at("path").get<std::string>();source.root=file.parent_path();
+   source.hash=nativeSha256(file.string()).substr(0,40);source.name=selected.at("name");
+   source.files.push_back({{"name",file.filename().string()},{"size",selected.at("size")}});
+  }
+ }else torrent=getTorrent(request.at("id"));
+ if(!torrent.is_null()){
+  if(torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)||torrent.value("status",0)==1||torrent.value("status",0)==2)throw PreparationBusy("Wait for the complete, verified download");
+  source.remote=torrent.value("remote",false);source.torrentId=torrent.at("id");source.hash=torrent.at("hashString");source.name=torrent.at("name");
+  source.storageId=source.remote?remote->published(torrent.at("id")).at("storage").get<std::string>():storage.forDownload(torrent.at("downloadDir").get<std::string>());
+  const auto disk=storage.get(source.storageId);source.root=disk.complete;source.mountRoot=disk.root;
+  for(const auto& f:torrent.at("files")){if(f.at("bytesCompleted")!=f.at("length"))throw std::runtime_error("Some Switch archive volumes or files are incomplete");source.files.push_back({{"name",f.at("name")},{"size",f.at("length")}});}
+ }
+ const auto directoryIdentity=[](const fs::path& path){struct stat st{};if(::lstat(path.c_str(),&st)||!S_ISDIR(st.st_mode))throw std::runtime_error("Switch source folder is unavailable");return std::array<uint64_t,2>{uint64_t(st.st_dev),uint64_t(st.st_ino)};};
+ const auto sourceIdentity=directoryIdentity(source.root);
+ json fingerprint=json::array();
+ for(const auto& f:source.files){const auto file=containedExisting(source.root,source.root/safeRelative(f.at("name").get<std::string>()));fingerprint.push_back({{"name",f.at("name")},{"identity",Emulation::sourceIdentity(file)}});}
+ if(source.torrentId.is_null())source.hash=nativeSha256(source.root.string()+":"+fingerprint.dump()).substr(0,40);
+ if(!settlement_.observe(source.root.string()+":"+source.hash,fingerprint))throw PreparationBusy("Finalizing Switch download. Wait a few seconds; automatic preparation will retry. For a manual import, choose Prepare again.");
+ const auto root=emulation.root();
+ for(const auto& old:jobs)if(old.value("platform",std::string{})=="switch"&&old.value("hash",std::string{})==source.hash){
+  if(old.value("status",std::string{})=="moved"){if(publishedIntact(old,root))throw std::runtime_error("This Switch release is already imported in Emulation");continue;}
+  if(!old.value("dismissed",false)&&retained(old))throw std::runtime_error("Switch publication needs recovery; restart Botty to resume its retained transaction before retrying");
+ }
+ fs::create_directories(root/".botty-preparation");containedExisting(root,root/".botty-preparation");
+ json job={{"id",randomId()},{"hash",source.hash},{"name",source.name},{"sourceRoot",source.root.string()},{"sourceKind",source.torrentId.is_null()?"existing":"download"},{"platform","switch"},{"emulationContent",true},{"emulationRoot",root.string()},{"remote",source.remote},{"automatic",automatic},{"preparation","switch"},{"status","extracting"},{"phase","Checking Switch download"},{"error",""},{"bytes",0},{"total",0},{"content",{{"kind","switch"}}}};
+ if(!source.torrentId.is_null())job["torrentId"]=source.torrentId;
+ if(!source.storageId.empty())job["storage"]=source.storageId;
+ return startPreparationWorker(job,
+  [source,sourceIdentity,directoryIdentity,root](json& job,const Reporter& progress){
+   const std::string id=job.at("id");const auto stage=root/".botty-preparation"/(id+".working");
+   const auto check=[&]{if(retiring||cancelExtraction)throw std::runtime_error("Switch preparation cancelled; source files kept");if(emulation.root()!=root||directoryIdentity(source.root)!=sourceIdentity||(!source.storageId.empty()&&storage.get(source.storageId,false).root!=source.mountRoot))throw std::runtime_error("Switch source or destination disk changed");};
+   const Reporter report=[&](const Progress& p){check();progress(p);};
+   const auto receipt=prepareSwitchFiles(source.root,source.files,stage,root/"keys/prod.keys",job.at("name"),report,check);
+   check();job["publicationPending"]=true;publishJob(job);publishSwitchBatch(stage,root,id,check);
+   completed(job,receipt,root,"Ready in Emulation; game/update/DLC identified");
+  },
+  [](json& job,const std::exception& error){
+   job["status"]=job.value("publicationPending",false)?"interrupted":cancelExtraction?"cancelled":"failed";
+   job["error"]=error.what();job["phase"]=job.value("publicationPending",false)?"Switch publication retained; restart Botty to resume":"Switch preparation needs attention; sources kept";
+  });
+}
+
+// Only completed, verified download members may be copied into Eden.
+json emulationState(const json& downloads) {
+  auto state=emulation.state();
+  const auto legacy=legacyEmulation.state();
+  for(auto item:legacy.at("entries")){
+    if(state["entries"].size()>=256)break;
+    bool listed=false;for(const auto& known:state["entries"])if(known.at("path")==item.at("path"))listed=true;
+    if(listed)continue;
+    item["sourceKind"]=item.at("kind");item["source"]="existing-ps5";item["kind"]="download";
+    item["id"]=nativeSha256("download:"+item.at("path").get<std::string>());
+    state["entries"].push_back(std::move(item));
+  }
+  for(const auto& torrent:downloads) {
+    if(torrent.value("leftUntilDone",uint64_t(1))!=0||torrent.value("error",0)!=0||torrent.value("remoteCandidate",false)||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
+    try {
+      const auto base=storage.get(storage.forDownload(torrent.at("downloadDir").get<std::string>())).complete;
+      for(const auto& file:torrent.at("files")) {
+        if(state["entries"].size()>=256)return state;
+        const auto name=safeRelative(file.at("name").get<std::string>());
+        if(!Emulation::supported(name)||file.value("bytesCompleted",uint64_t(0))!=file.at("length").get<uint64_t>())continue;
+        try{auto item=Emulation::entry(base,base/name,"download");if(item.at("size")!=file.at("length"))continue;item["torrentId"]=torrent.at("id");state["entries"].push_back(item);}catch(...){}
       }
-      job["elapsed"]=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
-      job["extractionRate"]=0;job["eta"]=job["status"]=="ready"?0:-1;
-      try{publishJob(job);}catch(const std::exception& error){std::cerr<<"Job state save failed: "<<error.what()<<'\n';}
-      std::lock_guard<std::mutex> guard(lock);extracting=false;activeJob.clear();
-    }).detach();
-  }catch(...){extracting=false;activeJob.clear();throw;}
-  return job;
+    }catch(...){}
+  }
+  return state;
+}
+// Shared durable lifecycle for file transfers. Callers hold admission's mutex;
+// work reports whether a failed move has an uncertain, non-replayable outcome.
+template<class Work>
+void startTrackedTransfer(json initial,const std::string& name,Work work,bool notify=false) {
+  const auto id=initial.at("id").is_string()?initial.at("id").get<std::string>():std::to_string(initial.at("id").get<int>());
+  transfers.start(id,name,"transfer");transferState=std::move(initial);
+  try{writeJson(paths.root/"transfer.json",transferState);}catch(...){transfers.finish(false,"Cannot save transfer state");throw;}
+  transferring=true;
+  try{std::thread([work=std::move(work),notify]()mutable{
+    bool uncertain=false;
+    try{
+      const auto phase=work(uncertain);
+      {std::lock_guard<std::mutex> guard(lock);transferState["status"]="complete";transferState["phase"]=phase;writeJson(paths.root/"transfer.json",transferState);transferring=false;transfers.finish(true);}
+      if(notify)try{notifySystem("Botty+: Move completed. You can open Botty+.");}catch(...){}
+    }catch(const std::exception& error){
+      std::lock_guard<std::mutex> guard(lock);transferState["status"]=uncertain?"uncertain":"failed";
+      if(!uncertain)transferring=false;
+      transferState["error"]=error.what();transferState["phase"]="Transfer stopped; retained copies need inspection";
+      try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}
+      transfers.finish(false,error.what());
+    }
+  }).detach();}catch(...){
+    transferring=false;transferState["status"]="failed";transferState["error"]="Cannot start transfer worker";
+    try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}
+    transfers.finish(false,"Cannot start transfer worker");throw;
+  }
+}
+json importEmulation(const json& body) {
+ const auto kind=body.value("kind",std::string("auto"));if(kind!="auto")throw std::runtime_error("Switch content type is detected automatically; refresh the client and choose Analyze and import");
+ return switchPreparation.start({{"entry",body.at("id")}},true);
 }
 // Only explicitly requested Prowlarr downloads enter this durable queue.
 fs::path automaticTaskPath(const std::string& hash,int id,bool isRemote){return paths.root/"automatic"/(isRemote?"remote-"+std::to_string(id)+".json":hash+".json");}
-json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true,const std::string& engine="rtorrent"){
+json queueDownload(const std::string& method,const json& arguments,const std::string& selected="internal",bool automatic=true,const std::string& engine="rtorrent",const std::string& platform="ps5"){
+  if(platform!="ps5"&&platform!="switch")throw std::runtime_error("Choose PS5 or Switch preparation");
   std::lock_guard<std::mutex> guard(lock);if(transferring||retiring)throw std::runtime_error("Wait for the storage transfer to finish");
   nativeUpdater->requireAdmission();
   const auto selectedPaths=storage.get(selected);
-  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;args["automatic"]=automatic;
+  auto args=arguments;args["download-dir"]=selectedPaths.complete.string();args["storage"]=selected;args["engine"]=engine;args["automatic"]=automatic;args["platform"]=platform;
   auto result=rpc(method,args);
   auto torrent=result.contains("torrent-added")?result.at("torrent-added"):result.at("torrent-duplicate");
   auto hash=torrent.at("hashString").get<std::string>();
   if(!std::regex_match(hash,std::regex("[a-fA-F0-9]{40}")))throw std::runtime_error("Invalid torrent confirmation");
   const bool isRemote=remote&&remote->contains(torrent.at("id"));auto file=automaticTaskPath(hash,torrent.at("id"),isRemote);
-  if(!result.contains("torrent-duplicate"))writeJson(file,{{"torrentId",torrent.at("id")},{"remote",isRemote},{"hash",hash},{"status",automatic?"waiting":"download-only"},{"storage",selected}});
+  if(!result.contains("torrent-duplicate"))writeJson(file,{{"torrentId",torrent.at("id")},{"remote",isRemote},{"hash",hash},{"status",automatic?"waiting":"download-only"},{"storage",selected},{"platform",platform}});
   return result;
 }
 void automaticDownloads(){
@@ -336,11 +544,13 @@ void automaticDownloads(){
         for(const auto& torrent:entries){
           if(torrent.at("id")!=sourceId||torrent.at("hashString")!=task.at("hash")||torrent.value("leftUntilDone",1ULL)!=0||torrent.value("error",0)!=0||torrent.value("status",0)==1||torrent.value("status",0)==2)continue;
           const auto archives=archiveSets(torrent);
-          if(archives.size()>1){
+          const bool switchContent=task.value("platform",std::string("ps5"))=="switch"||switchTorrent(torrent);
+          if(switchContent)task["platform"]="switch";
+          if(archives.size()>1&&!switchContent){
             json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"remote",torrent.value("remote",false)},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error","Multiple RAR sets found. Choose the archive to prepare."}};
             publishJob(job);task["status"]="attention";writeJson(file.path(),task);break;
           }
-          try{const auto job=startExtraction({{"id",torrent.at("id")},{"archive",archives.empty()?std::string{}:archives[0]},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
+          try{const auto job=switchContent?switchPreparation.start({{"id",torrent.at("id")}},true):startExtraction({{"id",torrent.at("id")},{"archive",archives.empty()?std::string{}:archives[0]},{"storage",task.value("storage",std::string("internal"))}},true);task["job"]=job.at("id");task["status"]="tracked";}
           catch(const PreparationBusy&){continue;}
           catch(const std::exception& e){json job={{"id",randomId()},{"torrentId",sourceId},{"hash",task.at("hash")},{"name",torrent.at("name")},{"automatic",true},{"status","failed"},{"phase","Needs attention"},{"error",e.what()}};publishJob(job);task["status"]="attention";}
           writeJson(file.path(),task);break;
@@ -385,7 +595,9 @@ json startTransfer(const json& body) {
     torrent=getTorrent(body.at("id").get<int>());if(torrent.value("remote",false)&&torrent.value("remotePhase","")!="ready")throw std::runtime_error("Finish the remote import before moving it");if(torrent.value("remote",false)){ownership=remote->published(torrent.at("id"));sourceId=ownership.at("storage").get<std::string>();}else sourceId=storage.forDownload(torrent.at("downloadDir").get<std::string>());
     if(torrent.value("status",0)==1||torrent.value("status",0)==2)throw std::runtime_error("Wait for torrent verification");
   }else{
-    job=findJob(body.at("id").get<std::string>());sourceId=job.value("storage","internal");
+    job=findJob(body.at("id").get<std::string>());
+    if(job.value("platform",std::string{})=="switch")throw std::runtime_error("Switch content is managed in Emulation; PS5 Library transfers are unavailable for these imports");
+    sourceId=job.value("storage","internal");
     const auto compressed=compressor.game(job.at("id").get<std::string>());
     if(compressed.value("status","")=="ready")sourceId=compressed.value("storage","internal");
     else if(compressor.protects(job.at("id").get<std::string>()))throw std::runtime_error("Resolve compression before transferring");
@@ -394,12 +606,7 @@ json startTransfer(const json& body) {
   }
   const auto source=storage.get(sourceId);
   if(kind!="publish"&&selected==sourceId)throw std::runtime_error("Choose a different disk");
-  transfers.start(body.at("id").is_string()?body.at("id").get<std::string>():std::to_string(body.at("id").get<int>()),kind=="torrent"?torrent.value("name","Torrent"):job.value("name","Game"),"transfer");
-  transferState={{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying; source kept until completion"}};
-  writeJson(paths.root/"transfer.json",transferState);transferring=true;
-  std::thread([kind,selected,sourceId,source,destination,job,torrent,ownership]()mutable{
-    bool changed=false;
-    try {
+  startTrackedTransfer({{"status","running"},{"kind",kind},{"id",body.at("id")},{"storage",selected},{"sourceStorage",sourceId},{"phase","Copying; source kept until completion"}},kind=="torrent"?torrent.value("name","Torrent"):job.value("name","Game"),[kind,selected,sourceId,source,destination,job,torrent,ownership](bool& changed)mutable{
       const auto check=[&]{if(storage.get(sourceId,false).root!=source.root||storage.get(selected,false).root!=destination.root)throw std::runtime_error("Disk mount changed during transfer");if(!ownership.empty())RemoteDownloads::checkPublishedIdentity(source.complete/ownership.at("hash").get<std::string>(),ownership.at("identity"));};
       ExtractionEstimate estimate;uint64_t previousTotal=0;
       const auto copyProgress=[&](uint64_t bytes,uint64_t total,const std::string& file){if(total!=previousTotal){estimate=ExtractionEstimate{};previousTotal=total;}estimate.update(std::chrono::steady_clock::now(),bytes,total);transfers.progress({{"bytes",bytes},{"total",total},{"file",file},{"unit","bytes"},{"rate",estimate.rate},{"eta",estimate.eta},{"phase","Copying files; source kept until completion"}});};
@@ -478,7 +685,7 @@ json startTransfer(const json& body) {
             changed=true;
             try{background.run("move",title,from,to,remoteReport,check);}catch(const BackgroundRejected&){changed=false;throw;}
             check();job["storage"]=selected;job["destination"]=to.string();publishJob(job);
-            std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Move completed. Ready in Library.";writeJson(paths.root/"transfer.json",transferState);transferring=false;transfers.finish(true);try{notifySystem("Botty+: Move completed. You can open Botty+.");}catch(...){}return;
+            return std::string("Move completed. Ready in Library.");
           }
           waitForGame(title);
         }
@@ -496,9 +703,8 @@ json startTransfer(const json& body) {
         }
         check();job["storage"]=selected;if(moved)job["destination"]=to.string();publishJob(job);removeTransferred(cleanup);
       }
-      std::lock_guard<std::mutex> g(lock);transferState["status"]="complete";transferState["phase"]="Transfer complete; sizes checked";writeJson(paths.root/"transfer.json",transferState);transferring=false;transfers.finish(true);try{notifySystem("Botty+: Move completed. You can open Botty+.");}catch(...){}
-    }catch(const std::exception& e){transfers.finish(false,e.what());std::lock_guard<std::mutex> g(lock);transferState["status"]=changed?"uncertain":"failed";if(!changed)transferring=false;transferState["error"]=e.what();transferState["phase"]="Transfer stopped; retained copies need inspection";try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}/* Do not replay an ambiguous move. */}
-  }).detach();return transferState;
+      return std::string("Transfer complete; sizes checked");
+  },true);return transferState;
 }
 
 void reply(httplib::Response& response,const json& body,int status=200){response.status=status;response.set_content(body.dump(),"application/json");}
@@ -521,6 +727,8 @@ int main(int argc,char** argv) {
       else if(arg=="--ui")uiDir=argv[++i];else if(arg=="--port")port=std::stoi(argv[++i]);else if(arg=="--rpc-port")rpcPort=std::stoi(argv[++i]);else throw std::runtime_error("Unknown argument");
     }
     if(paths.root=="/data/botty")throw std::runtime_error("Native testing requires --root");
+    emulation=Emulation(paths.root/"eden",paths.root/"eden-app");
+    legacyEmulation=Emulation(paths.root/"legacy-eden",paths.root/"legacy-eden-app");
 #endif
     if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw std::runtime_error("HTTPS initialization failed");
     umask(0077);signal(SIGPIPE,SIG_IGN);
@@ -534,7 +742,7 @@ int main(int argc,char** argv) {
     storage.init(paths,testMounts);storage.list();
     token=randomId();recoverJobs();compressor.init(paths,compressorPort,&storage,shadowPort);
     if(fs::exists(paths.root/"transfer.json")){transferState=json::parse(readText(paths.root/"transfer.json"));if(transferState.value("status","")=="running"||transferState.value("status","")=="uncertain"){transferState["status"]="uncertain";transferState["error"]="Interrupted file operation. Check retained files and the ShadowMount job before retrying.";transferring=true;auto& monitor=transferState.value("kind","")=="deletion"?operations:transfers;monitor.start(transferState.value("id",std::string("interrupted")),"Interrupted file operation",transferState.value("kind","")=="deletion"?"deletion":"transfer");monitor.progress(transferState);monitor.finish(false,transferState.at("error"));}}
-    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.8.0"}});
+    writeJson(paths.root/"manager-process.json",{{"pid",getpid()},{"version","1.10.2"}});
     NativeTransaction::Config nativeConfig;
 #ifndef __PS5__
     nativeConfig.nativeRoot=paths.root/"native-test/PPSA99071";
@@ -601,10 +809,10 @@ int main(int argc,char** argv) {
     });
     // Installed native clients require the original flat health contract.
     // Rest-mode details remain available in /api/rest-mode and /api/state.
-    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.8.0"},{"titleId","BTTY00001"},{"apiVersion",1}});});
+    server.Get("/health",[](const auto&,auto& res){reply(res,{{"app","Botty"},{"version","1.10.2"},{"titleId","BTTY00001"},{"apiVersion",1}});});
     server.Get("/api/installation/status",[](const auto&,auto& res){
       const auto update=nativeUpdater->state();
-      reply(res,{{"app","Botty"},{"version","1.8.0"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
+      reply(res,{{"app","Botty"},{"version","1.10.2"},{"titleId","BTTY00001"},{"apiVersion",1},{"updaterVersion","1.0.0"},{"pid",getpid()},{"updateQueued",nativeUpdater->requested()},{"updateTransaction",update.value("transaction","")},{"updaterThreadFinished",nativeUpdater->finished()}});
     });
     server.Post("/api/installation/retire",[&](const auto& req,auto& res){
       const auto body=json::parse(req.body);
@@ -653,6 +861,8 @@ int main(int argc,char** argv) {
       for(auto& torrent:result["torrents"])try{torrent["storage"]=storage.forDownload(torrent.at("downloadDir").get<std::string>());}catch(...){torrent["storage"]="unavailable";}
       result["preparationSupported"]=true;
       for(auto& torrent:result["torrents"]){
+        if(switchTorrent(torrent))torrent["emulationContent"]=true;
+        for(const auto& f:torrent.value("files",json::array()))if(Emulation::supported(fs::path(f.at("name").get<std::string>())))torrent["emulationContent"]=true;
         bool loose=false;for(const auto& f:torrent.value("files",json::array())){const fs::path name=f.at("name").get<std::string>();const auto ext=asciiLower(name.extension().string());loose|=ext==".exfat"||ext==".ffpkg"||ext==".ffpfs"||ext==".ffpfsc"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
         torrent["looseContent"]=loose&&archiveSets(torrent).empty()&&(!packageTorrent(torrent)||torrent.value("remote",false));
         std::string notes;
@@ -665,6 +875,7 @@ int main(int argc,char** argv) {
         }catch(...){}
         torrent["formatHint"]=releaseFormatHint(torrent.value("name",std::string{}),notes);
       }
+      result["emulation"]=emulationState(result["torrents"]);
       result["remoteDownloads"]=remote?remote->state():json{{"enabled",false},{"error",remoteError}};
       result["restMode"]=restState();
       explore.registerCatalogArtwork(result["torrents"],result["jobs"]);
@@ -694,9 +905,16 @@ int main(int argc,char** argv) {
       else res.set_content(data,"application/octet-stream");
     });
     server.Post("/api/explore",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
-    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);const auto platform=body.value("platform",std::string("ps5"));explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine,platform](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine,platform);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/emulation/import",[](const auto& req,auto& res){reply(res,importEmulation(json::parse(req.body)),202);});
+    server.Post("/api/emulation/launch",[](const auto& req,auto& res){
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
+      if(transferring||extracting||retiring)throw std::runtime_error("Wait for the current file operation");
+      const auto path=emulation.launchPath(json::parse(req.body).at("id").template get<std::string>());
+      reply(res,{{"ok",true},{"launchPath",path},{"engine","embedded-eden"}});
+    });
     server.Post("/api/search",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();search.start(paths,json::parse(req.body).at("query").template get<std::string>());reply(res,{{"ok",true}},202);});
-    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);search.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine);});reply(res,{{"ok",true}},202);});
+    server.Post("/api/search/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);const auto platform=body.value("platform",std::string("ps5"));search.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine,platform](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine,platform);});reply(res,{{"ok",true}},202);});
     server.Post("/api/torrent",[](const auto& req,auto& res){
       auto body=json::parse(req.body);const auto action=body.at("action").template get<std::string>();
       if(action=="add") {
@@ -704,11 +922,11 @@ int main(int argc,char** argv) {
           if(body.contains("magnet"))throw std::runtime_error("Choose a magnet link or a torrent file");
           const auto metainfo=body.at("metainfo").template get<std::string>();
           if(metainfo.empty()||metainfo.size()>1398104)throw std::runtime_error("Torrent files must be between 1 byte and 1 MiB");
-          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
+          reply(res,queueDownload("torrent-add",{{"metainfo",metainfo}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent")),body.value("platform",std::string("ps5"))));return;
         }
         const auto magnet=body.at("magnet").template get<std::string>();
         if(magnet.rfind("magnet:?",0)!=0 || magnet.size()>16384)throw std::runtime_error("Enter a valid magnet link");
-        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent"))));return;
+        reply(res,queueDownload("torrent-add",{{"filename",magnet}},body.value("storage","internal"),body.value("automatic",false),body.value("engine",std::string("rtorrent")),body.value("platform",std::string("ps5"))));return;
       }
       if(transferring)throw std::runtime_error("Wait for the storage transfer to finish");
       const int id=body.at("id").template get<int>();
@@ -775,9 +993,11 @@ int main(int argc,char** argv) {
       if(!remote||transferring||retiring)throw std::runtime_error("Remote downloads unavailable or storage transfer active");
       const auto hash=body.contains("hash")?body.at("hash").template get<std::string>():remote->candidateHash(body.at("id").template get<int>());if(!std::regex_match(hash,std::regex("[a-f0-9]{40}")))throw std::runtime_error("Invalid remote hash");
       const auto selected=body.value("storage",std::string("internal"));auto selectedPaths=storage.get(selected);
-      json arguments={{"download-dir",selectedPaths.complete.string()},{"storage",selected},{"automatic",body.value("automatic",true)}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");
+      std::string detected="ps5";for(const auto& candidate:torrents())if(candidate.at("hashString")==hash&&switchTorrent(candidate)){detected="switch";break;}
+      const auto platform=body.value("platform",detected);if(platform!="switch"&&platform!="ps5")throw std::runtime_error("Invalid preparation platform");
+      json arguments={{"download-dir",selectedPaths.complete.string()},{"storage",selected},{"platform",platform},{"automatic",body.value("automatic",true)}};if(body.contains("parallelConnections"))arguments["parallelConnections"]=body.at("parallelConnections");
       const auto result=remote->add(hash,arguments,true);
-      if(result.contains("torrent-added"))writeJson(automaticTaskPath(hash,result.at("torrent-added").at("id"),true),{{"torrentId",result.at("torrent-added").at("id")},{"remote",true},{"hash",hash},{"status",body.value("automatic",true)?"waiting":"download-only"},{"storage",selected}});
+      if(result.contains("torrent-added"))writeJson(automaticTaskPath(hash,result.at("torrent-added").at("id"),true),{{"torrentId",result.at("torrent-added").at("id")},{"remote",true},{"hash",hash},{"status",body.value("automatic",true)?"waiting":"download-only"},{"storage",selected},{"platform",platform}});
       reply(res,result,202);
     });
     server.Post("/api/extract",[](const auto& req,auto& res){
@@ -787,9 +1007,10 @@ int main(int argc,char** argv) {
         const auto selected=body.value("storage",torrent.value("storage",std::string("internal")));
         if(selected!=torrent.value("storage",std::string("internal")))throw std::runtime_error("Keep the import destination chosen at download time");
         rpc("torrent-prepare",{{"ids",{torrent.at("id")}},{"package",body.value("archive",std::string{})}});
-        writeJson(automaticTaskPath(torrent.at("hashString"),torrent.at("id"),true),{{"torrentId",torrent.at("id")},{"remote",true},{"hash",torrent.at("hashString")},{"status","waiting"},{"storage",selected}});
+        writeJson(automaticTaskPath(torrent.at("hashString"),torrent.at("id"),true),{{"torrentId",torrent.at("id")},{"remote",true},{"hash",torrent.at("hashString")},{"status","waiting"},{"platform",switchTorrent(torrent)?"switch":"ps5"},{"storage",selected}});
         reply(res,{{"ok",true}},202);return;
       }
+      if(body.value("platform",std::string{})=="switch"||switchTorrent(torrent)){reply(res,switchPreparation.start(body,true),202);return;}
       reply(res,startExtraction(body,body.value("automatic",false)),202);
     });
     server.Post("/api/move",[](const auto& req,auto& res){
@@ -810,6 +1031,7 @@ int main(int argc,char** argv) {
       if(status!="moved"&&job.value("adoptedImport",false))throw std::runtime_error("Publish the imported game to Library before removing its preparation record");
       if(status!="ready"&&status!="moved"&&status!="failed"&&status!="cancelled"&&status!="interrupted")throw std::runtime_error("Only finished extractions can be removed from the list");
       if(status=="failed"||status=="cancelled"||status=="interrupted"){
+        if(job.value("platform",std::string{})=="switch")switchPreparation.removePartial(job);
         DeletionScope operation(operations,id,job.value("name","Partial extraction"));
         for(const auto& suffix:{"", ".working"}){const auto selected=storage.get(job.value("storage","internal"));const auto path=selected.extracted/(id+suffix);if(fs::exists(fs::symlink_status(path)))deleteGameDirectory(selected.extracted,path.filename(),operation.reporter());}
         operation.complete();
@@ -886,6 +1108,7 @@ int main(int argc,char** argv) {
       std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();compressor.requireIdle();requireLibraryIdle();if(registeringLibrary||transferring||extracting)throw std::runtime_error("Wait for the active extraction to finish");
       auto job=findJob(id);if(job.value("status","")!="moved"&&job.value("adoptedImport",false))throw std::runtime_error("Publish the imported game to Library before deleting it");
       if(job.value("status","")=="moved" || job.value("status","")=="moving" || job.value("status","")=="move-error")throw std::runtime_error("Moved or uncertain library files require manual review");
+      if(job.value("platform",std::string{})=="switch")switchPreparation.removePartial(job);
       DeletionScope operation(operations,id,job.value("name","Extraction"));
       for(const auto& suffix:{"", ".working"}) {const auto selected=storage.get(job.value("storage","internal"));const auto path=selected.extracted/(id+suffix);if(fs::exists(fs::symlink_status(path)))deleteGameDirectory(selected.extracted,path.filename(),operation.reporter());}
       operation.complete();fs::remove(paths.jobs/(id+".json"));for(auto it=jobs.begin();it!=jobs.end();++it)if(it->at("id")==id){jobs.erase(it);break;}

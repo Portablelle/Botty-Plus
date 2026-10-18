@@ -70,15 +70,15 @@ struct Model {
     static constexpr std::array<const char*,3> exploreSorts{"newest","seeders","completed"};
     static constexpr std::array<const char*,3> exploreLabels{"Newest","Most seeded","Most grabbed"};
     // Browse -> follow -> collect -> manage. Circle never quits; Close lives in System.
-    enum Tab : unsigned { discover=0, activity=1, library=2, system=3 };
-    static constexpr unsigned tabCount=4, libraryColumns=7, systemItems=3;
+    enum Tab : unsigned { discover=0, activity=1, library=2, emulation=3, config=4, system=5 };
+    static constexpr unsigned tabCount=6, libraryColumns=7, systemItems=3;
     unsigned tab=discover, selected=0, count=0, filter=0, detailPage=0, exploreSort=0;
     // Details buttons and file pages; the app derives both counts before input.
     unsigned detailButton=0, buttonCount=0, pageCount=1;
     bool details=false, searchResults=false;
     // Inline System confirmation; Cancel stays focused until moved explicitly.
     bool updateDialog=false, confirmUpdate=false;
-    enum class Action { none, retry, quit, menu, add, explore, update, installUpdate, search, get, compare, run };
+    enum class Action { none, retry, quit, menu, add, explore, update, installUpdate, search, get, compare, run, emulationPlay, emulationGame, emulationConfig, emulationGameConfig };
     Action press(unsigned edge) noexcept {
         if (updateDialog) {
             if (edge & Buttons::circle) { updateDialog=false; return Action::none; }
@@ -119,6 +119,16 @@ struct Model {
             if((edge&Buttons::left)&&selected)--selected;
             if((edge&Buttons::options)&&count)return Action::compare;
             return (edge&Buttons::cross)&&count?Action::get:Action::none;
+        }
+        if(tab==config)return (edge&Buttons::cross)?Action::emulationConfig:Action::none;
+        if(tab==emulation){
+            if(edge&Buttons::triangle){filter=(filter+1)%3;selected=0;return Action::none;}
+            if(edge&Buttons::square)return Action::search;
+            if((edge&Buttons::down)&&selected+1<count)++selected;
+            if((edge&Buttons::up)&&selected)--selected;
+            if((edge&Buttons::cross)&&count)return filter==0?Action::emulationPlay:filter==2?Action::emulationGame:Action::none;
+            if((edge&Buttons::options)&&count&&filter==0)return Action::emulationGameConfig;
+            return Action::none;
         }
         if(tab==system){
             if((edge&Buttons::down)&&selected+1<systemItems)++selected;

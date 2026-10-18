@@ -11,6 +11,41 @@ bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
 
 class BridgeTests(unittest.TestCase):
+    def test_explicit_switch_import_does_not_require_release_name_hint(self):
+        value=bridge.Bridge.__new__(bridge.Bridge);value.owned={}
+        value.info=lambda hash: (dict(name='Game.zip',save_path='/fixture'),[dict(name='Game.zip')],True)
+        value.save=lambda: None
+        value.snapshot=lambda hash: value.owned[hash]
+        with self.assertRaises(ValueError): value.import_torrent('a'*40)
+        self.assertEqual(value.import_torrent('a'*40,platform='switch')['platform'],'switch')
+
+    def test_switch_container_candidates_require_valid_completed_headers(self):
+        with tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve())) as tmp:
+            Path(tmp, 'Game.xci').write_bytes(bytes(256) + b'HEADfixture')
+            Path(tmp, 'Update.nsp').write_bytes(b'PFS0fixture')
+            files = [{'name': 'Game.xci'}, {'name': 'Update.nsp'}]
+            self.assertFalse(bridge.compatibility('Switch', files)['verified'])
+            result = bridge.compatibility('Switch', files, tmp, True)
+            self.assertEqual(result['kind'], 'switch')
+            self.assertFalse(result['verified'])
+            Path(tmp, 'Update.nsp').write_bytes(b'bad')
+            self.assertIsNone(bridge.compatibility('Switch', files, tmp, True))
+
+
+    def test_qb_json_add_response_requires_expected_hash_and_no_failures(self):
+        from unittest.mock import patch
+        b=bridge.Bridge.__new__(bridge.Bridge); b.c={'downloads':'/safe/downloads'}; b.save=lambda:None
+        h='d'*40
+        for response,ok in [(dict(added_torrent_ids=[h],failure_count=0),True),(dict(added_torrent_ids=['e'*40],failure_count=0),False),(dict(added_torrent_ids=[h],failure_count=1),False)]:
+            b.owned={}
+            b.qb=lambda route,fields=None: b'[]' if fields is None else json.dumps(response).encode()
+            body=dict(hash=h,filename='magnet:?xt=urn:btih:'+h,platform='switch',automatic=True)
+            if ok:
+                self.assertEqual(b.add(body),{'hash':h})
+                self.assertEqual(b.owned[h]['platform'],'switch')
+            else:
+                with self.assertRaises(ValueError): b.add(body)
+
     def test_lost_add_response_recovered_without_adopting_foreign_destination(self):
         b = bridge.Bridge.__new__(bridge.Bridge); b.c = {'downloads': '/safe/downloads'}; b.owned = {}; b.save = lambda: None
         rows = []
@@ -28,6 +63,25 @@ class BridgeTests(unittest.TestCase):
         rows[0]['save_path'] = b.owned[h]['root']
         self.assertEqual(b.add(body), {'hash': h})
         self.assertNotIn('pending', b.owned[h])
+
+    def test_verified_identity_is_checked_on_the_streamed_descriptor(self):
+        import contextlib
+        import http.client
+        import threading
+        with tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve())) as tmp:
+            path=Path(tmp,'file');path.write_bytes(b'payload');identity=bridge.Forge.identity(path)
+            b=bridge.Bridge.__new__(bridge.Bridge);b.c={'token':'a'*64};b.request_operation=contextlib.nullcontext
+            def replace_after_verification(*args):
+                replacement=Path(tmp,'replacement');replacement.write_bytes(b'changed');replacement.replace(path)
+                return tmp,dict(name='file',size=7,identity=identity)
+            b.file_member=replace_after_verification
+            server=bridge.BoundedHTTPServer(('127.0.0.1',0),bridge.Handler);server.bridge=b
+            worker=threading.Thread(target=server.serve_forever);worker.start()
+            try:
+                client=http.client.HTTPConnection('127.0.0.1',server.server_port,timeout=5)
+                client.request('GET','/file/'+'a'*40+'/0',headers={'Authorization':'Bearer '+b.c['token'],'X-Botty-File-Name':'file','X-Botty-File-Size':'7'})
+                response=client.getresponse();self.assertEqual(response.status,400);self.assertNotEqual(response.read(),b'changed');client.close()
+            finally:server.shutdown();server.server_close();worker.join()
 
     def test_stream_read_failure_closes_without_appending_error_response(self):
         import contextlib
