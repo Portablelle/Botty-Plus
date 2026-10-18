@@ -138,7 +138,7 @@ inline void installationLoad(const std::string& bytes) {
 }
 inline bool installationRetireAuthorized(const fs::path& root,const std::string& transaction,const std::string& capability,const std::function<bool(const json&)>& owns={}) {
   if(!std::regex_match(transaction,std::regex("[a-f0-9]{32}"))||!std::regex_match(capability,std::regex("[a-f0-9]{64}")))return false;
-  const auto handoff=installationRecord(root/"installation/handoff.json",256*1024);
+  const auto handoff=installationRecord(root/"installation/handoff.json",2*1024*1024);
   if(handoff.at("transaction")!=transaction||handoff.at("capability")!=capability||handoff.at("status")!="takeover"||handoff.at("running").at("manager").at("pid")!=getpid())return false;
   return owns?owns(handoff):installationHandoffOwned(root,handoff,installationBootId());
 }

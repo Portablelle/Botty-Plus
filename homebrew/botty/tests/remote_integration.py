@@ -232,6 +232,13 @@ with tempfile.TemporaryDirectory() as tmp:
         api('/api/torrent', {'id': local['id'], 'action': 'remove-data', 'confirmed': True})
         assert not local_entries and not local_file.exists()
         assert any(t['hashString'] == game and t.get('remoteCandidate') for t in api('/api/state')['torrents'])
+        switch_candidate='1234567890'*4
+        (sources/'Candidate.zip').write_bytes(b'archive fixture')
+        rows[switch_candidate]=({'name':'Fixture NSW','save_path':str(sources)+'/'},[{'name':'Candidate.zip','size':15,'index':0}])
+        wait(lambda: any(t['hashString']==switch_candidate and t.get('remoteCandidate') for t in api('/api/state')['torrents']))
+        switch_id=api('/api/remote/import',{'hash':switch_candidate,'automatic':False})['torrent-added']['id']
+        assert bridge.owned[switch_candidate]['platform']=='switch'
+        assert next(t for t in api('/api/state')['torrents'] if t['id']==switch_id)['emulationContent']
         local_task = data / 'automatic' / (game + '.json')
         local_task_data = {'hash': game, 'status': 'waiting', 'storage': 'internal'}
         local_task.write_text(json.dumps(local_task_data))
@@ -538,7 +545,7 @@ with tempfile.TemporaryDirectory() as tmp:
         fault = root / 'fail-directory-sync'; library = root / 'fsync-fault.so'
         environment = dict(os.environ)
         if Path('/proc/self/fd').exists():
-            subprocess.run(['clang', '-shared', '-fPIC', str(HERE / 'fsync-fault.c'), '-o', str(library), '-ldl'], check=True)
+            subprocess.run([os.environ.get('CC', 'clang'), '-shared', '-fPIC', str(HERE / 'fsync-fault.c'), '-o', str(library), '-ldl'], check=True)
             fault.write_text(str(data / 'downloads/complete'))
             environment.update(LD_PRELOAD=str(library), BOTTY_FAIL_DIRECTORY_SYNC=str(fault))
         local_entries.append({'id': 22, 'hashString': '9' * 40, 'name': 'Shared legacy staging', 'status': 0, 'error': 0, 'leftUntilDone': 1, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': '.remote-' + trial + '.partial/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': 16384}]})

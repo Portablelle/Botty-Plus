@@ -66,7 +66,7 @@ misleading file-range fault. Imports retry after the bridge is updated.
 
 ## Private provisioning
 
-1. Install both `server.py` and `forge.py` in `/opt/botty-remote` (the module is required even when conversion is disabled), and the systemd unit in
+1. Install both `server.py`, `forge.py` and `switch_prepare.py` in `/opt/botty-remote` (the module is required even when conversion is disabled), and the systemd unit in
    `/etc/systemd/system`. The supplied unit runs as the existing `ubuntu` account;
    adapt that account and paths for another installation.
 2. Create private `/etc/botty-remote/config.json` with fields `qbUrl`
@@ -180,3 +180,15 @@ Run `python3 test_server.py` and `python3 test_forge.py` before deploying. These
 changes do not install Forge, change your running service or modify any torrent.
 See [the preparation design](../../docs/game-preparation.md) for storage,
 ShadowMount/home-screen admission and the supported-format boundaries.
+
+### Switch preparation
+
+Configure absolute `switchBinary` (the dedicated-host build of
+`homebrew/botty/build/botty-switch-prepare`) and private `switchKeys` paths.
+The keys must be supplied privately; they are never included in source archives.
+The worker storage under the registry directory must be writable by the service.
+Downloads explicitly marked `platform: "switch"` use the shared RAR/ZIP,
+NSP/XCI, CNMT and content-hash pipeline before transfer. Originals are kept.
+Failures and interrupted preparations retain their private staging; Prepare
+starts a fresh attempt after validating that the source inventory is unchanged.
+Run `test_switch_prepare.py` against the compiled binary before deployment.

@@ -1,3 +1,4 @@
+#include <cstring>
 // Botty+. SPDX-License-Identifier: GPL-3.0-or-later
 #include "renderer.hpp"
 #include "model.hpp"
@@ -39,6 +40,8 @@ botty::ArtworkPage covers;
 botty::Connection connection;
 botty::Catalog catalog;
 botty::Workflow workflow;
+bool emulationSearch=false, editingEmulationSearch=false, pendingEmulationSearch=false;
+std::array<char,512> emulationSearchQuery{}, pendingSearchQuery{};
 botty::NativeKeyboard nativeKeyboard;
 enum class TextEntryState { idle, editing, ready, accepted, capacity, fallback };
 TextEntryState textEntryState=TextEntryState::idle;
@@ -441,9 +444,13 @@ void resultToast(const botty::ActionResult& result) noexcept {
 }
 // Quiet requests (searches, Explore refreshes) report only failures.
 bool quietRequest=false,updateSubmitting=false,exitRequested=false;
+std::array<char,4096> emulationLaunchPath{};
+bool emulationConfiguration=false;
 void consume(const botty::ActionResult& received) noexcept {
     actionResult=received;++displayRevision;
     const bool success=received.status==botty::ActionResult::Status::success;
+    if(success&&sentOperation==Op::search){emulationSearch=pendingEmulationSearch;emulationSearchQuery=pendingSearchQuery;}
+    if(success&&(sentOperation==Op::emulationLaunch||sentOperation==Op::emulationConfigure)&&received.launchPath[0]){emulationLaunchPath=received.launchPath;emulationConfiguration=sentOperation==Op::emulationConfigure;exitRequested=true;return;}
     if(updateSubmitting){updateSubmitting=false;if(success){exitRequested=true;return;}}
     if(!quietRequest||!success)resultToast(received);
     quietRequest=false;
@@ -479,16 +486,16 @@ void header(Canvas& c,const char* state,Color stateColor) noexcept {
     middle(c,154,47,34,"Botty+",28,ink,bold);
     unsigned x=154+width(c,"Botty+",28,bold)+64;
     x+=keycap(c,x,48,"L1")+40;
-    const char* tabs[]={"Discover","Activity","Library","System"};
+    const char* tabs[]={"Discover","Activity","Library","Emulation","Config","System"};
     for(unsigned i=0;i<Model::tabCount;++i){
         const bool active=model.tab==i;const unsigned w=width(c,tabs[i],28,active?bold:regular);
         text(c,static_cast<int>(x),47,tabs[i],28,34,active?ink:muted,active?bold:regular);
         if(active)c.rounded(x+(w-32)/2,89,32,4,2,accent);
-        x+=w+40;
+        x+=w+28;
     }
     keycap(c,x,48,"R1");
     char free[96],size[48];free[0]=0;
-    if(catalog.valid){botty::formatBytes(catalog.freeBytes,size,sizeof(size));std::snprintf(free,sizeof(free),"PS5 SSD \xc2\xb7 %s free",size);}
+    if(catalog.valid&&x+470<1824){botty::formatBytes(catalog.freeBytes,size,sizeof(size));std::snprintf(free,sizeof(free),"PS5 SSD \xc2\xb7 %s free",size);}
     unsigned right=1824;
     if(free[0]){const unsigned w=width(c,free,20);text(c,static_cast<int>(right-w),52,free,20,24,muted);right-=w+28;c.rectangle(right-1,52,1,24,line);right-=29;}
     const unsigned w=width(c,state,20);text(c,static_cast<int>(right-w),52,state,20,24,ink);
@@ -1099,8 +1106,8 @@ void drawSheet(Canvas& c) noexcept {
             showArrows=count>0;
         }else if(row==Row::mode){
             std::snprintf(label,sizeof(label),"After download");
-            std::snprintf(value,sizeof(value),"%s",workflow.command.automatic?"Prepare and add to Library":"Keep the download only");
-            std::snprintf(sub,sizeof(sub),"%s",workflow.command.automatic?"Detect format, prepare, then add to Library":"Prepare it later from Activity");
+            std::snprintf(value,sizeof(value),"%s",workflow.command.automatic?workflow.command.switchContent?"Verify and import into Emulation":"Prepare and add to Library":"Keep the download only");
+            std::snprintf(sub,sizeof(sub),"%s",workflow.command.automatic?(workflow.command.switchContent?"Extract archives, identify game / update / DLC, then import":"Detect format, prepare, then add to Library"):"Prepare it later from Activity");
             index=workflow.command.automatic?0:1;count=2;showArrows=true;
         }else if(row==Row::archive){
             std::snprintf(label,sizeof(label),"%s",target&&target->remotePreparation?"Server package":"Archive");
@@ -1231,6 +1238,42 @@ void drawToast(Canvas& c,bool sheet) noexcept {
     else c.rounded(x+w-34,y+h/2-5,10,10,5,toast.kind==Toast::Kind::success?success:warning);
 }
 
+void drawEmulation(Canvas& c) noexcept {
+    text(c,96,146,"Emulation",56,68,ink,bold);
+    const char* filters[]={"Games","Updates / DLC","Available files"};
+    unsigned x=1100;for(unsigned i=0;i<3;++i)x+=chip(c,x,202,filters[i],model.filter==i)+12;
+    const char* note=!catalog.emulationSupported?"Update the Botty service to enable Emulation.":catalog.emulationError[0]?catalog.emulationError.data():!catalog.emulationInstalled?"Install the Botty+ package with its included Switch engine from Portal.":model.filter==0?"Switch engine included with Botty+. Games return to Botty+ when closed.":model.filter==1?"Compatible updates and DLC are applied the next time the game starts.":"Completed downloads and existing PS5 files. Originals are kept when added to your library.";
+    fit(c,96,258,note,24,30,1728,muted);
+    if(!model.count)drawEmpty(c,310,"No files in this view",model.filter==2?"Download NSP/XCI files from Discover, then return here. Triangle changes the view.":catalog.emulationRoot.data());
+    const unsigned first=(model.selected/6)*6;
+    for(unsigned i=0;i<6&&first+i<model.count;++i){
+        const auto* e=botty::emulationAt(catalog,model.filter,first+i);if(!e)break;
+        const unsigned y=300+i*102;const bool focused=first+i==model.selected;
+        c.rounded(96,y,1728,88,12,focused?raised:surface);
+        if(focused)focusRing(c,96,y,1728,88,12,3,bg);
+        fit(c,120,y+14,e->name.data(),28,34,1400,ink,bold);
+        char size[48];botty::formatBytes(e->total,size,sizeof(size));fit(c,120,y+52,e->phase[0]?e->phase.data():size,20,24,1680,muted);
+    }
+    unsigned hx=96;
+    if(model.filter==0){hx=hint(c,hx,Glyph::cross,"Play",true);hx=hint(c,hx,Glyph::menu,"Game configuration");}
+    if(model.filter==2){hx=hint(c,hx,Glyph::cross,"Analyze and import",true);}
+    hx=hint(c,hx,Glyph::triangle,"Change view");hint(c,hx,Glyph::square,"Search Switch");
+}
+
+void drawEmulationConfig(Canvas& c) noexcept {
+    text(c,96,146,"Emulator configuration",56,68,ink,bold);
+    fit(c,96,238,"All settings of the Switch engine included with Botty+.",26,34,1728,muted);
+    c.rounded(96,318,1728,138,16,raised);
+    focusRing(c,96,318,1728,138,16,3,bg);
+    text(c,128,340,"Open all emulator settings",32,40,ink,bold);
+    fit(c,128,396,"Circle returns to Botty+. Settings are saved by the emulator and used on the next launch.",23,30,1648,muted);
+    const char* names[]={"Video and FPS","Performance","Audio and controls","Profiles and system"};
+    const char* descriptions[]={"1080p / 1440p / 2160p output, render scale, filters, refresh rate, FPS overlay and frame generation.","CPU and GPU options, shaders, memory and the same compatibility controls as the embedded engine.","Volume, mute, vibration, button mapping and menu shortcuts.","User profiles, game language, accessibility, diagnostics, files, save sync and appearance."};
+    for(unsigned i=0;i<4;++i){const unsigned y=504+i*92;text(c,112,y,names[i],26,32,ink,bold);fit(c,112,y+36,descriptions[i],21,28,1660,muted);}
+    fit(c,96,900,"Per-game overrides: Emulation > Games > select a game > Options. Display and backend support determine available modes.",22,30,1728,muted);
+    hint(c,96,Glyph::cross,"Open settings",true);
+}
+
 bool nativeInputPending() noexcept {return textEntryState==TextEntryState::accepted||textEntryState==TextEntryState::capacity;}
 bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept {
     // Circle backs out like the keyboard panel does: a password edit returns to Extract.
@@ -1251,12 +1294,13 @@ bool finishNativeInput(unsigned edge,bool busy,bool snapshotKnown=true) noexcept
 }
 void submitWorkflow() noexcept {
     const auto op=workflow.command.operation;
+
     std::array<char,96> cover{};std::string_view name=workflow.targetName.data();
     if(op==Op::exploreGrab||op==Op::grab){cover=sheetCover();name=workflow.gameName.data();}
     else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==0?'t':'j');
     if(op==Op::add)name="Magnet link";
     if(send(workflow.command,name,cover,op==Op::search)){
-        if(op==Op::search){rememberSearch(workflow.command.text.data());model.tab=Model::discover;model.searchResults=true;model.selected=0;}
+        if(op==Op::search){pendingEmulationSearch=editingEmulationSearch;std::snprintf(pendingSearchQuery.data(),pendingSearchQuery.size(),"%s",workflow.command.text.data());rememberSearch(workflow.command.text.data());model.tab=Model::discover;model.searchResults=true;model.selected=0;}
         // File operations continue in Activity, where their progress is shown.
         if(op==Op::transfer||op==Op::move||op==Op::extract||op==Op::compress||op==Op::remove||op==Op::removeLibrary||op==Op::removeTorrent||op==Op::removeOriginal||op==Op::dismiss){model.tab=Model::activity;model.selected=model.filter=0;model.details=false;}
     }
@@ -1315,6 +1359,7 @@ bool draw(Canvas& c) noexcept {
         if(model.detailButton>=model.buttonCount)model.detailButton=model.buttonCount?model.buttonCount-1:0;
         if(model.detailPage>=model.pageCount)model.detailPage=model.pageCount-1;
     }
+    const auto panelBeforeInput=workflow.panel;
     if(workflow.panel!=Panel::closed){
         unsigned workflowEdge=edge;
         if(workflow.panel==Panel::keyboard&&textEntryState!=TextEntryState::fallback){
@@ -1349,7 +1394,23 @@ bool draw(Canvas& c) noexcept {
             else if(send(command,"Botty+",{}))updateSubmitting=true;
         }
         if(action==Action::quit){if(!network.busy())return false;notify(Toast::Kind::error,"Close Botty+ later","Wait for the pending request before closing.");}
+        if(action==Action::emulationConfig){
+            if(!catalog.valid||catalog.stale||!catalog.emulationInstalled||catalog.transferring||catalog.extracting||network.busy())
+                notify(Toast::Kind::error,"Configuration unavailable","Wait for the embedded engine, local service and current file operations.");
+            else {emulationConfiguration=true;exitRequested=true;}
+        }
+        if(action==Action::emulationPlay||action==Action::emulationGame||action==Action::emulationGameConfig){
+            const auto* entry=botty::emulationAt(catalog,model.filter,model.selected);
+            if(!catalog.valid||catalog.stale||!catalog.emulationSupported||catalog.transferring)notify(Toast::Kind::error,"Emulation unavailable","Wait for the service and current file operations.");
+            else if(entry){
+                botty::Command command;command.id=entry->id;
+                command.operation=action==Action::emulationGameConfig?Op::emulationConfigure:action==Action::emulationPlay?Op::emulationLaunch:Op::emulationGame;
+                (void)send(command,entry->name.data(),{});
+            }
+        }
         if(action==Action::search){
+            editingEmulationSearch=model.tab==Model::emulation||(model.tab==Model::discover&&model.searchResults&&emulationSearch&&std::strcmp(catalog.searchQuery.data(),emulationSearchQuery.data())==0);
+
             if(!catalog.valid||!catalog.searchSupported)notify(Toast::Kind::notice,"Search unavailable",botty::unavailable(Op::search,nullptr,catalog));
             else workflow.search(model.searchResults?std::string_view(catalog.searchQuery.data()):std::string_view{});
         }
@@ -1358,7 +1419,7 @@ bool draw(Canvas& c) noexcept {
                 if(model.selected<catalog.resultCount){
                     const auto& result=catalog.results[model.selected];
                     if(result.complete)notify(Toast::Kind::notice,"Already added","This result is already in Botty+. Follow it in Activity.");
-                    else workflow.grab(result,catalog);
+                    else workflow.grab(result,catalog,emulationSearch&&std::strcmp(catalog.searchQuery.data(),emulationSearchQuery.data())==0);
                 }
             }else if(exploreCurrent()&&model.selected<catalog.exploreCount)workflow.chooseSources(catalog.exploreResults[model.selected],catalog,action==Action::compare);
         }
@@ -1382,6 +1443,11 @@ bool draw(Canvas& c) noexcept {
                 else if(workflow.panel==Panel::menu&&!workflow.confirming){detailNotice.fill(0);std::copy_n(workflow.notice.begin(),detailNotice.size()-1,detailNotice.begin());workflow.close();}
             }
         }
+    }
+    if(panelBeforeInput==Panel::closed&&workflow.panel==Panel::sheet){
+        // Opening a download sheet consumes queued controller events and waits
+        // for release, so a buffered Select cannot immediately submit it.
+        input.reset();discardPadBatch=true;
     }
     if(workflow.panel==Panel::keyboard&&textEntryState==TextEntryState::idle&&!nativeKeyboard.active()){
         textEntryState=TextEntryState::editing;
@@ -1440,7 +1506,8 @@ bool draw(Canvas& c) noexcept {
             model.count=exploreCurrent()?catalog.exploreCount:0;
             if(changed&&focusedId[0])for(unsigned i=0;i<model.count;++i)if(catalog.exploreResults[i].id==focusedId){model.selected=i;break;}
         }
-    }else model.count=Model::systemItems;
+    }else if(model.tab==Model::emulation)model.count=catalog.valid?botty::emulationCount(catalog,model.filter):0;
+    else model.count=model.tab==Model::config?1:Model::systemItems;
     if(model.selected>=model.count)model.selected=model.count?model.count-1:0;
     if(model.details&&!focused().entry)model.details=false;
     {
@@ -1506,7 +1573,9 @@ bool draw(Canvas& c) noexcept {
                 const char* exploreState=!catalog.exploreSupported?"Update the Botty service to enable Discover.":catalog.exploreBusy||explore.requested?"Loading this ranking\xe2\x80\xa6":catalog.exploreError[0]?catalog.exploreError.data():"No new PS5 games found for this ranking.";
                 drawDiscover(c,explore.requested||quietRequest,catalog.valid?exploreState:detail);
             }
-        }else if(model.tab==Model::system)drawSystem(c,online,managerOnline,updateStale,detail);
+        }else if(model.tab==Model::emulation)drawEmulation(c);
+        else if(model.tab==Model::config)drawEmulationConfig(c);
+        else if(model.tab==Model::system)drawSystem(c,online,managerOnline,updateStale,detail);
         else if(model.details)drawDetails(c,focused());
         else if(model.tab==Model::activity)drawActivity(c,detail);
         else drawLibrary(c,detail);
@@ -1527,6 +1596,8 @@ int main() {
     if(mode=="discover"||mode=="explore"||mode=="sources"||mode=="storage"||mode=="download-mode"||mode=="get-game"||mode=="compare")model.tab=Model::discover;
     else if(mode=="search"||mode=="search-typing"){model.tab=Model::discover;model.searchResults=true;}
     else if(mode=="library"||mode=="delete-game"||mode=="checking-game-deletion"||mode=="quick-actions"||mode=="library-details")model.tab=Model::library;
+    else if(mode=="emulation")model.tab=Model::emulation;
+    else if(mode=="config")model.tab=Model::config;
     else if(mode=="connections"||mode=="system"||mode=="quit"||mode=="exit"||mode.starts_with("update-"))model.tab=Model::system;
     else model.tab=Model::activity;
 #endif
@@ -1551,7 +1622,16 @@ int main() {
     network.stop();
     if(pad>=0)(void)scePadClose(pad);
     botty::platform::log("Resources released - requesting application exit");
-    (void)sceSystemServiceLoadExec("exit",nullptr);
+    if(emulationLaunchPath[0]||emulationConfiguration){
+        const char* gameArgs[]={"--rom",emulationLaunchPath.data(),emulationConfiguration?"--botty-config":"--exit-after-game",nullptr};
+        const char* configArgs[]={"--botty-config",nullptr};
+        const char** args=emulationLaunchPath[0]?gameArgs:configArgs;
+        const int result=sceSystemServiceLoadExec("/app0/emulation/eboot.bin",args);
+        char failure[128];std::snprintf(failure,sizeof(failure),"Embedded emulator launch refused: %x; reopening Botty+",static_cast<unsigned>(result));
+        botty::platform::log(failure);
+        (void)sceSystemServiceLoadExec("/app0/eboot.bin",nullptr);
+        (void)sceSystemServiceLoadExec("exit",nullptr);
+    }else (void)sceSystemServiceLoadExec("exit",nullptr);
     // Returning from main is unsafe in this native runtime if exit is rejected.
     botty::platform::log("Exit returned - close application from PS menu");
     for(;;)botty::platform::sleep(1000000);

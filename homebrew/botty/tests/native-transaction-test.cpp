@@ -45,6 +45,25 @@ int main() {
   assert(nativeHash("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   assert(nativeHash("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   assert(nativeHash(std::string(1000000,'a'))=="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+  {
+    Fixture f;NativeTransaction t(f.config);
+    for(const auto* path:embeddedRuntimeFiles){
+      f.data[path]="synthetic engine fixture";
+      f.manifest["files"].push_back({{"path",path},{"size",f.data[path].size()},{"sha256",nativeHash(f.data[path])}});
+    }
+    const auto mask=::umask(0077);
+    t.stage(f.manifest,f.hash,f.fetch());t.publish(f.manifest,f.hash,[]{});
+    ::umask(mask);
+    for(const auto* dir:{"emulation","emulation/ui"}){
+      struct stat info{};assert(!::stat((f.config.nativeRoot/dir).c_str(),&info));assert((info.st_mode&0777)==0755);
+    }
+    assert(t.targetComplete(f.manifest,f.hash));
+    const auto before=t.installedFingerprint();put(f.config.nativeRoot/"emulation/ui/fonts/montserrat-medium.pefont","changed");assert(before!=t.installedFingerprint());
+    for(const auto* path:{"emulation/../escape","emulation/keys/prod.keys","emulation/firmware/firmware.nca","emulation/Keys/Prod.Keys","emulation/game.NSP"}){
+      auto bad=f.manifest;bad["files"].back()["path"]=path;refuses([&]{validateNativeManifest(bad);});
+    }
+    auto incomplete=f.manifest;incomplete["files"].erase(14);refuses([&]{validateNativeManifest(incomplete);});
+  }
   for(const auto name:{"botty-131-20261003","botty-131-stackfix-20261003"}){
     Fixture f;NativeTransaction t(f.config);
     json record={{"schema",1},{"status","complete"},{"target",f.hash},{"previous",nativeHash("previous")},{"backup",(f.config.stateRoot/"backups"/name/"PPSA99071").string()}};
