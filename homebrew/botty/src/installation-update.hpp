@@ -64,7 +64,7 @@ private:
   }
   void progress() {
     if(fs::exists(fs::symlink_status(handoffPath()))) {
-      const auto handoff=installationRecord(handoffPath(),256*1024);
+      const auto handoff=installationRecord(handoffPath(),2*1024*1024);
       if(handoff.at("schema")!=1)throw std::runtime_error("Unsupported installation handoff schema.");
       if(handoff.at("transaction")!=request_.at("transaction"))throw std::runtime_error("Installation handoff transaction mismatch.");
       if(handoff.at("bundle").at("hash")!=request_.at("hash"))throw std::runtime_error("Installation handoff bundle mismatch.");
@@ -82,7 +82,7 @@ private:
       if(phase=="prepared")throw std::runtime_error("Service updater takeover is unconfirmed. Automatic launch retry refused; use Portal recovery.");
       if(phase!="takeover"&&phase!="starting"&&phase!="services-verified")throw std::runtime_error("Unknown service updater phase. Use Portal recovery.");
       if(!cfg_.owns||!cfg_.owns(handoff)) {
-        const auto latest=installationRecord(handoffPath(),256*1024);
+        const auto latest=installationRecord(handoffPath(),2*1024*1024);
         if(latest.at("transaction")==request_.at("transaction")&&(latest.value("status","")=="complete"||latest.value("status","")=="recovery-required")){progress();return;}
         throw std::runtime_error("Service updater ownership or current boot is unconfirmed. Use Portal recovery; automatic restart refused.");
       }
@@ -109,7 +109,7 @@ private:
     auto owned=request_;owned["status"]="handoff";nativeWrite(requestPath(),owned.dump()+"\n");{std::lock_guard<std::mutex> guard(mutex_);request_=owned;}
     cfg_.launch(handoff);
     for(int i=0;i<120&&!cancelled_;++i) {
-      const auto taken=installationRecord(handoffPath(),256*1024);
+      const auto taken=installationRecord(handoffPath(),2*1024*1024);
       if(taken.at("transaction")==request_.at("transaction")&&taken.value("status","")!="prepared") {
         if(taken.value("status","")!="takeover"||!cfg_.owns||!cfg_.owns(taken))throw std::runtime_error("Durable updater takeover ownership or boot is unconfirmed. Automatic launch retry refused.");
         finished_=true;return;
@@ -170,7 +170,7 @@ public:
     json result;{std::lock_guard<std::mutex> guard(mutex_);result=state_;}
     if(finished_&&requested_)try {
       if(fs::exists(fs::symlink_status(handoffPath()))) {
-        const auto handoff=installationRecord(handoffPath(),256*1024);
+        const auto handoff=installationRecord(handoffPath(),2*1024*1024);
         if(handoff.value("status","")=="recovery-required"){result["status"]="blocked";result["message"]=handoff.value("message","Installation recovery is required. Keep Botty+ closed.");}
         else if(handoff.value("status","")!="complete"&&(!cfg_.owns||!cfg_.owns(handoff))){result["status"]="blocked";result["message"]="Service updater ownership or current boot is unconfirmed. Use Portal recovery; automatic restart refused.";}
       }
@@ -187,7 +187,7 @@ public:
     if(requested_)return ack();
     if(trusted_.hash!=release.hash||state_.at("status")!="available")throw std::runtime_error("Installation check changed; run a fresh check.");
     if(fs::exists(fs::symlink_status(handoffPath()))) {
-      const auto previous=installationRecord(handoffPath(),256*1024);
+      const auto previous=installationRecord(handoffPath(),2*1024*1024);
       if(previous.at("status")!="complete"||request_.value("status","")!="complete"||previous.at("transaction")!=request_.at("transaction"))throw std::runtime_error("Previous updater handoff needs Portal recovery before another transaction.");
       nativeWrite(cfg_.root/"installation/history"/(previous.at("transaction").get<std::string>()+".json"),previous.dump()+"\n",true);
       if(::unlink(handoffPath().c_str()))throw std::runtime_error("Cannot archive the completed updater handoff.");

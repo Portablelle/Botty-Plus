@@ -44,6 +44,17 @@ class PackageTests(unittest.TestCase):
     def test_interrupted_copy(self):
         (self.app/'sce_module/libc.prx').unlink()
         with self.assertRaisesRegex(ValueError,'Missing'):module.verify(self.dist,self.param)
+    def test_symlinked_parent(self):
+        external=self.dist/'external'
+        (self.app/'sce_module').rename(external)
+        (self.app/'sce_module').symlink_to(external,target_is_directory=True)
+        with self.assertRaisesRegex(ValueError,'symbolic'):module.verify(self.dist,self.param)
+    def test_incomplete_embedded_resources(self):
+        for name in ('emulation-runtime.json','emulation/eboot.bin','emulation/lapy.elf','emulation/lapy-manifest.json'):
+            path=self.app/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture')
+            self.manifest['files'].append(dict(path=name,size=7,sha256=hashlib.sha256(b'fixture').hexdigest()))
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError,'Incomplete embedded'):module.verify(self.dist,self.param)
     def test_stale_zip(self):
         with zipfile.ZipFile(self.dist/(self.title+'.zip'),'w') as z:z.writestr(self.title+'/eboot.bin',b'old')
         with self.assertRaises(ValueError):module.verify(self.dist,self.param)

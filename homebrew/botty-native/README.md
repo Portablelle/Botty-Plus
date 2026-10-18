@@ -310,3 +310,17 @@ Server download and HTTPS import phases are displayed separately. Candidates are
 never enrolled automatically; server originals are preserved. See the
 [bridge guide](../../deployment/botty-remote/README.md) for detection limits and
 storage/mode selection. Hardware acceptance remains pending.
+
+## Embedded Switch configuration
+
+Config opens the complete settings screens of the embedded engine. Circle at the
+settings root returns to Botty+. Emulation > Games > Options opens the selected
+game's own overrides, including games imported into atomic batch directories.
+Global defaults and per-game settings use the engine's existing profile-aware,
+atomic settings store. No separate ProsperoEden installation is needed.
+
+Output resolution (1080p, 1440p, 2160p), internal render scale, refresh rate and
+frame generation are separate controls. Modes remain subject to the engine's
+backend and display capabilities; selecting 2160p does not promise 60 FPS.
+The Config session temporarily uses the built-in settings UI without changing
+the user's saved launcher selection. Private runtime files are not packaged.

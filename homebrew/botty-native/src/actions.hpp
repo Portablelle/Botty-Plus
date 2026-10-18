@@ -4,10 +4,10 @@
 namespace botty {
 bool packageHint(std::string_view name) noexcept;
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
-enum class Operation { none, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
+enum class Operation { none, emulationConfigure, emulationLaunch, emulationGame, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
 struct Command {
     Operation operation=Operation::none;
-    bool refresh=false,automatic=true,torrent=false,useRemote=false;
+    bool refresh=false,automatic=true,torrent=false,useRemote=false,switchContent=false;
     std::array<char,64> storage{};
     std::array<char,65> serviceVersion{};
     std::array<char,96> id{};
@@ -17,6 +17,7 @@ struct Command {
 struct ActionResult {
     enum class Status { idle, success, failed, uncertain } status=Status::idle;
     std::array<char,512> message{};
+    std::array<char,4096> launchPath{};
     unsigned revision=0;
 };
 const char* operationLabel(Operation) noexcept;
@@ -59,14 +60,14 @@ struct Workflow {
     unsigned optionCount=0;
     // The last disk and download mode are remembered for this launch.
     std::array<char,64> lastStorage{};
-    bool lastAutomatic=true;
+    bool lastAutomatic=true,emulationDownload=false;
     void open(const Entry*,unsigned,const Catalog&) noexcept;
     // Starts one Quick action. True emits a safe action that runs immediately.
     bool choose(Operation,const Catalog&,bool busy) noexcept;
     void chooseSources(const Entry&,const Catalog&,bool compare=false) noexcept;
     void add() noexcept;
     void search(std::string_view previous={}) noexcept;
-    void grab(const Entry&,const Catalog&) noexcept;
+    void grab(const Entry&,const Catalog&,bool emulation=false) noexcept;
     void close() noexcept;
     const Entry* target(const Catalog&) const noexcept;
     bool hasRow(Row) const noexcept;
