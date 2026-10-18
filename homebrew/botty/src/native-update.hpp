@@ -53,7 +53,7 @@ inline NativeRelease nativeRelease(const std::function<std::string(const std::st
   if(index.value("schema",0)!=1||!index.contains("sha256")||!index.at("sha256").is_object())throw std::runtime_error("Unexpected native release index.");
   const auto hash=index.at("sha256").at("botty-native/manifest.json").get<std::string>();
   if(!std::regex_match(hash,std::regex("[a-f0-9]{64}")))throw std::runtime_error("Invalid native manifest digest.");
-  const auto bytes=fetch("botty-native/manifest.json",65536);
+  const auto bytes=fetch("botty-native/manifest.json",1024*1024);
   if(nativeHash(bytes)!=hash)throw std::runtime_error("Native manifest verification failed. The release may be changing; retry later.");
   auto manifest=json::parse(bytes);validateNativeManifest(manifest);
   json selected={{"manifest",hash},{"files",json::object()}};
@@ -162,7 +162,7 @@ public:
   void start() {
     try {
       if(fs::exists(fs::symlink_status(requestPath_))) {
-        durable_=json::parse(nativeRead(requestPath_,65536));
+        durable_=json::parse(nativeRead(requestPath_,2*1024*1024));
         if(durable_.value("schema",0)!=1||!std::regex_match(durable_.value("target",""),std::regex("[a-f0-9]{64}"))||!std::regex_match(durable_.value("releaseHash",""),std::regex("[a-f0-9]{64}"))||!std::regex_match(durable_.value("previous",""),std::regex("[a-f0-9]{64}"))||!std::regex_match(durable_.value("version",""),std::regex("[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}"))||(durable_.value("status","")!="queued"&&durable_.value("status","")!="complete"&&durable_.value("status","")!="failed"))throw std::runtime_error("Native update request is damaged. Existing files were preserved.");
         requested_=durable_.at("status")=="queued";
       }

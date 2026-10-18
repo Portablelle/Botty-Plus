@@ -66,6 +66,11 @@ bool startWorker(void* (*fn)(void*),void* context,void** handle) noexcept {
 void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(handle);pthread_join(worker->thread,nullptr);delete worker;}
 }
 int main() {
+    std::array<char,4096> launch{};
+    assert(botty::emulationLaunchResponse(R"({"ok":true,"engine":"embedded-eden","launchPath":"/data/botty/emulation/switch/roms/Game.xci"})",launch));
+    assert(!botty::emulationLaunchResponse(R"({"ok":true,"engine":"external","launchPath":"/data/game.xci"})",launch));
+    assert(!botty::emulationLaunchResponse(R"({"ok":true,"engine":"embedded-eden","launchPath":"/data/../game.xci"})",launch));
+
     {
         botty::ExploreRefresh refresh;
         refresh.update(false,0);assert(!refresh.requested&&refresh.force);
@@ -475,6 +480,42 @@ int main() {
     for(unsigned i=0;i<800;++i){updateCheck.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision&&result.status==ActionResult::Status::success);assert(request.find("POST /api/native-update/check ")!=std::string::npos);updateCheck.stop();workerAllowed=false;
     // Start in Discover: Explore and Search share one tab.
+    {
+        auto edenCatalog=std::make_unique<Catalog>();
+        const std::string edenState=R"({"torrents":[],"jobs":[],"transmissionReady":true,"freeBytes":1,"emulation":{"supported":true,"installed":true,"entries":[{"id":")"+std::string(64,'a')+R"(","kind":"roms","name":"Game","path":"/data/prosperoeden/roms/Game.xci","size":512}]}})";
+        assert(parseCatalog(edenState,*edenCatalog));assert(edenCatalog->emulationSupported);
+        assert(emulationCount(*edenCatalog,0)==1&&emulationCount(*edenCatalog,1)==0);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->name.data())=="Game");
+        edenCatalog->storageSupported=true;edenCatalog->remoteEnabled=true;
+        Workflow edenDownload;Entry release;std::fill_n(release.id.begin(),32,'b');
+        edenDownload.grab(release,*edenCatalog,true);
+        assert(edenDownload.command.automatic&&edenDownload.command.switchContent&&edenDownload.hasRow(Workflow::Row::mode));
+        assert(edenDownload.hasRow(Workflow::Row::engine));
+        assert(edenDownload.rows[edenDownload.focus]==Workflow::Row::engine);
+        assert(!edenDownload.press(Buttons::cross,*edenCatalog,false)&&edenDownload.panel==Workflow::Panel::sheet);
+        assert(edenDownload.focus==edenDownload.rowCount);
+        Model emulator;emulator.tab=Model::emulation;emulator.count=2;
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationPlay);
+        emulator.press(Buttons::triangle);assert(emulator.filter==1);
+        assert(emulator.press(Buttons::cross)==Model::Action::none);
+        emulator.press(Buttons::triangle);assert(emulator.filter==2);
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationGame);
+        assert(emulator.press(Buttons::options)==Model::Action::none);
+        emulator.filter=0;
+        assert(emulator.press(Buttons::options)==Model::Action::emulationGameConfig);
+        emulator.press(Buttons::r1);assert(emulator.tab==Model::config);
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationConfig);
+        emulator.press(Buttons::r1);assert(emulator.tab==Model::system);
+        Command command;command.operation=Operation::emulationGame;
+        std::fill_n(command.id.begin(),64,'a');char payload[256];std::size_t bytes=0;
+        assert(encodeCommand(command,payload,sizeof(payload),bytes));
+        assert(std::string(payload).find("\"kind\":\"auto\"")!=std::string::npos);
+        assert(std::string(actionPath(command.operation))=="/api/emulation/import");
+        command.operation=Operation::emulationConfigure;
+        assert(encodeCommand(command,payload,sizeof(payload),bytes));
+        assert(std::string(payload)=="{\"id\":\""+std::string(64,'a')+"\"}");
+        assert(std::string(actionPath(command.operation))=="/api/emulation/launch");
+    }
     Model searchModel;assert(searchModel.tab==Model::discover);
     searchModel.press(Buttons::r1);assert(searchModel.tab==Model::activity);
     searchModel.press(Buttons::l1);assert(searchModel.tab==Model::discover);

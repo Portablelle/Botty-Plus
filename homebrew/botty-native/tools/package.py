@@ -18,6 +18,10 @@ def main():
         raise SystemExit('Missing native executable/runtime')
     if json.loads((app / 'sce_sys/param.json').read_text()) != param:
         raise SystemExit('Packaged metadata does not match source')
+    engine_sources = ROOT / 'build/emulation-source.tar.gz'
+    embedded = (app / 'emulation-runtime.json').is_file()
+    if embedded and not engine_sources.is_file():
+        raise SystemExit('Archive corresponding engine sources before packaging the standalone title')
     files = [dict(path=str(p.relative_to(app)), size=p.stat().st_size,
                   sha256=hashlib.sha256(p.read_bytes()).hexdigest())
              for p in sorted(app.rglob('*')) if p.is_file()]
@@ -34,6 +38,8 @@ def main():
                 continue
             if p.is_file():
                 archive.add(p, arcname='botty-native/'+str(rel), recursive=False)
+        if embedded:
+            archive.add(engine_sources, arcname='botty-native/build/emulation-source.tar.gz', recursive=False)
     (dist / 'SHA256SUMS').write_text(''.join(
         hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n'
         for p in sorted(dist.iterdir()) if p.is_file() and p.name!='SHA256SUMS'))

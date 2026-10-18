@@ -1,5 +1,6 @@
 #pragma once
 #include "core.hpp"
+#include "emulation-runtime-files.hpp"
 #include "../vendor/unrar/rartypes.hpp"
 #include "../vendor/unrar/sha256.hpp"
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <fcntl.h>
 #include <optional>
 #include <regex>
+#include <set>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -39,10 +41,18 @@ public:
   };
   using Fetch = std::function<std::string(const std::string&, size_t)>;
   using Gate = std::function<void()>;
-  static constexpr size_t maxFileBytes = 32*1024*1024;
+  static constexpr size_t maxFileBytes = 128*1024*1024;
   static const std::array<std::string,13>& files() {
     static const std::array<std::string,13> value = {{"assets/Manrope-OFL.txt","assets/build.txt","assets/nebula.rgb","assets/courier.rgba","assets/extractor.rgba","assets/vault.rgba","assets/ui-font.bin","eboot.bin","sce_module/libc.prx","sce_sys/icon0.png","sce_sys/pic0.dds","sce_sys/param.json","sce_sys/snd0.at9"}};
     return value;
+  }
+  static bool enginePath(const std::string& path) {
+    if(path=="emulation-runtime.json")return true;
+    if(path.rfind("emulation/",0)!=0||path.size()>240||path.find("..")!=std::string::npos)return false;
+    auto lower=path;std::transform(lower.begin(),lower.end(),lower.begin(),[](unsigned char c){return c>='A'&&c<='Z'?char(c+32):char(c);});
+    const auto extension=fs::path(lower).extension();
+    if(lower.find("keys")!=std::string::npos||lower.find("firmware")!=std::string::npos||extension==".nca"||extension==".nsp"||extension==".xci")return false;
+    return std::all_of(path.begin(),path.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='/'||c=='.'||c=='_'||c=='-';})&&fs::path(path).lexically_normal().generic_string()==path;
   }
   NativeTransaction() : NativeTransaction(Config{}) {}
   explicit NativeTransaction(Config config) : cfg(std::move(config)) {
@@ -63,6 +73,10 @@ public:
       if (!data || data->empty()) fail("Installed native tree is incomplete");
       digests.push_back({{"path",file},{"size",data->size()},{"sha256",nativeSha256(*data)}});
     }
+    std::vector<fs::path> extra;
+    for(const auto& entry:fs::recursive_directory_iterator(cfg.nativeRoot))if(entry.is_regular_file()&&enginePath(entry.path().lexically_relative(cfg.nativeRoot).generic_string()))extra.push_back(entry.path());
+    std::sort(extra.begin(),extra.end());
+    for(const auto& path:extra){const auto data=read(path,maxFileBytes);if(!data||data->empty())fail("Incomplete embedded engine");digests.push_back({{"path",path.lexically_relative(cfg.nativeRoot).generic_string()},{"size",data->size()},{"sha256",nativeSha256(*data)}});}
     return nativeSha256(digests.dump());
   }
   bool pendingJournal() const {
@@ -129,7 +143,12 @@ public:
     if (identity(*read(root/"sce_sys/param.json",16384)).at("contentVersion")!=manifest.at("version")) fail("Package identity version mismatch");
     inspectStage(root);
     if (!matches(root,manifest)) fail("Native staging verification failed");
-    for (const auto& dir:{root/"assets",root/"sce_module",root/"sce_sys",root}) {
+    std::set<fs::path> directories{root};
+    for (const auto& file:manifest.at("files")) {
+      auto dir=(root/file.at("path").get<std::string>()).parent_path();
+      for (;dir!=root;dir=dir.parent_path()) directories.insert(dir);
+    }
+    for (const auto& dir:directories) {
       ancestors(dir);
       if (::chmod(dir.c_str(),0755)) fail("Cannot set native directory permissions");
       sync(dir);
@@ -261,20 +280,23 @@ private:
     while(n<sizeof(bytes)) { auto got=::read(fd,bytes+n,sizeof(bytes)-n); if(got<0&&errno==EINTR) continue; if(got<=0) {::close(fd);fail("Native random source failed");} n+=size_t(got); } ::close(fd);
     std::string s; for(auto b:bytes) {s+="0123456789abcdef"[b>>4];s+="0123456789abcdef"[b&15];} return s;
   }
-  static mode_t mode(const std::string& p) { return p=="eboot.bin"||p=="sce_module/libc.prx" ? 0755:0644; }
+  static mode_t mode(const std::string& p) { return p=="eboot.bin"||p=="sce_module/libc.prx"||p=="emulation/eboot.bin"||p=="emulation/sce_module/libc.prx" ? 0755:0644; }
   static json identity(const std::string& data) {
     auto p=json::parse(data); auto title=p.value("localizedParameters",json::object()).value("en-US",json::object()).value("titleName","");
     if(p.value("titleId","")!="PPSA99071" || p.value("contentId","")!="UP9000-PPSA99071_00-BOTTYNATIVE00001" || !std::regex_match(p.value("contentVersion",""),std::regex("[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}")) || (title!="Botty+"&&title!="Botty Native Preview"&&title!="Botty Native")) fail("Unrecognized native identity");
     return p;
   }
   static void validate(const json& m) {
-    if(m.at("schema")!=1 || m.at("titleId")!="PPSA99071" || !std::regex_match(m.at("version").get<std::string>(),std::regex("[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}")) || !m.at("files").is_array() || m.at("files").size()!=13) fail("Invalid native manifest");
-    std::vector<std::string> seen;
+    if(m.at("schema")!=1 || m.at("titleId")!="PPSA99071" || !std::regex_match(m.at("version").get<std::string>(),std::regex("[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}")) || !m.at("files").is_array() || (m.at("files").size()<13||m.at("files").size()>2048)) fail("Invalid native manifest");
+    std::vector<std::string> seen;size_t totalBytes=0;
     for(const auto& f:m.at("files")) {
       auto path=f.at("path").get<std::string>();
-      if(std::find(files().begin(),files().end(),path)==files().end() || std::find(seen.begin(),seen.end(),path)!=seen.end() || !f.at("size").is_number_integer() || f.at("size").get<int64_t>()<1 || f.at("size").get<int64_t>()>int64_t(maxFileBytes)) fail("Invalid native manifest file");
+      if((std::find(files().begin(),files().end(),path)==files().end()&&!enginePath(path)) || std::find(seen.begin(),seen.end(),path)!=seen.end() || !f.at("size").is_number_integer() || f.at("size").get<int64_t>()<1 || f.at("size").get<int64_t>()>int64_t(maxFileBytes)) fail("Invalid native manifest file");
+      totalBytes+=f.at("size").get<size_t>();if(totalBytes>512*1024*1024)fail("Native package exceeds size bound");
       checkHash(f.at("sha256").get<std::string>()); seen.push_back(path);
     }
+    for(const auto& file:files())if(std::find(seen.begin(),seen.end(),file)==seen.end())fail("Missing native file");
+    if(seen.size()>files().size())for(const auto* file:embeddedRuntimeFiles)if(std::find(seen.begin(),seen.end(),file)==seen.end())fail("Incomplete embedded engine manifest");
   }
   static void verify(const std::string& data,const json& f) { if(data.size()!=f.at("size").get<size_t>() || nativeSha256(data)!=f.at("sha256")) fail("Native file hash mismatch"); }
   static bool matchesFile(const fs::path& p,const json& f) { auto data=read(p,maxFileBytes); return data && data->size()==f.at("size").get<size_t>() && nativeSha256(*data)==f.at("sha256"); }
@@ -313,8 +335,8 @@ private:
     for(const auto& e:fs::recursive_directory_iterator(root)) {
       const auto relative=e.path().lexically_relative(root).generic_string();
       if(e.is_directory()) {
-        if(relative!="assets"&&relative!="sce_module"&&relative!="sce_sys")fail("Unexpected directory in native staging; files retained");
-      }else if(std::find(files().begin(),files().end(),relative)==files().end())fail("Unexpected file in native staging; files retained");
+        if(relative!="assets"&&relative!="sce_module"&&relative!="sce_sys"&&relative!="emulation"&&!enginePath(relative))fail("Unexpected directory in native staging; files retained");
+      }else if(std::find(files().begin(),files().end(),relative)==files().end()&&!enginePath(relative))fail("Unexpected file in native staging; files retained");
     }
   }
   static void copyTree(const fs::path& from,const fs::path& to) {
@@ -380,7 +402,7 @@ inline std::string nativeHash(const std::string& bytes) { return nativeSha256(by
 inline std::string nativeTransactionId() { return NativeTransaction::randomHex(); }
 inline bool nativeFileAllowed(const std::string& path) {
   const auto& files=NativeTransaction::files();
-  return std::find(files.begin(),files.end(),path)!=files.end();
+  return std::find(files.begin(),files.end(),path)!=files.end()||NativeTransaction::enginePath(path);
 }
 inline void validateNativeManifest(const json& manifest) { NativeTransaction::validate(manifest); }
 inline std::string nativeRead(const fs::path& path, size_t limit) {

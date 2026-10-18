@@ -19,11 +19,16 @@ void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept {
  else std::snprintf(out,size,"Estimated total: about %.0f-%.0f min. Actual time varies.",low,high);
 }
 const char* operationLabel(Operation op) noexcept {
+ if(op==Operation::emulationConfigure)return "Game configuration";
+ if(op==Operation::emulationLaunch)return "Play";
+ if(op==Operation::emulationGame)return "Analyze and import";
  if(op==Operation::nativeUpdate)return "Update Botty+";
  if(op==Operation::checkNativeUpdate)return "Check for updates";
  switch(op){case Operation::importRemote:return "Import to PS5";case Operation::transfer:return "Move to another disk";case Operation::restoreOriginal:return "Restore uncompressed game";case Operation::removeOriginal:return "Delete uncompressed copy";case Operation::compress:return "Compress game";case Operation::cancelCompression:return "Cancel compression";case Operation::removeLibrary:return "Delete game";case Operation::removeTorrent:return "Delete torrent & files";case Operation::explore:return "Explore games";case Operation::search:return "Search games";case Operation::exploreGrab:case Operation::grab:return "Add game";case Operation::pause:return "Pause";case Operation::resume:return "Resume";case Operation::verify:return "Verify files";case Operation::add:return "Add magnet";case Operation::extract:return "Prepare game";case Operation::move:return "Move to Library";case Operation::remove:return "Delete extraction";case Operation::cancel:return "Cancel preparation";case Operation::dismiss:return "Remove from Activity";default:return "Actions";}
 }
 const char* actionPath(Operation op) noexcept {
+ if(op==Operation::emulationLaunch||op==Operation::emulationConfigure)return "/api/emulation/launch";
+ if(op==Operation::emulationGame)return "/api/emulation/import";
  if(op==Operation::nativeUpdate)return "/api/native-update";
  if(op==Operation::checkNativeUpdate)return "/api/native-update/check";
  switch(op){case Operation::importRemote:return "/api/remote/import";case Operation::transfer:return "/api/transfer";case Operation::restoreOriginal:return "/api/restore-uncompressed";case Operation::removeOriginal:return "/api/delete-uncompressed";case Operation::compress:return "/api/compress-game";case Operation::cancelCompression:return "/api/cancel-compression";case Operation::removeLibrary:return "/api/delete-library-game";case Operation::explore:return "/api/explore";case Operation::exploreGrab:return "/api/explore/add";case Operation::search:return "/api/search";case Operation::grab:return "/api/search/add";case Operation::extract:return "/api/extract";case Operation::move:return "/api/move";case Operation::remove:return "/api/delete-extraction";case Operation::cancel:return "/api/cancel-extraction";case Operation::dismiss:return "/api/dismiss-extraction";default:return "/api/torrent";}
@@ -34,7 +39,12 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
  const auto quote=[&](std::string_view s){append("\"");for(unsigned char c:s){if(c=='"')append("\\\"");else if(c=='\\')append("\\\\");else if(c<32){char b[7];std::snprintf(b,sizeof(b),"\\u%04x",c);append(b);}else {char b=static_cast<char>(c);append({&b,1});}}append("\"");};
  if(cmd.operation==Operation::none)return false;
  append("{");
- if(cmd.operation==Operation::nativeUpdate||cmd.operation==Operation::checkNativeUpdate){}
+ if(cmd.operation==Operation::emulationConfigure||cmd.operation==Operation::emulationLaunch||cmd.operation==Operation::emulationGame){
+  if(std::string_view(cmd.id.data()).size()!=64)return false;
+  append("\"id\":");quote(cmd.id.data());
+  if(cmd.operation!=Operation::emulationLaunch&&cmd.operation!=Operation::emulationConfigure){append(",\"kind\":");quote("auto");}
+ }
+ else if(cmd.operation==Operation::nativeUpdate||cmd.operation==Operation::checkNativeUpdate){}
  else if(cmd.operation==Operation::explore){const auto sort=std::string_view(cmd.text.data());if(sort!="seeders"&&sort!="completed"&&sort!="newest")return false;append("\"sort\":");quote(sort);if(cmd.refresh)append(",\"refresh\":true");}
  else if(cmd.operation==Operation::search){if(!cmd.text[0]||std::string_view(cmd.text.data()).size()>200)return false;append("\"query\":");quote(cmd.text.data());}
  else if(cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab){if(std::string_view(cmd.id.data()).size()!=32)return false;append("\"id\":");quote(cmd.id.data());}
@@ -50,7 +60,8 @@ bool encodeCommand(const Command& cmd,char* out,std::size_t capacity,std::size_t
  if(cmd.storage[0]&&cmd.operation!=Operation::nativeUpdate&&cmd.operation!=Operation::checkNativeUpdate){append(",\"storage\":");quote(cmd.storage.data());}
  if(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab){append(",\"engine\":");quote(cmd.useRemote?"qbittorrent":"rtorrent");}
  if(cmd.operation==Operation::transfer){append(",\"kind\":");quote(cmd.torrent?"torrent":"job");}
- if(cmd.storage[0]&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab||cmd.operation==Operation::importRemote))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
+ if((cmd.storage[0]||!cmd.automatic)&&(cmd.operation==Operation::add||cmd.operation==Operation::grab||cmd.operation==Operation::exploreGrab||cmd.operation==Operation::importRemote))append(cmd.automatic?",\"automatic\":true":",\"automatic\":false");
+ if(cmd.switchContent)append(",\"platform\":\"switch\"");
  append("}");if(length<capacity)out[length]=0;return ok;
 }
 const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
@@ -82,7 +93,7 @@ const char* unavailable(Operation op,const Entry* e,const Catalog& c) noexcept {
  if(op==Operation::removeTorrent){if(!c.torrentRemovalSupported)return "Update Botty to enable torrent deletion.";if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";return c.extracting?"Wait for extraction to finish before deleting archives.":"";}
  if(op==Operation::pause||op==Operation::resume||op==Operation::verify||op==Operation::extract){
   if(!c.transmissionReady)return "Wait for rTorrent to reconnect.";
-  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount&&(e->archivesOmitted||(!e->remoteLoose&&!e->remotePreparation)))return e->archivesOmitted?"Archive names exceed the display limit.":"No supported archive, game folder or image found.";}
+  if(op==Operation::extract){if(c.extracting)return "Wait for the active extraction to finish.";if(!e->extractable)return "Wait until this torrent is complete, verified and error-free.";if(!e->archiveCount&&(e->archivesOmitted||(!e->remoteLoose&&!e->remotePreparation&&!e->emulationContent)))return e->archivesOmitted?"Archive names exceed the display limit.":"No supported archive, game folder or image found.";}
   return "";
  }
  if((op==Operation::cancel||op==Operation::dismiss)&&!c.extractionControls)return "Start the updated Botty service next session to use this action.";
@@ -117,11 +128,12 @@ bool Workflow::destructive(Operation op) noexcept {
  return op==Operation::removeTorrent||op==Operation::removeLibrary||op==Operation::removeOriginal||op==Operation::restoreOriginal||
   op==Operation::remove||op==Operation::dismiss||op==Operation::cancel||op==Operation::cancelCompression;
 }
-void Workflow::close() noexcept {panel=Panel::closed;rowCount=focus=0;confirming=confirm=false;unicodeInput=false;codepoint.fill(0);command.text.fill(0);savedPassword.fill(0);notice.fill(0);++revision;}
+void Workflow::close() noexcept {emulationDownload=false;panel=Panel::closed;rowCount=focus=0;confirming=confirm=false;unicodeInput=false;codepoint.fill(0);command.text.fill(0);savedPassword.fill(0);notice.fill(0);++revision;}
 const Entry* Workflow::target(const Catalog& c) const noexcept {const auto& list=targetTab==0?c.torrents:c.jobs;const auto count=targetTab==0?c.torrentCount:c.jobCount;for(unsigned i=0;i<count;++i)if(std::string_view(list[i].id.data())==targetId.data())return &list[i];return nullptr;}
 bool Workflow::hasRow(Row row) const noexcept {for(unsigned i=0;i<rowCount;++i)if(rows[i]==row)return true;return false;}
 unsigned quickActions(const Entry* e,unsigned tab,const Catalog& c,std::array<Operation,8>& options) noexcept {
  unsigned optionCount=0;if(!e||e->task||tab>2)return 0;
+ if(tab==1&&e->emulationContent&&!e->active){options[optionCount++]=Operation::dismiss;return optionCount;}
  if(tab==0&&e->remoteCandidate){options[optionCount++]=Operation::importRemote;return optionCount;}
  if(tab==0){options[optionCount++]=e->active?Operation::pause:Operation::resume;if(!e->remote)options[optionCount++]=Operation::verify;options[optionCount++]=Operation::extract;}
  else if(tab==2){
@@ -151,7 +163,7 @@ bool Workflow::choose(Operation op,const Catalog& c,bool busy) noexcept {
  if(index==optionCount)return false;
  selected=index;confirming=confirm=false;
  const char* reason=unavailable(op,e,c);if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
- command=Command{};command.operation=op;command.id=targetId;command.torrent=targetTab==0;notice.fill(0);
+ command=Command{};command.operation=op;command.id=targetId;command.torrent=targetTab==0;command.switchContent=e&&e->emulationContent;notice.fill(0);
  if(immediate(op)){
   if(busy){std::snprintf(notice.data(),notice.size(),"Wait for the current request to finish.");return false;}
   panel=Panel::closed;return true;
@@ -171,7 +183,7 @@ void Workflow::openSheet(const Catalog& c) noexcept {
  if((c.storageSupported||op==Operation::transfer)&&!serverPreparation)rows[rowCount++]=Row::storage;
  if(serverPreparation)command.storage=e->storage;
  const bool download=op==Operation::add||op==Operation::grab||op==Operation::exploreGrab||op==Operation::importRemote;
- if(download&&c.storageSupported){rows[rowCount++]=Row::mode;command.automatic=lastAutomatic;}
+ if(download){command.switchContent=emulationDownload||(e&&e->emulationContent);if(c.storageSupported){rows[rowCount++]=Row::mode;command.automatic=lastAutomatic;}}
  if(hasRow(Row::storage)){
   if(download)pickStorage(c,command.storage,lastStorage.data(),{});
   else if(op==Operation::transfer)pickStorage(c,command.storage,{},e?std::string_view(e->storage.data()):std::string_view{});
@@ -211,7 +223,7 @@ bool Workflow::submit(const Catalog& c,bool busy) noexcept {
  const char* reason=unavailable(op,download&&op!=Operation::importRemote?nullptr:e,c);
  if(*reason){std::snprintf(notice.data(),notice.size(),"%s",reason);return false;}
  if(op==Operation::exploreGrab||op==Operation::grab){if(sourceIndex>=sourceCount)return false;command.id=sources[sourceIndex].id;}
- if(op==Operation::extract&&(!e||(!e->remoteLoose&&!e->remotePreparation)||e->archiveCount)){
+ if(op==Operation::extract&&(!e||(!e->remoteLoose&&!e->remotePreparation&&!e->emulationContent)||e->archiveCount)){
   const int at=e&&command.archive[0]?archivePosition(c,*e,command.archive):-1;
   if(at<0){
    std::snprintf(notice.data(),notice.size(),"The archive list changed. Check the archive, then extract again.");
@@ -237,11 +249,16 @@ void Workflow::search(std::string_view previous) noexcept {
  for(unsigned i=0;i<previous.size()&&i<textLimit(Operation::search);++i)command.text[i]=previous[i];
  panel=Panel::keyboard;selected=0;keyPage=0;
 }
-void Workflow::grab(const Entry& e,const Catalog& c) noexcept {
- close();command=Command{};command.operation=Operation::grab;command.id=e.id;targetName=e.name;targetId.fill(0);gameName=e.name;gameId=e.id;
+void Workflow::grab(const Entry& e,const Catalog& c,bool emulation) noexcept {
+ close();emulationDownload=emulation;command=Command{};command.operation=Operation::grab;command.id=e.id;targetName=e.name;targetId.fill(0);gameName=e.name;gameId=e.id;
  sourceCount=1;sourceIndex=0;auto& source=sources[0];source=DownloadSource{};source.id=e.id;source.name=e.name;
  std::snprintf(source.tracker.data(),source.tracker.size(),"Prowlarr");source.size=e.total;source.seeders=e.peers;source.leechers=e.downloadingPeers;
  openSheet(c);
+ if(emulation){
+  focus=0;for(unsigned i=0;i<rowCount;++i)if(rows[i]==Row::engine){focus=i;break;}
+  std::snprintf(notice.data(),notice.size(),"Automatically extract, verify and identify Switch content, then import into Emulation. Originals are kept.");
+ }
+
 }
 void Workflow::chooseSources(const Entry& e,const Catalog& c,bool compare) noexcept {
  close();command=Command{};command.operation=Operation::exploreGrab;targetName=e.name;targetId.fill(0);sourceCount=0;gameName=e.name;gameId=e.id;

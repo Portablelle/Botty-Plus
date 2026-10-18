@@ -11,7 +11,7 @@ struct Entry {
     std::array<char,32> status{}, kind{}, titleId{};
     std::array<char,2048> files{};
     unsigned fileCount=0,archiveStart=0,archiveCount=0,sourceStart=0,sourceCount=0;
-    bool sourcesOmitted=false;
+    bool sourcesOmitted=false,emulationContent=false;
     bool task=false,items=false,remote=false,remoteCandidate=false,remoteLoose=false,remotePreparation=false,adopted=false,adoptedImport=false,libraryPending=false;
     double elapsed=0;
     std::array<char,512> currentFile{};
@@ -52,6 +52,11 @@ const char* nativeUpdateLabel(const NativeUpdate&,bool stale) noexcept;
 bool nativeUpdateAvailable(const NativeUpdate&,bool stale) noexcept;
 bool parseProcessing(std::string_view,Processing&) noexcept;
 struct Catalog {
+    bool emulationSupported=false,emulationInstalled=false;
+    std::array<char,512> emulationRoot{},emulationError{};
+    std::array<Entry,256> emulationEntries{};
+    unsigned emulationCount=0;
+
     Processing processing;
     NativeUpdate nativeUpdate;
     std::array<char,512> transferPhase{},transferError{};
@@ -82,6 +87,7 @@ struct Catalog {
     double freeBytes=0;
     std::array<char,512> library{},error{};
 };
+bool emulationLaunchResponse(std::string_view,std::array<char,4096>&) noexcept;
 bool responseObject(std::string_view,std::array<char,512>& error) noexcept;
 bool firstArchive(std::string_view) noexcept;
 bool parseCatalog(std::string_view,Catalog&) noexcept;
@@ -96,6 +102,8 @@ ActivityItem activityAt(const Catalog&,unsigned filter,unsigned index) noexcept;
 unsigned activityCount(const Catalog&,unsigned filter) noexcept;
 // Filters: 0 all, 1 PS5 SSD, 2 external storage, 3 compressed.
 const Entry* libraryAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+const Entry* emulationAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+unsigned emulationCount(const Catalog&,unsigned filter) noexcept;
 unsigned libraryCount(const Catalog&,unsigned filter) noexcept;
 struct LibraryCopy { const char* format; const char* storage; bool retained=false; };
 unsigned libraryCopies(const Entry&,std::array<LibraryCopy,2>&) noexcept;

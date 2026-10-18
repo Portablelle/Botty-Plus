@@ -47,7 +47,7 @@ double number(std::string_view s){double n=0,scale=1;bool fraction=false,negativ
     if(p<s.size()&&(s[p]=='e'||s[p]=='E')){++p;bool neg=p<s.size()&&s[p]=='-';if(p<s.size()&&(s[p]=='-'||s[p]=='+'))++p;unsigned e=0;for(;p<s.size();++p){e=e*10+s[p]-'0';if(e>308)return 0;}while(e--)n*=neg?.1:10;}
     if(n>1e30)return 0;return negative?-n:n;
 }
-bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
+bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2&&e.emulationContent)return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
 }
 bool validNativeVersion(std::string_view value) noexcept {
     if(value.size()!=10)return false;
@@ -95,6 +95,16 @@ const char* nativeUpdateLabel(const NativeUpdate& update,bool stale) noexcept {
 bool responseObject(std::string_view body,std::array<char,512>& error) noexcept {
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
 }
+bool emulationLaunchResponse(std::string_view body,std::array<char,4096>& path) noexcept {
+ std::array<char,512> error{};
+ if(!responseObject(body,error)||error[0]||field(body,"ok")!="true"||field(body,"engine")!="\"embedded-eden\""||!decode(field(body,"launchPath"),path,true))return false;
+ const std::string_view value(path.data());
+ if(value.empty()||value.front()!='/'||value.find("/../")!=value.npos||value.ends_with("/.."))return false;
+ for(char c:value)if(static_cast<unsigned char>(c)<32)return false;
+ if(value.size()<4||value[value.size()-4]!='.')return false;
+ const char a=value[value.size()-3]|32,b=value[value.size()-2]|32,c=value.back()|32;
+ return (a=='n'&&b=='s'&&c=='p')||(a=='x'&&b=='c'&&c=='i');
+}
 bool firstArchive(std::string_view name) noexcept {
  if(name.size()<4||name[name.size()-4]!='.'||(name[name.size()-3]|32)!='r'||(name[name.size()-2]|32)!='a'||(name[name.size()-1]|32)!='r')return false;
  auto part=std::string_view::npos;for(std::size_t i=0;i+5<=name.size();++i)if(name[i]=='.'&&(name[i+1]|32)=='p'&&(name[i+2]|32)=='a'&&(name[i+3]|32)=='r'&&(name[i+4]|32)=='t')part=i;
@@ -107,6 +117,21 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.remoteEnabled=field(field(body,"remoteDownloads"),"enabled")=="true";out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    out.emulationCount=0;
+    const auto emulator=field(body,"emulation");out.emulationSupported=field(emulator,"supported")=="true";out.emulationInstalled=field(emulator,"installed")=="true";
+    decode(field(emulator,"root"),out.emulationRoot);decode(field(emulator,"error"),out.emulationError);
+    const auto emulatorEntries=field(emulator,"entries");
+    if(!emulatorEntries.empty()){
+        JSON items{emulatorEntries};if(!items.take('['))return false;
+        if(!items.take(']')){do{
+            items.ws();auto start=items.p;if(!items.value())return false;
+            const auto row=slice(emulatorEntries,start,items.p-start);
+            if(out.emulationCount>=out.emulationEntries.size()){out.truncated=true;continue;}
+            auto& e=out.emulationEntries[out.emulationCount++];e=Entry{};decode(field(row,"phase"),e.phase);
+            if(!decode(field(row,"id"),e.id,true)||!decode(field(row,"kind"),e.kind,true))return false;
+            decode(field(row,"name"),e.name);decode(field(row,"path"),e.destination);e.total=number(field(row,"size"));
+        }while(items.take(','));if(!items.take(']'))return false;}
+    }
     out.nativeUpdate=NativeUpdate{};
     const auto update=field(body,"nativeUpdate");
     if(field(update,"supported")=="true"){
@@ -157,7 +182,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     for(unsigned type=0;type<2;++type){auto array=type?jobs:torrents;JSON j{array};j.take('[');if(j.take(']'))continue;
         do{j.ws();auto start=j.p;if(!j.value())return false;auto obj=slice(array,start,j.p-start);if(obj.empty()||obj.front()!='{')return false;
             auto& count=type?out.jobCount:out.torrentCount;auto& entries=type?out.jobs:out.torrents;
-            if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};
+            if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};e.emulationContent=field(obj,"emulationContent")=="true";
             auto id=field(obj,"id");if(id.empty()||field(obj,"name").empty())return false;
             if(type)decode(id,e.id);else std::snprintf(e.id.data(),e.id.size(),"%.0f",number(id));
             decode(field(obj,type?"hash":"hashString"),e.hash);if(type&&!field(obj,"torrentId").empty())e.torrentId=static_cast<int>(number(field(obj,"torrentId")));
@@ -361,6 +386,15 @@ void formatETA(const Entry& e,char* out,unsigned length) noexcept {
     else if(seconds<3600)std::snprintf(out,length,"ETA %s%llu min",approx,seconds/60);
     else if(seconds<86400)std::snprintf(out,length,"ETA %s%llu h %llu min",approx,seconds/3600,(seconds%3600)/60);
     else std::snprintf(out,length,"ETA %s%llu d %llu h",approx,seconds/86400,(seconds%86400)/3600);
+}
+
+const Entry* emulationAt(const Catalog& s,unsigned filter,unsigned index) noexcept {
+    const std::string_view kind=filter==0?"roms":filter==1?"updates":"download";
+    for(unsigned i=0;i<s.emulationCount;++i)if(std::string_view(s.emulationEntries[i].kind.data())==kind&&index--==0)return &s.emulationEntries[i];
+    return nullptr;
+}
+unsigned emulationCount(const Catalog& s,unsigned filter) noexcept {
+    unsigned n=0;while(emulationAt(s,filter,n))++n;return n;
 }
 
 }

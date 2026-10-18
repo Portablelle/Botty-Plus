@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 from pathlib import Path
 import re
@@ -19,15 +21,36 @@ class PackageTests(unittest.TestCase):
                                  (ROOT/'deployment/botty-remote'/name).read_bytes())
     def test_native_source_archive_matches_current_runtime_sources(self):
         native=ROOT/'homebrew/botty-native'
-        with tarfile.open(ROOT/'packages/botty-native/botty-native-source.tar.gz', 'r:gz') as archive:
-            actual={member.name:archive.extractfile(member).read() for member in archive.getmembers()
-                    if member.isfile() and member.name.startswith('botty-native/src/')}
+        base=ROOT/'packages/botty-native'
+        # Stream the checked parts; do not allocate another complete archive in CI tmpfs.
+        from source_parts import metadata, source_names
+        source_names(base)
+        index=metadata(base)
+        paths=[base/part['path'] for part in index['parts']] if index else [base/'botty-native-source.tar.gz']
+        class Parts(io.RawIOBase):
+            def readable(self): return True
+            def readinto(self, buffer):
+                while self.streams:
+                    count=self.streams[0].readinto(buffer)
+                    if count: return count
+                    self.streams.pop(0).close()
+                return 0
+        with contextlib.ExitStack() as stack:
+            reader=Parts()
+            reader.streams=[stack.enter_context(path.open('rb')) for path in paths]
+            stream=stack.enter_context(io.BufferedReader(reader))
+            archive=stack.enter_context(tarfile.open(fileobj=stream, mode='r|gz'))
             expected={'botty-native/'+path.relative_to(native).as_posix():path.read_bytes()
                       for path in (native/'src').rglob('*') if path.is_file()}
-            self.assertEqual(actual, expected)
             for name in ['Makefile', 'release.json']:
-                with self.subTest(file=name):
-                    self.assertEqual(archive.extractfile('botty-native/'+name).read(), (native/name).read_bytes())
+                expected['botty-native/'+name]=(native/name).read_bytes()
+            actual={}
+            for member in archive:
+                if member.isfile() and (member.name.startswith('botty-native/src/') or
+                                        member.name in ('botty-native/Makefile', 'botty-native/release.json')):
+                    self.assertNotIn(member.name, actual, 'Duplicate source member')
+                    actual[member.name]=archive.extractfile(member).read()
+            self.assertEqual(actual, expected)
     def test_service_web_assets_belong_to_the_packaged_version(self):
         source=(ROOT/'homebrew/botty/src/server.cpp').read_text()
         version=json.loads((ROOT/'packages/botty/manifest.json').read_text())['id']
