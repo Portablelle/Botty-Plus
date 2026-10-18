@@ -70,7 +70,13 @@ class ClaudeWorkflowRuntimeTests(unittest.TestCase):
             head = git('rev-parse', 'HEAD')
             git('init', '-q', cwd=checkout)
             git('remote', 'add', 'origin', str(source), cwd=checkout)
-            env.update(HEAD=head, RUNNER_TEMP=temp, GITHUB_ENV=str(root / 'env'))
+            # Model the GitHub commit archive while retaining a real legacy gitlink.
+            gh = root / 'gh'
+            gh.write_text('#!/bin/sh\nexec git -C "$EXPORT_REPO" archive --format=tar.gz --prefix=export/ "$HEAD"\n')
+            gh.chmod(0o755)
+            env.update(HEAD=head, RUNNER_TEMP=temp, GITHUB_ENV=str(root / 'env'),
+                       GITHUB_REPOSITORY='fixture/repo', EXPORT_REPO=str(source),
+                       PATH=temp + os.pathsep + os.environ['PATH'])
             result = subprocess.run(['bash', '-e', '-c', body], cwd=checkout, env=env,
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)

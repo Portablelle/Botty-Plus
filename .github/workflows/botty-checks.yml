@@ -59,13 +59,25 @@ jobs:
     name: ${{ needs.route.outputs.trusted-verify == 'true' && 'Checks handled by review workflow' || 'verify' }}
     if: always() && !cancelled() && needs.route.outputs.trusted-verify != 'true'
     runs-on: [self-hosted, linux, x64, botty-plus-ci]
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      CCACHE_MAXSIZE: 128M
     permissions:
       contents: read
       pull-requests: read
       statuses: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          filter: blob:none
+          sparse-checkout: .github/scripts
+      - name: Stream the checked commit without a duplicate binary object store
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/tarball/$GITHUB_SHA" |
+            tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -75,6 +87,12 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-host-${{ github.sha }}
           restore-keys: ccache-host-
+      - name: Bound the restored compiler cache
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --max-size="$CCACHE_MAXSIZE"
+            ccache --cleanup
+          fi
       - name: Detect an already validated merge
         if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
