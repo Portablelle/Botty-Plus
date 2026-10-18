@@ -48,13 +48,13 @@ with tempfile.TemporaryDirectory() as temp:
   client=ROOT.parent/'botty-native/build/action-client'
   def native(op):
    r=subprocess.run([str(client),str(service_port),str(op),jobid],capture_output=True,text=True,timeout=15);assert r.returncode==0,r.stdout+r.stderr
-  native(16);assert started
+  native('compress');assert started
   req('/api/compress-game',dict(id=jobid,confirmed=True),400)
   req('/api/extract',dict(id=1,archive='a.rar'),400)
   req('/api/delete-library-game',dict(id=jobid,confirmed=True),400)
   req('/api/beta/shutdown',dict(confirmed=True),400)
   state=req('/api/state');assert state['compression']['busy'] and state['jobs'][0]['status']=='moved'
-  native(17);assert cancelled
+  native('cancel-compression');assert cancelled
   done=True
   for _ in range(30):
    s=req('/api/state')['compression']
@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory() as temp:
    except OSError:time.sleep(.05)
   req('/api/delete-library-game',dict(id=jobid,confirmed=True),403,False)
   req('/api/delete-library-game',dict(id=jobid),400)
-  native(15)
+  native('remove-library')
   deletion=req('/api/state')['compression'];assert deletion['status']=='waiting-close' and deletion['deleteGameRequested'] and not deletion['originalKept']
   req('/api/delete-library-game',dict(id=jobid,confirmed=True),400)
   print('Compressed-only deletion queued through the native client without original, torrent or archive. Authentication, confirmation and duplicate request guards passed.')

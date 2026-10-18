@@ -42,22 +42,22 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   assert token
   probe=subprocess.run([str(ROOT/'build/action-client'),str(port),'--probe'],capture_output=True,text=True,timeout=20)
   assert probe.returncode==0,(probe.stdout,probe.stderr) # Real /health -> bootstrap -> connection -> catalog.
-  action(2,1);assert entries[0]['status']==6
-  action(1,1);assert entries[0]['status']==0
-  action(3,1);assert entries[0]['status']==2
-  action(5,1,'sample.rar',success=False) # Verification blocks extraction.
+  action('resume',1);assert entries[0]['status']==6
+  action('pause',1);assert entries[0]['status']==0
+  action('verify',1);assert entries[0]['status']==2
+  action('extract',1,'sample.rar',success=False) # Verification blocks extraction.
   entries[0]['status']=6
   magnet='magnet:?xt=urn:btih:'+'a'*40+'&dn=Native%20fixture'
-  action(4,text=magnet);assert next(c for c in calls if c['method']=='load.start')['params'][1]==magnet
-  action(5,1,'sample.rar');ready=job();assert ready['status']=='moved'
+  action('add',text=magnet);assert next(c for c in calls if c['method']=='load.start')['params'][1]==magnet
+  action('extract',1,'sample.rar');ready=job();assert ready['status']=='moved'
   assert ready['libraryStatus']=='pending' # Host cannot confirm PS5 home-screen admission.
-  action(6,ready['id'],success=False) # Publication was already completed automatically.
-  action(7,ready['id'],success=False) # Moved library files are protected.
+  action('move',ready['id'],success=False) # Publication was already completed automatically.
+  action('remove',ready['id'],success=False) # Moved library files are protected.
   assert (root/'test-library/PPSA12345-app/eboot.bin').is_file()
-  action(5,2,'broken.rar');failed=job();assert failed['status']=='failed'
-  action(7,failed['id']);assert all(j['id']!=failed['id'] for j in get('/api/state')['jobs'])
+  action('extract',2,'broken.rar');failed=job();assert failed['status']=='failed'
+  action('remove',failed['id']);assert all(j['id']!=failed['id'] for j in get('/api/state')['jobs'])
   assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
-  action(15,ready['id'])
+  action('remove-library',ready['id'])
   assert get('/api/processing')['tasks'][0]['status']=='running'
   for _ in range(100):
    if get('/api/processing')['tasks'][0]['status']=='completed':break

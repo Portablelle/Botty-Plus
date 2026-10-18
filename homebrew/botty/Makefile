@@ -58,14 +58,14 @@ test-remote: build/botty-native build/remote-buffer-test
 
 test-progress: build/progress-test
 	./build/progress-test
-TEST_BINARIES := build/emulation-test build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
+TEST_BINARIES := build/botty-switch-prepare build/switch-settlement-test build/emulation-test build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
 .PHONY: test-build
 # Compiles every `test` prerequisite without running it (warms ccache).
 test-build: $(TEST_BINARIES)
 # Each `test` command is its own target so TEST_JOBS can run them concurrently
 # (tests use temporary directories and ephemeral ports). Longest runs start first.
-SERVICE_UNIT_TESTS := emulation-test remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
-SERVICE_INTEGRATION_TESTS := emulation_integration remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
+SERVICE_UNIT_TESTS := switch-settlement-test emulation-test remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
+SERVICE_INTEGRATION_TESTS := switch_pipeline emulation_integration remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
 UNIT_RUNS := $(addprefix unit-,$(SERVICE_UNIT_TESTS))
 INTEGRATION_RUNS := $(addprefix integration-,$(SERVICE_INTEGRATION_TESTS))
 .PHONY: $(UNIT_RUNS) $(INTEGRATION_RUNS) integration-remote-bridge
@@ -76,6 +76,8 @@ $(INTEGRATION_RUNS): integration-%:
 integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 $(REMOTE_BRIDGE)/test_forge.py
+	python3 $(REMOTE_BRIDGE)/test_switch_prepare.py
+	python3 -m unittest discover -s $(REMOTE_BRIDGE) -p test_switch_preparer_state.py -v
 TEST_JOBS ?= 1
 # GNU Make 4+ keeps each parallel test's output together; 3.81 (macOS) interleaves it.
 TEST_SYNC := $(if $(filter-out 1,$(TEST_JOBS)),$(if $(filter 3.%,$(MAKE_VERSION)),,--output-sync=target))
@@ -180,8 +182,10 @@ build/switch-prepare.elf: src/switch-prepare.cpp src/core.cpp src/storage.cpp sr
 
 .PHONY: test-switch
 build/switch-settlement-test: tests/switch-settlement-test.cpp src/switch-source-settlement.hpp src/core.hpp vendor/json.hpp
+	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) $< -o $@
 test-switch: build/botty-switch-prepare build/switch-settlement-test
 	./build/switch-settlement-test
 	python3 tests/switch_pipeline.py
 	python3 $(REMOTE_BRIDGE)/test_switch_prepare.py
+	python3 -m unittest discover -s $(REMOTE_BRIDGE) -p test_switch_preparer_state.py -v
