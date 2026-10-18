@@ -112,7 +112,7 @@ class ValidatedMergeTests(unittest.TestCase):
 
     def test_build_only_compiles_every_selected_suite_without_running_tests(self):
         source = SCRIPT.read_text()
-        self.assertIn('make -C homebrew/botty -j4 NATIVE_CXX="$cxx" test-build', source)
+        self.assertIn('make -C homebrew/botty -j"$jobs" NATIVE_CXX="$cxx" test-build', source)
         self.assertIn('skip_check "Native tests" "build only"', source)
         self.assertIn('skip_check "rTorrent" "build only"', source)
         makefile = (ROOT / 'homebrew/botty/Makefile').read_text()

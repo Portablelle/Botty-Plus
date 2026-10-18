@@ -55,8 +55,12 @@ findings and a verdict for the current PR head; forks require a local review.
 The reviewer uses `pull_request_target`, so same-repo PRs are reviewed even when
 GitHub cannot generate a merge commit. The workflow and policy come from the
 trusted base SHA; Claude reads PR versions through `git show` without checking
-out or executing them. Host checks export the exact PR tree with `git archive`,
+out or executing them. Host checks stream the exact PR tree from the GitHub commit archive,
 without initializing legacy gitlinks or leaving checkout credentials in that tree.
+Git retains only commit/tree metadata; reviewer content reads hydrate textual files on demand.
+Generated package binaries are verified by the isolated package checks, not downloaded
+a second time for review. Host compilation defaults to two parallel jobs and the review
+workflow bounds its restored compiler cache to 128 MiB.
 They run concurrently with review in a separate ephemeral job, with
 no Claude secret and read-only repository permission. Its entry point is always
 the trusted base script, executed against the PR workspace. This also avoids sharing
