@@ -24,12 +24,22 @@ and print the summary and findings in the terminal instead.
 
 - `gh pr view $ARGUMENTS --json title,body,author,baseRefName,headRefOid,mergeable` (always
   with `--json`: plain `gh pr view` fails on CI-status permissions).
-- `gh pr diff $ARGUMENTS --name-only` for the full file list, then the diff itself
-  (`git diff origin/<base>...<headRefOid>`). Output can be truncated: read every changed
+- `gh pr diff $ARGUMENTS --name-only` for the full file list, then path-specific content diffs
+  (in CI, apply the generated-package exclusions below). Output can be truncated: read every changed
   file, in full when the diff was cut off. Do not skip tests, scripts or docs.
   When `CLAUDE_REVIEW_HEAD` is set, the checkout is the trusted base, not the PR.
   Read every reviewed file and its callers/tests with `git show <CLAUDE_REVIEW_HEAD>:<path>`;
-  use `git diff --no-ext-diff --no-textconv <CLAUDE_REVIEW_BASE>...<CLAUDE_REVIEW_HEAD>` for the complete diff.
+  start with `git diff --name-only --no-renames <CLAUDE_REVIEW_BASE>...<CLAUDE_REVIEW_HEAD>`
+  for the complete inventory, then `git diff --no-ext-diff --no-textconv <CLAUDE_REVIEW_BASE>...<CLAUDE_REVIEW_HEAD> -- . ':(exclude)packages/**'`
+  for source changes. This is a partial clone: never run an unrestricted content diff,
+  numstat or `git show` on generated binary package payloads (ELF/SELF, archives,
+  source parts, images or fonts), as that downloads another copy into CI memory.
+  Read every changed textual package manifest, notice, license and configuration
+  separately with `git show`/path-specific diff. Review the corresponding source
+  and packaging code, and require the trusted host package/hash/source checks to
+  pass for the exact head; do not infer binary integrity from filenames or skip
+  failed checks. Binary payloads are validated by those checks, not by printing
+  their bytes. Apply the same package exclusion to incremental content diffs.
   Never substitute a base-checkout file for its PR version. Do not check out or
   execute PR code in this mode. If the live `headRefOid` differs from
   `CLAUDE_REVIEW_HEAD`, stop without publishing a summary: its new run will review it.
@@ -51,7 +61,8 @@ and print the summary and findings in the terminal instead.
   The marker holds the last reviewed SHA: `<!-- claude-review sha=<sha> -->`.
 
 **Incremental review.** If a previous summary exists and its SHA is an ancestor of
-<headRefOid> (`git merge-base --is-ancestor <sha> <headRefOid>`), focus on `git diff <sha>..<headRefOid>`.
+<headRefOid> (`git merge-base --is-ancestor <sha> <headRefOid>`), focus on `git diff <sha>..<headRefOid> -- . ":(exclude)packages/**"` and read
+changed textual package records separately as above.
 Still read enough of the rest of the PR to judge the new commits in context.
 Otherwise (first review or force-push), review the whole PR.
 
