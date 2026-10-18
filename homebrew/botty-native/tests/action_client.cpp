@@ -40,7 +40,18 @@ int main(int argc,char** argv){
   std::puts(botty::probeText(connection.status));
   return connection.status==botty::Probe::ready&&catalog.valid?0:1;
  }
- botty::Command cmd;for(auto op:{botty::Operation::pause,botty::Operation::resume,botty::Operation::verify,botty::Operation::add,botty::Operation::extract,botty::Operation::move,botty::Operation::remove,botty::Operation::removeLibrary,botty::Operation::compress,botty::Operation::cancelCompression})if(std::atoi(argv[2])==static_cast<int>(op))cmd.operation=op;
+ botty::Command cmd;
+ // Stable host adapter names do not depend on the production enum's ordering.
+ struct NamedOperation {std::string_view name;botty::Operation operation;};
+ const NamedOperation operations[]={
+  {"pause",botty::Operation::pause},{"resume",botty::Operation::resume},
+  {"verify",botty::Operation::verify},{"add",botty::Operation::add},
+  {"extract",botty::Operation::extract},{"move",botty::Operation::move},
+  {"remove",botty::Operation::remove},{"remove-library",botty::Operation::removeLibrary},
+  {"compress",botty::Operation::compress},{"cancel-compression",botty::Operation::cancelCompression}
+ };
+ for(const auto& operation:operations)if(operation.name==argv[2])cmd.operation=operation.operation;
+ if(cmd.operation==botty::Operation::none){std::puts("Unknown integration action. Nothing was sent.");return 2;}
  if(argc>3)std::snprintf(cmd.id.data(),cmd.id.size(),"%s",argv[3]);
  if(argc>4)std::snprintf(cmd.archive.data(),cmd.archive.size(),"%s",argv[4]);
  if(argc>5)std::snprintf(cmd.text.data(),cmd.text.size(),"%s",argv[5]);
