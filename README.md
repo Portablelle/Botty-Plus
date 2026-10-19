@@ -17,7 +17,8 @@
 
 Botty+ is a PS5 app for finding, downloading and organizing your games
 from the couch, with your controller. Pick a game, choose where it goes, and
-Botty+ downloads it, extracts it and adds it to your Library. Downloads and file
+Botty+ downloads it, extracts it and adds it to Library for PS5 games or
+Emulation for Switch games. Downloads and file
 operations keep running in the background after you close the app.
 
 ## Highlights
@@ -63,7 +64,7 @@ operations keep running in the background after you close the app.
 After each console restart, open Portal+ and select **LAUNCH** again before
 opening Botty+.
 
-### Your first download
+### Your first PS5 download
 
 - **From Discover:** select a game, check the **Get game** sheet and press Cross.
   Discover works once your portal provider has
@@ -72,12 +73,27 @@ opening Botty+.
 
 In the **Get game** sheet, choose:
 
+- **Download on:** the PS5, or a dedicated server if your portal provider has
+  configured one.
 - **Install on:** the PS5 SSD or your external disk.
 - **After download:** **Extract and add to Library** to have everything done
   for you, or **Keep the download only** to handle the next steps yourself.
 
 Botty+ remembers both choices until you close it. Follow progress in **Activity**;
 the game appears in **Library** once it is ready.
+
+### Switch games
+
+Open **Emulation** and press Square to search. Choose the download destination
+and automatic preparation to extract, verify and import supported games,
+updates and DLC. Follow progress in **Activity**, then return to **Emulation**
+to play. Triangle switches between **Games**, **Updates / DLC** and
+**Available files**. Options on a game opens its per-game settings;
+the **Config** tab opens global settings.
+
+Switch emulation requires your existing firmware and keys, provisioned
+separately through your private Portal endpoint. They are not included in
+the public release. See [setup and supported formats](docs/EMULATION.md).
 
 ## Using Botty+
 
@@ -98,9 +114,9 @@ Press L1 or R1 to switch between tabs.
 | D-pad / left stick | Move around; left and right change an option in a sheet |
 | Cross | Select or confirm |
 | Circle | Go back, or dismiss an error message |
-| Options | Show actions for the selected item, or compare sources in Discover |
-| Square | Search in Discover, add a magnet link in Activity |
-| Triangle | Change the Discover ranking, filter Library or refresh Activity |
+| Options | Show item actions, compare sources in Discover, or open per-game Config in Emulation → Games |
+| Square | Search in Discover or Emulation, add a magnet link in Activity |
+| Triangle | Change the Discover ranking, filter Library, refresh Activity, or cycle Emulation's Games / Updates & DLC / Available files views |
 
 To close the app, open **System** and select **Close Botty+**. Circle never
 closes it by accident.
@@ -135,9 +151,13 @@ Do not run **LAUNCH** while an in-app update is waiting or installing. See
 
 - **Your files are kept.** Botty+ keeps the original download after extracting it,
   and keeps the original game after compressing it until you choose to delete it.
-- **Supported archives:** RAR, including password-protected and multi-part
-  archives. ZIP and 7z archives, PKG installation and launching games from
-  Botty+ are not supported.
+- **PS5 preparation:** RAR extraction includes password-protected and multi-part
+  archives. Local ZIP/7z extraction, direct PKG installation on the PS5 and
+  launching PS5 games from Botty+ are not supported. A configured dedicated
+  server can convert supported FPKG releases; see [game preparation](docs/game-preparation.md).
+- **Switch preparation:** supported RAR/ZIP archives are extracted automatically,
+  and NSP/XCI games, updates and DLC are verified and imported into Emulation.
+  Switch games launch directly from that tab. NSZ/XCZ are not supported.
 - **Interrupted work:** an interrupted extraction can resume on the same disk;
   an interrupted compression starts again from the beginning.
 - **Rest mode is experimental.** Botty+ asks the console to keep its services
