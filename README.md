@@ -22,6 +22,10 @@ operations keep running in the background after you close the app.
 
 ## Highlights
 
+- **New in 2.0.0 — Switch emulation:** play from the Emulation tab with an
+  embedded engine, automatic game/update/DLC imports and per-game settings.
+  No separate ProsperoEden installation is required. See the
+  [setup and compatibility guide](docs/EMULATION.md).
 - **Discover:** browse popular releases or search every connected tracker, then
   get a game in one step.
 - **Activity:** follow every download, extraction, move and deletion in one
@@ -77,13 +81,14 @@ the game appears in **Library** once it is ready.
 
 ## Using Botty+
 
-Botty+ has four tabs. Press L1 or R1 to switch between them.
+Press L1 or R1 to switch between tabs.
 
 | Tab | What you do there |
 | --- | --- |
 | **Discover** | Browse releases by newest, most seeded or most downloaded, or search every tracker. |
 | **Activity** | Follow downloads and file operations, pause or resume them, extract an archive or add a magnet link. |
 | **Library** | See your games, filter by disk or compression, compress, move or delete a game. |
+| **Emulation** | Search, import and launch Switch games, manage updates and DLC, and open global or per-game Config. |
 | **System** | Find the web address and login for your phone or computer, update Botty+, reconnect or close the app. |
 
 | Button | Action |
