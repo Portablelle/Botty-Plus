@@ -30,6 +30,8 @@ def assemble(engine):
         shutil.rmtree(target)
     shutil.copytree(engine, target)
     shutil.copyfile(ROOT/"emulation/licenses/Montserrat-OFL.txt", target/"licenses/Montserrat-OFL.txt")
+    # UltraCam is a separately licensed optional mod; no game data is included.
+    shutil.copytree(ROOT/"emulation/ultracam", target/"ultracam")
     # Both processes use the engine's pinned clean-room libc from /app0/sce_module.
     shutil.copy2(engine / 'sce_module/libc.prx', app / 'sce_module/libc.prx')
     runtime = dict(schema=1, engine='ProsperoEden', commit='8f392248f7d49fc2be47f60ad7764ac5a392b1fe',

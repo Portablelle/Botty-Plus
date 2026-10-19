@@ -83,6 +83,14 @@ server-download/import flow. Its code changes require separate deployment.
 
 Upstream: https://github.com/blackbearreloaded/ProsperoEden (GPL-3.0-or-later).
 
+### UltraCam per-game configuration
+
+Config → select a game → UltraCam provides an optional bundled UltraCam 1.0.1 mod by MaxLastBreath for Breath of the Wild 1.6.0. It starts disabled. The page includes a target frame rate, game resolution, quality, render distance, FOV and camera settings. These settings belong to the game and do not change the global render scale or TV refresh rate. A target of 60 FPS does not guarantee 60 FPS on PS5.
+
+Enabling checks the effective Control/NACP display version, confirms that the selected Program patch can apply to the base ROM, and verifies the bundled payload hashes. External updates take precedence over packed updates as in the loader. Advanced disabled-update overrides block activation instead of approving a version that might not run. Botty writes a managed mod under `mods/01007EF00011E000/Botty UltraCam/`, leaves other mods alone and refuses to overwrite an unmanaged or modified folder. Changing the game's update to an unsupported version disables this mod for that launch; it can always be turned off in Config. The game-wide Mods switch must also be on; enabling UltraCam never changes other mods’ activation. The mod is separately licensed CC-BY-NC-2.0; attribution, license, pinned upstream revision and file hashes ship in `emulation/ultracam/`.
+
+Validation: `emulation/tests/ultracam_check.cpp` exercises version gates, integrity, per-game INI settings and preservation; `emulation/tests/ultracam_ui.py` uses the real settings renderer.
+
 ### Switch archive preparation
 
 `platform: "switch"` is persisted from search/download/import through the

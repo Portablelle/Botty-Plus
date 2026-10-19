@@ -74,5 +74,11 @@ inline constexpr const char* embeddedRuntimeFiles[] = {
   "emulation/ui/sounds/toggle_02.wav",
   "emulation/ui/sounds/toggle_03.wav",
   "emulation/ui/sounds/welcome_01.wav",
+  "emulation/ultracam/LICENSE.md",
+  "emulation/ultracam/NOTICE.md",
+  "emulation/ultracam/botw/exefs/main.npdm",
+  "emulation/ultracam/botw/exefs/subsdk3",
+  "emulation/ultracam/botw/romfs/UltraCam/maxlastbreath.ini",
+  "emulation/ultracam/manifest.json",
 };
 }

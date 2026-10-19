@@ -808,18 +808,19 @@ index bce0587..2854342 100644
      while (!rom.empty() && (rom.back() == ' ' || rom.back() == '\r' || rom.back() == '\n')) rom.remove_suffix(1);
      if (rom.empty()) return {};
 diff --git a/headless/main.cpp b/headless/main.cpp
-index fe4f8f2..ad85c3e 100644
+index fe4f8f2..8504e77 100644
 --- a/headless/main.cpp
 +++ b/headless/main.cpp
-@@ -8,6 +8,7 @@
+@@ -8,6 +8,8 @@
  #include <exception>
  #include "assets_dir.h"
  #include "forwarded_launch.h"
 +#include "botty_configuration.h"
++#include "ultracam.h"
  #include "gpu_failure.h"
  #include "guest_fault.h"
  #include "jit_list.h"
-@@ -101,6 +102,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
+@@ -101,6 +103,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
  #include "core/hle/kernel/k_process.h"  // every build: the game's code address (jit_list.h)
  #ifdef PS5_NATIVE
  #include "core/hle/kernel/k_thread.h"
@@ -827,7 +828,7 @@ index fe4f8f2..ad85c3e 100644
  #endif
  #pragma clang diagnostic pop
  #ifdef EDEN_DEV_PROFILE
-@@ -147,7 +149,7 @@ public:
+@@ -147,7 +150,7 @@ public:
  
  #ifdef PS5_NATIVE
  // First start with filesystem access: copy what the sandbox kept (settings, covers, Eden's saves
@@ -836,7 +837,7 @@ index fe4f8f2..ad85c3e 100644
  // sandbox copy stays, so an older ProsperoEden still finds its data.
  // dev-settings jit_table_check=on: the JIT's direct page table (headless/jit-page-table.cmake) must
  // hold, for every page, the pointer of Eden's entry, or 0 where the entry is marked or empty. A
-@@ -178,7 +180,7 @@ public:
+@@ -178,7 +181,7 @@ public:
  }
  
  static void MigrateSandboxData() {
@@ -845,7 +846,7 @@ index fe4f8f2..ad85c3e 100644
      const std::pair<std::filesystem::path, std::string> moves[] = {
          {sandbox / "eden-headless-g7/user", Eden::UserDir()},
          {sandbox / "prosperoeden/covers", Eden::CoversDir()},
-@@ -206,10 +208,10 @@ static void MigrateSandboxData() {
+@@ -206,10 +209,10 @@ static void MigrateSandboxData() {
  
  #ifdef PS5_NATIVE
  // Game files an early version kept inside the app's folder (assets/ with keys, firmware and
@@ -858,7 +859,7 @@ index fe4f8f2..ad85c3e 100644
  static void MoveGameFilesOutOfTheApp() {
      const std::string from = std::string{Eden::kInstallDir} + "/assets", to = Eden::kDefaultAssetsDir;
      const std::string saved = Eden::LoadSavedAssetsDir();
-@@ -280,6 +282,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
+@@ -280,6 +283,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
  
  int main(int argc, char** argv) {
      try {
@@ -869,7 +870,7 @@ index fe4f8f2..ad85c3e 100644
          std::FILE* report = stdout;
          SCOPE_EXIT { if (report != stdout) std::fclose(report); };
          std::setvbuf(report, nullptr, _IONBF, 0);
-@@ -347,7 +353,7 @@ int main(int argc, char** argv) {
+@@ -347,7 +354,7 @@ int main(int argc, char** argv) {
          Eden::Crash::Install(Eden::LogsDir(), Eden::kAppVersion, last_crash.restarted);
          Eden::BootTrace::Ready(Eden::LogsDir(), Eden::FilesystemAccess());
          Eden::BootTrace::Line("logs and crash handler ready (%s)", Eden::LogsDir().c_str());
@@ -878,7 +879,7 @@ index fe4f8f2..ad85c3e 100644
              Eden::BootTrace::Line("app folder candidate %s: eboot %s, font %s", folder,
                                    Eden::FileExists(std::string{folder} + "/eboot.bin") ? "yes" : "no",
                                    Eden::FileExists(std::string{folder} + "/ui/fonts/montserrat-medium.pefont") ? "yes" : "no");
-@@ -483,10 +489,18 @@ int main(int argc, char** argv) {
+@@ -483,10 +490,18 @@ int main(int argc, char** argv) {
          std::string launch_error;
          // The previous run crashed: the launcher says where its report is.
          if (!last_crash.report.empty()) launch_error = std::string{Eden::Crash::kNotice} + last_crash.report;
@@ -899,7 +900,7 @@ index fe4f8f2..ad85c3e 100644
              const std::string path = Eden::ResolveForwardedRom(forwarded.rom, Eden::AssetsPath("roms"));
              if (!path.empty() && Eden::FileExists(path)) forwarded_game = path;
              else launch_error = "Forwarded game not found: " + (path.empty() ? forwarded.rom : path);
-@@ -567,10 +581,16 @@ int main(int argc, char** argv) {
+@@ -567,10 +582,16 @@ int main(int argc, char** argv) {
          } else if (!forwarded_game.empty()) {
              guest_fault_retries = 0;
              forwarded_session = true;
@@ -920,7 +921,22 @@ index fe4f8f2..ad85c3e 100644
              return 0;
          } else {
          guest_fault_retries = 0;
-@@ -1567,7 +1587,7 @@ int main(int argc, char** argv) {
+@@ -1289,6 +1310,14 @@ int main(int argc, char** argv) {
+             const u64 title = eden_game_title_id(guest);
+             const auto all_mods = Eden::Mods::List(Eden::AssetsPath("mods"), title);
+             auto mods_off = Eden::LoadDisabledMods(title);
++            if (title==Eden::UltraCam::kTitle && std::filesystem::exists(Eden::UltraCam::Root())) {
++                eden_scan_addons(Eden::AssetsPath("updates").c_str(),Eden::AssetsPath("keys").c_str());
++                char version[64]{};eden_game_effective_version(guest,Eden::AssetsPath("keys").c_str(),title,version,sizeof(version));
++                const bool compatible=Eden::UltraCam::Compatible(title,version);
++                if(!compatible&&std::find(mods_off.begin(),mods_off.end(),Eden::UltraCam::kName)==mods_off.end())mods_off.push_back(Eden::UltraCam::kName);
++                const auto config=Eden::UltraCam::Load();
++                Eden::Report("ultracam",("BOTW version="+std::string(version)+" compatible="+(compatible?"yes":"no")+" enabled="+(config[0]?"yes":"no")+" target="+std::string(Eden::UltraCam::Value(config,Eden::UltraCam::TargetFps))).c_str());
++            }
+             if (!Eden::LoadModsEnabled(title)) {
+                 for (const auto& mod : all_mods)
+                     if (std::find(mods_off.begin(), mods_off.end(), mod.name) == mods_off.end())
+@@ -1567,7 +1596,7 @@ int main(int argc, char** argv) {
                  }
  #ifdef PS5_NATIVE
                  if (game) {
@@ -929,7 +945,7 @@ index fe4f8f2..ad85c3e 100644
                      const bool saved_last = Eden::SaveLastGame(filename);
                      const bool saved_recent = Eden::SaveRecentGame(filename);
                      if (!saved_last || !saved_recent)
-@@ -1972,6 +1992,9 @@ int main(int argc, char** argv) {
+@@ -1972,6 +2001,9 @@ int main(int argc, char** argv) {
                      completion->wake.wait_for(lock, std::chrono::milliseconds(wait_ms), completed);
                      const bool guest_exited = completion->exited;
                      return_to_menu = completion->return_to_menu;
@@ -939,11 +955,140 @@ index fe4f8f2..ad85c3e 100644
  #ifdef PS5_NATIVE
                      if (completion->room_lost)
                          launch_error = "The room connection was lost. Rejoin from Multiplayer before launching again.";
+diff --git a/headless/metadata_bridge.cpp b/headless/metadata_bridge.cpp
+index f3274b3..7d8fda1 100644
+--- a/headless/metadata_bridge.cpp
++++ b/headless/metadata_bridge.cpp
+@@ -123,6 +123,16 @@ uint32_t ReadLanguages(const FileSys::VirtualDir& romfs) {
+     return static_cast<uint32_t>(raw.supported_languages);
+ }
+ 
++// Display version is a NACP field, distinct from the numeric CNMT revision.
++std::string ReadVersion(const FileSys::VirtualDir& romfs) {
++    auto nacp=romfs->GetFile("control.nacp");
++    if(!nacp)nacp=romfs->GetFile("Control.nacp");
++    std::array<char,0x10> version{};
++    if(!nacp||nacp->Read(reinterpret_cast<unsigned char*>(version.data()),version.size(),0x3060)!=version.size())return {};
++    const auto end=std::find(version.begin(),version.end(),'\0');
++    return std::string(version.begin(),end);
++}
++
+ // The game's language flags: a packed update's when it has them (a game can gain languages in an
+ // update), else the game's own.
+ uint32_t ReadLanguages(const FileSys::VirtualDir& game, const FileSys::VirtualDir& packed_update) {
+@@ -312,16 +322,26 @@ void eden_scan_addons(const char* updates_dir, const char* keys_dir) {
+             auto& addons = scanned[FileSys::GetBaseTitleID(entry.title_id)];
+             if (!addons.update.empty()) continue;
+             // Newest first; the display version comes from the update's own control data.
+-            if (const auto versions = provider.ListUpdateVersions(entry.title_id); !versions.empty()) {
++            const auto versions = provider.ListUpdateVersions(entry.title_id);
++            if (!versions.empty()) {
+                 addons.update = versions.front().version_string.empty()
+                     ? "v" + std::to_string(versions.front().version) : versions.front().version_string;
+             } else if (const auto version = provider.GetEntryVersion(entry.title_id)) {
+                 addons.update = "v" + std::to_string(*version);
+             }
+-            if (const auto control = provider.GetEntry(entry.title_id, FileSys::ContentRecordType::Control);
+-                control && control->GetStatus() == Loader::ResultStatus::Success)
+-                if (const auto romfs = control->GetRomFS())
+-                    if (const auto files = FileSys::ExtractRomFS(romfs)) addons.languages = ReadLanguages(files);
++            const auto control_raw=versions.empty() ? provider.GetEntryRaw(entry.title_id,FileSys::ContentRecordType::Control)
++                : provider.GetEntryForVersion(entry.title_id,FileSys::ContentRecordType::Control,versions.front().version);
++            if(control_raw) {
++                const FileSys::NCA control(control_raw);
++                if(control.GetStatus()==Loader::ResultStatus::Success)
++                    if(const auto romfs=control.GetRomFS())
++                        if(const auto files=FileSys::ExtractRomFS(romfs)) {
++                            addons.languages=ReadLanguages(files);
++                            if(const auto display=ReadVersion(files);!display.empty())addons.update=display;
++                        }
++            }
++            if(FileSys::GetBaseTitleID(entry.title_id)==0x01007EF00011E000ULL)
++                std::fprintf(stderr,"EDEN_BOTW_UPDATE revision=%s control=%s\n",addons.update.c_str(),provider.HasEntry(entry.title_id,FileSys::ContentRecordType::Control)?"present":"missing");
+         }
+         std::set<uint64_t> dlc;
+         for (const auto& entry : provider.ListEntriesFilter(FileSys::TitleType::AOC, std::nullopt, std::nullopt))
+@@ -424,6 +444,64 @@ int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, u
+     return !found->second.update.empty() || found->second.dlc != 0;
+ }
+ 
++int eden_game_effective_version(const char* rom_path,const char* keys_dir,uint64_t title_id,char* out,size_t capacity) {
++    if(!out||!capacity)return 0;
++    out[0]='\0';
++    try {
++        if(!rom_path||!keys_dir)return 0;
++        // Advanced update-selection overrides are not managed by this panel.
++        // Refuse approval rather than assume the newest installed patch is active.
++        for(const auto& name:Eden::LoadDisabledMods(title_id))
++            if(name=="Update"||name.starts_with("Update@")||name=="Update (NAND)"||name=="Update (SDMC)"){
++                std::snprintf(out,capacity,"update disabled in game settings");return 0;
++            }
++        Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir,keys_dir);
++        FileSys::RealVfsFilesystem vfs;
++        auto file=vfs.OpenFile(rom_path,FileSys::OpenMode::Read);
++        if(!file)return 0;
++        std::string ext=std::filesystem::path(rom_path).extension().string();
++        std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return std::tolower(c);});
++        std::shared_ptr<FileSys::NCA> base;
++        FileSys::VirtualDir base_control,packed_control;
++        FileSys::VirtualFile packed_raw;
++        const auto packed=[&](const FileSys::NSP& package){
++            packed_control=PackedUpdateControl(package);
++            // Match AppLoader_NSP/XCI::ReadUpdateRaw, including its default title type.
++            packed_raw=package.GetNCAFile(FileSys::GetUpdateTitleID(title_id),FileSys::ContentRecordType::Program);
++            if(packed_raw&&FileSys::NCA(packed_raw).GetStatus()!=Loader::ResultStatus::ErrorMissingBKTRBaseRomFS)packed_raw=nullptr;
++        };
++        if(ext==".xci"){
++            FileSys::XCI image(file);if(image.GetStatus()!=Loader::ResultStatus::Success)return 0;
++            base=image.GetNCAByType(FileSys::NCAContentType::Program);
++            base_control=ExtractControl(image.GetNCAByType(FileSys::NCAContentType::Control));
++            if(const auto secure=image.GetSecurePartitionNSP())packed(*secure);
++        }else{
++            FileSys::NSP package(file);if(package.GetStatus()!=Loader::ResultStatus::Success)return 0;
++            base=package.GetNCA(title_id,FileSys::ContentRecordType::Program);
++            base_control=ExtractControl(package.GetNCA(title_id,FileSys::ContentRecordType::Control));packed(package);
++        }
++        if(!base||base->GetStatus()!=Loader::ResultStatus::Success||base->GetTitleId()!=title_id)return 0;
++        FileSys::VirtualFile selected=packed_raw;
++        FileSys::VirtualDir selected_control=packed_raw?packed_control:base_control;
++        const FileSys::ExternalContentProvider provider({vfs.OpenDirectory(Eden::AssetsPath("updates"),FileSys::OpenMode::Read)});
++        const auto update_id=FileSys::GetUpdateTitleID(title_id);
++        const auto versions=provider.ListUpdateVersions(update_id);
++        if(!versions.empty()){
++            // Same external-first, newest-enabled Program selection as PatchManager.
++            selected=provider.GetEntryForVersion(update_id,FileSys::ContentRecordType::Program,versions.front().version);
++            if(!selected)return 0;
++            const auto control=provider.GetEntryForVersion(update_id,FileSys::ContentRecordType::Control,versions.front().version);
++            selected_control=control?ExtractControl(std::make_shared<FileSys::NCA>(control)):FileSys::VirtualDir{};
++        }
++        if(selected){
++            const FileSys::NCA applied(selected,base.get());
++            if(applied.GetStatus()!=Loader::ResultStatus::Success||!applied.GetExeFS()||!applied.GetRomFS())return 0;
++        }
++        const auto version=selected_control?ReadVersion(selected_control):std::string{};
++        std::snprintf(out,capacity,"%s",version.c_str());return !version.empty();
++    }catch(const std::exception&){return 0;}
++}
++
+ namespace {
+ // The save folder name of the profile games use (profiles.h), as Eden's save paths spell it.
+ // Without a profile file (no game has run yet) the one existing user save folder is used.
 diff --git a/headless/metadata_bridge.h b/headless/metadata_bridge.h
-index 112bac8..ae8633d 100644
+index 112bac8..d4488cf 100644
 --- a/headless/metadata_bridge.h
 +++ b/headless/metadata_bridge.h
-@@ -61,7 +61,7 @@ enum {
+@@ -46,6 +46,10 @@ int eden_game_addon_files(uint64_t title_id, const char* updates_dir, const char
+ // Returns nonzero when either exists.
+ int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, unsigned* dlc_count);
+ 
++// Effective display version: external update first (as PatchManager), then a
++// packed update, then the base game's control. Empty when it cannot be verified.
++int eden_game_effective_version(const char* rom_path,const char* keys_dir,uint64_t title_id,char* out,size_t capacity);
++
+ // Save transfer for one game (ryujinx_saves.h). Sources, in the game files folder next to roms/:
+ // save-import/<title ID>/ (a save folder copied by hand) or ryujinx/ (a Ryujinx data folder).
+ enum {
+@@ -61,7 +65,7 @@ enum {
      EDEN_SAVE_FAILED = 3,    // the copy failed; the current save is unchanged
  };
  // Copies the game's saves from the source into ProsperoEden's, after moving the current ones to
@@ -953,18 +1098,20 @@ index 112bac8..ae8633d 100644
  int eden_save_import(uint64_t title_id, char* path, size_t capacity);
  // Copies the game's saves to save-export/<title ID>-<date>-<time>/ (account/ and device/) in the
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
-index 0e5ac8b..9307af4 100644
+index 0e5ac8b..b52ba97 100644
 --- a/headless/prosperoeden/eden_services.cpp
 +++ b/headless/prosperoeden/eden_services.cpp
-@@ -7,6 +7,7 @@
+@@ -7,7 +7,9 @@
  #include "multiplayer_logging.h"
  #include "network/room.h"
  #include "metadata_bridge.h"
 +#include "botty_configuration.h"
  #include "mods.h"
++#include "ultracam.h"
  #include "profiles.h"
  #include "update_notice.h"
-@@ -683,6 +684,14 @@ std::vector<pe::ui::Game> EdenServices::games() {
+ #include "game_name.h"
+@@ -683,6 +685,14 @@ std::vector<pe::ui::Game> EdenServices::games() {
      auto entries = Eden::ReadNativeDirectory(Eden::AssetsPath("roms"), directory_error);
      // Without a roms folder there are still the download sources' games.
      if (directory_error) entries.clear();
@@ -979,7 +1126,7 @@ index 0e5ac8b..9307af4 100644
      eden_scan_addons(Eden::AssetsPath("updates").c_str(), Eden::AssetsPath("keys").c_str());
      // The download sources' games, each title once: one that is on the console can be downloaded
      // again, and is deleted from the console in its settings.
-@@ -696,7 +705,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
+@@ -696,7 +706,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
          return sources;
      };
      for (const auto& entry : entries) {
@@ -988,6 +1135,73 @@ index 0e5ac8b..9307af4 100644
          const std::size_t dot = file.find_last_of('.');
          if (file == "." || file == ".." || dot == std::string::npos) continue;
          std::string format = file.substr(dot + 1);
+@@ -728,6 +738,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
+             else
+                 (void)std::remove(staged.c_str());
+             game.title_id = eden_game_title_id(path.c_str());
++            if(game.title_id)local_roms_[game.title_id]=path;
+             // The game's own language (Library > Game settings > Language) or Settings > Language.
+             const GameLanguage language = LanguageFor(path, game.title_id, Eden::PreferencesFor(game.title_id).language);
+             game.addons = AddOnSummary(game.title_id);
+@@ -904,6 +915,16 @@ static_assert(std::tuple_size_v<decltype(pe::ui::GameSettings::performance)> ==
+ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
+     const Eden::GameSettings saved = Eden::LoadGameSettings(title_id);
+     pe::ui::GameSettings result;
++    if (title_id == Eden::UltraCam::kTitle) {
++        const std::lock_guard lock(bridge_);
++        char version[64]{};
++        const auto rom=local_roms_.find(title_id);
++        if(rom!=local_roms_.end())eden_game_effective_version(rom->second.c_str(),Eden::AssetsPath("keys").c_str(),title_id,version,sizeof(version));
++        Eden::Report("ultracam",("Config detected effective BOTW version: "+std::string(version)).c_str());
++        result.ultracam_available=Eden::UltraCam::Compatible(title_id,version);
++        result.ultracam_note=result.ultracam_available ? "UltraCam 1.0.1 | BOTW 1.6.0. FPS is a target, not a guarantee." : ("Requires BOTW 1.6.0. Detected update: "+std::string(version[0]?version:"none")+".");
++        result.ultracam=Eden::UltraCam::Load();
++    }
+     result.renderer = saved.renderer;
+     result.resolution = saved.resolution;
+     result.filter = saved.upscaling_filter;
+@@ -929,6 +950,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
+     return result;
+ }
+ 
++bool EdenServices::set_ultracam(std::uint64_t title_id,const std::array<int,14>& values,std::string& error) {
++    const std::lock_guard lock(bridge_);
++    char version[64]{};const auto rom=local_roms_.find(title_id);
++    if(rom!=local_roms_.end())eden_game_effective_version(rom->second.c_str(),Eden::AssetsPath("keys").c_str(),title_id,version,sizeof(version));
++    return Eden::UltraCam::Save(title_id,version,values,error);
++}
++
+ bool EdenServices::set_game_settings(std::uint64_t title_id, const pe::ui::GameSettings& settings) {
+     Eden::GameSettings value;
+     value.renderer = settings.renderer;
+diff --git a/headless/prosperoeden/eden_services.h b/headless/prosperoeden/eden_services.h
+index b4ed9bd..9e59e35 100644
+--- a/headless/prosperoeden/eden_services.h
++++ b/headless/prosperoeden/eden_services.h
+@@ -2,6 +2,7 @@
+ // What the launcher screens ask of the app, answered from the console: the games folder,
+ // the settings file, Eden's metadata reader.
+ #pragma once
++#include <map>
+ 
+ #include "pe/ui/services.hpp"
+ #include "remote/remote.h"
+@@ -39,6 +40,7 @@ public:
+     void finish_update() override;
+     bool docked(std::uint64_t title_id) override;
+     bool set_docked(std::uint64_t title_id, bool docked) override;
++    bool set_ultracam(std::uint64_t title_id, const std::array<int,14>& values, std::string& error) override;
+     pe::ui::GameSettings game_settings(std::uint64_t title_id) override;
+     bool set_game_settings(std::uint64_t title_id, const pe::ui::GameSettings& settings) override;
+ 
+@@ -131,6 +133,7 @@ private:
+     int user_ = -1; // the PS5 user in front when the menu opened (negative: unknown)
+     std::string launch_error_;
+     std::string setup_; // what is missing from keys and firmware; empty when ready
++    std::map<std::uint64_t,std::string> local_roms_;
+     std::mutex bridge_; // Eden's metadata reader keeps state between calls: one caller at a time
+     // The download sources' games as titles (Remote::Titles), read again when their lists changed:
+     // the menu asks for its downloads four times a second.
 diff --git a/headless/prosperoeden/frontend.cpp b/headless/prosperoeden/frontend.cpp
 index 5e6ee7c..a7c7534 100644
 --- a/headless/prosperoeden/frontend.cpp
@@ -1124,18 +1338,27 @@ index 9e7899a..e32e3f1 100644
      s.wait(2.0f);
      s.shoot("25b-home-crash-report");
 diff --git a/headless/prosperoeden/host/runtime_preview.cpp b/headless/prosperoeden/host/runtime_preview.cpp
-index 6dd9f86..10b2e0e 100644
+index 6dd9f86..b176c4d 100644
 --- a/headless/prosperoeden/host/runtime_preview.cpp
 +++ b/headless/prosperoeden/host/runtime_preview.cpp
-@@ -24,6 +24,7 @@ public:
+@@ -22,8 +22,16 @@
+ class RuntimePreviewServices : public pe::host::FakeServices {
+ public:
      using FakeServices::FakeServices;
++    pe::ui::GameSettings game_settings(std::uint64_t id) override {
++        auto value=FakeServices::game_settings(id);value.ultracam_available=true;
++        value.ultracam_note="UltraCam 1.0.1 | BOTW 1.6.0 (preview fixture)";return value;
++    }
++    bool set_ultracam(std::uint64_t id,const std::array<int,14>& values,std::string& error) override {
++        auto value=FakeServices::game_settings(id);value.ultracam=values;error.clear();return FakeServices::set_game_settings(id,value);
++    }
      nlohmann::json launches=nlohmann::json::array();
      void will_play(const std::string& file) override {
 +        FakeServices::will_play(file);
          int profile=-1;
          for(int i=0;i<static_cast<int>(people.size());++i) if(people[i].playing) profile=i;
          launches.push_back({{"file",file},{"profile",profile}});
-@@ -83,7 +84,19 @@ int main(int argc,char**argv) {
+@@ -83,7 +91,19 @@ int main(int argc,char**argv) {
          while(std::getline(std::cin,input)){
              std::istringstream parser(input);std::string command,arg;int frames=2;parser>>command>>arg>>frames;
              if(command=="exit")break;
@@ -1156,6 +1379,165 @@ index 6dd9f86..10b2e0e 100644
              else if(command=="key" && keys.contains(arg)){launcher.press(keys.at(arg));tick(std::max(1,frames));}
              else if(command=="tick"){tick(arg.empty()?60:std::stoi(arg));}
              else if(command=="capture"){capture(arg);}
+diff --git a/headless/prosperoeden/pe/ui/game_options.cpp b/headless/prosperoeden/pe/ui/game_options.cpp
+index 593a23e..963216e 100644
+--- a/headless/prosperoeden/pe/ui/game_options.cpp
++++ b/headless/prosperoeden/pe/ui/game_options.cpp
+@@ -29,15 +29,6 @@ constexpr int kRowsShown = 5;
+ constexpr Rect kWindow{592.0f, kRowsTop, 736.0f, kRowPitch * (kRowsShown - 1) + kRowHeight};
+ constexpr float kHints = 848.0f;
+ 
+-enum Category : int
+-{
+-    category_video,
+-    category_performance,
+-    category_audio,
+-    category_controls,
+-    category_system,
+-    category_language,
+-};
+ // The Video category's rows that say something of their own once chosen.
+ constexpr int kAstcRow = 3;
+ constexpr int kRefreshRow = 4;
+@@ -85,6 +76,20 @@ std::string pick(const std::vector<std::string> &values, int index)
+ 
+ // One setting of a game: its choices, the one the game has (-1: it follows Settings), and what
+ // Settings has.
++struct CategoryPolicy {
++    bool inherits_global;
++    bool refresh_mods;
++    std::string locked_message;
++    bool (*save)(Services&,std::uint64_t,const GameSettings&,std::string&);
++};
++CategoryPolicy policy(int category,const GameSettings& game) {
++    if(category==category_ultracam)return {false,true,game.ultracam_note,
++        [](Services& services,std::uint64_t id,const GameSettings& next,std::string& error){return services.set_ultracam(id,next.ultracam,error);}};
++    return {true,false,tr("Frame generation needs Lossless.dll, from Lossless Scaling, in the lossless folder."),
++        [](Services& services,std::uint64_t id,const GameSettings& next,std::string& error){
++            const bool ok=services.set_game_settings(id,next);if(!ok)error=tr("Could not save. Please try again.");return ok;}};
++}
++
+ struct Option
+ {
+     std::string name;
+@@ -192,6 +197,15 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences
+                          tr("Right Joy-Con")},
+                         game.controller, tr("Automatic")});
+         break;
++    case category_ultracam:
++        for (std::size_t i=0;i<Eden::UltraCam::Count;++i) {
++            const auto& definition=Eden::UltraCam::kDefinitions[i];
++            std::vector<std::string> choices;
++            for(int choice=0;choice<definition.count;++choice)choices.emplace_back(definition.choices[choice].label);
++            rows.push_back({definition.label,choices,game.ultracam[i],"",
++                !game.ultracam_available && (i!=Eden::UltraCam::Enabled || game.ultracam[i]==0)});
++        }
++        break;
+     case category_system:
+         // The seed is a number: the row's one choice is the game's (0 until one is typed, with
+         // Cross). Without a seed the game is loaded at a new random address at every start.
+@@ -241,6 +255,9 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
+             game.own_mapping = value >= 0;
+         }
+         break;
++    case category_ultracam:
++        game.ultracam[static_cast<std::size_t>(row)] = value;
++        break;
+     case category_system:
+         game.rng_seed = value < 0 ? -1 : std::max<std::int64_t>(game.rng_seed, 0);
+         break;
+@@ -392,20 +409,22 @@ void Launcher::press_game_options(Key key)
+         edit_seed();
+         return;
+     }
++    const auto category_policy=policy(game_options_,game_settings_);
+     if (option.locked)
+     {
+-        say(tr("Frame generation needs Lossless.dll, from Lossless Scaling, in the lossless folder."), true);
++        say(category_policy.locked_message, true);
+         cue(Cue::error);
+         return;
+     }
+     // Settings' value (-1), then each of the game's choices.
+     const int count = static_cast<int>(option.values.size());
+     const int step = key == Key::left ? -1 : 1;
+-    const int value = (option.value + 1 + step + count + 1) % (count + 1) - 1;
++    const int value = category_policy.inherits_global ? (option.value + 1 + step + count + 1) % (count + 1) - 1 : (option.value + step + count) % count;
+     const GameSettings next = with_option(game_settings_, game_options_, row, value, prefs_);
+-    const bool saved = services_.set_game_settings(game.title_id, next);
+-    if (saved)
+-        game_settings_ = next;
++    std::string error;
++    const bool saved=category_policy.save(services_,game.title_id,next,error);
++    if(saved)game_settings_=services_.game_settings(game.title_id);
++    if(category_policy.refresh_mods)read_mods(games_[static_cast<std::size_t>(library_.selected)]);
+     // 120 Hz is a request: the display has the last word.
+     const bool fast = saved && game_options_ == category_video && row == kRefreshRow &&
+                       (game_settings_.refresh >= 0 ? game_settings_.refresh : prefs_.refresh) == 1;
+@@ -415,7 +434,7 @@ void Launcher::press_game_options(Key key)
+     say(fast ? tr("Saved. A display that cannot show 120 Hz stays at 60 Hz.") :
+         full ? tr("Saved. Full quality uses four times the graphics memory for these textures and can run out "
+                   "above 1x.") :
+-        saved ? tr("Saved for this game. Applies on next launch.") : tr("Could not save. Please try again."),
++        saved ? tr("Saved for this game. Applies on next launch.") : error,
+         !saved);
+     cue(saved ? Cue::toggle : Cue::error);
+ }
+@@ -431,6 +450,14 @@ int Launcher::option_action() const
+ 
+ std::string Launcher::option_about(int category, int row) const
+ {
++    if (category == category_ultracam) {
++        if (row == 0) return game_settings_.ultracam_note;
++        if (row == 1) return "FPS target with dynamic game speed. The PS5 may not sustain it. This is separate from TV refresh rate and frame generation.";
++        if (row == 2) return "Game resolution before the emulator render scale. Lower this and use 1x when testing the 60 FPS target.";
++        if (row == 3) return "Disables the game's FXAA, FSR and dynamic resolution. May change sharpness and performance.";
++        if (row == 4) return "A shorter distance may improve performance but makes distant scenery disappear earlier.";
++        return "UltraCam by MaxLastBreath. Saved for this game; other games keep their settings.";
++    }
+     // The Performance switches each say what they do (settings.cpp).
+     if (category == category_performance)
+         return tr(performance_about(row));
+@@ -469,7 +496,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+         // The game's own choice, or "Default (what Settings has)".
+         const std::string value = option.locked ? std::string{tr("Unavailable")} :
+             option.value >= 0 ? pick(option.values, option.value) : fill(tr("Default ({0})"), {option.usual});
+-        if (option.locked)
++    if (option.locked)
+             list.push_opacity(0.38f);
+         const float taken = chooser(c, value, pane.x + pane.w - 24.0f, baseline(top, height, t.size_text),
+                                     focused ? 1.0f : 0.0f, option.value >= 0 ? t.accent : t.meta);
+@@ -479,7 +506,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+             list.circle(pane.x + 34.0f, top + height * 0.5f, 4.0f, t.accent);
+         text_shrink(c, option.name, pane.x + 28.0f + lead, baseline(top, height, t.size_text), t.size_text,
+                     focused ? t.title : t.value, pane.w - 28.0f - lead - 24.0f - taken - 28.0f);
+-        if (option.locked)
++    if (option.locked)
+             list.pop_opacity();
+         list.pop_opacity();
+     }
+diff --git a/headless/prosperoeden/pe/ui/home.cpp b/headless/prosperoeden/pe/ui/home.cpp
+index 16693af..04813d7 100644
+--- a/headless/prosperoeden/pe/ui/home.cpp
++++ b/headless/prosperoeden/pe/ui/home.cpp
+@@ -30,7 +30,7 @@ constexpr int kViewAll = kFirstRecent + kRecents;
+ 
+ // The library grid on the home screen shares these with library.cpp.
+ constexpr int kGridColumns = 4;
+-constexpr float kGameKindPitch = 80.0f;
++constexpr float kGameKindPitch = 72.0f;
+ 
+ // The words at the left, the cover at the right.
+ constexpr float kWords = 1120.0f;
+@@ -156,7 +156,7 @@ void Launcher::press_home(Key key)
+             read_mods(games_[static_cast<std::size_t>(library_.selected)]);
+             open_modal(Modal::game);
+             pane_.snap(0.0f);
+-            game_rows_.visible = 10;
++            game_rows_.visible = 11;
+             game_rows_.pitch = kGameKindPitch;
+             game_rows_.reset(dialog_rows(Modal::game), 0);
+             return;
 diff --git a/headless/prosperoeden/pe/ui/launcher.cpp b/headless/prosperoeden/pe/ui/launcher.cpp
 index 2198972..6077fb2 100644
 --- a/headless/prosperoeden/pe/ui/launcher.cpp
@@ -1240,10 +1622,20 @@ index 2198972..6077fb2 100644
      refresh_sync_setup(dt);
      update_multiplayer();
 diff --git a/headless/prosperoeden/pe/ui/launcher.hpp b/headless/prosperoeden/pe/ui/launcher.hpp
-index fed5e78..12b0932 100644
+index fed5e78..099dd9f 100644
 --- a/headless/prosperoeden/pe/ui/launcher.hpp
 +++ b/headless/prosperoeden/pe/ui/launcher.hpp
-@@ -29,6 +29,9 @@ class Launcher
+@@ -16,6 +16,9 @@
+ 
+ namespace pe::ui
+ {
++enum GameOptionCategory : int { category_video, category_performance, category_audio,
++ category_controls, category_system, category_language, category_ultracam, category_count };
++
+ 
+ // Every screen of the launcher as one state machine. The frontend feeds it
+ // pressed buttons and frame time, draws its list and plays its cues; it ends
+@@ -29,6 +32,9 @@ class Launcher
      Launcher(const Launcher &) = delete;
      Launcher &operator=(const Launcher &) = delete;
  
@@ -1253,7 +1645,7 @@ index fed5e78..12b0932 100644
      void accept_update_offer(const UpdateOffer& offer) { update_=offer; update_version_=offer.version; notes_laid_out_=false; update_waiting_=offer.installable; }
      bool take_launcher_picker() { return std::exchange(launcher_picker_, false); }
      void press(Key key);
-@@ -64,6 +67,9 @@ class Launcher
+@@ -64,6 +70,9 @@ class Launcher
  
    private:
      bool launcher_picker_ = false;
@@ -1263,6 +1655,118 @@ index fed5e78..12b0932 100644
      enum class Screen : std::uint8_t
      {
          home,
+@@ -230,7 +239,7 @@ class Launcher
+     // ---- a game's own settings by category, and the button mapping (game_options.cpp) ----
+     // Categories, in the order of the game settings' rows: video, performance, audio, controls,
+     // system, language.
+-    static constexpr int kGameOptionCategories = 6;
++    static constexpr int kGameOptionCategories = category_count;
+     void open_game_options(int category);
+     void press_game_options(Key key);
+     // The RNG seed is typed on the system keyboard: opens it, and takes its answer when it closes.
+diff --git a/headless/prosperoeden/pe/ui/library.cpp b/headless/prosperoeden/pe/ui/library.cpp
+index 669180b..83a9281 100644
+--- a/headless/prosperoeden/pe/ui/library.cpp
++++ b/headless/prosperoeden/pe/ui/library.cpp
+@@ -34,8 +34,8 @@ constexpr Rect kDetail{1304.0f, 136.0f, 520.0f, 836.0f};
+ 
+ // A game's settings: a page of three parts beside the rail.
+ constexpr Rect kKinds{layout::kLeft, 160.0f, 400.0f, 792.0f};
+-constexpr float kKindPitch = 80.0f;
+-constexpr float kKindHeight = 72.0f;
++constexpr float kKindPitch = 72.0f;
++constexpr float kKindHeight = 70.0f;
+ constexpr Rect kMiddle{624.0f, 160.0f, 760.0f, 792.0f};
+ constexpr Rect kExplain{1424.0f, 160.0f, 400.0f, 792.0f};
+ 
+@@ -50,19 +50,20 @@ enum GameRow : int
+     row_controls,
+     row_system,
+     row_language,
++    row_ultracam,
+     row_mods,
+     row_save,   // in builds that move saves
+     row_delete, // a game a download source has: deleted from the console
+ };
+ constexpr const char *kKindNames[] = {TR("Console mode"), TR("Video"),    TR("Performance"),
+                                       TR("Audio"),        TR("Controls"), TR("System"),
+-                                      TR("Language"),     TR("Mods"),     TR("Save data"),
++                                      TR("Language"),     TR("UltraCam"), TR("Mods"),     TR("Save data"),
+                                       TR("Delete from console")};
+ 
+ // How many settings a game has of its own.
+ int changes_of(const GameSettings &game)
+ {
+-    return (game.renderer >= 0) + (game.resolution >= 0) + (game.filter >= 0) + (game.astc >= 0) +
++    return (game.ultracam[0] != 0) + (game.renderer >= 0) + (game.resolution >= 0) + (game.filter >= 0) + (game.astc >= 0) +
+            (game.refresh >= 0) + (game.hud >= 0) + (game.hud_size >= 0) + (game.hud_corner >= 0) +
+            (game.post_processing >= 0) + (game.frame_gen >= 0) + (game.frame_gen_target >= 0) +
+            (game.frame_gen_multiplier >= 0) +
+@@ -453,7 +454,7 @@ void Launcher::press_library(Key key)
+         read_mods(games_[static_cast<std::size_t>(library_.selected)]);
+         open_modal(Modal::game);
+         pane_.snap(0.0f);
+-        game_rows_.visible = 10;
++        game_rows_.visible = 11;
+         game_rows_.pitch = kKindPitch;
+         game_rows_.reset(dialog_rows(Modal::game), 0);
+         return;
+@@ -857,6 +858,10 @@ void Launcher::press_game(Key key)
+             open_game_options(kind - row_video);
+         return;
+     }
++    if (kind == row_ultracam) {
++        if (key == Key::cross || key == Key::right) open_game_options(category_ultracam);
++        return;
++    }
+     if (kind == row_mods)
+     {
+         // The game's mods have their own list. It is read again: mods may have been copied in
+@@ -1002,6 +1007,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
+         {
+         case row_mode:
+             return game_docked_ ? tr("Docked") : tr("Handheld");
++        case row_ultracam:
++            return !game_settings_.ultracam_available ? "BOTW 1.6.0 only" : game_settings_.ultracam[0] ? "On" : "Off";
+         case row_mods:
+             // With the game's Mods switch off (the Library's), none of them is on.
+             return mods_.empty() ? std::string{tr("No mods")} :
+@@ -1022,6 +1029,7 @@ void Launcher::draw_game_page(Canvas &c, float open)
+     const auto there = [&](int which)
+     {
+         return which == row_mode ? true :
++               which == row_ultracam ? game_settings_.ultracam[0]!=0 :
+                which == row_mods ? !mods_.empty() && game.mods_enabled :
+                which == row_save ? import_source_ != SaveSource::none :
+                which == row_delete ? false : game_overrides(which - row_video) > 0;
+@@ -1046,6 +1054,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
+     const bool active = modal_shown_ != Modal::game;
+     if (kind == row_mode)
+         draw_mode_pane(c, middle);
++    else if (kind == row_ultracam)
++        draw_option_pane(c, middle, 6, active);
+     else if (kind == row_mods)
+         draw_mods_pane(c, middle, active);
+     else if (kind == row_save || kind == row_delete)
+@@ -1290,6 +1300,9 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+     case row_controls:
+         about = tr("Controller shortcuts and supported features.");
+         break;
++    case row_ultracam:
++        about = game_settings_.ultracam_note.c_str();
++        break;
+     case row_language:
+         about = tr("The language games use when they offer it.");
+         break;
+@@ -1297,7 +1310,7 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+         break;
+     }
+     // What the focused switch does says more than what its kind is about.
+-    const std::string detail = rows_have_focus ? option_about(kind - row_video, option_rows_.selected) : std::string{};
++    const std::string detail = rows_have_focus ? option_about(kind == row_ultracam ? 6 : kind - row_video, option_rows_.selected) : std::string{};
+     const std::string words = !detail.empty() ? detail : std::string{about};
+     if (!words.empty())
+     {
 diff --git a/headless/prosperoeden/pe/ui/runtime_launcher.cpp b/headless/prosperoeden/pe/ui/runtime_launcher.cpp
 index 329141a..ac30529 100644
 --- a/headless/prosperoeden/pe/ui/runtime_launcher.cpp
@@ -1311,6 +1815,64 @@ index b2c1866..98f27d2 100644
      void press(Key);
      void update(float);
      void draw(gfx::DrawList&);
+diff --git a/headless/prosperoeden/pe/ui/runtime_models.hpp b/headless/prosperoeden/pe/ui/runtime_models.hpp
+index 3b6ab5b..f8064ba 100644
+--- a/headless/prosperoeden/pe/ui/runtime_models.hpp
++++ b/headless/prosperoeden/pe/ui/runtime_models.hpp
+@@ -17,7 +17,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Recent, file, title, cover)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Home, setup_ready, status, launch_failed, last_file, last_exists, last_title, last_caption, last_caption_warning, last_cover, last_title_id, last_addons, last_language, last_mods, last_mods_on, recents, system_status)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Profile, name, playing)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper)
+-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed)
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cheat, name, enabled)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FolderInfo, keys, firmware, games)
+diff --git a/headless/prosperoeden/pe/ui/services.hpp b/headless/prosperoeden/pe/ui/services.hpp
+index 19ac605..993045a 100644
+--- a/headless/prosperoeden/pe/ui/services.hpp
++++ b/headless/prosperoeden/pe/ui/services.hpp
+@@ -13,6 +13,7 @@
+ #include <atomic>
+ #include <optional>
+ #include "../../../multiplayer.h"
++#include "../../../ultracam_options.h"
+ #include "../../../multiplayer_directory.h"
+ 
+ namespace pe::ui
+@@ -379,6 +380,9 @@ struct Preferences
+ // the game follows Settings; switches are 0 off, 1 on.
+ struct GameSettings
+ {
++    bool ultracam_available = false;
++    std::string ultracam_note = "UltraCam supports BOTW 1.6.0 only.";
++    Eden::UltraCam::Options ultracam=Eden::UltraCam::kDefaults;
+     int renderer = -1;   // 0 OpenGL, 1 Vulkan
+     int resolution = -1; // index into Services::resolution_labels
+     int filter = -1;     // index into Services::filter_labels
+@@ -599,6 +603,9 @@ class Services
+         return false;
+     }
+ 
++    virtual bool set_ultracam(std::uint64_t, const std::array<int,14>&, std::string& error)
++    { error = "UltraCam is unavailable in this build."; return false; }
++
+     // ---- mods: patches, replacement files and cheats the player added for a game ----
+     virtual std::vector<Mod> mods(std::uint64_t)
+     {
+diff --git a/headless/prosperoeden/pe/ui/settings.cpp b/headless/prosperoeden/pe/ui/settings.cpp
+index 9026565..f1b1224 100644
+--- a/headless/prosperoeden/pe/ui/settings.cpp
++++ b/headless/prosperoeden/pe/ui/settings.cpp
+@@ -552,7 +552,7 @@ int Launcher::dialog_rows(Modal modal) const
+         // Console mode, video, performance, audio, controls, system, language, mods; save data in
+         // builds that move saves.
+         // A game a download source has can be deleted from the console (and downloaded again).
+-        return (services_.save_transfer_available() ? 9 : 8) +
++        return (services_.save_transfer_available() ? 10 : 9) +
+                (library_.selected < static_cast<int>(games_.size()) &&
+                         !games_[static_cast<std::size_t>(library_.selected)].sources.empty() &&
+                         !games_[static_cast<std::size_t>(library_.selected)].remote ? 1 : 0);
 diff --git a/headless/prosperoeden/pe/ui/shell.cpp b/headless/prosperoeden/pe/ui/shell.cpp
 index 2be4dc5..bafbdf7 100644
 --- a/headless/prosperoeden/pe/ui/shell.cpp
@@ -1423,6 +1985,226 @@ index 67fb986..69079d1 100644
      }();
      return directory;
  }
+diff --git a/headless/ultracam.h b/headless/ultracam.h
+new file mode 100644
+index 0000000..3484a88
+--- /dev/null
++++ b/headless/ultracam.h
+@@ -0,0 +1,178 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Botty's per-game adapter for the separately licensed, unmodified UltraCam mod.
++#pragma once
++#include "assets_dir.h"
++#include "settings_store.h"
++#include "mods.h"
++#include "ultracam_options.h"
++#include "update_check/self_update_sha256.h"
++#include <array>
++#include <filesystem>
++#include <fstream>
++#include <functional>
++#include <set>
++#if defined(__PROSPERO__)
++#include "native_directory.h"
++#endif
++#include <stdexcept>
++#include <fcntl.h>
++#include <unistd.h>
++
++namespace Eden::UltraCam {
++namespace fs = std::filesystem;
++inline constexpr uint64_t kTitle = 0x01007EF00011E000ULL;
++inline constexpr const char* kName = "Botty UltraCam";
++struct Payload { const char* path; size_t size; const char* hash; };
++inline constexpr Payload kFiles[]{
++ {"exefs/main.npdm",1612,"7cedbb57ba93e3ab6e660490a0a7b932716854004786a2ac42d39dbf8b85e678"},
++ {"exefs/subsdk3",138431,"1216d58cb3eb8028a905a3c88b104a1338b48cff2b1dfeac571bff7b9826dac6"},
++};
++inline fs::path Root(const std::string& directory=AssetsPath("mods")) {
++ const auto existing=Eden::Mods::TitleFolder(directory,kTitle);
++ return fs::path(existing.empty()?Eden::Mods::TitleFolderToCreate(directory,kTitle):existing)/kName;
++}
++inline bool Compatible(uint64_t title, std::string_view version) { return title==kTitle && version=="1.6.0"; }
++inline bool Valid(const Options& values) {
++ for(size_t i=0;i<values.size();++i) if(values[i]<0 || values[i]>=kDefinitions[i].count) return false;
++ return true;
++}
++inline bool Read(const fs::path& path,size_t limit,std::string& bytes) {
++ std::error_code ec; const auto st=fs::symlink_status(path,ec);
++ if(ec || !fs::is_regular_file(st)) return false;
++ const auto size=fs::file_size(path,ec); if(ec||size>limit) return false;
++ std::ifstream in(path,std::ios::binary);bytes.resize(size);in.read(bytes.data(),std::streamsize(size));
++ return size_t(in.gcount())==size && in.peek()==std::char_traits<char>::eof();
++}
++inline bool Verified(const fs::path& path,const Payload& file) {
++ std::string bytes;if(!Read(path,file.size,bytes)||bytes.size()!=file.size)return false;
++ self_update_sha256 hash;unsigned char digest[32];self_update_sha256_start(&hash);
++ self_update_sha256_add(&hash,bytes.data(),bytes.size());self_update_sha256_finish(&hash,digest);
++ return self_update_sha256_matches(digest,file.hash);
++}
++inline void Directory(const fs::path& path) {
++ fs::path part;
++ for(const auto& name:path){part/=name;std::error_code ec;auto st=fs::symlink_status(part,ec);
++  if(!fs::exists(st)){if(!fs::create_directory(part))throw std::runtime_error("Cannot create UltraCam folder");fs::permissions(part,fs::perms::owner_all);}
++  else if(!fs::is_directory(st))throw std::runtime_error("UltraCam folder must not be a link");
++ }
++}
++inline void Write(const fs::path& path,std::string_view bytes) {
++ Directory(path.parent_path());auto temp=path.string()+".XXXXXX";std::vector<char> name(temp.begin(),temp.end());name.push_back(0);
++ const int fd=mkstemp(name.data());if(fd<0)throw std::runtime_error("Cannot stage UltraCam settings");
++ bool ok=true;size_t at=0;while(at<bytes.size()){const auto n=::write(fd,bytes.data()+at,bytes.size()-at);if(n<=0){ok=false;break;}at+=size_t(n);}
++ if(fsync(fd))ok=false;
++ if(close(fd))ok=false;
++ if(!ok||rename(name.data(),path.c_str())){unlink(name.data());throw std::runtime_error("Cannot save UltraCam settings");}
++}
++inline Options Load(const fs::path& root=Root(),const std::string& settings=SettingsFile()) {
++ auto values=kDefaults;std::string text;bool managed=false;
++ try {if(Read(root/".botty-ultracam.json",8192,text)){
++  const auto j=Settings::Json::parse(text);auto saved=j.at("options").get<Options>();
++  if(j.at("schema")==1 && j.at("version")=="1.0.1" && Valid(saved)){values=saved;managed=true;}
++ }}catch(const std::exception&){}
++ const auto off=LoadDisabledMods(kTitle,settings);
++ values[0]=managed&&
++           std::find(off.begin(),off.end(),kName)==off.end();
++ return values;
++}
++inline std::string Ini(const Options& v) {
++ if(!Valid(v))throw std::runtime_error("Invalid UltraCam option");
++ const int height=std::stoi(Value(v,Resolution));
++ const int width=height==720?1280:height==900?1600:height==1080?1920:2048;
++ std::ostringstream out;out<<"# UltraCam by MaxLastBreath. Settings managed by Botty for BOTW 1.6.0.\n"
++ <<"[Resolution]\nMaxFramerate = "<<Value(v,TargetFps)<<"\nMenuFPS = "<<Value(v,MenuFps)
++ <<"\nQualityImprovements = "<<Value(v,Quality)<<"\nRenderDistance = "<<Value(v,Distance)
++ <<"\nWidth = "<<width<<"\nHeight = "<<height
++ <<"\n\n[Features]\nFov = "<<Value(v,Fov)<<"\n\n[UltraCam]\nTriggerWithController = "<<Value(v,FreeCamera)
++ <<"\nAutoHideUI = "<<Value(v,HideUi)<<"\nCameraSpeed = "<<Value(v,Sensitivity)<<"\nSpeed = "<<Value(v,Speed)
++ <<"\nAnimationSmoothing = "<<Value(v,Smoothing)<<"\nAnimationFadeout = "<<Value(v,Fadeout)
++ <<"\n\n[Benchmark]\nBenchmark = "<<Value(v,Benchmark)<<"\n";return out.str();
++}
++inline void Managed(const fs::path& root) {
++ const std::set<std::string> files{"exefs/main.npdm","exefs/subsdk3","romfs/UltraCam/maxlastbreath.ini",".botty-ultracam.json"};
++ const std::set<std::string> directories{"exefs","romfs","romfs/UltraCam"};
++ std::function<void(const fs::path&)> inspect=[&](const fs::path& path) {
++  std::error_code ec;
++#if defined(__PROSPERO__)
++  const auto entries=Eden::ReadNativeDirectory(path,ec);
++  if(ec)throw std::runtime_error("Cannot inspect the UltraCam folder");
++#else
++  std::vector<fs::directory_entry> entries;
++  for(fs::directory_iterator it(path,ec),end;!ec&&it!=end;it.increment(ec))entries.push_back(*it);
++  if(ec)throw std::runtime_error("Cannot inspect the UltraCam folder");
++#endif
++  if(entries.size()>8)throw std::runtime_error("Extra files in UltraCam folder; existing files were kept");
++  for(const auto& entry:entries){
++   const auto relative=entry.path().lexically_relative(root).generic_string();
++   const auto st=entry.symlink_status();
++   if(fs::is_directory(st)&&directories.count(relative))inspect(entry.path());
++   else if(!fs::is_regular_file(st)||!files.count(relative))throw std::runtime_error("Modified UltraCam folder; existing files were kept");
++  }
++ };
++ inspect(root);
++}
++struct Stage {
++ fs::path path;bool preserve=false;
++ ~Stage(){if(!preserve&&!path.empty()){std::error_code ec;fs::remove_all(path,ec);}}
++};
++inline fs::path TemporaryDirectory(const fs::path& parent) {
++ Directory(parent);auto pattern=(parent/".botty-ultracam-XXXXXX").string();
++ std::vector<char> name(pattern.begin(),pattern.end());name.push_back(0);
++ const auto made=mkdtemp(name.data());if(!made)throw std::runtime_error("Cannot stage UltraCam");return made;
++}
++inline bool Save(uint64_t title,std::string_view version,const Options& values,std::string& error,
++                 const fs::path& source=AppFile("ultracam/botw"),const fs::path& target=Root(),const std::string& settings=SettingsFile(),
++                 const std::function<void(std::string_view)>& checkpoint={}) {
++ try {
++  if(title!=kTitle||!Valid(values))throw std::runtime_error("UltraCam supports Breath of the Wild only");
++  if(values[0]&&!Compatible(title,version))throw std::runtime_error("UltraCam requires the BOTW 1.6.0 update. Enable it only after installing that version.");
++  auto disabled=Load(target,settings);disabled[Enabled]=0;
++  if(!values[Enabled]&&(values==disabled||!Compatible(title,version))){
++   if(!SaveModEnabled(title,kName,false,settings))throw std::runtime_error("Could not disable UltraCam");
++   error.clear();return true;
++  }
++  if(values[0]&&!LoadModsEnabled(title,settings))throw std::runtime_error("Turn on this game's Mods switch before enabling UltraCam");
++  for(const auto& f:kFiles)if(!Verified(source/f.path,f))throw std::runtime_error("Bundled UltraCam verification failed; reinstall Botty");
++  const bool exists=fs::exists(fs::symlink_status(target));
++  if(exists){
++   std::string marker,ini;
++   if(!fs::is_directory(fs::symlink_status(target))||!Read(target/".botty-ultracam.json",8192,marker))throw std::runtime_error("An unmanaged UltraCam folder already exists; existing files were kept");
++   const auto previous=Settings::Json::parse(marker);
++   const auto saved=previous.at("options").get<Options>();
++   if(previous.at("schema")!=1||previous.at("version")!="1.0.1"||!Valid(saved))throw std::runtime_error("Unknown UltraCam installation; existing files were kept");
++   Managed(target);
++   for(const auto& f:kFiles)if(!Verified(target/f.path,f))throw std::runtime_error("UltraCam files were modified; existing files were kept");
++   if(!Read(target/"romfs/UltraCam/maxlastbreath.ini",8192,ini)||ini!=Ini(saved))throw std::runtime_error("UltraCam INI was modified outside Config; existing files were kept");
++  }
++  // Stage next to the title folders, outside the title's mod load root. This
++  // stays on the mods volume even if settings are stored on another disk.
++  Stage stage{TemporaryDirectory(target.parent_path().parent_path())};
++  const auto next=stage.path/"next";
++  for(const auto& f:kFiles){std::string data;if(!Read(source/f.path,f.size,data))throw std::runtime_error("Cannot read UltraCam payload");Write(next/f.path,data);}
++  Write(next/"romfs/UltraCam/maxlastbreath.ini",Ini(values));
++  Write(next/".botty-ultracam.json",Settings::Json{{"schema",1},{"version","1.0.1"},{"options",values}}.dump()+"\n");
++  Stage snapshot{TemporaryDirectory(fs::path(settings).parent_path())};
++  const bool hadSettings=fs::exists(fs::symlink_status(settings));
++  if(hadSettings){std::string bytes;if(!Read(settings,1024*1024,bytes))throw std::runtime_error("Cannot preserve existing game settings");Write(snapshot.path/"settings.json",bytes);}
++  if(checkpoint)checkpoint("staged");
++  bool oldMoved=false,published=false,settingsTouched=false;
++  try {
++   // No partially copied payload is visible to the loader. Keep both prior
++   // directories and settings until the entire activation has committed.
++   if(exists){fs::rename(target,stage.path/"previous");oldMoved=true;}
++   Directory(target.parent_path());fs::rename(next,target);published=true;
++   if(checkpoint)checkpoint("published");
++   settingsTouched=true;
++   if(!SaveModEnabled(title,kName,values[0]!=0,settings))throw std::runtime_error("Could not save UltraCam activation");
++  }catch(...){
++   try {
++    if(published)fs::rename(target,stage.path/"uncommitted");
++    if(oldMoved)fs::rename(stage.path/"previous",target);
++    if(settingsTouched){if(hadSettings)fs::rename(snapshot.path/"settings.json",settings);else fs::remove(settings);}
++   }catch(...){stage.preserve=true;snapshot.preserve=true;throw std::runtime_error("UltraCam save and rollback failed. Recovery files retained at "+stage.path.string()+" and "+snapshot.path.string());}
++   throw;
++  }
++  error.clear();return true;
++ }catch(const std::exception& e){error=e.what();return false;}
++}
++} // namespace Eden::UltraCam
+diff --git a/headless/ultracam_options.h b/headless/ultracam_options.h
+new file mode 100644
+index 0000000..1cde264
+--- /dev/null
++++ b/headless/ultracam_options.h
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstddef>
++namespace Eden::UltraCam {
++// Persisted order is schema 1: append fields only or migrate the marker.
++enum Field : std::size_t { Enabled, TargetFps, Resolution, Quality, Distance, Fov,
++ FreeCamera, MenuFps, HideUi, Sensitivity, Speed, Smoothing, Fadeout, Benchmark, Count };
++using Options = std::array<int,Count>;
++struct Choice { const char* label; const char* value; };
++struct Definition { const char* label; int initial; int count; std::array<Choice,8> choices; };
++inline constexpr std::array<Definition,Count> kDefinitions{{
++ {"UltraCam",0,2,{{{"Off","Off"},{"On","On"}}}},
++ {"Target FPS",2,5,{{{"30","30"},{"40","40"},{"60","60"},{"90","90"},{"120","120"}}}},
++ {"Game resolution",2,4,{{{"720p","720"},{"900p","900"},{"1080p","1080"},{"1152p","1152"}}}},
++ {"Quality improvements",1,2,{{{"Off","Off"},{"On","On"}}}},
++ {"Render distance",3,4,{{{"Very low","1000"},{"Low","5000"},{"Medium","12500"},{"Default","25000"}}}},
++ {"Field of view",2,8,{{{"40","40"},{"45","45"},{"50","50"},{"55","55"},{"60","60"},{"70","70"},{"80","80"},{"90","90"}}}},
++ {"Free camera",0,2,{{{"Off","Off"},{"On","On"}}}},
++ {"Menu FPS",2,5,{{{"30","30"},{"40","40"},{"60","60"},{"90","90"},{"120","120"}}}},
++ {"Hide UI in freecam",1,2,{{{"Off","Off"},{"On","On"}}}},
++ {"Freecam sensitivity",2,7,{{{"10","10"},{"20","20"},{"30","30"},{"40","40"},{"60","60"},{"80","80"},{"100","100"}}}},
++ {"Freecam speed",2,6,{{{"1","1"},{"2","2"},{"5","5"},{"10","10"},{"15","15"},{"20","20"}}}},
++ {"Sequence smoothing",1,3,{{{"0.1","0.1"},{"0.25","0.25"},{"0.5","0.5"}}}},
++ {"Animation fadeout",1,2,{{{"Off","Off"},{"On","On"}}}},
++ {"Benchmark location",0,3,{{{"Kakariko","0"},{"Korok Forest","1"},{"Zora Domain","3"}}}},
++}};
++inline constexpr Options kDefaults=[] { Options out{}; for(std::size_t i=0;i<Count;++i)out[i]=kDefinitions[i].initial; return out; }();
++inline const char* Value(const Options& values,Field field) { return kDefinitions[field].choices[values[field]].value; }
++} // namespace Eden::UltraCam
 diff --git a/headless/update_check_check.cpp b/headless/update_check_check.cpp
 index 2a0a127..5779459 100644
 --- a/headless/update_check_check.cpp

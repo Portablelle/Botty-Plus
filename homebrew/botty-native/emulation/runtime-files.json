@@ -71,6 +71,12 @@
     "ui/sounds/toggle_01.wav",
     "ui/sounds/toggle_02.wav",
     "ui/sounds/toggle_03.wav",
-    "ui/sounds/welcome_01.wav"
+    "ui/sounds/welcome_01.wav",
+    "ultracam/LICENSE.md",
+    "ultracam/NOTICE.md",
+    "ultracam/botw/exefs/main.npdm",
+    "ultracam/botw/exefs/subsdk3",
+    "ultracam/botw/romfs/UltraCam/maxlastbreath.ini",
+    "ultracam/manifest.json"
   ]
 }
