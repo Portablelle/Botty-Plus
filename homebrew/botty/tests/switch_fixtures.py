@@ -12,11 +12,12 @@ def partition(files, hashed=False):
     names+=bytes((-len(names)-16-len(entries))%16)
     return (b'HFS0' if hashed else b'PFS0')+struct.pack('<III',len(files),len(names),0)+entries+names+data
 
-def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, missing_delta=False, empty=False, duplicate=False, extra_nca=False, corrupt_metadata=False, wrong_program_id=False, wrong_meta_id=False, id_offset=0):
+def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, missing_delta=False, empty=False, duplicate=False, extra_nca=False, corrupt_metadata=False, wrong_program_id=False, wrong_meta_id=False, id_offset=0, update_program_uses_patch_id=False, dlc_content_type=5):
     title=base if kind=='game' else base+0x800 if kind=='update' else base+0x1001
     program=bytearray(4096)
-    program[0x200:0x204]=b'NCA3';program[0x205]=4 if kind in ('dlc','unlocker') else 0
-    struct.pack_into('<QQ',program,0x208,len(program),title+id_offset+(0x4000 if wrong_program_id else 0))
+    program[0x200:0x204]=b'NCA3';program[0x205]=dlc_content_type if kind in ('dlc','unlocker') else 0
+    program_base=base if kind=='update' and not update_program_uses_patch_id else title
+    struct.pack_into('<QQ',program,0x208,len(program),program_base+id_offset+(0x4000 if wrong_program_id else 0))
     program[-32:]=hashlib.sha256(f'{kind}:{version}'.encode()).digest()
     digest=hashlib.sha256(program).digest();name=digest[:16].hex()+'.nca'
     typ={'game':0x80,'update':0x81,'dlc':0x82,'unlocker':0x82}[kind]
@@ -51,12 +52,14 @@ def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, miss
         files.append((hashlib.sha256(other).digest()[:16].hex()+'.nca',bytes(other)))
     return partition(files)
 
-def xci():
+def xci(include_update=False):
     # Convert the top-level synthetic NSP's two members into the secure HFS0.
-    nsp=package();count,strings=struct.unpack_from('<II',nsp,4);data_at=16+count*24+strings;files=[]
-    for i in range(count):
-        off,size,name_off=struct.unpack_from('<QQI',nsp,16+i*24)
-        start=16+count*24+name_off;name=nsp[start:nsp.index(0,start)].decode()
-        files.append((name,nsp[data_at+off:data_at+off+size]))
+    files=[]
+    for nsp in [package()]+([package('update',65536)] if include_update else []):
+        count,strings=struct.unpack_from('<II',nsp,4);data_at=16+count*24+strings
+        for i in range(count):
+            off,size,name_off=struct.unpack_from('<QQI',nsp,16+i*24)
+            start=16+count*24+name_off;name=nsp[start:nsp.index(0,start)].decode()
+            files.append((name,nsp[data_at+off:data_at+off+size]))
     secure=partition(files,True);root=partition([('secure',secure)],True)
     header=bytearray(0xf000);header[0x100:0x104]=b'HEAD';struct.pack_into('<Q',header,0x130,len(header));return bytes(header)+root

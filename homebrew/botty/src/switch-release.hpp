@@ -27,10 +27,11 @@ inline json switchReleaseNotes(std::string text,const std::string& fallback={}){
  if(std::regex_search(title,match,std::regex(R"(\bUpdate\s+v([0-9]+(?:\.[0-9]+){1,3}))",std::regex::icase)))out["versionLabel"]=match[1].str();
  return out;
 }
-inline bool switchAnnouncedIdentity(const json& notes,const json& metadata){
+inline bool switchAnnouncedIdentity(const json& notes,const json& metadata,bool primaryOnly=false){
  if(!notes.contains("announcedTitleId"))return false;
  const auto expected=notes.at("announcedTitleId").get<std::string>();
  for(const auto& title:metadata.at("titles")){const auto actual=title.at("titleId").get<std::string>();
+ if(primaryOnly&&actual!=metadata.at("titleId").get<std::string>())continue;
  bool same=expected.size()==actual.size();
  for(size_t i=0;same&&i<expected.size();++i)same=expected[i]=='X'||expected[i]==actual[i];
  if(same)return true;
@@ -40,7 +41,9 @@ inline bool switchAnnouncedIdentity(const json& notes,const json& metadata){
 inline json applySwitchReleaseNotes(json metadata,const std::vector<json>& notes,const std::string& fallback){
  json selected=switchReleaseNotes("",fallback);
  bool matched=false;
- for(const auto& n:notes)if(switchAnnouncedIdentity(n,metadata)){selected=n;
+ // An XCI can contain both a game and its patch. A separate patch's notes
+ // must not replace the primary game's declaration when reimporting a batch.
+ for(const auto& n:notes)if(switchAnnouncedIdentity(n,metadata,true)){selected=n;
  matched=true;
  break;
  }
