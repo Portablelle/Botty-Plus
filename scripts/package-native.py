@@ -75,6 +75,8 @@ def main():
                          'botty-native-source.tar.gz contains their index and restore.py; run it against this package folder '
                          'to reconstruct the complete archive, including build/emulation-source.tar.gz.\n'
                          'https://github.com/blackbearreloaded/ProsperoEden\n')
+    with (out / 'NOTICE.md').open('a') as notice:
+        notice.write('\nOptional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.\nSee emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.\n')
     print('Native source and notices refreshed')
     import subprocess
     subprocess.run([sys.executable, str(project / 'scripts/botty-packages.py')], check=True)
