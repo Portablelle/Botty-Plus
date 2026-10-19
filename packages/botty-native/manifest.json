@@ -2,8 +2,8 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.012.002",
-  "releaseVersion": "1.12.2",
+  "version": "02.000.000",
+  "releaseVersion": "2.0.0",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -23,8 +23,8 @@
     },
     {
       "path": "assets/build.txt",
-      "size": 39,
-      "sha256": "be307be982c45f48bba4e7a752397be901736ee178ccc47d3d91dc198abf7cf7"
+      "size": 38,
+      "sha256": "605228b545e8800b5f2660b41ccd8b50f01e296e7e28ef017f6973a981a664d5"
     },
     {
       "path": "assets/courier.rgba",
@@ -54,7 +54,7 @@
     {
       "path": "eboot.bin",
       "size": 31012908,
-      "sha256": "88edd24f38304dc738e473583b2598218d3931fa3c9faa69c3df344a6b7e3480"
+      "sha256": "d61f6ccd6b884bca447e1bdd5ed1c315a052ecd21563007749b6508f5558f260"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -459,7 +459,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 903,
-      "sha256": "ab51d95383d5a3881a2dc88470a8f6eb2b7556fb805c0f16bc130a7c0452d9d4"
+      "sha256": "e1f57cd04902e9461c92c4d232e4247dbec757762ed993c43ab01cfc2cb428a1"
     },
     {
       "path": "sce_sys/pic0.dds",
