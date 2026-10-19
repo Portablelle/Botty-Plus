@@ -205,8 +205,11 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  if(actual==container.contents.end()||actual->second.size!=switchLE(record+48,6))throw std::runtime_error("Missing or incomplete NCA content "+ncaName+" (expected "+std::to_string(switchLE(record+48,6))+", actual "+(actual==container.contents.end()?std::string("absent; content type ")+std::to_string(record[54]):std::to_string(actual->second.size))+"); obtain the complete release");
  if(record[54]==1||record[54]==2){const unsigned expectedType=record[54]==1?0:4;
   const auto prior=requiredTypes.emplace(actual->second.start,expectedType);if(!prior.second&&prior.first->second!=expectedType)throw std::runtime_error("Conflicting NCA content types");}
- const uint64_t contentId=title+record[55];
- if(contentId<title)throw std::runtime_error("CNMT content identity overflow");
+ // Patch program NCAs keep the application's identity, while their metadata
+ // NCA uses the patch title ID. The content ID offset applies to both.
+ const uint64_t contentBase=type==0x81?base:title;
+ const uint64_t contentId=contentBase+record[55];
+ if(contentId<contentBase)throw std::runtime_error("CNMT content identity overflow");
  const auto priorId=requiredIds.emplace(actual->second.start,contentId);
  if(!priorId.second&&priorId.first->second!=contentId)throw std::runtime_error("Conflicting CNMT content identities");
  verifyFile(actual->second,record);
@@ -221,7 +224,11 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  }
  if(titles.empty())throw std::runtime_error("No identifiable title metadata. A bare ticket/unlocker is not an importable game or DLC.");
  for(const auto& required:requiredIds)if(ncaIds.at(required.first)!=required.second)throw std::runtime_error("NCA program identity does not match CNMT");
- for(const auto& required:requiredTypes)if(ncaTypes.at(required.first)!=required.second)throw std::runtime_error("CNMT program or data does not match its NCA content type");
+ for(const auto& required:requiredTypes){
+  const auto actual=ncaTypes.at(required.first);
+  // CNMT Data may be stored as either NCA Data (4) or PublicData (5).
+  if(actual!=required.second&&!(required.second==4&&actual==5))throw std::runtime_error("CNMT program or data does not match its NCA content type");
+ }
  for(const auto& entry:container.contents)if(asciiLower(fs::path(entry.first).extension().string())==".nca"&&!metadataFiles.count(entry.first)&&!verifiedContent.count(entry.second.start))throw std::runtime_error("Unreferenced NCA content; select a reconciled package");
  std::set<std::string> bases;
  bool game=false;

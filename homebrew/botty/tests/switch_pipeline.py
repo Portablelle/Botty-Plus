@@ -49,6 +49,20 @@ with tempfile.TemporaryDirectory(prefix='botty-switch-pipeline-') as tmp:
     single(root/'partial-notes.rar',[(n,b) for n,b in contents if not n.endswith('.nfo') or n=='dlc.nfo']);assert len(run(root,['partial-notes.rar'])['files'])==8
     (root/'Game.xci').write_bytes(xci());assert run(root,['Game.xci'])['files'][0]['metadata']['type']=='game'
     (root/'MultiProgram.nsp').write_bytes(package(id_offset=2));assert run(root,['MultiProgram.nsp'])['files'][0]['metadata']['type']=='game'
+    (root/'MultiProgramUpdate.nsp').write_bytes(package('update',id_offset=2));assert run(root,['MultiProgramUpdate.nsp'])['files'][0]['metadata']['type']=='update'
+    for name,options in [('WrongUpdateProgram',dict(wrong_program_id=True)),('PatchIdProgram',dict(update_program_uses_patch_id=True))]:
+        path=root/(name+'.nsp');path.write_bytes(package('update',**options));assert 'program identity' in run(root,[path.name],False)
+    (root/'DataDlc.nsp').write_bytes(package('dlc',dlc_content_type=4));assert run(root,['DataDlc.nsp'])['files'][0]['metadata']['type']=='dlc'
+    (root/'WrongDlcType.nsp').write_bytes(package('dlc',dlc_content_type=0));assert 'NCA content type' in run(root,['WrongDlcType.nsp'],False)
+    # Dedicated preparation followed by console import must preserve a bundle
+    # whose XCI contains an older update alongside a newer separate patch.
+    (root/'BundledGame.xci').write_bytes(xci(include_update=True))
+    (root/'NewPatch.nsp').write_bytes(package('update',131072))
+    (root/'PublicDlc.nsp').write_bytes(package('dlc'))
+    first=run(root,['NewPatch.nsp','BundledGame.xci','PublicDlc.nsp'])
+    prepared=root/('prepared-'+str(len(list(root.glob('request-*.json')))-1))/'content'
+    second=run(prepared,[f['name'] for f in first['files']])
+    assert {f['metadata']['type'] for f in second['files'] if 'metadata' in f}=={'game','update','dlc'}
     (root/'Corrupt.nsp').write_bytes(package(corrupt=True));assert 'SHA-256' in run(root,['Corrupt.nsp'],False)
     (root/'Delta.nsp').write_bytes(package('update',missing_delta=True));assert run(root,['Delta.nsp'])['files'][0]['metadata']['omittedDeltaFragments']==1
     (root/'NoProgram.nsp').write_bytes(package('game',missing_delta=True));run(root,['NoProgram.nsp'],False)
