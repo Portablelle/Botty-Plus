@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "UltraCam BOTW",
+  "version": "1.0.1",
+  "titleId": "01007EF00011E000",
+  "gameVersion": "1.6.0",
+  "repository": "https://github.com/MaxLastBreath/nx-optimizer",
+  "commit": "bd98bb3c9ee7eb16c2dd3c51a8c6ecf168330cf3",
+  "license": "CC-BY-NC-2.0",
+  "files": [
+    {
+      "path": "exefs/main.npdm",
+      "size": 1612,
+      "sha256": "7cedbb57ba93e3ab6e660490a0a7b932716854004786a2ac42d39dbf8b85e678"
+    },
+    {
+      "path": "exefs/subsdk3",
+      "size": 138431,
+      "sha256": "1216d58cb3eb8028a905a3c88b104a1338b48cff2b1dfeac571bff7b9826dac6"
+    },
+    {
+      "path": "romfs/UltraCam/maxlastbreath.ini",
+      "size": 1122,
+      "sha256": "8ff291f955068298d1210212ace9787f9701f3cf7a8f704f7531b59b0f37f80a"
+    }
+  ]
+}

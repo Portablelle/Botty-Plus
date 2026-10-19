@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "1.10.3",
+  "id": "1.10.4",
   "apiVersion": 1,
   "workerVersion": "1.3.1",
   "workerApi": "library-1.3",
@@ -9,7 +9,7 @@
     {
       "path": "botty-manager.elf",
       "size": 16168256,
-      "sha256": "1b080589dbd9c44105909a93e56b4f3380f3372ff8416213436b83d4e1154610"
+      "sha256": "6a90205d88f1895125200073a6c42bc014366b81fba188ff966720bb21367a36"
     },
     {
       "path": "icon0.png",
