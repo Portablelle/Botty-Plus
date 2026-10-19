@@ -26,3 +26,6 @@ Embedded Switch engine: ProsperoEden (GPL-3.0-or-later), commit 8f392248f7d49fc2
 Complete corresponding sources are distributed as checked parts in source/.
 botty-native-source.tar.gz contains their index and restore.py; run it against this package folder to reconstruct the complete archive, including build/emulation-source.tar.gz.
 https://github.com/blackbearreloaded/ProsperoEden
+
+Optional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.
+See emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.
