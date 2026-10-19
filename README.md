@@ -88,7 +88,8 @@ Press L1 or R1 to switch between tabs.
 | **Discover** | Browse releases by newest, most seeded or most downloaded, or search every tracker. |
 | **Activity** | Follow downloads and file operations, pause or resume them, extract an archive or add a magnet link. |
 | **Library** | See your games, filter by disk or compression, compress, move or delete a game. |
-| **Emulation** | Search, import and launch Switch games, manage updates and DLC, and open global or per-game Config. |
+| **Emulation** | Search, import and launch Switch games, manage updates and DLC, and press Options on a game for its per-game Config. |
+| **Config** | Open the embedded Switch engine's global settings. |
 | **System** | Find the web address and login for your phone or computer, update Botty+, reconnect or close the app. |
 
 | Button | Action |
