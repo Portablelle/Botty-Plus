@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "archive": "botty-native-source.tar.gz",
-  "size": 1176845243,
-  "sha256": "d3e8c544d3ea561256bdb1e45640c5a7a79dc7be3dea82ba9965aaa05e9b503e",
+  "size": 1176845400,
+  "sha256": "8dc06a323c3a01a6c6de114412b26097951eb564190e4fd4f5f632d8132797f9",
   "parts": [
     {
       "path": "source/native-source.part001",
@@ -66,8 +66,8 @@
     },
     {
       "path": "source/native-source.part013",
-      "size": 44383163,
-      "sha256": "05df5c58d5c036c3cef0df2f64161e87f6a3f08f0605e0ec24f75d3a168e8fbc"
+      "size": 44383320,
+      "sha256": "2da718b1a1caa956b8efe51f397ff7a560d5c6609dabf0fd10a571eedfeb5a92"
     }
   ]
 }
