@@ -5,6 +5,8 @@
 #include "switch-library.hpp"
 #include <fstream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <regex>
 
 namespace botty {
@@ -12,6 +14,7 @@ namespace botty {
 class Emulation {
   fs::path data_, install_;
   struct Cached {std::array<uint64_t,4> identity{},coverIdentity{};json data;std::string pixels,id,artworkId,kind;};
+  std::shared_ptr<std::mutex> displayLock_=std::make_shared<std::mutex>();
   mutable std::map<std::string,Cached> display_;
   mutable std::string keysIdentity_;
   static json selectEntry(const json& inventory,const std::string& id){
@@ -103,46 +106,50 @@ class Emulation {
   }
   static void project(json& out,const std::map<std::string,ModInventory>& modsByGame) {
     const auto version=[](const json& m){const auto label=m.value("versionLabel",std::string{});return label.empty()?"revision "+std::to_string(m.value("version",uint64_t(0))):"v"+label;};
-    std::map<std::string,std::string> names;
-    std::map<std::string,uint64_t> games,updates;
+    struct Related {
+      std::string name,updateVersion;
+      bool hasGame=false,hasUpdate=false;
+      uint64_t gameRevision=0,updateRevision=0;
+      json updates=json::array(),dlc=json::array();
+      std::set<std::string> seenDlc;
+    };
+    std::map<std::string,Related> related;
+    // Build each title's relationships once, including bundled content.
     for(const auto& item:out["entries"]){const auto& m=item.at("library");for(const auto& title:m.value("titles",json::array())){
-      const auto baseId=title.value("baseTitleId",std::string{}),type=title.value("type",std::string{});
-      if(type=="game"){games[baseId]=std::max(games[baseId],title.value("version",uint64_t(0)));names[baseId]=item.at("name");}
-      if(type=="update")updates[baseId]=std::max(updates[baseId],title.value("version",uint64_t(0)));
+      auto& r=related[title.value("baseTitleId",std::string{})];
+      const auto type=title.value("type",std::string{});const auto revision=title.value("version",uint64_t(0));
+      if(type=="game"){r.hasGame=true;r.gameRevision=std::max(r.gameRevision,revision);r.name=item.at("name");}
+      else if(type=="update"){
+        json update=title;update["file"]=fs::path(item.at("path").get<std::string>()).filename().string();
+        // A game's NACP describes its base, not a bundled update's display version.
+        if(m.value("type",std::string{})=="update"&&m.contains("versionLabel"))update["versionLabel"]=m.at("versionLabel");
+        r.updates.push_back(std::move(update));
+        if(!r.hasUpdate||revision>r.updateRevision){r.updateRevision=revision;r.updateVersion=m.value("type",std::string{})=="update"?version(m):"revision "+std::to_string(revision);}
+        r.hasUpdate=true;
+      }else if(type=="dlc"&&r.seenDlc.insert(title.value("titleId",std::string{})).second){
+        json entry=title;entry["file"]=fs::path(item.at("path").get<std::string>()).filename().string();entry["unlocker"]=m.value("type",std::string{})=="unlocker";r.dlc.push_back(std::move(entry));
+      }
     }}
     for(auto& item:out["entries"]){
       const auto& m=item.at("library");const auto baseId=m.value("baseTitleId",std::string{}),type=m.value("type",std::string{});
       item["titleId"]=baseId;
       if(type.empty()){item["phase"]="Details unavailable | "+fs::path(item.at("path").get<std::string>()).filename().string();item["details"]="Game identity and version could not be read.\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();continue;}
+      const auto& r=related[baseId];
       if(type!="game"){
-        if(names.count(baseId))item["name"]=names[baseId];
+        if(r.hasGame)item["name"]=r.name;
         std::string phase=(type=="update"?"Update ":type=="unlocker"?"DLC unlocker ":"DLC ")+version(m);
-        if(!games.count(baseId)){item["dependencyStatus"]="base-game-missing";phase+=" | Base game missing";}
-        else if(m.value("requiredApplicationVersion",uint64_t(0))>std::max(games[baseId],updates[baseId])){item["dependencyStatus"]="update-required";phase+=" | Required update missing";}
+        if(!r.hasGame){item["dependencyStatus"]="base-game-missing";phase+=" | Base game missing";}
+        else if(m.value("requiredApplicationVersion",uint64_t(0))>std::max(r.gameRevision,r.updateRevision)){item["dependencyStatus"]="update-required";phase+=" | Required update missing";}
         else {item["dependencyStatus"]="ready";phase+=" | Base game found";}
         item["phase"]=phase;item["details"]=phase+"\nTitle ID: "+m.value("titleId",baseId)+"\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();continue;
       }
-      json additions=json::array(),dlc=json::array();std::set<std::string> seenDlc;
-      const json* newest=nullptr;uint64_t newestRevision=0;
-      // Include updates/DLC bundled in the game as well as separately imported files.
-      for(const auto& other:out["entries"]){const auto& metadata=other.at("library");for(const auto& title:metadata.value("titles",json::array())){
-        if(title.value("baseTitleId",std::string{})!=baseId)continue;
-        const auto kind=title.value("type",std::string{});
-        if(kind=="update"){
-          json update=title;update["file"]=fs::path(other.at("path").get<std::string>()).filename().string();
-          // A game's NACP describes its base, not a bundled update's display version.
-          if(metadata.value("type",std::string{})=="update"&&metadata.contains("versionLabel"))update["versionLabel"]=metadata.at("versionLabel");
-          additions.push_back(update);
-          const auto revision=title.value("version",uint64_t(0));
-          if(!newest||revision>newestRevision){newest=&other;newestRevision=revision;}
-        }else if(kind=="dlc"&&seenDlc.insert(title.value("titleId",std::string{})).second){json entry=title;entry["file"]=fs::path(other.at("path").get<std::string>()).filename().string();entry["unlocker"]=metadata.value("type",std::string{})=="unlocker";dlc.push_back(entry);}
-      }}
+      const auto& additions=r.updates;const auto& dlc=r.dlc;
       const auto& inventory=modsByGame.at(baseId);const auto& mods=inventory.entries;const bool modsKnown=inventory.known;
       unsigned on=0;for(const auto& mod:mods)if(mod.at("enabled")==true)++on;
       std::string phase="Base "+version(m),updateVersion="None detected";
       std::string detail="Title ID: "+baseId+"\nBase: "+version(m);
-      if(newest){
-        const auto& meta=newest->at("library");const auto updateLabel=meta.value("type",std::string{})=="update"?version(meta):"revision "+std::to_string(newestRevision);
+      if(r.hasUpdate){
+        const auto& updateLabel=r.updateVersion;
         updateVersion=updateLabel;phase+=" | Update "+updateLabel;detail+="\nUpdate present: "+updateLabel;
       }else detail+="\nUpdate: none detected";
       phase+=" | "+std::to_string(dlc.size())+" DLC";
@@ -239,11 +246,13 @@ public:
     return out;
   }
   json state() const {
+    std::lock_guard<std::mutex> guard(*displayLock_);
     auto out=inventory();
     try{enrich(out,root());}catch(...){out["error"]="Some game details are unavailable; files were left unchanged";}
     return out;
   }
   std::string artwork(const std::string& id) const {
+    std::lock_guard<std::mutex> guard(*displayLock_);
     auto found=std::find_if(display_.begin(),display_.end(),[&](const auto& entry){return entry.second.id==id||entry.second.artworkId==id;});
     if(found==display_.end())return {};
     const auto path=found->first;fs::path base;
