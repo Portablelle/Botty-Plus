@@ -53,8 +53,13 @@
     },
     {
       "path": "eboot.bin",
-      "size": 31012908,
-      "sha256": "d61f6ccd6b884bca447e1bdd5ed1c315a052ecd21563007749b6508f5558f260"
+      "size": 33222252,
+      "sha256": "ffc310a4388d8dcd94ed45b1b51097333a2554833314a6924e938c506c1f4c02"
+    },
+    {
+      "path": "emulation-runtime.json",
+      "size": 411,
+      "sha256": "88c2ef2f6edb5de8ff0e9c940ceaddea2ad2f09c502de62b1ddc76dcf488f033"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -440,11 +445,6 @@
       "path": "emulation/ultracam/manifest.json",
       "size": 757,
       "sha256": "44f8aaf6be386becc77138a7ef8385cf7b999bd4185c29346d83fe1afa01f7c9"
-    },
-    {
-      "path": "emulation-runtime.json",
-      "size": 411,
-      "sha256": "88c2ef2f6edb5de8ff0e9c940ceaddea2ad2f09c502de62b1ddc76dcf488f033"
     },
     {
       "path": "sce_module/libc.prx",

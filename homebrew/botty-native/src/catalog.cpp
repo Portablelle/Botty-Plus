@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "catalog.hpp"
+#include <algorithm>
 #include <cstdio>
 namespace botty {
 namespace {
@@ -30,14 +31,14 @@ struct JSON {
 std::string_view field(std::string_view object,std::string_view key){JSON j{object};if(!j.take('{'))return {};if(j.take('}'))return {};
     do{j.ws();auto k=j.p;if(!j.string())return {};auto name=slice(object,k+1,j.p-k-2);if(!j.take(':'))return {};j.ws();auto start=j.p;if(!j.value())return {};if(name==key)return slice(object,start,j.p-start);}while(j.take(','));return {};}
 unsigned hex(char c){return c<='9'?c-'0':(c|32)-'a'+10;}
-template<std::size_t N> bool decode(std::string_view s,std::array<char,N>& out,bool exact=false){out.fill(0);if(s.size()<2||s.front()!='"')return false;unsigned at=0;bool fits=true;
+template<std::size_t N> bool decode(std::string_view s,std::array<char,N>& out,bool exact=false,bool multiline=false){out.fill(0);if(s.size()<2||s.front()!='"')return false;unsigned at=0;bool fits=true;
     auto put=[&](unsigned c){if(c==0)fits=false;if(at+1<N)out[at++]=static_cast<char>(c);else fits=false;};
     for(std::size_t i=1;i+1<s.size();++i){unsigned char c=s[i];if(c!='\\'){put(c);continue;}c=s[++i];
         if(c=='u'){unsigned cp=0;for(unsigned n=0;n<4;++n)cp=cp*16+hex(s[++i]);
             if(cp>=0xd800&&cp<=0xdbff&&i+6<s.size()&&s[i+1]=='\\'&&s[i+2]=='u'){i+=2;unsigned low=0;for(unsigned n=0;n<4;++n)low=low*16+hex(s[++i]);cp=low>=0xdc00&&low<=0xdfff?0x10000+((cp-0xd800)<<10)+low-0xdc00:0xfffd;}
             if(cp>=0xd800&&cp<=0xdfff)cp=0xfffd;
-            if(cp<128)put(cp<32&&!exact?' ':cp);else if(cp<2048){put(0xc0|(cp>>6));put(0x80|(cp&63));}else if(cp<65536){put(0xe0|(cp>>12));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}else{put(0xf0|(cp>>18));put(0x80|((cp>>12)&63));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}
-        }else {unsigned d=c=='n'?'\n':c=='r'?'\r':c=='t'?'\t':c=='b'?'\b':c=='f'?'\f':c;put(d<32&&!exact?' ':d);}
+            if(cp<128)put(cp<32&&!exact&&!(multiline&&cp=='\n')?' ':cp);else if(cp<2048){put(0xc0|(cp>>6));put(0x80|(cp&63));}else if(cp<65536){put(0xe0|(cp>>12));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}else{put(0xf0|(cp>>18));put(0x80|((cp>>12)&63));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}
+        }else {unsigned d=c=='n'?'\n':c=='r'?'\r':c=='t'?'\t':c=='b'?'\b':c=='f'?'\f':c;put(d<32&&!exact&&!(multiline&&d=='\n')?' ':d);}
     }
     if(!fits&&!exact){out[N-4]='.';out[N-3]='.';out[N-2]='.';}
     return fits;
@@ -130,6 +131,13 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
             auto& e=out.emulationEntries[out.emulationCount++];e=Entry{};decode(field(row,"phase"),e.phase);
             if(!decode(field(row,"id"),e.id,true)||!decode(field(row,"kind"),e.kind,true))return false;
             decode(field(row,"name"),e.name);decode(field(row,"path"),e.destination);e.total=number(field(row,"size"));
+            decode(field(row,"titleId"),e.titleId);decode(field(row,"details"),e.files,false,true);decode(field(row,"metadataStatus"),e.error);
+            decode(field(row,"baseVersion"),e.emulation.baseVersion);decode(field(row,"updateVersion"),e.emulation.updateVersion);
+            decode(field(row,"artworkId"),e.emulation.artwork);
+            decode(field(row,"modSummary"),e.emulation.mods,false,true);
+            e.emulation.dlcCount=static_cast<unsigned>(std::clamp(number(field(row,"dlcCount")),0.0,4096.0));
+            e.emulation.modCount=static_cast<unsigned>(std::clamp(number(field(row,"modCount")),0.0,4096.0));
+            e.emulation.modsOn=static_cast<unsigned>(std::clamp(number(field(row,"modsOn")),0.0,4096.0));e.emulation.modsKnown=field(row,"modsKnown")=="true";
         }while(items.take(','));if(!items.take(']'))return false;}
     }
     out.nativeUpdate=NativeUpdate{};

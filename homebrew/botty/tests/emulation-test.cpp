@@ -2,6 +2,7 @@
 #include "switch-preparation.hpp"
 #include <cassert>
 #include <fstream>
+#include <thread>
 using namespace botty;
 int main(){
   const auto temp=fs::temp_directory_path()/("botty-eden-test-"+randomId());
@@ -14,6 +15,10 @@ int main(){
   {std::ofstream out(install/"emulation/eboot.bin");out<<"fixture";}
   writeJson(install/"emulation-runtime.json",{{"schema",1}});
   Emulation emulator(data,install);auto state=emulator.state();assert(state.at("installed")==true);assert(state.at("entries").size()==2);assert(state.at("error")=="");
+  const auto artworkId=state.at("entries").at(0).at("artworkId").get<std::string>();
+  std::thread polls([&]{for(unsigned i=0;i<50;++i)assert(emulator.state().at("entries").size()==2);});
+  std::thread covers([&]{for(unsigned i=0;i<50;++i)assert(emulator.artwork(artworkId).empty());});
+  polls.join();covers.join();
   const auto malformed=data/"roms/Game.xci.botty.json";
   writeJson(malformed,{{"verified",true},{"kind","roms"},{"verifiedFileSize",fs::file_size(data/"roms/Game.xci")},{"verifiedMtime",fs::last_write_time(data/"roms/Game.xci").time_since_epoch().count()},{"titles",json::array()},{"versionLabel",1}});
   const auto resilient=emulator.state();assert(resilient.at("entries").size()==1 && resilient.at("error")!="");

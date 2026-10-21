@@ -3,7 +3,15 @@
 #include "model.hpp"
 #include <array>
 namespace botty {
+struct EmulationDetails {
+    std::array<char,96> artwork{};
+    std::array<char,64> baseVersion{},updateVersion{};
+    std::array<char,512> mods{};
+    unsigned dlcCount=0,modCount=0,modsOn=0;
+    bool modsKnown=false;
+};
 struct Entry {
+    EmulationDetails emulation;
     std::array<char,96> id{};
     std::array<char,64> hash{};int torrentId=-1;
     std::array<char,64> storage{},sourceStorage{},compressedStorage{};

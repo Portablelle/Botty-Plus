@@ -61,8 +61,30 @@ inline std::array<unsigned char,32> switchDigest(const unsigned char* bytes,size
  if(EVP_Digest(bytes,n,out.data(),&count,EVP_sha256(),nullptr)!=1||count!=32)throw std::runtime_error("Switch SHA-256 verification failed");
  return out;
  }
-inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,const Reporter& report={},const std::function<void()>& check={}){
+inline std::vector<unsigned char> switchNcaHeader(const SwitchContainer& container,const SwitchMember& member,
+    const SwitchKeys& keys,bool allowNca2=false){
+ if(member.size<0xc00)throw std::runtime_error("Truncated NCA header");
+ auto header=container.read(member.start,0xc00);
+ const auto readable=[&](){return !std::memcmp(header.data()+0x200,"NCA3",4)||(allowNca2&&!std::memcmp(header.data()+0x200,"NCA2",4));};
+ if(!readable()){
+  const auto& key=keys.get("header_key",32);
+  for(unsigned sector=0;sector<6;++sector){
+   std::array<unsigned char,16> iv{};
+   // NCA2 restarts XTS at zero for each filesystem header, after the first 0x400 bytes.
+   iv[15]=sector>=2&&!std::memcmp(header.data()+0x200,"NCA2",4)?0:sector;
+   auto block=switchDecrypt(EVP_aes_128_xts(),key.data(),iv.data(),{header.begin()+sector*512,header.begin()+(sector+1)*512});
+   std::copy(block.begin(),block.end(),header.begin()+sector*512);
+  }
+ }
+ if(!readable())throw std::runtime_error("Unsupported NCA header or incorrect private header key");
+ if(switchLE(header.data()+0x208,8)!=member.size)throw std::runtime_error("NCA length does not match the container");
+ return header;
+}
+enum class SwitchMetadataRead { VerifiedImport, DisplayInventory };
+inline json inspectSwitchMetadataImpl(const fs::path& file,const SwitchKeys& keys,const Reporter& report,const std::function<void()>& check,SwitchMetadataRead purpose){
+ const bool contentHashes=purpose==SwitchMetadataRead::VerifiedImport;
  SwitchContainer container(file);
+ if(!contentHashes&&container.contents.size()>512)throw std::runtime_error("Library metadata inventory limit reached");
  json titles=json::array();
  std::set<std::string> identities, metadataFiles;
  std::map<uint64_t,std::array<unsigned char,32>> verifiedContent;
@@ -77,6 +99,9 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
   if(previous->second!=wanted)throw std::runtime_error("Conflicting NCA content hashes");
   return;
  }
+ // Library display only reads authenticated CNMT, never rehashes multi-GB games.
+ // This mode must not be used to authorize an import or create a verified receipt.
+ if(!contentHashes){verifiedContent.emplace(entry.start,wanted);return;}
   EVP_MD_CTX* context=EVP_MD_CTX_new();
  if(!context)throw std::runtime_error("Cannot initialize content verification");
  struct Free{EVP_MD_CTX* p;
@@ -97,19 +122,7 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  };
  for(const auto& member:container.contents){if(asciiLower(fs::path(member.first).extension().string())!=".nca")continue;
  if(check)check();
- if(member.second.size<0xc00)throw std::runtime_error("Truncated NCA header");
- auto header=container.read(member.second.start,0xc00);
-  if(std::memcmp(header.data()+0x200,"NCA3",4)){
-   const auto& key=keys.get("header_key",32);
- for(unsigned sector=0;sector<6;++sector){std::array<unsigned char,16> iv{};
- iv[15]=sector; // Nintendo XTS sector numbers are encoded big endian.
- std::vector<unsigned char> block(header.begin()+sector*512,header.begin()+(sector+1)*512);
- block=switchDecrypt(EVP_aes_128_xts(),key.data(),iv.data(),block);
- std::copy(block.begin(),block.end(),header.begin()+sector*512);
- }
-   if(std::memcmp(header.data()+0x200,"NCA3",4))throw std::runtime_error("Unsupported NCA header or incorrect private header key");
-  }
-  if(switchLE(header.data()+0x208,8)!=member.second.size)throw std::runtime_error("NCA length does not match the container");
+ const auto header=switchNcaHeader(container,member.second,keys,!contentHashes);
  ncaTypes[member.second.start]=header[0x205];
  ncaIds[member.second.start]=switchLE(header.data()+0x210,8);
  if(header[0x205]!=1)continue;
@@ -156,7 +169,7 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
    std::vector<std::pair<uint64_t,std::vector<unsigned char>>> hashLayers;
    for(uint64_t layer=0;layer<layers;++layer){
     const auto at=switchLE(fs+0x30+layer*16,8),size=switchLE(fs+0x38+layer*16,8);
-    if(!size||size>16*1024*1024||at>end-start||size>end-start-at)throw std::runtime_error("Invalid metadata hash layer bounds");
+    if(!size||size>(contentHashes?16u*1024*1024:1024*1024)||at>end-start||size>end-start-at)throw std::runtime_error("Invalid metadata hash layer bounds");
     for(const auto& previous:hashLayers)if(at<previous.first+previous.second.size()&&previous.first<at+size)throw std::runtime_error("Overlapping metadata hash layers");
     if(check)check();hashLayers.emplace_back(at,readSection(at,size_t(size)));
    }
@@ -192,11 +205,12 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  if(ncaIds.at(member.second.start)!=title)throw std::runtime_error("Metadata NCA title identity does not match CNMT");
  const auto id=switchTitleId(title);
  if(!identities.insert(id).second)throw std::runtime_error("Duplicate title metadata");
-    bool requiredContent=false;std::set<std::string> titleContent;
+    bool requiredContent=false;std::set<std::string> titleContent;std::string controlNca;
     for(uint64_t j=0;j<count;++j){const auto* record=cnmt+32+extended+j*56;
  const auto ncaName=switchHex(record+32,16)+".nca";
  if(!titleContent.insert(ncaName).second)throw std::runtime_error("Duplicate CNMT content reference");
  if(record[54]<1||record[54]>6)throw std::runtime_error("Unsupported CNMT content record");
+ if(record[54]==3)controlNca=ncaName;
  requiredContent=requiredContent||(type==0x82?record[54]==2:record[54]==1);
  const auto actual=container.contents.find(ncaName);
  // Full update packages do not need the optional delta fragments used to patch
@@ -216,7 +230,8 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  }
     if(!requiredContent)throw std::runtime_error("CNMT has no required program or DLC data content");
     const auto required=type==0x82?switchLE(cnmt+40,4):0;
-    titles.push_back({{"type",type==0x80?"game":type==0x81?"update":"dlc"},{"titleId",id},{"baseTitleId",switchTitleId(base)},{"version",version},{"requiredApplicationVersion",required},{"verified",true}});
+    titles.push_back({{"type",type==0x80?"game":type==0x81?"update":"dlc"},{"titleId",id},{"baseTitleId",switchTitleId(base)},{"version",version},{"requiredApplicationVersion",required},{"verified",contentHashes}});
+    if(!contentHashes&&!controlNca.empty())titles.back()["controlNca"]=controlNca;
  found=true;
    }
   }
@@ -240,8 +255,15 @@ inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,co
  for(const auto& t:titles)if((game&&t.at("type")=="game")||(!game&&t.at("version")>primary.at("version")))primary=t;
  primary["titles"]=titles;primary["omittedDeltaFragments"]=omittedDeltaFragments;
  primary["kind"]=game?"roms":"updates";
- primary["verification"]="CNMT inventory and content SHA-256";
+ primary["verification"]=contentHashes?"CNMT inventory and content SHA-256":"CNMT display inventory (content not rehashed)";
  primary["includesUpdate"]=game&&std::any_of(titles.begin(),titles.end(),[](const json& t){return t.at("type")=="update";});
  return primary;
+}
+// Explicit contracts: only verified imports authorize publication and receipts.
+inline json inspectSwitchMetadata(const fs::path& file,const SwitchKeys& keys,const Reporter& report={},const std::function<void()>& check={}){
+ return inspectSwitchMetadataImpl(file,keys,report,check,SwitchMetadataRead::VerifiedImport);
+}
+inline json inspectSwitchDisplayMetadata(const fs::path& file,const SwitchKeys& keys){
+ return inspectSwitchMetadataImpl(file,keys,{},{},SwitchMetadataRead::DisplayInventory);
 }
 }

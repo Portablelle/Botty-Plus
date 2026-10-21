@@ -14,6 +14,17 @@ Builds require complete corresponding sources, package validation and PS5 launch
 Triangle cycles Games, Updates / DLC and Available files. Cross plays a library
 game or copies a completed download into the game library. Completed files use one Analyze and import action; their verified metadata determines whether they are a game, update or DLC. Originals are preserved and name collisions are refused.
 Eden determines title compatibility and applies compatible updates/DLC on launch.
+Games show the title and base display version from their Control/NACP data,
+embedded artwork, associated updates and DLC, and named mods with their saved
+on/off switches. The selected game's panel includes its title ID and filename.
+Legacy NSP/XCI files copied manually are inspected too; display metadata is
+cached by file identity and private-key revision, without changing game files.
+The display scan reads CNMT and Control data with bounded reads and does not
+rehash entire games or confer import verification. Numeric CNMT revisions are
+labelled as revisions when a readable NACP version is unavailable. Update/DLC
+presence is distinct from the engine's compatibility/activation decision at launch;
+mod switches do not establish build compatibility. Unreadable metadata keeps the
+file visible with an explicit unavailable state.
 Square opens a Switch search using the existing PS5/server download choices.
 Automatic Switch downloads extract, verify and classify content before importing it into Emulation, on the PS5 or dedicated server. Download-only mode remains available.
 

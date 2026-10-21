@@ -482,10 +482,15 @@ int main() {
     // Start in Discover: Explore and Search share one tab.
     {
         auto edenCatalog=std::make_unique<Catalog>();
-        const std::string edenState=R"({"torrents":[],"jobs":[],"transmissionReady":true,"freeBytes":1,"emulation":{"supported":true,"installed":true,"entries":[{"id":")"+std::string(64,'a')+R"(","kind":"roms","name":"Game","path":"/data/prosperoeden/roms/Game.xci","size":512}]}})";
+        const std::string edenState=R"({"torrents":[],"jobs":[],"transmissionReady":true,"freeBytes":1,"emulation":{"supported":true,"installed":true,"entries":[{"id":")"+std::string(64,'a')+R"json(","kind":"roms","name":"Game","path":"/data/prosperoeden/roms/Game.xci","size":512,"titleId":"0100000000000000","baseVersion":"v1.0.0","updateVersion":"v3.0.5","dlcCount":1,"modCount":2,"modsOn":1,"modsKnown":true,"modSummary":"First mod (on)\nSecond mod (off)","phase":"Base v1.0.0 | Update v3.0.5 present | DLC 1 | Mods 1/2 on","details":"Base: v1.0.0\nUpdate present: v3.0.5\nMods: UltraCam (off)"}]}})json";
         assert(parseCatalog(edenState,*edenCatalog));assert(edenCatalog->emulationSupported);
         assert(emulationCount(*edenCatalog,0)==1&&emulationCount(*edenCatalog,1)==0);
         assert(std::string(emulationAt(*edenCatalog,0,0)->name.data())=="Game");
+        assert(std::string(emulationAt(*edenCatalog,0,0)->titleId.data())=="0100000000000000");
+        assert(std::string(emulationAt(*edenCatalog,0,0)->files.data()).find("\n")!=std::string::npos);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->emulation.baseVersion.data())=="v1.0.0");
+        assert(emulationAt(*edenCatalog,0,0)->emulation.modsOn==1);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->emulation.mods.data()).find("\nSecond mod (off)")!=std::string::npos);
         edenCatalog->storageSupported=true;edenCatalog->remoteEnabled=true;
         Workflow edenDownload;Entry release;std::fill_n(release.id.begin(),32,'b');
         edenDownload.grab(release,*edenCatalog,true);

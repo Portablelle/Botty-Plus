@@ -220,6 +220,9 @@ transfers and simultaneous gameplay remain unvalidated on hardware.
   `vendor/HTTPLIB-LICENSE`. PS5 compatibility uses `accept` instead of `accept4`.
 - nlohmann/json v3.11.3, commit `9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03`;
   `vendor/JSON-LICENSE`.
+- stb_image, nothings/stb commit `f0569113c93ad095470c54bf34a17b36646bbbb5`;
+  MIT / public-domain license in `vendor/stb_image.h`. Only JPEG and TGA are
+  enabled for local Switch artwork; input size and image dimensions are bounded.
 - Historical launcher integration derives from `ps5-payload-dev/websrv` v0.33,
   commit `baabe27e5449baeb059b850d0393c31fdee219b7`.
 
