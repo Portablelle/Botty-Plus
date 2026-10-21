@@ -24,6 +24,15 @@ int main(){
   const auto resilient=emulator.state();assert(resilient.at("entries").size()==1 && resilient.at("error")!="");
   writeJson(malformed,{{"name","Downloaded fixture"},{"type","game"}});
   assert(Emulation::entry(data,data/"roms/Game.xci","download").at("name")=="Downloaded fixture");
+  writeJson(malformed,{{"verified",true},{"kind","roms"},{"name","Receipt game"},
+    {"verifiedFileSize",fs::file_size(data/"roms/Game.xci")},
+    {"verifiedMtime",fs::last_write_time(data/"roms/Game.xci").time_since_epoch().count()},
+    {"titles",json::array()}});
+  const auto named=emulator.state();
+  for(const auto& item:named.at("entries"))if(item.at("kind")=="roms"){
+    assert(item.at("name")=="Receipt game");
+    assert(emulator.artworkTitle(item.at("artworkId"))=="Receipt game");
+  }
   fs::remove(malformed);
   const auto id=state.at("entries").at(0).at("id").get<std::string>();assert(id.size()==64);assert(emulator.resolve(id).at("kind")=="roms");
   bool missing=false;try{emulator.launchPath(id);}catch(const std::exception&){missing=true;}assert(missing);

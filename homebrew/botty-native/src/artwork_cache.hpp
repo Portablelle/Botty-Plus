@@ -36,12 +36,17 @@ public:
                 };
                 bool ppsa=word.size()>4&&lower(word[0])=='p'&&lower(word[1])=='p'&&lower(word[2])=='s'&&lower(word[3])=='a';
                 for(unsigned i=4;ppsa&&i<word.size();++i)ppsa=word[i]>='0'&&word[i]<='9';
-                if(equals("ps5")){if(!emulation)platform=1;break;}
+                if(equals("ps5")){
+                    if(!emulation)platform=1;
+                    if(length)break;
+                    continue; // Leading platform tags are not a game identity.
+                }
                 if(ppsa&&!emulation)platform=1;
                 else if(platform!=1&&(equals("nsw")||equals("nsp")||equals("xci")||equals("switch")))platform=2;
                 if(length&&length<normalized.size())normalized[length++]=' ';
                 for(auto i=start;i<at&&length<normalized.size();++i)normalized[length++]=lower(title[i]);
             }
+            if(!length)return key(id,{});
             // Keep a readable prefix as well as a hash of the full normalized key.
             for(unsigned i=0;i<length&&i<96;++i)out[i]=normalized[i];
             std::uint64_t hash=14695981039346656037ULL;

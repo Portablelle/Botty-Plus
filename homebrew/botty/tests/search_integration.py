@@ -11,6 +11,8 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  (root/'eden/roms').mkdir(parents=True);(root/'eden/keys').mkdir(parents=True)
  (root/'eden/keys/prod.keys').write_text('# synthetic fixture')
  (root/'eden/roms/demo.nsp').write_bytes(package(display=('Switch Fixture','1.0.0')))
+ (root/'eden/updates').mkdir()
+ (root/'eden/updates/dlc.nsp').write_bytes(package('dlc'))
  complete=root/'downloads/complete'; complete.mkdir(parents=True)
  (complete/'sample.rar').write_bytes((root/'fixtures/app.rar').read_bytes())
  size=(complete/'sample.rar').stat().st_size
@@ -181,6 +183,11 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
   switch=next(row for row in request('/api/state')['emulation']['entries'] if row['name']=='Switch Fixture')
   assert until(lambda:catalog_artwork('m:'+switch['artworkId']))==bytes([12,80,160])*(160*240)
   assert until(lambda:catalog_artwork('m:'+switch['artworkId'],'hero'))==bytes([12,80,160])*(640*360)
+  dlc=next(row for row in request('/api/state')['emulation']['entries'] if row['path'].endswith('/dlc.nsp'))
+  assert dlc['name']=='Switch Fixture'
+  # DLC has no Control NACP: resolve through its projected base-game name.
+  assert until(lambda:catalog_artwork('m:'+dlc['artworkId']))==bytes([12,80,160])*(160*240)
+  assert until(lambda:catalog_artwork('m:'+dlc['artworkId'],'hero'))==bytes([12,80,160])*(640*360)
   assert until(lambda:catalog_artwork('t:1','hero'))==bytes([12,80,160])*(640*360)
   for invalid in ['t:999','j:unknown','https://example.com/image.jpg','../../outside']:
    try:catalog_artwork(invalid);raise AssertionError('Unknown artwork ID accepted')

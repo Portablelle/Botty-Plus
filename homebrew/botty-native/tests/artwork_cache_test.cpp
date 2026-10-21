@@ -18,6 +18,10 @@ int main(){
     const auto shared=ArtworkCache::key(first,"Astro.Bot.PS5.Release-A");
     assert(shared==ArtworkCache::key(second,"ASTRO BOT PS5 Release-B"));
     assert(shared!=ArtworkCache::key(second,"Another Game PS5 Release-B"));
+    assert(shared==ArtworkCache::key(first,"[PS5] Astro Bot"));
+    assert(shared!=ArtworkCache::key(first,"[PS5] Gran Turismo 7"));
+    assert(ArtworkCache::key(first,"[PS5]")!=ArtworkCache::key(second,"[PS5]"));
+    assert(ArtworkCache::key(first,"!!!")!=ArtworkCache::key(second,"!!!"));
     second[0]='m';second[1]=':';
     assert(shared!=ArtworkCache::key(second,"Astro Bot PS5"));
     const auto ps5Remake=ArtworkCache::key(first,"Resident Evil 4 PS5");
