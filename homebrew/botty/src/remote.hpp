@@ -101,17 +101,18 @@ class RemoteDownloads {
   }
   json row(const std::string& hash,const json& r) const {
     const auto snapshot=r.value("snapshot",json::object());
-    uint64_t total=snapshot.value("total",uint64_t(0));const bool ready=r.value("phase","")=="ready";
+    uint64_t total=snapshot.value("total",uint64_t(0));const bool ready=(r.value("phase","")=="ready"||r.value("phase","")=="adopted");
     const auto phase=r.value("phase",std::string("remote"));
     uint64_t done=ready?total:(phase=="transfer"?r.value("bytes",uint64_t(0)):snapshot.value("done",uint64_t(0)));
     // Server completion never unlocks extraction before local publication.
     uint64_t left=ready?0:std::max(uint64_t(1),total>done?total-done:uint64_t(0));
     json files=json::array();for(const auto& f:r.value("inventory",snapshot.value("files",json::array())))files.push_back({{"name",hash+"/"+f.at("name").get<std::string>()},{"length",f.at("size")},{"bytesCompleted",ready?f.at("size"):json(0)}});
-    const auto error=r.value("error",std::string{});
+    const auto prep=snapshot.value("preparation",json::object());
+    const auto error=r.value("error",std::string{}).empty()?prep.value("error",std::string{}):r.value("error",std::string{});
     const bool paused=r.value("paused",false)||(phase=="remote"&&snapshot.value("paused",false));
     bool archive=false,loose=false;for(const auto& f:r.value("inventory",json::array())){const fs::path name=asciiLower(f.at("name").get<std::string>());archive=archive||name.extension()==".rar";loose=loose||name.extension()==".exfat"||(name.filename()=="param.json"&&name.parent_path().filename()=="sce_sys");}
     return {{"id",r.at("id")},{"hashString",hash},{"name",snapshot.value("name",r.value("name",std::string("Remote torrent")))},{"status",paused?0:ready?6:4},
-      {"remote",true},{"parallelConnections",r.value("parallelConnections",2)},{"effectiveConnections",r.value("effectiveConnections",r.value("parallelConnections",2))},{"remoteLoose",ready&&loose&&!archive},{"remoteRetrying",phase=="transfer"&&!paused&&!error.empty()&&r.value("retrying",false)},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
+      {"remote",true},{"emulationContent",(r.value("platform",std::string{})=="switch"||r.value("compatibility",json::object()).value("kind","")=="switch")},{"remotePreparation",prep},{"adopted",phase=="adopted"},{"preparationJob",r.value("preparationJob",std::string{})},{"parallelConnections",r.value("parallelConnections",2)},{"effectiveConnections",r.value("effectiveConnections",r.value("parallelConnections",2))},{"remoteLoose",ready&&loose&&!archive},{"remoteRetrying",phase=="transfer"&&!paused&&!error.empty()&&r.value("retrying",false)},{"remoteCandidate",phase=="available"},{"remotePhase",phase},{"phase",phase=="adopted"?"Prepared for Library":prep.contains("phase")&&phase=="remote"?prep.at("phase").get<std::string>():phase=="available"?"Available on dedicated server":phase=="transfer"?"Importing from dedicated server":phase=="ready"?"Imported to PS5":"Torrent downloading on dedicated server"},{"percentDone",total?double(done)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},
       {"rateDownload",phase=="transfer"?r.value("rate",uint64_t(0)):ready?uint64_t(0):snapshot.value("rate",uint64_t(0))},{"rateUpload",phase=="remote"?snapshot.value("upload",uint64_t(0)):uint64_t(0)},{"eta",r.value("eta",-1.0)},
       {"downloadDir",r.at("directory")},{"storage",r.at("storage")},{"files",files},{"error",error.empty()?0:1},{"errorString",error},{"peersConnected",snapshot.value("peers",0)},{"peersSendingToUs",0},{"peersGettingFromUs",0}};
   }
@@ -452,8 +453,8 @@ class RemoteDownloads {
 
       json records;{std::lock_guard<std::mutex> g(mutex_);records=records_;}
       for(auto it=records.begin();it!=records.end()&&!stop_;++it){
-        const auto hash=it.key();auto r=it.value();if(r.value("paused",false)||r.value("phase","")=="ready"||r.value("phase","")=="available")continue;
-        {std::lock_guard<std::mutex> g(mutex_);if(blocked_||!admitted_()||!records_.contains(hash)||records_[hash].value("paused",false))continue;r=records_[hash];if(r.value("phase","")=="ready"||r.value("phase","")=="available")continue;active_=hash;cancel_=false;}
+        const auto hash=it.key();auto r=it.value();if(r.value("paused",false)||r.value("phase","")=="ready"||r.value("phase","")=="adopted"||r.value("phase","")=="available")continue;
+        {std::lock_guard<std::mutex> g(mutex_);if(blocked_||!admitted_()||!records_.contains(hash)||records_[hash].value("paused",false))continue;r=records_[hash];if(r.value("phase","")=="ready"||r.value("phase","")=="adopted"||r.value("phase","")=="available")continue;active_=hash;cancel_=false;}
         try{
           if(recoverPublished(hash,r)){std::lock_guard<std::mutex> g(mutex_);active_.clear();wake_.notify_all();continue;}
           auto snapshot=snapshotFor(hash);
@@ -500,6 +501,23 @@ public:
     if(fs::exists(paths.root/"remote-downloads.json"))records_=json::parse(readText(paths.root/"remote-downloads.json",16*1024*1024));
     if(!records_.is_object())throw std::runtime_error("Invalid remote download records");
     std::set<int> ids;for(auto it=records_.begin();it!=records_.end();++it){if(!std::regex_match(it.key(),std::regex("[a-f0-9]{40}"))||it.value().at("id").get<int>()<1000000000||!ids.insert(it.value().at("id").get<int>()).second)throw std::runtime_error("Invalid remote identity");}
+    bool recovered=false;
+    for(auto it=records_.begin();it!=records_.end();++it){auto& r=it.value();
+      if(r.value("phase","")!="adopted"||!r.contains("adoptionDestination"))continue;
+      const auto source=fs::path(r.at("directory").get<std::string>())/it.key();
+      // If the positively identified source still exists, adoption did not
+      // finish. Recover it even if a reservation survived; never delete an
+      // unrecognized destination or repeat the transfer.
+      try{if(fs::exists(source)){
+        checkStorage_(r.at("storage"),source.parent_path());checkPublishedIdentity(source,r.at("publishedIdentity"));
+        const fs::path destination=r.at("adoptionDestination").get<std::string>();
+        struct stat reserved{};
+        if(r.contains("adoptionReservation")&&!lstat(destination.c_str(),&reserved)&&S_ISDIR(reserved.st_mode)&&
+           uint64_t(reserved.st_dev)==r["adoptionReservation"].at("device")&&uint64_t(reserved.st_ino)==r["adoptionReservation"].at("inode"))::rmdir(destination.c_str()); // Only succeeds for an empty reservation.
+        r["phase"]="ready";r.erase("preparationJob");r.erase("adoptionDestination");r.erase("adoptionReservation");recovered=true;
+      }}catch(...){}
+    }
+    if(recovered)save();
     for(const auto& r:records_)nextId_=std::max(nextId_,r.at("id").get<int>()+1);
     if(fs::exists(paths.root/"remote-next-id.json"))nextId_=std::max(nextId_,json::parse(readText(paths.root/"remote-next-id.json",128)).get<int>());
   }
@@ -513,6 +531,10 @@ public:
       out.push_back(row(it.key(),it.value()));}return out;}
   std::string candidateHash(int id){std::lock_guard<std::mutex> g(mutex_);for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id&&it.value().value("phase","")=="available")return it.key();return "";}
   void removeData(int id){
+    bool adopted=false;{std::lock_guard<std::mutex> g(mutex_);for(const auto& r:records_)if(r.at("id")==id)adopted=r.value("phase","")=="adopted";}
+    // Ownership has moved to the preparation job. Forget only the tracking
+    // record; never traverse either the old import or its Library destination.
+    if(adopted){action("torrent-remove",{{"ids",{id}}});return;}
     action("torrent-close",{{"ids",{id}}});
     json r;std::string hash;{std::lock_guard<std::mutex> g(mutex_);for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id){hash=it.key();r=it.value();}}
     if(hash.empty()||r.value("phase","")=="available")throw std::runtime_error("Only imported torrents can be removed");
@@ -537,6 +559,51 @@ public:
     }
     action("torrent-remove",{{"ids",{id}}});
   }
+  // Transfer ownership of a completed import to a preparation job, without copying.
+  // Journal first: an interrupted rename must never trigger a second import.
+  void adopt(int id,const fs::path& destination,const std::string& job,const std::function<void()>& check,bool resumeEmpty=false) {
+    std::lock_guard<std::mutex> serial(requests_);std::lock_guard<std::mutex> g(mutex_);
+    for(auto it=records_.begin();it!=records_.end();++it)if(it.value().at("id")==id){
+      auto& r=it.value();const fs::path directory=r.at("directory").get<std::string>();
+      const bool interrupted=resumeEmpty&&r.value("phase","")=="adopted"&&r.value("preparationJob","")==job&&r.value("adoptionDestination","")==destination.string();
+      if(r.value("phase","")!="ready"&&!interrupted)throw std::runtime_error("Import is not ready for preparation");
+      // A disk can reconnect after constructor recovery. The retained source
+      // must pass the same identity, inventory and shared-reference checks.
+      checkStorage_(r.at("storage"),directory);checkPublishedIdentity(directory/it.key(),r.at("publishedIdentity"));
+      validateTree(directory/it.key(),r.at("inventory"));
+      checkMembers_(directory/it.key(),destination,r.at("inventory"));check();
+      // An interrupted mkdir may precede its identity journal. Only an explicit
+      // preparation resume can discard an empty directory, after validating the
+      // intact import. rmdir is atomic and cannot remove any contained files.
+      if(resumeEmpty&&fs::is_directory(fs::symlink_status(destination))&&fs::is_empty(destination)){
+        if(::rmdir(destination.c_str()))throw std::runtime_error("Cannot clear empty preparation reservation");
+      }
+      const auto hash=it.key();const bool wasPaused=r.value("paused",false);
+      try{
+        r["adoptionDestination"]=destination.string();r["phase"]="adopted";r["preparationJob"]=job;r["paused"]=true;save();
+        publishExclusive(directory/hash,destination,[&](uint64_t device,uint64_t inode){
+        records_[hash]["adoptionReservation"]={{"device",device},{"inode",inode}};save();
+        checkMembers_(directory/hash,destination,records_[hash].at("inventory"));check();
+      });}catch(...){
+        auto& current=records_.at(hash);
+        if(fs::exists(directory/hash)){
+          checkPublishedIdentity(directory/hash,current.at("publishedIdentity"));
+          struct stat reserved{};
+          if(current.contains("adoptionReservation")&&!lstat(destination.c_str(),&reserved)&&S_ISDIR(reserved.st_mode)&&
+             uint64_t(reserved.st_dev)==current["adoptionReservation"].at("device")&&uint64_t(reserved.st_ino)==current["adoptionReservation"].at("inode"))::rmdir(destination.c_str());
+          current["phase"]="ready";current["paused"]=wasPaused;current.erase("preparationJob");current.erase("adoptionDestination");current.erase("adoptionReservation");save();
+        }
+        throw;
+      }
+      return;
+    }
+    throw std::runtime_error("Import disappeared");
+  }
+  bool adoptedBy(int id,const std::string& job){
+    std::lock_guard<std::mutex> g(mutex_);
+    for(const auto& r:records_)if(r.at("id")==id)return r.value("phase","")=="adopted"&&r.value("preparationJob","")==job;
+    return false;
+  }
   bool contains(const json& id){if(!id.is_number_integer())return false;std::lock_guard<std::mutex> g(mutex_);for(const auto& r:records_)if(r.at("id")==id)return true;return false;}
   json add(const std::string& hash,const json& args,bool importing=false) {
     std::lock_guard<std::mutex> serial(requests_);
@@ -544,7 +611,7 @@ public:
     const auto directory=args.at("download-dir").get<std::string>(),storage=args.value("storage",std::string("internal"));checkStorage_(storage,directory);
     const int parallel=connections(args);auto body=args;body["hash"]=hash;auto response=http(importing?"/import":"/add",&body);
     std::lock_guard<std::mutex> g(mutex_);if(records_.size()>=4096&&!records_.contains(hash))throw std::runtime_error("Remote download registry is full");const int id=records_.contains(hash)?records_[hash].at("id").get<int>():allocateId();
-    records_[hash]={{"id",id},{"stagingFormat",2},{"transferFormat",2},{"segments",json::object()},{"parallelConnections",parallel},{"directory",directory},{"storage",storage},{"paused",false},{"phase","remote"},{"snapshot",importing?response:json::object()},{"name",args.value("name",std::string("Remote torrent"))}};save();
+    records_[hash]={{"id",id},{"platform",args.value("platform",std::string("ps5"))},{"stagingFormat",2},{"transferFormat",2},{"segments",json::object()},{"parallelConnections",parallel},{"directory",directory},{"storage",storage},{"paused",false},{"phase","remote"},{"snapshot",importing?response:json::object()},{"name",args.value("name",std::string("Remote torrent"))}};save();
     return {{"torrent-added",{{"id",id},{"hashString",hash}}}};
   }
   json action(const std::string& method,const json& args) {
@@ -552,7 +619,12 @@ public:
     for(const auto& id:args.at("ids")){
       std::string hash;for(auto it=records_.begin();it!=records_.end();++it)if((id.is_number_integer()&&it.value().at("id")==id)||(id.is_string()&&it.key()==id.get<std::string>()))hash=it.key();
       if(hash.empty())throw std::runtime_error("Remote torrent no longer exists");auto& r=records_[hash];if(r.value("phase","")=="available")throw std::runtime_error("Import this server candidate first");
-      if(method=="torrent-stop"||method=="torrent-close"){
+      if(r.value("phase","")=="adopted"&&method!="torrent-remove")throw std::runtime_error("Imported files belong to a Library preparation; use that task");
+      if(method=="torrent-prepare"){
+        if(r.value("phase","")!="remote")throw std::runtime_error("Server preparation is not available for this import");
+        g.unlock();try{json body={{"hash",hash},{"package",args.value("package",std::string{})}};http("/prepare",&body);}catch(...){g.lock();throw;}g.lock();
+        records_[hash]["paused"]=false;records_[hash]["error"]="";save();
+      }else if(method=="torrent-stop"||method=="torrent-close"){
         r["paused"]=true;save();if(active_==hash){cancel_=true;if(!wake_.wait_for(g,std::chrono::seconds(35),[&]{return active_!=hash;}))throw std::runtime_error("Waiting for remote transfer to pause; no files removed");}
         if(method=="torrent-stop"&&records_[hash].value("phase","")=="remote"){g.unlock();try{json body={{"hash",hash},{"action","pause"}};http("/action",&body);}catch(...){g.lock();throw;}g.lock();}
       }else if(method=="torrent-start"||method=="torrent-start-now"){

@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "content.hpp"
 #include "unicode.hpp"
 #include "progress.hpp"
 #include "operations.hpp"
@@ -128,6 +129,11 @@ int main(){
   const auto privateApp=paths.extracted/id/"Demo";
   fs::permissions(privateApp,fs::perms::owner_all);
   fs::permissions(privateApp/"eboot.bin",fs::perms::owner_read|fs::perms::owner_write);
+  bool publicationCancelled=false;
+  try{prepareLibraryPermissions(privateApp,[]{throw std::runtime_error("Preparation cancelled");});}catch(const std::runtime_error&){publicationCancelled=true;}
+  assert(publicationCancelled);
+  assert((fs::status(privateApp).permissions()&fs::perms::all)==fs::perms::owner_all);
+  assert((fs::status(privateApp/"eboot.bin").permissions()&fs::perms::all)==(fs::perms::owner_read|fs::perms::owner_write));
   json job={{"id",id},{"status","ready"}};auto moved=movePrepared(paths,job);
   assert(moved["status"]=="moved");assert(fs::exists(paths.library/"PPSA12345-app/sce_sys/param.json"));
   const auto app=paths.library/"PPSA12345-app";
@@ -152,6 +158,20 @@ int main(){
   assert(!fs::exists(app));assert(fs::exists(outside/"keep"));
   assert(fs::exists(paths.extracted/id/"Demo/eboot.bin"));
   deleteLibraryGame(paths,moved); // Already removed externally: idempotent cleanup.
+  assert(packageName("Game.PS5.FPKG")&&!packageName("Game.ffpkg"));
+  const auto archiveTorrent=json::parse(R"({"files":[{"name":"Game.part001.rar"},{"name":"Game.part002.rar"},{"name":"Game.part000.rar"}]})");
+  assert(archiveSets(archiveTorrent)==std::vector<std::string>{"Game.part001.rar"});
+  assert(releaseFormatHint("Game-DUPLEX").find("confirmed from the files")!=std::string::npos);
+  assert(releaseFormatHint("Game", "For now we kept the file/folder format. Remove fakelib content if needed.").find("Folder announced")!=std::string::npos);
+  const auto loose=root/"loose";fs::create_directories(loose/"game/sce_sys");
+  writeJson(loose/"game/sce_sys/param.json",{{"titleId","PPSA12345"}});std::ofstream(loose/"game/eboot.bin")<<"game";
+  json members=json::array();for(const auto& entry:fs::recursive_directory_iterator(loose))if(entry.is_regular_file())members.push_back({{"name",entry.path().lexically_relative(loose).string()},{"length",entry.file_size()}});
+  assert(classifyDownload(loose,members).at("kind")=="folder");
+  std::ofstream(loose/"game/foreign.bin")<<"unrelated";fails([&]{classifyDownload(loose,members);});fs::remove(loose/"game/foreign.bin");
+  fs::create_symlink(outside/"keep",loose/"game/link");fails([&]{classifyDownload(loose,members);});fs::remove(loose/"game/link");
+  std::ofstream(loose/"image.exfat",std::ios::binary)<<"xxxEXFAT   "<<std::string(512,'x');
+  assert(classifyDownload(loose,json::array({{{"name","image.exfat"},{"length",fs::file_size(loose/"image.exfat")}}})).at("kind")=="exfat");
+  auto mixed=members;mixed.push_back({{"name","image.exfat"},{"length",fs::file_size(loose/"image.exfat")}});assert(classifyDownload(loose,mixed).at("kind")=="unsupported");
   std::cout<<"Core tests passed: real extraction, 163-volume r/s transition, missing volumes, CRC errors, traversal, symlinks, classification and no-overwrite moves.\n";
  }catch(...){fs::remove_all(root);throw;}
  fs::remove_all(root);

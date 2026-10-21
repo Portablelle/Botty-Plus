@@ -216,7 +216,9 @@ with tempfile.TemporaryDirectory() as tmp:
             api('/api/torrent', {'id': local['id'], 'action': 'remove-data', 'confirmed': True})
             raise RuntimeError('Transient local inspection failure allowed deletion')
         except AssertionError as e:
-            assert 'cannot be inspected' in str(e)
+            # A background metadata poll may consume the one-shot failure first;
+            # the live shared-reference check must still refuse this deletion.
+            assert 'cannot be inspected' in str(e) or 'shared with another torrent' in str(e)
         assert local_file.exists()
         local_entries.pop(); fail_inspection[0] = None
         local_entries[0]['status'] = 4; ignore_stops[0] = True
@@ -230,6 +232,13 @@ with tempfile.TemporaryDirectory() as tmp:
         api('/api/torrent', {'id': local['id'], 'action': 'remove-data', 'confirmed': True})
         assert not local_entries and not local_file.exists()
         assert any(t['hashString'] == game and t.get('remoteCandidate') for t in api('/api/state')['torrents'])
+        switch_candidate='1234567890'*4
+        (sources/'Candidate.zip').write_bytes(b'archive fixture')
+        rows[switch_candidate]=({'name':'Fixture NSW','save_path':str(sources)+'/'},[{'name':'Candidate.zip','size':15,'index':0}])
+        wait(lambda: any(t['hashString']==switch_candidate and t.get('remoteCandidate') for t in api('/api/state')['torrents']))
+        switch_id=api('/api/remote/import',{'hash':switch_candidate,'automatic':False})['torrent-added']['id']
+        assert bridge.owned[switch_candidate]['platform']=='switch'
+        assert next(t for t in api('/api/state')['torrents'] if t['id']==switch_id)['emulationContent']
         local_task = data / 'automatic' / (game + '.json')
         local_task_data = {'hash': game, 'status': 'waiting', 'storage': 'internal'}
         local_task.write_text(json.dumps(local_task_data))
@@ -324,6 +333,57 @@ with tempfile.TemporaryDirectory() as tmp:
         assert next(t for t in api('/api/state')['torrents'] if t['id'] == folder_id)['remoteLoose']
         assert not list((data / 'test-library').rglob('.botty-remote-owner'))
         assert (sources / 'app/eboot.bin').read_bytes() == b'fixture app'
+        # Crash between reservation mkdir and identity journal: the original
+        # import remains intact, and the empty job destination must be resumable.
+        recovery_hash = '9' * 40; rows[recovery_hash] = rows[folder]
+        recovery_id = api('/api/remote/import', {'hash': recovery_hash, 'automatic': False})['torrent-added']['id']
+        wait(lambda: any(t['id'] == recovery_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+        proc.terminate(); proc.wait(timeout=10)
+        # A cancelled attempt never owned this import. Its dismissed journal
+        # must not block removing the later successful adoption's tracking.
+        cancelled_job = 'ac' * 16
+        (data / 'jobs' / (cancelled_job + '.json')).write_text(json.dumps(dict(id=cancelled_job, torrentId=recovery_id, name='Cancelled before adoption', status='cancelled', storage='internal', remote=True, adoptedImport=False, automatic=False)))
+        recovery_job = 'ab' * 16; recovery_dest = data / 'extracted' / recovery_job
+        recovery_dest.mkdir()
+        saved = json.loads((data / 'remote-downloads.json').read_text())
+        saved[recovery_hash].update(phase='adopted', preparationJob=recovery_job, adoptionDestination=str(recovery_dest))
+        (data / 'remote-downloads.json').write_text(json.dumps(saved))
+        (data / 'jobs' / (recovery_job + '.json')).write_text(json.dumps(dict(id=recovery_job, torrentId=recovery_id, name='Recovered reservation', status='extracting', storage='internal', remote=True, adoptedImport=True, automatic=False)))
+        shutil.rmtree(data / 'test-library/PPSA12345-app')
+        recovery_source = data / 'downloads/complete' / recovery_hash
+        disconnected_source = recovery_source.with_name(recovery_hash + '-offline')
+        recovery_source.rename(disconnected_source) # Unavailable during startup recovery.
+        proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
+        assert json.loads((data / 'remote-downloads.json').read_text())[recovery_hash]['phase'] == 'adopted'
+        disconnected_source.rename(recovery_source) # Reconnect without restarting the manager.
+        api('/api/dismiss-extraction', {'id': cancelled_job})
+        dismissed = json.loads((data / 'jobs' / (cancelled_job + '.json')).read_text())
+        assert dismissed['dismissed'] and not dismissed['adoptedImport']
+
+        try:
+            api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+            raise RuntimeError('Unpublished adoption tracking was removed')
+        except AssertionError: pass
+
+        # A nonempty destination is never removed during recovery.
+        sentinel = recovery_dest / 'keep.txt'; sentinel.write_text('keep')
+        try:
+            api('/api/move', {'id': recovery_job})
+            raise RuntimeError('Unknown destination was published')
+        except AssertionError: pass
+        assert sentinel.read_text() == 'keep'
+        sentinel.unlink()
+        assert api('/api/move', {'id': recovery_job})['status'] == 'moved'
+        assert (data / 'test-library/PPSA12345-app/eboot.bin').read_bytes() == b'fixture app'
+        assert not (data / 'downloads/complete' / recovery_hash).exists()
+        api('/api/torrent', {'id': recovery_id, 'action': 'remove-data', 'confirmed': True})
+        assert (data / 'test-library/PPSA12345-app/eboot.bin').read_bytes() == b'fixture app'
+        reimport = api('/api/remote/import', {'hash': recovery_hash, 'automatic': False})
+        assert 'torrent-added' in reimport
+        reimport_id = reimport['torrent-added']['id']
+        wait(lambda: any(t['id'] == reimport_id and t['remotePhase'] == 'ready' for t in api('/api/state')['torrents']))
+        api('/api/torrent', {'id': reimport_id, 'action': 'remove-data', 'confirmed': True})
+
         member = {'name': game + '/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': len(payload)}
         local_entries.append({'id': 1, 'hashString': game, 'name': 'Shared local torrent', 'status': 0, 'error': 0, 'leftUntilDone': 0, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [member]})
         try:
@@ -442,9 +502,10 @@ with tempfile.TemporaryDirectory() as tmp:
             saved[trial].update(phase='transfer', paused=True, publishing=False, segments={'0': [], '1': []})
             saved[trial].pop('publishedIdentity', None)
             (data / 'remote-downloads.json').write_text(json.dumps(saved))
+            # Inject before startup: the monitor must not race mkdir with its atomic save.
+            state_tmp = data / 'remote-downloads.json.tmp'; state_tmp.mkdir()
             proc = subprocess.Popen(proc.args, stdout=log, stderr=log); token = ''; token = wait(bootstrap)
             # A persistence failure must prevent sparse writes and publication.
-            state_tmp = data / 'remote-downloads.json.tmp'; state_tmp.mkdir()
             try:
                 api('/api/torrent', {'id': trial_id, 'action': 'resume', 'parallelConnections': 4 if connections == 1 else 1})
             except AssertionError:
@@ -484,7 +545,7 @@ with tempfile.TemporaryDirectory() as tmp:
         fault = root / 'fail-directory-sync'; library = root / 'fsync-fault.so'
         environment = dict(os.environ)
         if Path('/proc/self/fd').exists():
-            subprocess.run(['clang', '-shared', '-fPIC', str(HERE / 'fsync-fault.c'), '-o', str(library), '-ldl'], check=True)
+            subprocess.run([os.environ.get('CC', 'clang'), '-shared', '-fPIC', str(HERE / 'fsync-fault.c'), '-o', str(library), '-ldl'], check=True)
             fault.write_text(str(data / 'downloads/complete'))
             environment.update(LD_PRELOAD=str(library), BOTTY_FAIL_DIRECTORY_SYNC=str(fault))
         local_entries.append({'id': 22, 'hashString': '9' * 40, 'name': 'Shared legacy staging', 'status': 0, 'error': 0, 'leftUntilDone': 1, 'totalSize': len(payload), 'downloadDir': str(data / 'downloads/complete'), 'files': [{'name': '.remote-' + trial + '.partial/Game PS5/a space.RAR', 'length': len(payload), 'bytesCompleted': 16384}]})

@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "content.hpp"
 #define _UNIX
 #include "dll.hpp"
 #include <algorithm>
@@ -19,7 +20,7 @@ namespace botty {
 namespace {
 struct Context {
   fs::path parent; std::string password, error; int fd=-1;
-  std::function<bool()> cancelled;
+  std::function<bool()> cancelled;std::set<fs::path> volumes;
   Progress progress; Reporter report; uint64_t written=0, expected=0;
 };
 std::string nameOf(const RARHeaderDataEx& header) {
@@ -34,6 +35,7 @@ int CALLBACK callback(UINT message, LPARAM user, LPARAM first, LPARAM second) {
     if (message == UCM_CHANGEVOLUME || message == UCM_CHANGEVOLUMEW) {
       const std::string name = message == UCM_CHANGEVOLUMEW ? wideToUtf8(reinterpret_cast<wchar_t*>(first), 1024) : std::string(reinterpret_cast<char*>(first));
       const auto path=containedExisting(context.parent, fs::path(name).is_absolute()?fs::path(name):context.parent/name);
+      if(!context.volumes.empty()&&!context.volumes.count(path))throw std::runtime_error("Archive requested an untracked volume");
       if (!fs::is_regular_file(path)) throw std::runtime_error("Missing archive volume");
       return 1;
     }
@@ -78,6 +80,7 @@ struct Archive {
 };
 void checkHeader(const RARHeaderDataEx& header) {
   safeRelative(nameOf(header));
+  if(packageName(nameOf(header)))throw std::runtime_error(packagePolicyMessage());
   if (header.RedirType || (header.HostOS==3 && (header.FileAttr&0170000)==0120000)) throw std::runtime_error("Archive links are rejected");
 }
 void checkCode(int code, const Context& context) {
@@ -85,8 +88,8 @@ void checkCode(int code, const Context& context) {
   if(code!=ERAR_SUCCESS) throw std::runtime_error(context.error.empty()?"RAR extraction failed (code "+std::to_string(code)+"). Check all volumes, CRC and password.":context.error);
 }
 }
-void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password, std::function<bool()> cancelled, unsigned workers, bool resume) {
-  Context context;context.parent=fs::canonical(archive.parent_path()); context.password=password; context.report=report; context.cancelled=std::move(cancelled);
+void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password, std::function<bool()> cancelled, unsigned workers, bool resume, const std::set<fs::path>& volumes) {
+  Context context;context.volumes=volumes;context.parent=fs::canonical(archive.parent_path()); context.password=password; context.report=report; context.cancelled=std::move(cancelled);
   context.progress.phase="Checking archive headers";context.report(context.progress);
   std::set<std::string> names; size_t entries=0;
   struct Member {std::string name;uint64_t size;bool directory;unsigned flags,version,method,crc;bool checksumComplete;};
@@ -187,7 +190,7 @@ void extractRar(const fs::path& archive, const fs::path& destination, Reporter r
   std::atomic<bool> stop{false};std::mutex progressLock;std::exception_ptr failure;
   const auto externalCancel=context.cancelled;
   auto run=[&](unsigned worker){
-    Context local;local.parent=context.parent;local.password=password;local.progress.total=context.progress.total;local.progress.phase=context.progress.phase;
+    Context local;local.parent=context.parent;local.volumes=context.volumes;local.password=password;local.progress.total=context.progress.total;local.progress.phase=context.progress.phase;
     local.cancelled=[&]{return stop.load()||(externalCancel&&externalCancel());};
     uint64_t previous=0;
     local.report=[&](const Progress& p){std::lock_guard<std::mutex> guard(progressLock);context.progress.bytes+=p.bytes-previous;previous=p.bytes;context.progress.file=p.file;context.report(context.progress);};

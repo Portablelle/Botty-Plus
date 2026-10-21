@@ -89,7 +89,7 @@ public:
       auto saved=json::parse(readText(cache,16*1024*1024));
       if(saved.at("source")==scope&&saved.at("results").is_array()&&saved.at("results").size()<=100){
         if(!sameSelection||rows.empty())rows=saved.at("results");const auto age=std::time(nullptr)-saved.at("saved").get<long long>();
-        if(!refresh){busy=false;notice=age>=0&&age<600?"Cached results. Square: Refresh.":"Saved results may be outdated. Square: Refresh.";return;}
+        if(!refresh&&age>=0&&age<600){busy=false;notice="Cached results. R3: Refresh.";return;}
         notice="Refreshing results. You can still browse and select games.";
       }
     }catch(...){}
@@ -143,7 +143,7 @@ public:
           if((!sort.empty()&&gameKey(row.at("name"))==gameKey(old.at("name")))||(row.at("download")==old.at("download")&&row.at("name")==old.at("name"))){row["id"]=old.at("id");row["added"]=old.value("added",false);}
           for(auto& source:row["sources"])for(const auto& prior:old.value("sources",json::array()))if(source.at("download")==prior.at("download")&&source.at("name")==prior.at("name")&&source.at("size")==prior.at("size"))source["id"]=prior.at("id");
         }
-        previousRows=sort.empty()?json::array():rows;rows=std::move(found);busy=false;notice=sort.empty()?"":"Results updated. Square: Refresh.";
+        previousRows=sort.empty()?json::array():rows;rows=std::move(found);busy=false;notice=sort.empty()?"":"Results updated. R3: Refresh.";
         if(!sort.empty())try{fs::create_directories(cache.parent_path());writeJson(cache,{{"source",scope},{"saved",std::time(nullptr)},{"results",rows}});}catch(...){}
 
       }catch(...){std::lock_guard<std::mutex> guard(mutex);error="Search failed. Check Prowlarr, its API key and the configured indexers.";busy=false;}

@@ -10,6 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'homebrew/botty-native/tools'))
 from release_version import ps5_version, release_version, sync
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from source_parts import source_names
+
 PACKAGES = {
     'botty': ('NOTICE.md', 'LICENSE', 'botty-source.tar.gz', 'game-compressor-source.tar.gz', 'game-compressor-NOTICE.md'),
     'botty-native': ('NOTICE.md', 'LICENSE', 'botty-native-source.tar.gz'),
@@ -73,7 +76,7 @@ def inventory(root):
         manifest = json.loads(regular_file(base / 'manifest.json').read_text())
         if manifest.get('schema') != 1 or not isinstance(manifest.get('version') if package == 'botty-native' else manifest.get('id'), str):
             raise ValueError('Unsupported Botty package: ' + package)
-        names = ['manifest.json', *notices]
+        names = ['manifest.json', *notices, *source_names(base)]
         for entry in manifest['files']:
             name = entry['path']
             relative = Path(name)

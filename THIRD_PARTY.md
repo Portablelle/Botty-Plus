@@ -14,6 +14,7 @@ or assign a blanket license to all files.
 | Experimental rest-mode companion | [PS5Tailscale and pinned ps5debug-NG provenance](homebrew/rest-mode-companion/README.md#provenance) |
 | cpp-httplib | [MIT notice](homebrew/botty/vendor/HTTPLIB-LICENSE) |
 | nlohmann/json | [MIT notice](homebrew/botty/vendor/JSON-LICENSE) |
+| stb_image | [MIT / public-domain notice](homebrew/botty/vendor/stb_image.h), pinned to nothings/stb `f0569113c93ad095470c54bf34a17b36646bbbb5`; used to decode local Switch icons |
 | PS5 controller ABI | [SDL-derived header and zlib notice](homebrew/botty-native/vendor/NOTICE.md) |
 | Manrope | [SIL Open Font License](homebrew/botty-native/assets/Manrope-OFL.txt) and vendored font source |
 | SDK distributions | Component Dockerfiles and [native build environment](homebrew/botty-native/BUILD-ENVIRONMENT.json) |

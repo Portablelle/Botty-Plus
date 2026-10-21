@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "engine": "ProsperoEden",
+  "commit": "8f392248f7d49fc2be47f60ad7764ac5a392b1fe",
+  "executable": "emulation/eboot.bin",
+  "dataRoot": "/data/botty/emulation/switch",
+  "standalone": true,
+  "hardwareValidated": false,
+  "privateProvisioning": true,
+  "configuration": true,
+  "configurationProtocol": 1,
+  "engineSha256": "7d1a01dfa7b1ea8fb49b006ca818c98289592e10ae6f11eb322a72b2b261fbae"
+}

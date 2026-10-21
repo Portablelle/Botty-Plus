@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <set>
 #include <vector>
 namespace botty {
 namespace fs = std::filesystem;
@@ -36,11 +37,11 @@ void downloadedFiles(const fs::path& root, const std::vector<fs::path>& files, b
 std::string randomId();
 json classify(const fs::path& extracted);
 json movePrepared(const Paths&, json job, const Paths* destination = nullptr, const std::function<void()>& check = {});
-void prepareLibraryPermissions(const fs::path&);
+void prepareLibraryPermissions(const fs::path&,const std::function<void()>& check={});
 void deleteGameDirectory(const fs::path& root,const fs::path& name, const DeleteProgress& progress = {});
 void deleteLibraryGame(const Paths&, const json& job, const DeleteProgress& progress = {});
 struct Progress { std::string phase, file; uint64_t bytes = 0, total = 0; };
 using Reporter = std::function<void(const Progress&)>;
 // Progress callbacks are serialized; cancellation may be queried concurrently.
-void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0, bool resume = false);
+void extractRar(const fs::path& archive, const fs::path& destination, Reporter report, const std::string& password = "", std::function<bool()> cancelled = {}, unsigned workers = 0, bool resume = false, const std::set<fs::path>& volumes = {});
 }

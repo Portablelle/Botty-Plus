@@ -66,6 +66,29 @@ bool startWorker(void* (*fn)(void*),void* context,void** handle) noexcept {
 void joinWorker(void* handle) noexcept {auto* worker=static_cast<WorkerStart*>(handle);pthread_join(worker->thread,nullptr);delete worker;}
 }
 int main() {
+    std::array<char,4096> launch{};
+    assert(botty::emulationLaunchResponse(R"({"ok":true,"engine":"embedded-eden","launchPath":"/data/botty/emulation/switch/roms/Game.xci"})",launch));
+    assert(!botty::emulationLaunchResponse(R"({"ok":true,"engine":"external","launchPath":"/data/game.xci"})",launch));
+    assert(!botty::emulationLaunchResponse(R"({"ok":true,"engine":"embedded-eden","launchPath":"/data/../game.xci"})",launch));
+
+    {
+        botty::ExploreRefresh refresh;
+        refresh.update(false,0);assert(!refresh.requested&&refresh.force);
+        refresh.update(true,0);assert(refresh.requested&&refresh.force);
+        // Startup must bypass even a fresh cache; deferred frames retain it.
+        refresh.update(true,1);assert(refresh.requested&&refresh.force);
+        refresh.submitted(0);
+        refresh.update(true,59999999);assert(!refresh.requested);
+        refresh.update(true,60000000);assert(refresh.requested&&!refresh.force);
+        // A busy network or open sheet may defer submission across frames.
+        refresh.update(true,61000000);assert(refresh.requested);
+        refresh.request(true);refresh.request();assert(refresh.force);
+        refresh.submitted(61000000);assert(!refresh.requested&&!refresh.force);
+        refresh.update(false,62000000);assert(!refresh.requested);
+        refresh.update(true,63000000);assert(refresh.requested); // Return to Explore.
+        refresh.submitted(63000000);
+        refresh.request();assert(refresh.requested&&!refresh.force); // Resume.
+    }
     using namespace botty;
     // Each Network owns a full catalog. Keep test instances off the main stack;
     // the app uses global storage and the Processing worker still has 64 KiB.
@@ -173,15 +196,15 @@ int main() {
     {
         // Activity groups downloads and jobs by state; it never pairs rows by name.
         static Catalog a;assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[{"id":1,"name":"Down","status":4,"leftUntilDone":5,"totalSize":10,"rateDownload":1},{"id":2,"name":"Paused","status":0,"leftUntilDone":5,"totalSize":10},{"id":3,"name":"Seed","status":6,"leftUntilDone":0,"totalSize":10},{"id":4,"name":"Broken","status":0,"leftUntilDone":5,"totalSize":10,"errorString":"Tracker error"}],"jobs":[{"id":"j1","name":"Down","status":"extracting","bytes":1,"total":2},{"id":"j2","name":"Ready","status":"ready","content":{"kind":"folder"}},{"id":"j3","name":"Failed","status":"failed","error":"CRC error"},{"id":"j4","name":"Moved","status":"moved","content":{"kind":"folder"}},{"id":"j5","name":"Hidden","status":"ready","dismissed":true,"content":{"kind":"folder"}}]})",a));
-        assert(activityCount(a,0)==7&&activityCount(a,1)==2&&activityCount(a,2)==2&&activityCount(a,3)==2);
-        const char* order[]={"1","j1","4","j3","2","3","j2"};
-        for(unsigned i=0;i<7;++i)assert(std::string_view(activityAt(a,0,i).entry->id.data())==order[i]);
-        assert(activityAt(a,0,0).torrent&&!activityAt(a,0,1).torrent&&!activityAt(a,0,7).entry);
+        assert(activityCount(a,0)==3&&activityCount(a,1)==2&&activityCount(a,2)==3&&activityCount(a,3)==1);
+        const char* order[]={"1","j1","2"};
+        for(unsigned i=0;i<3;++i)assert(std::string_view(activityAt(a,0,i).entry->id.data())==order[i]);
+        assert(activityAt(a,0,0).torrent&&!activityAt(a,0,1).torrent&&!activityAt(a,0,3).entry);
         assert(activityState(a.torrents[2],true)==ActivityState::done&&activityState(a.jobs[1],false)==ActivityState::done);
         // A Processing task replaces its job row; waiting for Botty+ to close needs the user.
         a.processing.count=1;a.processing.tasks[0]=Entry{};a.processing.tasks[0].task=true;a.processing.tasks[0].active=true;a.processing.tasks[0].id=a.jobs[0].id;
         std::snprintf(a.processing.tasks[0].status.data(),a.processing.tasks[0].status.size(),"waiting-close");
-        assert(activityCount(a,0)==7&&activityCount(a,2)==3&&activityAt(a,2,1).entry==&a.processing.tasks[0]);
+        assert(activityCount(a,0)==2&&activityCount(a,1)==3&&activityAt(a,1,1).entry==&a.processing.tasks[0]);
         // Library keeps dismissed rows and filters by disk or compression.
         assert(libraryCount(a,0)==3&&libraryCount(a,1)==3&&libraryCount(a,2)==0&&libraryCount(a,3)==0);
         std::snprintf(a.jobs[3].storage.data(),a.jobs[3].storage.size(),"external-x");
@@ -191,7 +214,7 @@ int main() {
         assert(!a.jobs[3].compressed&&libraryCount(a,3)==1&&std::string_view(libraryAt(a,3,0)->id.data())=="j4");
         // Queued downloads wait; only transferring or verifying work counts as running.
         std::snprintf(a.torrents[0].status.data(),a.torrents[0].status.size(),"Queued");
-        assert(activityState(a.torrents[0],true)==ActivityState::waiting&&activityCount(a,1)==0);
+        assert(activityState(a.torrents[0],true)==ActivityState::waiting&&activityCount(a,0)==2);
         // Cancellation is terminal: extraction leftovers need the user; tasks are done.
         Entry cancelled=a.jobs[2];std::snprintf(cancelled.status.data(),cancelled.status.size(),"cancelled");cancelled.error.fill(0);
         assert(activityState(cancelled,false)==ActivityState::attention);
@@ -219,7 +242,7 @@ int main() {
     Model browse;browse.tab=Model::activity;browse.count=12;browse.press(Buttons::down);assert(browse.selected==1);
     browse.press(Buttons::cross);assert(browse.details);browse.press(Buttons::circle);assert(!browse.details);
     browse.press(Buttons::right);assert(browse.filter==1&&browse.selected==0);
-    browse.press(Buttons::left);browse.press(Buttons::left);assert(browse.filter==3);
+    browse.press(Buttons::left);browse.press(Buttons::left);assert(browse.filter==4);
     browse.press(Buttons::r1);assert(browse.tab==Model::library&&browse.selected==0&&browse.filter==0);
     browse.press(Buttons::l1);assert(browse.tab==Model::activity);
     assert(browse.press(Buttons::options)==Model::Action::menu);
@@ -241,7 +264,7 @@ int main() {
     std::snprintf(command.text.data(),command.text.size(),"a\"b\\c\n");
     std::array<char,131072> encoded{};std::size_t encodedSize=0;
     assert(encodeCommand(command,encoded.data(),encoded.size(),encodedSize));
-    assert(std::string_view(encoded.data())==R"({"id":9,"archive":"folder/a\"b\\c.rar","password":"a\"b\\c\u000a"})");
+    assert(std::string_view(encoded.data())==R"({"id":9,"automatic":true,"archive":"folder/a\"b\\c.rar","password":"a\"b\\c\u000a"})");
     assert(!encodeCommand(command,encoded.data(),5,encodedSize));
     reset("");responses={wire(boot),"HTTP/1.1 202 Accepted\r\nContent-Length: 18\r\n\r\n{\"status\":\"ready\"}"};
     assert(performCommand(command).status==ActionResult::Status::success&&requests==2);
@@ -457,6 +480,47 @@ int main() {
     for(unsigned i=0;i<800;++i){updateCheck.read(snapshot,&catalog,&result);if(result.revision)break;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     assert(result.revision&&result.status==ActionResult::Status::success);assert(request.find("POST /api/native-update/check ")!=std::string::npos);updateCheck.stop();workerAllowed=false;
     // Start in Discover: Explore and Search share one tab.
+    {
+        auto edenCatalog=std::make_unique<Catalog>();
+        const std::string edenState=R"({"torrents":[],"jobs":[],"transmissionReady":true,"freeBytes":1,"emulation":{"supported":true,"installed":true,"entries":[{"id":")"+std::string(64,'a')+R"json(","kind":"roms","name":"Game","path":"/data/prosperoeden/roms/Game.xci","size":512,"titleId":"0100000000000000","baseVersion":"v1.0.0","updateVersion":"v3.0.5","dlcCount":1,"modCount":2,"modsOn":1,"modsKnown":true,"modSummary":"First mod (on)\nSecond mod (off)","phase":"Base v1.0.0 | Update v3.0.5 present | DLC 1 | Mods 1/2 on","details":"Base: v1.0.0\nUpdate present: v3.0.5\nMods: UltraCam (off)"}]}})json";
+        assert(parseCatalog(edenState,*edenCatalog));assert(edenCatalog->emulationSupported);
+        assert(emulationCount(*edenCatalog,0)==1&&emulationCount(*edenCatalog,1)==0);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->name.data())=="Game");
+        assert(std::string(emulationAt(*edenCatalog,0,0)->titleId.data())=="0100000000000000");
+        assert(std::string(emulationAt(*edenCatalog,0,0)->files.data()).find("\n")!=std::string::npos);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->emulation.baseVersion.data())=="v1.0.0");
+        assert(emulationAt(*edenCatalog,0,0)->emulation.modsOn==1);
+        assert(std::string(emulationAt(*edenCatalog,0,0)->emulation.mods.data()).find("\nSecond mod (off)")!=std::string::npos);
+        edenCatalog->storageSupported=true;edenCatalog->remoteEnabled=true;
+        Workflow edenDownload;Entry release;std::fill_n(release.id.begin(),32,'b');
+        edenDownload.grab(release,*edenCatalog,true);
+        assert(edenDownload.command.automatic&&edenDownload.command.switchContent&&edenDownload.hasRow(Workflow::Row::mode));
+        assert(edenDownload.hasRow(Workflow::Row::engine));
+        assert(edenDownload.rows[edenDownload.focus]==Workflow::Row::engine);
+        assert(!edenDownload.press(Buttons::cross,*edenCatalog,false)&&edenDownload.panel==Workflow::Panel::sheet);
+        assert(edenDownload.focus==edenDownload.rowCount);
+        Model emulator;emulator.tab=Model::emulation;emulator.count=2;
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationPlay);
+        emulator.press(Buttons::triangle);assert(emulator.filter==1);
+        assert(emulator.press(Buttons::cross)==Model::Action::none);
+        emulator.press(Buttons::triangle);assert(emulator.filter==2);
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationGame);
+        assert(emulator.press(Buttons::options)==Model::Action::none);
+        emulator.filter=0;
+        assert(emulator.press(Buttons::options)==Model::Action::emulationGameConfig);
+        emulator.press(Buttons::r1);assert(emulator.tab==Model::config);
+        assert(emulator.press(Buttons::cross)==Model::Action::emulationConfig);
+        emulator.press(Buttons::r1);assert(emulator.tab==Model::system);
+        Command command;command.operation=Operation::emulationGame;
+        std::fill_n(command.id.begin(),64,'a');char payload[256];std::size_t bytes=0;
+        assert(encodeCommand(command,payload,sizeof(payload),bytes));
+        assert(std::string(payload).find("\"kind\":\"auto\"")!=std::string::npos);
+        assert(std::string(actionPath(command.operation))=="/api/emulation/import");
+        command.operation=Operation::emulationConfigure;
+        assert(encodeCommand(command,payload,sizeof(payload),bytes));
+        assert(std::string(payload)=="{\"id\":\""+std::string(64,'a')+"\"}");
+        assert(std::string(actionPath(command.operation))=="/api/emulation/launch");
+    }
     Model searchModel;assert(searchModel.tab==Model::discover);
     searchModel.press(Buttons::r1);assert(searchModel.tab==Model::activity);
     searchModel.press(Buttons::l1);assert(searchModel.tab==Model::discover);
@@ -650,6 +714,10 @@ int main() {
         assert(!*unavailable(Operation::extract,&remote.torrents[0],remote));
         static Catalog engines;
         assert(parseCatalog(R"({"freeBytes":1000000000,"transmissionReady":true,"storageSupported":true,"remoteDownloads":{"enabled":true},"storage":[{"id":"internal","label":"PS5","available":true,"freeBytes":1000000000}],"torrents":[],"jobs":[]})",engines));
+        Workflow trackerMagnet;trackerMagnet.add();
+        trackerMagnet.acceptText("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&dn=Folder&tr=https://fpkg.example/announce",engines,false);
+        trackerMagnet.focus=trackerMagnet.rowCount;
+        assert(trackerMagnet.press(Buttons::cross,engines,false)); // Service checks dn, not tracker URLs.
         Workflow download;download.add();download.acceptText("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",engines,false);
         assert(download.hasRow(Workflow::Row::engine)&&download.rowCount==4&&!download.command.useRemote);
         // A 3-line note must end above the footer hints (y=1008) and rows must not overlap.
@@ -672,6 +740,34 @@ int main() {
         Entry result;std::snprintf(result.id.data(),result.id.size(),"%s","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");std::snprintf(result.name.data(),result.name.size(),"%s","PS5 game");
         Workflow searched;searched.grab(result,engines);assert(searched.hasRow(Workflow::Row::engine)&&searched.rowCount==4);
         Workflow discovered;discovered.chooseSources(result,engines,false);assert(discovered.hasRow(Workflow::Row::engine)&&discovered.rowCount==4);
+    }
+
+    {
+        static Catalog prep;
+        assert(parseCatalog(R"({"freeBytes":10,"transmissionReady":true,"torrents":[{"id":1000000000,"name":"Game FPKG","remote":true,"status":4,"leftUntilDone":1,"remotePreparation":{"status":"failed","packages":["game.pkg","backport/game.pkg"]},"files":[{"name":"extras.rar"}]}],"jobs":[]})",prep));
+        prep.storageSupported=true;
+        auto& e=prep.torrents[0];std::snprintf(e.storage.data(),e.storage.size(),"external");assert(e.remotePreparation&&e.extractable&&e.archiveCount==2);
+        assert(activityCount(prep,0)==0&&activityCount(prep,1)==1);
+        Workflow w;w.open(&e,0,prep);w.choose(Operation::extract,prep,false);
+        assert(w.hasRow(Workflow::Row::archive)&&!w.hasRow(Workflow::Row::password));
+        assert(!w.hasRow(Workflow::Row::storage)&&std::string_view(w.command.storage.data())=="external");
+        w.focus=0;w.press(Buttons::right,prep,false);w.focus=w.rowCount;assert(w.press(Buttons::cross,prep,false));
+        char body[1024];std::size_t n=0;assert(encodeCommand(w.command,body,sizeof(body),n));
+        assert(std::string_view(body).find("backport/game.pkg")!=std::string_view::npos);
+        assert(std::string_view(body).find("\"automatic\":true")!=std::string_view::npos);
+        assert(packageHint("Game.[FPKG]")&&!packageHint("Game.ffpkg")&&!packageHint("Game-DUPLEX"));
+        assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"torrents":[{"id":1,"name":"Same name","hashString":"aaaa","status":6,"leftUntilDone":0},{"id":2,"name":"Same name","hashString":"bbbb","status":4,"leftUntilDone":5}],"jobs":[{"id":"job","name":"Same name","hash":"aaaa","torrentId":1,"status":"moved","libraryStatus":"pending"}]})",prep));
+        assert(activityCount(prep,0)==1&&activityAt(prep,0,0).entry==&prep.torrents[1]);
+        assert(activityCount(prep,1)==1&&activityAt(prep,1,0).entry==&prep.jobs[0]);
+        assert(activityCount(prep,2)==0&&activityCount(prep,3)==1);
+        assert(parseProcessing(R"({"tasks":[{"id":"job","status":"restored"}]})",prep.processing));
+        assert(activityCount(prep,1)==1&&activityAt(prep,1,0).entry==&prep.jobs[0]);
+        assert(activityCount(prep,2)==0); // Finished processing restores the actionable game row.
+        assert(parseCatalog(R"({"freeBytes":1,"transmissionReady":true,"extractionControls":true,"torrents":[],"jobs":[{"id":"retained","name":"Recovered import","status":"ready","adoptedImport":true,"content":{"kind":"folder"}}]})",prep));
+        assert(prep.jobs[0].adoptedImport);
+        assert(*unavailable(Operation::remove,&prep.jobs[0],prep));
+        assert(*unavailable(Operation::dismiss,&prep.jobs[0],prep));
+        assert(!*unavailable(Operation::move,&prep.jobs[0],prep));
     }
 
 }

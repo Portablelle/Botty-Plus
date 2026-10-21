@@ -186,6 +186,9 @@ ActionResult performCommand(const Command& command) noexcept {
         result.status=ActionResult::Status::uncertain;message("Update confirmation was incomplete. Keep Botty+ open and check its update status before retrying.");return result;
         }
     }
+    if((command.operation==Operation::emulationLaunch||command.operation==Operation::emulationConfigure)&&!emulationLaunchResponse(response.view(),result.launchPath)){
+        message("Invalid emulator launch confirmation. Refresh and try again.");return result;
+    }
     result.status=ActionResult::Status::success;
     switch(command.operation){
     case Operation::explore:message("Explore updated.");break;
@@ -326,7 +329,7 @@ void* Network::worker(void* context) noexcept {
             self.deletion_.store(Deletion::idle);self.busy_.store(false);
             self.gate_.clear(std::memory_order_release);
         }
-        const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale?10:50;
+        const unsigned delay=connection.status==Probe::unavailable||connection.status==Probe::transmissionUnavailable||next.transmissionStale||next.exploreBusy?10:50;
         for(unsigned i=0;i<delay&&!self.stop_.load()&&!self.retry_.load()&&!self.queued_.load();++i)platform::sleep(100000);
     }
     return nullptr;

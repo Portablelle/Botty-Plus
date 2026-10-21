@@ -33,16 +33,16 @@ build/native/sha1.o build/ps5/sha1.o: $(UNRAR)/sha1.hpp $(UNRAR)/rartypes.hpp
 build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	@mkdir -p build/ps5
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
-build/botty-native: build/host/server.o build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) $(UPDATER_HEADERS)
-	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp
-	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+build/botty-native: build/host/server.o build/host/core.o build/host/storage.o build/host/rar.o build/host/switch-artwork.o $(NATIVE_OBJ) $(UPDATER_HEADERS)
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lcrypto -lz
+build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp src/switch-artwork.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp
+	$(PS5_CXX) $(APP_FLAGS) -Os -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/service-updater.elf: src/service-updater.cpp $(UPDATER_HEADERS) build/ps5/sha256.o
 	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/service-updater-embedded.hpp: build/service-updater.elf tools/embed-service-updater.py
 	python3 tools/embed-service-updater.py $< $@
 build/core-test: build/tests/core-test.o build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) src/unicode.hpp src/storage.hpp src/progress.hpp src/operations.hpp src/search.hpp src/rtorrent.hpp src/compressor.hpp src/compression-library.hpp src/background-storage.hpp src/notification.hpp
-	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lcrypto -lz
 build/progress-test: build/tests/progress-test.o src/progress.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) $< -o $@
@@ -53,18 +53,19 @@ build/remote-buffer-test: build/tests/remote-buffer-test.o src/remote-buffer.hpp
 test-remote: build/botty-native build/remote-buffer-test
 	./build/remote-buffer-test
 	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_forge.py
 	python3 tests/remote_integration.py
 
 test-progress: build/progress-test
 	./build/progress-test
-TEST_BINARIES := build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
+TEST_BINARIES := build/botty-switch-prepare build/switch-settlement-test build/emulation-test build/rest-companion-test build/rest-network-test build/rest-http-test build/core-test build/botty-native build/storage-test build/rest-mode-test build/progress-test build/rtorrent-resume-client build/native-transaction-test build/native-update-test build/native-idle-test build/installation-update-test build/installation-runtime-test build/search-idle-test build/remote-buffer-test
 .PHONY: test-build
 # Compiles every `test` prerequisite without running it (warms ccache).
 test-build: $(TEST_BINARIES)
 # Each `test` command is its own target so TEST_JOBS can run them concurrently
 # (tests use temporary directories and ephemeral ports). Longest runs start first.
-SERVICE_UNIT_TESTS := remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
-SERVICE_INTEGRATION_TESTS := remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
+SERVICE_UNIT_TESTS := switch-settlement-test emulation-test remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
+SERVICE_INTEGRATION_TESTS := switch_pipeline emulation_integration emulation_library remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
 UNIT_RUNS := $(addprefix unit-,$(SERVICE_UNIT_TESTS))
 INTEGRATION_RUNS := $(addprefix integration-,$(SERVICE_INTEGRATION_TESTS))
 .PHONY: $(UNIT_RUNS) $(INTEGRATION_RUNS) integration-remote-bridge
@@ -74,6 +75,9 @@ $(INTEGRATION_RUNS): integration-%:
 	python3 tests/$*.py
 integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
+	python3 $(REMOTE_BRIDGE)/test_forge.py
+	python3 $(REMOTE_BRIDGE)/test_switch_prepare.py
+	python3 -m unittest discover -s $(REMOTE_BRIDGE) -p test_switch_preparer_state.py -v
 TEST_JOBS ?= 1
 # GNU Make 4+ keeps each parallel test's output together; 3.81 (macOS) interleaves it.
 TEST_SYNC := $(if $(filter-out 1,$(TEST_JOBS)),$(if $(filter 3.%,$(MAKE_VERSION)),,--output-sync=target))
@@ -103,13 +107,13 @@ test-native-update: build/native-transaction-test build/native-update-test build
 
 build/installation-update-test: build/tests/installation-update-test.o $(UPDATER_HEADERS) build/native/sha256.o
 	@mkdir -p build
-	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lcrypto -lz
 .PHONY: test-installation-update
 test-installation-update: build/installation-update-test
 	./build/installation-update-test
 
 build/installation-runtime-test: build/tests/installation-runtime-test.o $(UPDATER_HEADERS) build/native/sha256.o
-	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lcrypto -lz
 build/search-idle-test: build/tests/search-idle-test.o src/search.hpp src/core.hpp vendor/json.hpp
 	@mkdir -p build
 	$(NATIVE_CXX) $(FLAGS) $< -o $@
@@ -165,4 +169,23 @@ test-rest-network: build/rest-network-test build/rest-http-test
 	./build/rest-http-test
 
 build/rest-companion-test: build/tests/rest-companion-test.o src/rest-companion.hpp src/rest-companion-protocol.h build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ)
-	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lz
+	$(NATIVE_CXX) $(FLAGS) $(filter %.o,$^) -o $@ -lcurl -lcrypto -lz
+
+build/emulation-test: build/tests/emulation-test.o build/host/core.o build/host/storage.o build/host/switch-artwork.o $(NATIVE_OBJ)
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.o,$^) -o $@ -lcurl -lcrypto -lz
+
+# Shared archive/container preparation runs natively on the server and PS5.
+build/botty-switch-prepare: src/switch-prepare.cpp build/host/core.o build/host/storage.o build/host/rar.o $(NATIVE_OBJ) $(UPDATER_HEADERS)
+	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcrypto -lz
+build/switch-prepare.elf: src/switch-prepare.cpp src/core.cpp src/storage.cpp src/rar.cpp $(PS5_OBJ) $(UPDATER_HEADERS)
+	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
+
+.PHONY: test-switch
+build/switch-settlement-test: tests/switch-settlement-test.cpp src/switch-source-settlement.hpp src/core.hpp vendor/json.hpp
+	@mkdir -p build
+	$(NATIVE_CXX) $(FLAGS) $< -o $@
+test-switch: build/botty-switch-prepare build/switch-settlement-test
+	./build/switch-settlement-test
+	python3 tests/switch_pipeline.py
+	python3 $(REMOTE_BRIDGE)/test_switch_prepare.py
+	python3 -m unittest discover -s $(REMOTE_BRIDGE) -p test_switch_preparer_state.py -v

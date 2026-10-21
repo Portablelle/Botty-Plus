@@ -2,15 +2,15 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "01.008.000",
-  "releaseVersion": "1.8.0",
+  "version": "02.000.000",
+  "releaseVersion": "2.0.0",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
   "identityStatus": "provisional-until-console-inventory",
   "readOnly": false,
   "requires": {
-    "manager": "1.6.0",
+    "manager": "1.10.4",
     "worker": "1.3.1",
     "rtorrent": "0.16.24-botty5",
     "apiVersion": 1
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "471bc0dc93592019f70d30ad1075b3c8910dfb03f410f46ac99d5088c2d90881"
+      "sha256": "605228b545e8800b5f2660b41ccd8b50f01e296e7e28ef017f6973a981a664d5"
     },
     {
       "path": "assets/courier.rgba",
@@ -53,8 +53,398 @@
     },
     {
       "path": "eboot.bin",
-      "size": 25289324,
-      "sha256": "853bfd1263141de9a14f38001495ddfeebb256317db177d92cc31d99c48257a9"
+      "size": 33222252,
+      "sha256": "ffc310a4388d8dcd94ed45b1b51097333a2554833314a6924e938c506c1f4c02"
+    },
+    {
+      "path": "emulation-runtime.json",
+      "size": 411,
+      "sha256": "88c2ef2f6edb5de8ff0e9c940ceaddea2ad2f09c502de62b1ddc76dcf488f033"
+    },
+    {
+      "path": "emulation/core-homebrew.nro",
+      "size": 16384,
+      "sha256": "b3c95e1c0dba8080fd172d1554af33506126ed0f74c18fb42b4ed3b9ea9032c2"
+    },
+    {
+      "path": "emulation/eboot.bin",
+      "size": 75426782,
+      "sha256": "7d1a01dfa7b1ea8fb49b006ca818c98289592e10ae6f11eb322a72b2b261fbae"
+    },
+    {
+      "path": "emulation/lapy-manifest.json",
+      "size": 608,
+      "sha256": "a59cbd8708b1301e5bb03daf426347d020bfe0935c84565041ff925f6a9d3450"
+    },
+    {
+      "path": "emulation/lapy.elf",
+      "size": 155224,
+      "sha256": "3a6144710cc54d1577acfcaafb833b916cccadd56615ff02eba19372e849b123"
+    },
+    {
+      "path": "emulation/launcher-runtime.json",
+      "size": 331,
+      "sha256": "6ede90dba3820f44a3f2ceb048595d344f5885b5a009fc02472980b5735ff807"
+    },
+    {
+      "path": "emulation/licenses/Lapy-MIT.txt",
+      "size": 1741,
+      "sha256": "5ef18e95f617c9d3a2674cc3256f5c0d6ec2f794a57e9e40f2185dd454c9f8da"
+    },
+    {
+      "path": "emulation/licenses/Montserrat-OFL.txt",
+      "size": 4392,
+      "sha256": "41f82bb4d24b304f30f7136bc47abdd083782e4265c984160f5649d1e78ea49c"
+    },
+    {
+      "path": "emulation/sce_module/libc.prx",
+      "size": 1284674,
+      "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
+    },
+    {
+      "path": "emulation/sce_sys/icon0.png",
+      "size": 246629,
+      "sha256": "08e2da9843e11fb17c3ac4c14bc753d0fd37cb8bd5157b2fa9e474d99d8d48b7"
+    },
+    {
+      "path": "emulation/sce_sys/param.json",
+      "size": 903,
+      "sha256": "ae1e0cb59ac57afc6d398f47c41bbe9fd23b303af9b0e02f1356ef21dd6b8a26"
+    },
+    {
+      "path": "emulation/sce_sys/pic0.dds",
+      "size": 8294548,
+      "sha256": "29184533d01cb87db54fcf987643b4de2559a44ed262330460d41f985453b0ba"
+    },
+    {
+      "path": "emulation/sce_sys/pic1.dds",
+      "size": 8294548,
+      "sha256": "00ec19095b42549a1a01d25283820f516ef30ac6aef86465183250edb0b4dc7d"
+    },
+    {
+      "path": "emulation/sce_sys/snd0.at9",
+      "size": 1281704,
+      "sha256": "47cbad547b1f705094af1eefbf303db477cf489d2fd3e499f8171f691a7d72c7"
+    },
+    {
+      "path": "emulation/self-updater.elf",
+      "size": 823504,
+      "sha256": "8f50e9ce4f859150de9aab95c434ca5c507c893b8b8329b3fd847ba406d0c946"
+    },
+    {
+      "path": "emulation/ui/art/backdrop-blur.tga",
+      "size": 589868,
+      "sha256": "64b9065790056770c26375090457eba1c40ca24e4215f720880ad82e57477ec2"
+    },
+    {
+      "path": "emulation/ui/art/backdrop.tga",
+      "size": 9437228,
+      "sha256": "74dda8d41607d33499d37316ddd76f61c71d263149431b12f7689776ad978099"
+    },
+    {
+      "path": "emulation/ui/art/brand.tga",
+      "size": 589868,
+      "sha256": "4737013c924d997ec2c820c616d2dbe9986a7768ccd65d796d99f26d8493cfae"
+    },
+    {
+      "path": "emulation/ui/art/controller.tga",
+      "size": 57644,
+      "sha256": "5d5e3c8edf7be13a110071bcfc3bfce57587847affd6e700cae14e10777273e4"
+    },
+    {
+      "path": "emulation/ui/art/slate-backdrop-blur.tga",
+      "size": 589868,
+      "sha256": "e465092401ccf31f9c55e8820f704be02a244c392309f0d266505e9f76e1f99f"
+    },
+    {
+      "path": "emulation/ui/art/slate-backdrop.tga",
+      "size": 9437228,
+      "sha256": "7cf136694b4a10937d7acef47774ed29d665eca7b84fe8b384e478122356a61a"
+    },
+    {
+      "path": "emulation/ui/fonts/montserrat-medium.pefont",
+      "size": 2500152,
+      "sha256": "38653ae96a2903a16ae2fe3e30154f70055847db8939e8ebc182ce48eb96dd9a"
+    },
+    {
+      "path": "emulation/ui/lang/ar.po",
+      "size": 73700,
+      "sha256": "ef018d7e809d63c74b9577bb45e19dfc2f41ae02c70de61817fce9f4bbb6a23f"
+    },
+    {
+      "path": "emulation/ui/lang/cs-CZ.po",
+      "size": 66399,
+      "sha256": "ba6e70b4100b5b798dad917980ce42b30e0d90681a9c5f1c6dffaf47ae9c751d"
+    },
+    {
+      "path": "emulation/ui/lang/da-DK.po",
+      "size": 65227,
+      "sha256": "5f98a54b2b8cfff998967fd09a2f2c25dcea9f32a7db4fd0fcf463b955e1d066"
+    },
+    {
+      "path": "emulation/ui/lang/de-DE.po",
+      "size": 67046,
+      "sha256": "73fa2d09efa6b0caf24a3e9694f7acebc993a6d8904bcd083d2778d8ad9378c2"
+    },
+    {
+      "path": "emulation/ui/lang/el-GR.po",
+      "size": 81879,
+      "sha256": "54bfe7daea0e341e747382c9a40ecde379b847969bbb5a233b5627f761592653"
+    },
+    {
+      "path": "emulation/ui/lang/es-419.po",
+      "size": 66966,
+      "sha256": "7b3abd76f27408ce4ca6fc70b7b159f9f32fdd40d63267acedba02877720dc66"
+    },
+    {
+      "path": "emulation/ui/lang/es-ES.po",
+      "size": 67050,
+      "sha256": "b416de84b16d2796cde3fe308ce11a373c12ca4725bf78ca7178de55c91b11c2"
+    },
+    {
+      "path": "emulation/ui/lang/fi-FI.po",
+      "size": 66523,
+      "sha256": "2d3603a65fe2739265bb621eec22ffe955f9d93c1da5336fbff7a4e2d26ba8ac"
+    },
+    {
+      "path": "emulation/ui/lang/fr-CA.po",
+      "size": 67950,
+      "sha256": "e9b3b7d5dc1b82ed6f132383577233b8d788c41472bb4c6da94fec225d64fbd6"
+    },
+    {
+      "path": "emulation/ui/lang/fr-FR.po",
+      "size": 67932,
+      "sha256": "1cb27a97991745e18e40c513aa3656327c7a82ad441258855d65c34f4d1c7406"
+    },
+    {
+      "path": "emulation/ui/lang/hu-HU.po",
+      "size": 67676,
+      "sha256": "4bd5a7262945756884cd6e5924100361439647749cd10830cc61e9a116ce8609"
+    },
+    {
+      "path": "emulation/ui/lang/id-ID.po",
+      "size": 65464,
+      "sha256": "3037cec408391e2d3342c4c3304aea28939ea3a7d8f9b2634b9380b23bdd6192"
+    },
+    {
+      "path": "emulation/ui/lang/it-IT.po",
+      "size": 66755,
+      "sha256": "4922b75153aeafff62a7f8ad2b2e2e5c80bf253c5ff85f8a6f32bbfe26e43373"
+    },
+    {
+      "path": "emulation/ui/lang/ja-JP.po",
+      "size": 72978,
+      "sha256": "80e4cf292f81709649870db99c7166f74e7c14393ac65418c64cdce06d14872e"
+    },
+    {
+      "path": "emulation/ui/lang/ko-KR.po",
+      "size": 68971,
+      "sha256": "d7b34825a18cf27121ac083cade39b4bcc394c3cad2caf1e3d88c2af232690bc"
+    },
+    {
+      "path": "emulation/ui/lang/ms-MY.po",
+      "size": 66079,
+      "sha256": "17f5c20b519207014207718fc3d76372bc27a732bac52f3b4a163d00a1f8c4e6"
+    },
+    {
+      "path": "emulation/ui/lang/nb-NO.po",
+      "size": 65126,
+      "sha256": "70fb259ae42859fed8a2ce77945cc2c1c202962b4648a1f3d444a9998ffade82"
+    },
+    {
+      "path": "emulation/ui/lang/nl-NL.po",
+      "size": 66389,
+      "sha256": "5621abb2a06e38edf78e2f45b6f007c79ea8108408433cd68526b3eeb608be3f"
+    },
+    {
+      "path": "emulation/ui/lang/pl-PL.po",
+      "size": 66049,
+      "sha256": "dcf0534e8638b8d8de879eb72f76df40c4a1b7ee472213ee36f287d711c0c261"
+    },
+    {
+      "path": "emulation/ui/lang/pt-BR.po",
+      "size": 66559,
+      "sha256": "6af5d59d7b459980fb4264313bd70b1ffc6317aae34051593dbdd08e14d20642"
+    },
+    {
+      "path": "emulation/ui/lang/pt-PT.po",
+      "size": 67138,
+      "sha256": "a10e5517ba2177857b435bfe8d131ebff3fc8e67b00f058a740bb7897fb9ca07"
+    },
+    {
+      "path": "emulation/ui/lang/ro-RO.po",
+      "size": 66738,
+      "sha256": "e41d639cab22c358d2935c5f39b5a8a6d0b77a0bd4985a9d3d10ee6a1cbfe07f"
+    },
+    {
+      "path": "emulation/ui/lang/ru-RU.po",
+      "size": 77479,
+      "sha256": "727eb3fc44a50083a4f98c79a19dc37145257cc31a6c1bdd980fce237bfab21e"
+    },
+    {
+      "path": "emulation/ui/lang/sv-SE.po",
+      "size": 65622,
+      "sha256": "add7e8c84d82cbc27aa8d96941071f7834998c3bfe825ea58eaffb559be1bcca"
+    },
+    {
+      "path": "emulation/ui/lang/th-TH.po",
+      "size": 89590,
+      "sha256": "1824a600631def34bf309a6d5b63d7a856500057068dd7e9ef51eeea6a96a59e"
+    },
+    {
+      "path": "emulation/ui/lang/tr-TR.po",
+      "size": 66694,
+      "sha256": "721362c9a225c9d842c766c8665a0898fdbca97b839e6adfd44a2725be6404c8"
+    },
+    {
+      "path": "emulation/ui/lang/uk-UA.po",
+      "size": 77791,
+      "sha256": "1f0bf973161f2c87e17174206980e56850e6c1c2b6efbcaefcdc4325df3c7361"
+    },
+    {
+      "path": "emulation/ui/lang/vi-VN.po",
+      "size": 69701,
+      "sha256": "ef5a081ce9a31cbcb02ab9b60ca2a23b1aec93899d67bc40c9bc7a33729e1653"
+    },
+    {
+      "path": "emulation/ui/lang/zh-Hans.po",
+      "size": 64342,
+      "sha256": "21eb95062a2e72a5177aa030e7d8ea975cc74a18b4261d9464fd4c9e032cccc8"
+    },
+    {
+      "path": "emulation/ui/lang/zh-Hant.po",
+      "size": 64621,
+      "sha256": "c533e1f11a3433ff6b2f7ad5ba0a4ec4fef158f6ea7ca683ab799f6eddeb164f"
+    },
+    {
+      "path": "emulation/ui/sounds/back_01.wav",
+      "size": 19244,
+      "sha256": "132a55c945c7a3f17d52ccd513c8f162508a301cbcdca1c3bea376af7e06d8b9"
+    },
+    {
+      "path": "emulation/ui/sounds/error_01.wav",
+      "size": 26924,
+      "sha256": "ab0fe700bb8d245f5e42ea2484045908c39971459aafeb985c7413caa30fcf85"
+    },
+    {
+      "path": "emulation/ui/sounds/focus_01.wav",
+      "size": 4844,
+      "sha256": "00a07b88a4a3b9349dd306e6f75e06760f293e2ee89ca437b2513f45cdeb6812"
+    },
+    {
+      "path": "emulation/ui/sounds/focus_02.wav",
+      "size": 4844,
+      "sha256": "8675f6e70ed8c0a446f5899da100e0be92aa43fc7ab8d93bfa010716c24445ca"
+    },
+    {
+      "path": "emulation/ui/sounds/launch_01.wav",
+      "size": 245804,
+      "sha256": "eae4ba7af91695850c7f031eeed0a01807d9ed1dca063fdca5a7df03e97870cd"
+    },
+    {
+      "path": "emulation/ui/sounds/modal_close_01.wav",
+      "size": 29680,
+      "sha256": "001e43366472ebf77f105e1cf7a163f87180f7b1afa288740ab55187467ca436"
+    },
+    {
+      "path": "emulation/ui/sounds/modal_open_01.wav",
+      "size": 33644,
+      "sha256": "65335418c229edb7e8e9483a427763d0055152c9b9f0ffbf75a49771592c167d"
+    },
+    {
+      "path": "emulation/ui/sounds/notify_01.wav",
+      "size": 145028,
+      "sha256": "e9fd1bd98879ed2eb7746714411a4c499a7e8b8c5eda704e316eca40230e160f"
+    },
+    {
+      "path": "emulation/ui/sounds/open_01.wav",
+      "size": 86444,
+      "sha256": "fbbd480d7530d050debe3735ae1ac7a06e75d6b51387c780e2a1649c9c2bba26"
+    },
+    {
+      "path": "emulation/ui/sounds/page_01.wav",
+      "size": 21164,
+      "sha256": "78e9228799ea0fa67f1bc921242c635efd524faaf66cb035e0e9211497bbe22c"
+    },
+    {
+      "path": "emulation/ui/sounds/resume_01.wav",
+      "size": 192044,
+      "sha256": "193a9d27b322941c578a307a76da7ffdcfeaff31f42aa054a7c52e59eda0e5ee"
+    },
+    {
+      "path": "emulation/ui/sounds/saved_01.wav",
+      "size": 153644,
+      "sha256": "273d07c2f504fe74d8d1ef09a0c3c8adaa8fead462ab5541b3db1b5816ec81c5"
+    },
+    {
+      "path": "emulation/ui/sounds/select_01.wav",
+      "size": 19244,
+      "sha256": "13ef90300db8b7ced7725c443103e97f8eaf3625903a35a869190c70bd35a6f4"
+    },
+    {
+      "path": "emulation/ui/sounds/slider_01.wav",
+      "size": 5804,
+      "sha256": "0337f6f0b9ea012fcf96de9f1d4d0223ccbd677b762c3ab4d686e0433014ba37"
+    },
+    {
+      "path": "emulation/ui/sounds/slider_02.wav",
+      "size": 5804,
+      "sha256": "9768ba4e468987e34b26d32557136e34884811745fe9fca0a976bbae102010a4"
+    },
+    {
+      "path": "emulation/ui/sounds/slider_03.wav",
+      "size": 5804,
+      "sha256": "bdc28efb13a367231a57f3b306795ddc57f20bd63f21c9afabdda3383c8cd489"
+    },
+    {
+      "path": "emulation/ui/sounds/toggle_01.wav",
+      "size": 5324,
+      "sha256": "0be4d732524d0b58840b2912424ead4b3d137134e53f4ef8c2e6da6aa919a93d"
+    },
+    {
+      "path": "emulation/ui/sounds/toggle_02.wav",
+      "size": 5324,
+      "sha256": "1647840bf2e0c6b2febeb527c5b8535f3c0d6b5cc9d2745b7433c9f9cc9aa2d9"
+    },
+    {
+      "path": "emulation/ui/sounds/toggle_03.wav",
+      "size": 5324,
+      "sha256": "1d544bc5f27b5e86ee7fecbff126c4f9690e69c5f34e306344c7a3ddc2997064"
+    },
+    {
+      "path": "emulation/ui/sounds/welcome_01.wav",
+      "size": 258192,
+      "sha256": "d18fb8de1123437622a7c3926ffc42df9385022002b377742fc75b2a88564c59"
+    },
+    {
+      "path": "emulation/ultracam/LICENSE.md",
+      "size": 262,
+      "sha256": "e8ac2e104a8bbabd4a56c67d9eaac923a1531c64adeee79763ba468d1012161e"
+    },
+    {
+      "path": "emulation/ultracam/NOTICE.md",
+      "size": 510,
+      "sha256": "b760468863ae88b6f82d88e998ef27166bba1af9e5717ceb25d95d102a4bebcb"
+    },
+    {
+      "path": "emulation/ultracam/botw/exefs/main.npdm",
+      "size": 1612,
+      "sha256": "7cedbb57ba93e3ab6e660490a0a7b932716854004786a2ac42d39dbf8b85e678"
+    },
+    {
+      "path": "emulation/ultracam/botw/exefs/subsdk3",
+      "size": 138431,
+      "sha256": "1216d58cb3eb8028a905a3c88b104a1338b48cff2b1dfeac571bff7b9826dac6"
+    },
+    {
+      "path": "emulation/ultracam/botw/romfs/UltraCam/maxlastbreath.ini",
+      "size": 1122,
+      "sha256": "8ff291f955068298d1210212ace9787f9701f3cf7a8f704f7531b59b0f37f80a"
+    },
+    {
+      "path": "emulation/ultracam/manifest.json",
+      "size": 757,
+      "sha256": "44f8aaf6be386becc77138a7ef8385cf7b999bd4185c29346d83fe1afa01f7c9"
     },
     {
       "path": "sce_module/libc.prx",
@@ -68,8 +458,8 @@
     },
     {
       "path": "sce_sys/param.json",
-      "size": 842,
-      "sha256": "9a3b9e7a6ae17ede4f35a2177b25eecdbe913c55f689b924632556ddeb32a580"
+      "size": 903,
+      "sha256": "e1f57cd04902e9461c92c4d232e4247dbec757762ed993c43ab01cfc2cb428a1"
     },
     {
       "path": "sce_sys/pic0.dds",

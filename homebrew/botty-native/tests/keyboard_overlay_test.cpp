@@ -39,7 +39,16 @@ bool overlayFrame(Canvas& canvas) noexcept {
         workflow.add();textEntryState=TextEntryState::editing;overlayImeFullMagnet=true;
         assert(nativeKeyboard.open(workflow.command.text.data(),"Add a magnet link",16384,false,true));
     }
-    input.head=0;input.count=edge?1:0;input.events[0]=edge;
+    if(frame==7){
+        workflow.close();textEntryState=TextEntryState::idle;model=botty::Model{};
+        model.tab=Model::discover;model.searchResults=true;model.count=1;
+        catalog.valid=true;catalog.stale=false;catalog.resultCount=1;catalog.remoteEnabled=true;catalog.storageSupported=true;
+        catalog.results[0]=botty::Entry{};std::fill_n(catalog.results[0].id.begin(),32,'c');
+        std::snprintf(catalog.results[0].name.data(),512,"Fixture NSW");
+        std::snprintf(catalog.searchQuery.data(),512,"Fixture");emulationSearch=true;emulationSearchQuery=catalog.searchQuery;
+        edge=Buttons::cross;
+    }
+    input.head=0;input.count=frame==7?2:edge?1:0;input.events[0]=edge;input.events[1]=edge;
     const auto previousDisplay=displayRevision;
     assert(draw(canvas));
     if(frame==0){
@@ -63,7 +72,13 @@ bool overlayFrame(Canvas& canvas) noexcept {
         if(textEntryState==TextEntryState::capacity&&++retries<100)return true;
         assert(textEntryState==TextEntryState::fallback&&workflow.panel==Panel::keyboard);
         assert(std::string_view(workflow.command.text.data()).size()==2048&&workflow.notice[0]);
-        assert(nativeKeyboard.text().empty());return false;
+        assert(nativeKeyboard.text().empty());
+    }
+    else if(frame==7){
+        assert(workflow.panel==Panel::sheet);
+        assert(workflow.rows[workflow.focus]==botty::Workflow::Row::engine);
+        assert(input.count==0&&!input.input.armed&&discardPadBatch);
+        return false;
     }
     ++frame;retries=0;return true;
 }

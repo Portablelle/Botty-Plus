@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "catalog.hpp"
+#include <algorithm>
 #include <cstdio>
 namespace botty {
 namespace {
@@ -30,14 +31,14 @@ struct JSON {
 std::string_view field(std::string_view object,std::string_view key){JSON j{object};if(!j.take('{'))return {};if(j.take('}'))return {};
     do{j.ws();auto k=j.p;if(!j.string())return {};auto name=slice(object,k+1,j.p-k-2);if(!j.take(':'))return {};j.ws();auto start=j.p;if(!j.value())return {};if(name==key)return slice(object,start,j.p-start);}while(j.take(','));return {};}
 unsigned hex(char c){return c<='9'?c-'0':(c|32)-'a'+10;}
-template<std::size_t N> bool decode(std::string_view s,std::array<char,N>& out,bool exact=false){out.fill(0);if(s.size()<2||s.front()!='"')return false;unsigned at=0;bool fits=true;
+template<std::size_t N> bool decode(std::string_view s,std::array<char,N>& out,bool exact=false,bool multiline=false){out.fill(0);if(s.size()<2||s.front()!='"')return false;unsigned at=0;bool fits=true;
     auto put=[&](unsigned c){if(c==0)fits=false;if(at+1<N)out[at++]=static_cast<char>(c);else fits=false;};
     for(std::size_t i=1;i+1<s.size();++i){unsigned char c=s[i];if(c!='\\'){put(c);continue;}c=s[++i];
         if(c=='u'){unsigned cp=0;for(unsigned n=0;n<4;++n)cp=cp*16+hex(s[++i]);
             if(cp>=0xd800&&cp<=0xdbff&&i+6<s.size()&&s[i+1]=='\\'&&s[i+2]=='u'){i+=2;unsigned low=0;for(unsigned n=0;n<4;++n)low=low*16+hex(s[++i]);cp=low>=0xdc00&&low<=0xdfff?0x10000+((cp-0xd800)<<10)+low-0xdc00:0xfffd;}
             if(cp>=0xd800&&cp<=0xdfff)cp=0xfffd;
-            if(cp<128)put(cp<32&&!exact?' ':cp);else if(cp<2048){put(0xc0|(cp>>6));put(0x80|(cp&63));}else if(cp<65536){put(0xe0|(cp>>12));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}else{put(0xf0|(cp>>18));put(0x80|((cp>>12)&63));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}
-        }else {unsigned d=c=='n'?'\n':c=='r'?'\r':c=='t'?'\t':c=='b'?'\b':c=='f'?'\f':c;put(d<32&&!exact?' ':d);}
+            if(cp<128)put(cp<32&&!exact&&!(multiline&&cp=='\n')?' ':cp);else if(cp<2048){put(0xc0|(cp>>6));put(0x80|(cp&63));}else if(cp<65536){put(0xe0|(cp>>12));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}else{put(0xf0|(cp>>18));put(0x80|((cp>>12)&63));put(0x80|((cp>>6)&63));put(0x80|(cp&63));}
+        }else {unsigned d=c=='n'?'\n':c=='r'?'\r':c=='t'?'\t':c=='b'?'\b':c=='f'?'\f':c;put(d<32&&!exact&&!(multiline&&d=='\n')?' ':d);}
     }
     if(!fits&&!exact){out[N-4]='.';out[N-3]='.';out[N-2]='.';}
     return fits;
@@ -47,7 +48,7 @@ double number(std::string_view s){double n=0,scale=1;bool fraction=false,negativ
     if(p<s.size()&&(s[p]=='e'||s[p]=='E')){++p;bool neg=p<s.size()&&s[p]=='-';if(p<s.size()&&(s[p]=='-'||s[p]=='+'))++p;unsigned e=0;for(;p<s.size();++p){e=e*10+s[p]-'0';if(e>308)return 0;}while(e--)n*=neg?.1:10;}
     if(n>1e30)return 0;return negative?-n:n;
 }
-bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
+bool visible(const Entry& e,unsigned tab,unsigned filter){if(tab==1&&(e.dismissed||std::string_view(e.status.data())=="moved"))return false;if(tab==2&&e.emulationContent)return false;if(tab==2)return std::string_view(e.status.data())=="ready"||std::string_view(e.status.data())=="moved"||std::string_view(e.status.data())=="moving"||std::string_view(e.status.data())=="move-error";return tab!=0||filter==0||(filter==1?e.active:e.complete);}
 }
 bool validNativeVersion(std::string_view value) noexcept {
     if(value.size()!=10)return false;
@@ -95,6 +96,16 @@ const char* nativeUpdateLabel(const NativeUpdate& update,bool stale) noexcept {
 bool responseObject(std::string_view body,std::array<char,512>& error) noexcept {
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
 }
+bool emulationLaunchResponse(std::string_view body,std::array<char,4096>& path) noexcept {
+ std::array<char,512> error{};
+ if(!responseObject(body,error)||error[0]||field(body,"ok")!="true"||field(body,"engine")!="\"embedded-eden\""||!decode(field(body,"launchPath"),path,true))return false;
+ const std::string_view value(path.data());
+ if(value.empty()||value.front()!='/'||value.find("/../")!=value.npos||value.ends_with("/.."))return false;
+ for(char c:value)if(static_cast<unsigned char>(c)<32)return false;
+ if(value.size()<4||value[value.size()-4]!='.')return false;
+ const char a=value[value.size()-3]|32,b=value[value.size()-2]|32,c=value.back()|32;
+ return (a=='n'&&b=='s'&&c=='p')||(a=='x'&&b=='c'&&c=='i');
+}
 bool firstArchive(std::string_view name) noexcept {
  if(name.size()<4||name[name.size()-4]!='.'||(name[name.size()-3]|32)!='r'||(name[name.size()-2]|32)!='a'||(name[name.size()-1]|32)!='r')return false;
  auto part=std::string_view::npos;for(std::size_t i=0;i+5<=name.size();++i)if(name[i]=='.'&&(name[i+1]|32)=='p'&&(name[i+2]|32)=='a'&&(name[i+3]|32)=='r'&&(name[i+4]|32)=='t')part=i;
@@ -107,6 +118,28 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.remoteEnabled=field(field(body,"remoteDownloads"),"enabled")=="true";out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
+    out.emulationCount=0;
+    const auto emulator=field(body,"emulation");out.emulationSupported=field(emulator,"supported")=="true";out.emulationInstalled=field(emulator,"installed")=="true";
+    decode(field(emulator,"root"),out.emulationRoot);decode(field(emulator,"error"),out.emulationError);
+    const auto emulatorEntries=field(emulator,"entries");
+    if(!emulatorEntries.empty()){
+        JSON items{emulatorEntries};if(!items.take('['))return false;
+        if(!items.take(']')){do{
+            items.ws();auto start=items.p;if(!items.value())return false;
+            const auto row=slice(emulatorEntries,start,items.p-start);
+            if(out.emulationCount>=out.emulationEntries.size()){out.truncated=true;continue;}
+            auto& e=out.emulationEntries[out.emulationCount++];e=Entry{};decode(field(row,"phase"),e.phase);
+            if(!decode(field(row,"id"),e.id,true)||!decode(field(row,"kind"),e.kind,true))return false;
+            decode(field(row,"name"),e.name);decode(field(row,"path"),e.destination);e.total=number(field(row,"size"));
+            decode(field(row,"titleId"),e.titleId);decode(field(row,"details"),e.files,false,true);decode(field(row,"metadataStatus"),e.error);
+            decode(field(row,"baseVersion"),e.emulation.baseVersion);decode(field(row,"updateVersion"),e.emulation.updateVersion);
+            decode(field(row,"artworkId"),e.emulation.artwork);
+            decode(field(row,"modSummary"),e.emulation.mods,false,true);
+            e.emulation.dlcCount=static_cast<unsigned>(std::clamp(number(field(row,"dlcCount")),0.0,4096.0));
+            e.emulation.modCount=static_cast<unsigned>(std::clamp(number(field(row,"modCount")),0.0,4096.0));
+            e.emulation.modsOn=static_cast<unsigned>(std::clamp(number(field(row,"modsOn")),0.0,4096.0));e.emulation.modsKnown=field(row,"modsKnown")=="true";
+        }while(items.take(','));if(!items.take(']'))return false;}
+    }
     out.nativeUpdate=NativeUpdate{};
     const auto update=field(body,"nativeUpdate");
     if(field(update,"supported")=="true"){
@@ -157,17 +190,18 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     for(unsigned type=0;type<2;++type){auto array=type?jobs:torrents;JSON j{array};j.take('[');if(j.take(']'))continue;
         do{j.ws();auto start=j.p;if(!j.value())return false;auto obj=slice(array,start,j.p-start);if(obj.empty()||obj.front()!='{')return false;
             auto& count=type?out.jobCount:out.torrentCount;auto& entries=type?out.jobs:out.torrents;
-            if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};
+            if(count==entries.size()){out.truncated=true;continue;}auto& e=entries[count++];e=Entry{};e.emulationContent=field(obj,"emulationContent")=="true";
             auto id=field(obj,"id");if(id.empty()||field(obj,"name").empty())return false;
             if(type)decode(id,e.id);else std::snprintf(e.id.data(),e.id.size(),"%.0f",number(id));
-            decode(field(obj,"name"),e.name);if(!decode(field(obj,"storage"),e.storage)||!e.storage[0])std::snprintf(e.storage.data(),e.storage.size(),"internal");
-            if(type){const auto compressed=field(obj,"compression");decode(field(compressed,"sourceStorage"),e.sourceStorage);decode(field(compressed,"storage"),e.compressedStorage);decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);
+            decode(field(obj,type?"hash":"hashString"),e.hash);if(type&&!field(obj,"torrentId").empty())e.torrentId=static_cast<int>(number(field(obj,"torrentId")));
+            decode(field(obj,"formatHint"),e.formatHint);decode(field(obj,"name"),e.name);if(!decode(field(obj,"storage"),e.storage)||!e.storage[0])std::snprintf(e.storage.data(),e.storage.size(),"internal");
+            if(type){e.adoptedImport=field(obj,"adoptedImport")=="true";e.libraryPending=field(obj,"libraryStatus")=="\"pending\"";const auto compressed=field(obj,"compression");decode(field(compressed,"sourceStorage"),e.sourceStorage);decode(field(compressed,"storage"),e.compressedStorage);decode(field(compressed,"status"),e.compressionState);e.compressed=e.compressionState[0]&&std::string_view(e.compressionState.data())!="restored"&&std::string_view(e.compressionState.data())!="failed"&&std::string_view(e.compressionState.data())!="cancelled";e.originalKept=field(compressed,"originalKept")=="true";e.compressionVerified=field(compressed,"verified")=="true";e.dismissed=field(obj,"dismissed")=="true";decode(field(obj,"status"),e.status);decode(field(obj,"phase"),e.phase);decode(field(obj,"file"),e.currentFile);decode(field(obj,"error"),e.error);
                 auto content=field(obj,"content");decode(field(content,"kind"),e.kind);decode(field(content,"titleId"),e.titleId);if(!e.error[0])decode(field(content,"reason"),e.error);
                 decode(field(obj,"destination"),e.destination);if(!e.destination[0])decode(field(content,"destination"),e.destination);
                 e.elapsed=number(field(obj,"elapsed"));e.bytes=number(field(obj,"bytes"));e.total=number(field(obj,"total"));e.progress=e.total>0?e.bytes/e.total:0;
                 e.active=std::string_view(e.status.data())=="extracting";
                 if(e.active){e.download=number(field(obj,"extractionRate"));const auto eta=field(obj,"eta");if(!eta.empty())e.eta=number(eta);e.etaEstimated=true;}
-            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=e.remote&&field(obj,"remoteLoose")=="true";e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
+            }else{e.remote=field(obj,"remote")=="true";e.remoteLoose=field(obj,"looseContent")=="true"||(e.remote&&field(obj,"remoteLoose")=="true");e.adopted=field(obj,"adopted")=="true";const auto preparation=field(obj,"remotePreparation");e.remotePreparation=e.remote&&(field(preparation,"status")=="\"download-only\""||field(preparation,"status")=="\"failed\"");e.remoteCandidate=field(obj,"remoteCandidate")=="true";decode(field(obj,"phase"),e.phase);const int status=static_cast<int>(number(field(obj,"status")));e.complete=number(field(obj,"leftUntilDone"))==0;e.active=status!=0;e.downloading=status==4&&!e.complete;
                 const char* label=status==0?"Paused":status==1||status==2?"Verifying":e.complete?"Completed":status==3?"Queued":"Downloading";
                 std::snprintf(e.status.data(),e.status.size(),"%s",label);decode(field(obj,"errorString"),e.error);e.total=number(field(obj,"totalSize"));e.download=number(field(obj,"rateDownload"));e.upload=number(field(obj,"rateUpload"));e.progress=number(field(obj,"percentDone"));
                 const auto count=[&](std::string_view key){const auto value=field(obj,key);const double n=value.empty()?-1:number(value);return n>=0&&n<=2147483647?static_cast<int>(n):-1;};
@@ -179,15 +213,21 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
                 if(!eta.empty())e.eta=number(eta);
                 else if(status==4&&e.download>0){e.eta=remaining/e.download;e.etaEstimated=true;}
                 if(status!=4)e.eta=-1;
-                e.extractable=e.complete&&status!=1&&status!=2&&number(field(obj,"error"))==0&&!e.error[0];
+                e.extractable=e.remotePreparation||(e.complete&&status!=1&&status!=2&&number(field(obj,"error"))==0&&!e.error[0]);
                 e.archiveStart=out.archiveCount;
+                if(e.remotePreparation){
+                    const auto list=field(preparation,"packages");JSON choices{list};
+                    if(choices.take('[')&&!choices.take(']'))do {choices.ws();const auto begin=choices.p;if(!choices.value())return false;
+                        std::array<char,4096> package{};if(decode(slice(list,begin,choices.p-begin),package,true)&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=package;++e.archiveCount;}else e.archivesOmitted=true;
+                    }while(choices.take(','));
+                }
                 auto files=field(obj,"files");JSON f{files};unsigned used=0;
                 if(f.take('[')&&!f.take(']'))do {f.ws();auto begin=f.p;if(!f.value())return false;++e.fileCount;
                     std::array<char,512> name{};decode(field(slice(files,begin,f.p-begin),"name"),name);
                     std::array<char,4096> archive{};
                     const bool exact=decode(field(slice(files,begin,f.p-begin),"name"),archive,true);
                     if(!exact)e.archivesOmitted=true;
-                    if(firstArchive(archive.data())){if(exact&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=archive;++e.archiveCount;}else e.archivesOmitted=true;}
+                    if(!e.remotePreparation&&firstArchive(archive.data())){if(exact&&out.archiveCount<out.archives.size()){out.archives[out.archiveCount++]=archive;++e.archiveCount;}else e.archivesOmitted=true;}
                     const auto length=std::string_view(name.data()).size();
                     if(used+length+2<e.files.size()){for(char ch:std::string_view(name.data()))e.files[used++]=ch;e.files[used++]='\n';}
                     else if(used+5<e.files.size()){for(char ch:std::string_view("...\n"))e.files[used++]=ch;}
@@ -244,11 +284,12 @@ unsigned entryCount(const Catalog& s,unsigned tab,unsigned filter) noexcept {uns
 ActivityState activityState(const Entry& e,bool torrent) noexcept {
     const auto status=std::string_view(e.status.data());
     if(torrent){
-        if(e.error[0])return ActivityState::attention;
+        if(e.error[0]||e.remotePreparation)return ActivityState::attention;
         if(status=="Verifying")return ActivityState::running;
         if(e.complete)return ActivityState::done;
         return e.active&&status!="Queued"?ActivityState::running:ActivityState::waiting;
     }
+    if(e.libraryPending)return ActivityState::attention;
     if(e.task){
         if(status=="waiting-close"||status=="failed"||status=="uncertain")return ActivityState::attention;
         // A cancelled task is finished: its worker keeps or cleans its own files.
@@ -259,26 +300,38 @@ ActivityState activityState(const Entry& e,bool torrent) noexcept {
     if(status=="extracting"||status=="moving")return ActivityState::running;
     // Cancelled extractions keep partial files until removed or retried.
     if(status=="failed"||status=="interrupted"||status=="move-error"||status=="cancelled"||e.error[0])return ActivityState::attention;
-    return status=="ready"?ActivityState::done:ActivityState::waiting;
+    return status=="ready"||status=="moved"?ActivityState::done:ActivityState::waiting;
 }
 namespace {
-bool replacedJob(const Catalog& s,const Entry& e) noexcept {for(unsigned t=0;t<s.processing.count;++t)if(s.processing.tasks[t].id==e.id)return true;return false;}
-// Visits Activity rows in display order: running, attention, waiting, then done.
+bool replacedJob(const Catalog& s,const Entry& e) noexcept {for(unsigned t=0;t<s.processing.count;++t){const auto& task=s.processing.tasks[t];const auto status=std::string_view(task.status.data());if(task.id==e.id&&!task.complete&&status!="cancelled"&&status!="failed")return true;}return false;}
+bool finishedTaskHasJob(const Catalog& s,const Entry& task) noexcept {if(!task.complete&&std::string_view(task.status.data())!="cancelled")return false;for(unsigned j=0;j<s.jobCount;++j)if(!s.jobs[j].dismissed&&s.jobs[j].id==task.id)return true;return false;}
+bool preparedTorrent(const Catalog& s,const Entry& torrent) noexcept {
+    if(torrent.adopted)return true;
+    for(unsigned i=0;i<s.jobCount;++i){const auto& job=s.jobs[i];
+        if(job.dismissed||std::string_view(job.status.data())=="failed"||std::string_view(job.status.data())=="cancelled"||std::string_view(job.status.data())=="interrupted"||!job.hash[0]||job.hash!=torrent.hash||job.torrentId<0)continue;
+        char id[32];std::snprintf(id,sizeof(id),"%d",job.torrentId);
+        if(std::string_view(torrent.id.data())==id)return true;
+    }
+    return false;
+}
 template<class Visit> bool visitActivity(const Catalog& s,unsigned filter,Visit visit) noexcept {
-    constexpr ActivityState groups[]={ActivityState::running,ActivityState::attention,ActivityState::waiting,ActivityState::done};
-    for(unsigned group=0;group<4;++group){
-        if(filter==1&&group!=0)continue;
-        if(filter==2&&group!=1)continue;
-        if(filter==3&&group!=3)continue;
-        const auto state=groups[group];
-        for(bool downloading:{true,false})for(unsigned i=0;i<s.torrentCount;++i){
-            const auto& e=s.torrents[i];
-            if(e.downloading==downloading&&activityState(e,true)==state&&visit(ActivityItem{&e,true}))return true;
+    if(filter>=3){
+        for(unsigned i=0;i<s.torrentCount;++i){const auto& e=s.torrents[i];
+            if((filter==4?e.remoteCandidate:!e.remoteCandidate&&!e.adopted&&e.complete)&&visit(ActivityItem{&e,true}))return true;
         }
-        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;}
-        for(unsigned i=0;i<s.jobCount;++i){
-            const auto& e=s.jobs[i];
-            if(e.dismissed||std::string_view(e.status.data())=="moved"||replacedJob(s,e))continue;
+        return false;
+    }
+    const auto matches=[&](ActivityState state){return filter==0?(state==ActivityState::running||state==ActivityState::waiting):filter==1?state==ActivityState::attention:state==ActivityState::done;};
+    constexpr ActivityState groups[]={ActivityState::running,ActivityState::attention,ActivityState::waiting,ActivityState::done};
+    for(const auto state:groups){
+        if(!matches(state))continue;
+        for(unsigned i=0;i<s.torrentCount;++i){const auto& e=s.torrents[i];
+            if(e.remoteCandidate||preparedTorrent(s,e))continue;
+            if(activityState(e,true)==state&&visit(ActivityItem{&e,true}))return true;
+        }
+        for(unsigned i=0;i<s.processing.count;++i){const auto& e=s.processing.tasks[i];if(!finishedTaskHasJob(s,e)&&activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;}
+        for(unsigned i=0;i<s.jobCount;++i){const auto& e=s.jobs[i];
+            if(e.dismissed||replacedJob(s,e))continue;
             if(activityState(e,false)==state&&visit(ActivityItem{&e,false}))return true;
         }
     }
@@ -318,7 +371,7 @@ unsigned libraryCopies(const Entry& e,std::array<LibraryCopy,2>& copies) noexcep
         copies[0]={"Compressed",target};
         if(e.originalKept){copies[1]={"Uncompressed",source};return 2;}
     }else{
-        copies[0]={kind=="folder"||kind=="exfat"?"Uncompressed":"Format unknown",e.storage.data()};
+        copies[0]={kind=="image"?"Game image":kind=="folder"||kind=="exfat"?"Uncompressed":"Format unknown",e.storage.data()};
         if(restored){copies[1]={"Compressed",target,true};return 2;}
     }
     return 1;
@@ -341,6 +394,15 @@ void formatETA(const Entry& e,char* out,unsigned length) noexcept {
     else if(seconds<3600)std::snprintf(out,length,"ETA %s%llu min",approx,seconds/60);
     else if(seconds<86400)std::snprintf(out,length,"ETA %s%llu h %llu min",approx,seconds/3600,(seconds%3600)/60);
     else std::snprintf(out,length,"ETA %s%llu d %llu h",approx,seconds/86400,(seconds%86400)/3600);
+}
+
+const Entry* emulationAt(const Catalog& s,unsigned filter,unsigned index) noexcept {
+    const std::string_view kind=filter==0?"roms":filter==1?"updates":"download";
+    for(unsigned i=0;i<s.emulationCount;++i)if(std::string_view(s.emulationEntries[i].kind.data())==kind&&index--==0)return &s.emulationEntries[i];
+    return nullptr;
+}
+unsigned emulationCount(const Catalog& s,unsigned filter) noexcept {
+    unsigned n=0;while(emulationAt(s,filter,n))++n;return n;
 }
 
 }

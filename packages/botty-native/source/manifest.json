@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "archive": "botty-native-source.tar.gz",
+  "size": 1176838696,
+  "sha256": "a957e699bcf9872665c77d142b4a3c51e68cc2729a1e24f215660e9db49f8ea6",
+  "parts": [
+    {
+      "path": "source/native-source.part001",
+      "size": 94371840,
+      "sha256": "c66b7f551857b439c3e1dccfd0baa0c363c7d3aef0deb6a284afd08e6ceca1b8"
+    },
+    {
+      "path": "source/native-source.part002",
+      "size": 94371840,
+      "sha256": "f603f5d109b57a4a0709dffe5bc24cc30a560a4d4450467168bcf6470a9d3215"
+    },
+    {
+      "path": "source/native-source.part003",
+      "size": 94371840,
+      "sha256": "b90e25c46acb0f6e4c2a75f2f3cf7584cc4fd8194ff37b8ae6ccd637845f10ba"
+    },
+    {
+      "path": "source/native-source.part004",
+      "size": 94371840,
+      "sha256": "4d150c56abe16b358fe18461ca5979a717fbe13ef857eb16d84b6403d42b4208"
+    },
+    {
+      "path": "source/native-source.part005",
+      "size": 94371840,
+      "sha256": "93c5e0be846ea02b4db4855fbecfded48c28a085978db1286e46c18b35cc6516"
+    },
+    {
+      "path": "source/native-source.part006",
+      "size": 94371840,
+      "sha256": "7fb00442056bc03e6692d6cff38bf00c4bc58dc43cf0366eb06bb3f67729fdaa"
+    },
+    {
+      "path": "source/native-source.part007",
+      "size": 94371840,
+      "sha256": "57af7434ec21cad6665d3a3090811bac2c0cb381ebc3ceebcae392a7c036d65b"
+    },
+    {
+      "path": "source/native-source.part008",
+      "size": 94371840,
+      "sha256": "ddf739e5428bce50195ad3697ee910c0b3fb399f4097032bd14059ccd4e0a72c"
+    },
+    {
+      "path": "source/native-source.part009",
+      "size": 94371840,
+      "sha256": "b3acb82e893e4e89d347c8036f79e9cb15fc8143741a534c291b0be8f689993e"
+    },
+    {
+      "path": "source/native-source.part010",
+      "size": 94371840,
+      "sha256": "ae57cb377448e3a78fa01fcc9bc715ac9f44ac3df2a914161ab91c27134034b6"
+    },
+    {
+      "path": "source/native-source.part011",
+      "size": 94371840,
+      "sha256": "b780fb494f1c2aadb6abf378a97bed3be3ec2570111e185ef53d44c74566f052"
+    },
+    {
+      "path": "source/native-source.part012",
+      "size": 94371840,
+      "sha256": "63b9f81e2116e34d083c75a4af2f38caebf22405f2f7326919f2a5afd3305bc7"
+    },
+    {
+      "path": "source/native-source.part013",
+      "size": 44376616,
+      "sha256": "ba63c6d9b8c2111c439acadd8fb5a37d1f7b8b2b2681faa0a765dc7f3fca98ce"
+    }
+  ]
+}

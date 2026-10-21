@@ -1,5 +1,6 @@
 #pragma once
 #include "core.hpp"
+#include "content.hpp"
 #include "rartypes.hpp"
 #include "sha1.hpp"
 #include "progress.hpp"
@@ -83,7 +84,8 @@ class Rtorrent {
       }
       int receiving=0,sending=0;
       for(const auto& peer:call("p.multicall",{hash,"","p.down_rate=","p.up_rate="})){receiving+=peer[0].get<uint64_t>()>0;sending+=peer[1].get<uint64_t>()>0;}
-      const auto error=row[12].get<std::string>();
+      auto error=row[12].get<std::string>();
+      if(packageTorrent({{"name",name},{"files",files}}))error=packagePolicyMessage();
       result.push_back({{"id",identity(hash)},{"hashString",hash},{"name",name},{"status",status},{"percentDone",total?double(total-left)/total:0.0},{"leftUntilDone",left},{"totalSize",total},{"sizeWhenDone",total},{"eta",eta},{"downloadDir",base.string()},{"rateDownload",rate},{"rateUpload",row[7]},{"error",error.empty()?0:1},{"errorString",error},{"files",files},{"peersConnected",row[13]},{"peersSendingToUs",receiving},{"peersGettingFromUs",sending}});
     }
     for(auto it=estimates_.begin();it!=estimates_.end();)if(!present.count(it->first))it=estimates_.erase(it);else ++it;
@@ -104,6 +106,24 @@ class Rtorrent {
     sha1_context context;uint32 digest[5];sha1_init(&context);sha1_process(&context,reinterpret_cast<const byte*>(data.data()+start),end-start);sha1_done(&context,digest);
     char hash[41];for(int i=0;i<5;++i)snprintf(hash+8*i,9,"%08x",digest[i]);return hash;
   }
+  static bool packageMagnetName(const std::string& uri) {
+    const auto query=uri.find('?');if(query==std::string::npos)return false;
+    const auto fragment=uri.find('#',query+1),end=fragment==std::string::npos?uri.size():fragment;
+    const auto hex=[](char c)->int {if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;};
+    for(size_t at=query+1;at<end;){
+      auto next=uri.find('&',at);if(next==std::string::npos||next>end)next=end;
+      if(uri.compare(at,3,"dn=")==0){
+        std::string name;
+        for(size_t i=at+3;i<next;++i){
+          if(uri[i]=='%'&&i+2<next&&hex(uri[i+1])>=0&&hex(uri[i+2])>=0){name+=char(hex(uri[i+1])*16+hex(uri[i+2]));i+=2;}
+          else name+=uri[i]=='+'?' ':uri[i];
+        }
+        if(packageName(name))return true;
+      }
+      at=next+1;
+    }
+    return false;
+  }
   static std::string decode64(const std::string& text) {
     const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;unsigned value=0,bits=0;bool padding=false;
     for(unsigned char c:text){if(c=='='){padding=true;continue;}auto digit=alphabet.find(c);if(digit==std::string::npos||padding)throw std::runtime_error("Invalid torrent encoding");value=(value<<6)|digit;bits+=6;if(bits>=8){bits-=8;out+=char((value>>bits)&255);}}
@@ -115,6 +135,13 @@ public:
     const auto source=args.at("filename").get<std::string>();std::smatch match;
     if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");
     return lower(match[1]);
+  }
+  void enforcePackagePolicy(const json& items) {
+    std::lock_guard<std::mutex> guard(mutex_);applyPolicy();
+    for(const auto& item:items)if(!item.value("remote",false)&&item.value("status",0)!=0&&packageTorrent(item)){
+      // One failed stop must not hide other torrents or block remote preparation.
+      try{call("d.stop",json::array({item.at("hashString")}));}catch(...){}
+    }
   }
   json installationRpc(const std::string& method,const json& params=json::array({""})) {
     static const std::set<std::string> allowed={"system.pid","session.save","d.multicall","d.stop","d.start","d.resume","d.is_active","d.hashing","system.shutdown.normal"};
@@ -130,11 +157,14 @@ public:
     if(method=="torrent-add") {
       std::string hash,source;
       if(args.contains("metainfo")) {
-        auto data=decode64(args.at("metainfo"));hash=metadataHash(data);auto path=paths_.root/"rtorrent/state/incoming"/(hash+".torrent");
+        auto data=decode64(args.at("metainfo"));hash=metadataHash(data);size_t at=0;const auto info=bdecode(data,at).at("info");
+        if(packageName(info.value("name",std::string{}))||packageName(info.value("name.utf-8",std::string{})))throw std::runtime_error(packagePolicyMessage());
+        for(const auto& f:info.value("files",json::array()))for(const auto* key:{"path","path.utf-8"})for(const auto& part:f.value(key,json::array()))if(packageName(part.get<std::string>()))throw std::runtime_error(packagePolicyMessage());auto path=paths_.root/"rtorrent/state/incoming"/(hash+".torrent");
         std::ofstream output(path,std::ios::binary|std::ios::trunc);output.write(data.data(),data.size());output.close();if(!output)throw std::runtime_error("Cannot save torrent metadata");source=path.string();
       } else {
         source=args.at("filename").get<std::string>();std::smatch match;
         if(source.size()>16384||!std::regex_search(source,match,std::regex("^magnet:\\?.*xt=urn:btih:([a-fA-F0-9]{40})(?:&|$)")))throw std::runtime_error("A v1 magnet with a hexadecimal info hash is required");hash=lower(match[1]);
+        if(packageMagnetName(source))throw std::runtime_error(packagePolicyMessage());
       }
       bool duplicate=false;for(const auto& item:list())if(item.at("hashString")==hash)duplicate=true;
       if(!duplicate){
@@ -150,6 +180,7 @@ public:
       std::string hash;
       for(const auto& item:items)if((id.is_number_integer()&&item.at("id")==id)||(id.is_string()&&item.at("hashString")==lower(id.get<std::string>())))hash=item.at("hashString");
       if(hash.empty())throw std::runtime_error("Torrent no longer exists");
+      if(method=="torrent-start"||method=="torrent-start-now")for(const auto& item:items)if(item.at("hashString")==hash&&packageTorrent(item))throw std::runtime_error(packagePolicyMessage());
       if(method=="torrent-stop")call("d.stop",{hash});
       else if(method=="torrent-start"||method=="torrent-start-now") {
         call("d.start",{hash});

@@ -148,8 +148,11 @@ RAR5 may use UnRAR's internal decoder threads. Each member has a single owner an
 all workers join before terminal publication. Sample benchmarks are not a promise
 of full-archive throughput.
 
-Explore rankings cache for ten minutes and covers for thirty days. Stale rankings
-can display while refreshing; Square requests a refresh. Cover requests accept
+Explore rankings cache for ten minutes and covers for thirty days. Discover
+always fetches fresh results on app launch, even with a recent cache, then
+revalidates on entry, after resume and every minute while open. Expired rankings
+refresh automatically while saved results remain visible; R3 bypasses the cache.
+Cover requests accept
 known result/torrent/job IDs, not arbitrary URLs. Unknown artwork remains a
 placeholder. See `deployment/README.md` for the private configuration contract.
 
@@ -217,6 +220,9 @@ transfers and simultaneous gameplay remain unvalidated on hardware.
   `vendor/HTTPLIB-LICENSE`. PS5 compatibility uses `accept` instead of `accept4`.
 - nlohmann/json v3.11.3, commit `9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03`;
   `vendor/JSON-LICENSE`.
+- stb_image, nothings/stb commit `f0569113c93ad095470c54bf34a17b36646bbbb5`;
+  MIT / public-domain license in `vendor/stb_image.h`. Only JPEG and TGA are
+  enabled for local Switch artwork; input size and image dimensions are bounded.
 - Historical launcher integration derives from `ps5-payload-dev/websrv` v0.33,
   commit `baabe27e5449baeb059b850d0393c31fdee219b7`.
 

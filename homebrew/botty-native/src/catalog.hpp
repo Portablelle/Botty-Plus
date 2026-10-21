@@ -3,15 +3,24 @@
 #include "model.hpp"
 #include <array>
 namespace botty {
+struct EmulationDetails {
+    std::array<char,96> artwork{};
+    std::array<char,64> baseVersion{},updateVersion{};
+    std::array<char,512> mods{};
+    unsigned dlcCount=0,modCount=0,modsOn=0;
+    bool modsKnown=false;
+};
 struct Entry {
+    EmulationDetails emulation;
     std::array<char,96> id{};
+    std::array<char,64> hash{};int torrentId=-1;
     std::array<char,64> storage{},sourceStorage{},compressedStorage{};
-    std::array<char,512> name{}, error{}, destination{}, phase{};
+    std::array<char,512> name{}, error{}, destination{}, phase{},formatHint{};
     std::array<char,32> status{}, kind{}, titleId{};
     std::array<char,2048> files{};
     unsigned fileCount=0,archiveStart=0,archiveCount=0,sourceStart=0,sourceCount=0;
-    bool sourcesOmitted=false;
-    bool task=false,items=false,remote=false,remoteCandidate=false,remoteLoose=false;
+    bool sourcesOmitted=false,emulationContent=false;
+    bool task=false,items=false,remote=false,remoteCandidate=false,remoteLoose=false,remotePreparation=false,adopted=false,adoptedImport=false,libraryPending=false;
     double elapsed=0;
     std::array<char,512> currentFile{};
     bool compressed=false,originalKept=false,compressionVerified=false;
@@ -51,6 +60,11 @@ const char* nativeUpdateLabel(const NativeUpdate&,bool stale) noexcept;
 bool nativeUpdateAvailable(const NativeUpdate&,bool stale) noexcept;
 bool parseProcessing(std::string_view,Processing&) noexcept;
 struct Catalog {
+    bool emulationSupported=false,emulationInstalled=false;
+    std::array<char,512> emulationRoot{},emulationError{};
+    std::array<Entry,256> emulationEntries{};
+    unsigned emulationCount=0;
+
     Processing processing;
     NativeUpdate nativeUpdate;
     std::array<char,512> transferPhase{},transferError{};
@@ -81,21 +95,23 @@ struct Catalog {
     double freeBytes=0;
     std::array<char,512> library{},error{};
 };
+bool emulationLaunchResponse(std::string_view,std::array<char,4096>&) noexcept;
 bool responseObject(std::string_view,std::array<char,512>& error) noexcept;
 bool firstArchive(std::string_view) noexcept;
 bool parseCatalog(std::string_view,Catalog&) noexcept;
 unsigned entryCount(const Catalog&,unsigned tab,unsigned filter) noexcept;
 const Entry* entryAt(const Catalog&,unsigned tab,unsigned filter,unsigned index) noexcept;
-// Activity lists downloads and Processing rows together. Rows are never merged by
-// name: each keeps the actions of its own source.
+// Activity groups preparation and download by persisted torrent identity, never by name.
 enum class ActivityState { running, attention, waiting, done };
 ActivityState activityState(const Entry&,bool torrent) noexcept;
 struct ActivityItem { const Entry* entry=nullptr; bool torrent=false; };
-// Filters: 0 all, 1 running, 2 needs attention, 3 done.
+// Filters: 0 in progress (including queued), 1 attention, 2 history, 3 seeding, 4 server candidates.
 ActivityItem activityAt(const Catalog&,unsigned filter,unsigned index) noexcept;
 unsigned activityCount(const Catalog&,unsigned filter) noexcept;
 // Filters: 0 all, 1 PS5 SSD, 2 external storage, 3 compressed.
 const Entry* libraryAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+const Entry* emulationAt(const Catalog&,unsigned filter,unsigned index) noexcept;
+unsigned emulationCount(const Catalog&,unsigned filter) noexcept;
 unsigned libraryCount(const Catalog&,unsigned filter) noexcept;
 struct LibraryCopy { const char* format; const char* storage; bool retained=false; };
 unsigned libraryCopies(const Entry&,std::array<LibraryCopy,2>&) noexcept;

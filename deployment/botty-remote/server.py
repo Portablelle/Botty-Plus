@@ -15,6 +15,15 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
+import importlib.util
+_forge_spec = importlib.util.spec_from_file_location('botty_forge', Path(__file__).with_name('forge.py'))
+_forge_module = importlib.util.module_from_spec(_forge_spec)
+_forge_spec.loader.exec_module(_forge_module)
+Forge = _forge_module.Forge
+_switch_spec = importlib.util.spec_from_file_location('botty_switch_prepare', Path(__file__).with_name('switch_prepare.py'))
+_switch_module = importlib.util.module_from_spec(_switch_spec)
+_switch_spec.loader.exec_module(_switch_module)
+SwitchPreparer = _switch_module.SwitchPreparer
 
 HASH = re.compile(r'[a-f0-9]{40}')
 
@@ -108,6 +117,22 @@ def compatibility(name, files, root=None, complete=False):
                 (not re.search(r'\.part\d+\.rar$', n, re.I) or re.search(r'\.part0*1\.rar$', n, re.I))]
     if re.search(r'(?<![a-z0-9])ps5(?![a-z0-9])', name, re.I) and len(archives) == 1:
         return {'kind': 'rar', 'verified': False, 'reason': 'PS5 archive candidate; content checked after extraction'}
+    switch_files = [n for n in names if n.lower().endswith(('.nsp', '.xci'))]
+    if (switch_files and not archives) or (re.search(r'(?<![a-z0-9])(NSW|Switch)(?![a-z0-9])', name, re.I) and any(n.lower().endswith(('.rar', '.zip')) for n in names)):
+        if complete and root:
+            for name in switch_files:
+                fd = open_member(root, name)
+                with os.fdopen(fd, 'rb') as stream:
+                    xci = name.lower().endswith('.xci')
+                    if xci:
+                        stream.seek(0x100)
+                    if stream.read(4) != (b'HEAD' if xci else b'PFS0'):
+                        return None
+            return {'kind': 'switch', 'verified': False, 'reason': 'Switch candidate; CNMT and hashes checked before import'}
+        return {'kind': 'switch', 'verified': False, 'reason': 'NSP/XCI download; headers checked on completion'}
+    packages = [n for n in names if n.lower().endswith(('.pkg', '.fpkg'))]
+    if packages:
+        return {'kind': 'pkg', 'verified': False, 'reason': 'Package; server conversion required'}
     # Completed loose folders/images require content evidence, not release names.
     candidates = []
     if complete and root:
@@ -119,14 +144,26 @@ def compatibility(name, files, root=None, complete=False):
                 if not isinstance(data, dict):
                     continue
                 title = next((data[k] for k in ('titleId', 'title_id', 'TITLE_ID') if k in data), '')
-                if isinstance(title, str) and re.fullmatch(r'PPSA[0-9]{5}', title):
+                executable = str(PurePosixPath(n).parent.parent / 'eboot.bin')
+                if isinstance(title, str) and re.fullmatch(r'PPSA[0-9]{5}', title) and executable in names:
+                    fd = open_member(root, executable); os.close(fd)
                     candidates.append({'kind': 'folder', 'verified': True, 'reason': 'PS5 application metadata'})
-            elif n.lower().endswith('.exfat'):
+            elif n.lower().endswith(('.exfat', '.ffpkg', '.ffpfs', '.ffpfsc')):
                 fd = open_member(root, n)
                 with os.fdopen(fd, 'rb') as f:
-                    header = f.read(11)
-                if header[3:11] == b'EXFAT   ' and re.search(r'(?<![a-z0-9])ps5(?![a-z0-9])', name, re.I):
-                    candidates.append({'kind': 'exfat', 'verified': True, 'reason': 'exFAT image in PS5 release'})
+                    ext = Path(n).suffix.lower()
+                    header = f.read(64)
+                    valid = ext == '.exfat' and header[3:11] == b'EXFAT   '
+                    if ext in ('.ffpfs', '.ffpfsc') and len(header) == 64:
+                        block = int.from_bytes(header[32:36], 'little')
+                        valid = (int.from_bytes(header[:8], 'little') in (1, 2) and
+                                 int.from_bytes(header[8:16], 'little') == 20130315 and
+                                 4096 <= block <= 65536 and block & (block-1) == 0)
+                    if ext == '.ffpkg':
+                        f.seek(65536 + 1372)
+                        valid = int.from_bytes(f.read(4), 'little') == 0x19540119
+                if valid and re.search(r'(?<![a-z0-9])ps5(?![a-z0-9])', name, re.I):
+                    candidates.append({'kind': ext[1:], 'verified': False, 'reason': 'Image header recognized; ShadowMount validates the game'})
     return candidates[0] if len(candidates) == 1 else None
 
 class Bridge:
@@ -137,11 +174,13 @@ class Bridge:
         self.registry = Path(config['registry'])
         self.owned = json.loads(self.registry.read_text()) if self.registry.exists() else {}
         self.file_cache = {}
+        self.forge = Forge(config['forgeBinary'], self.registry.parent / 'conversions') if config.get('forgeBinary') else None
+        self.switch = SwitchPreparer(config['switchBinary'], config.get('switchKeys', ''), self.registry.parent / 'switch-preparations', Forge) if config.get('switchBinary') else None
         self.login()
 
     def login(self):
         result = self.qb('auth/login', {'username': self.c['username'], 'password': self.c['password']}, retry=False)
-        if result != b'Ok.':
+        if result not in (b'Ok.', b''):
             raise RuntimeError('qBittorrent authentication failed')
 
     @contextlib.contextmanager
@@ -220,13 +259,94 @@ class Bridge:
             raise ValueError('Torrent location changed; import again explicitly')
         if require_owned and self.owned[hash].get('pending') and t.get('category') != 'botty-ps5':
             raise ValueError('Pending add does not match the Botty category')
-        return {'capabilities': {'boundedRanges': True}, 'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
+        if require_owned and not self.owned[hash].get('package'):
+            unpacked = [f for f in files if not f['name'].lower().endswith(('.pkg', '.fpkg'))]
+            if unpacked and len(unpacked) != len(files):
+                content = compatibility(t['name'], unpacked, t['save_path'], complete)
+                if content and content['kind'] != 'pkg':
+                    # Keep ancillary updates/DLC on the server. They must not
+                    # replace the game archive/folder or be transferred to PS5.
+                    files = unpacked
+        result = {'capabilities': {'boundedRanges': True, 'fpkgToExfat': bool(getattr(self, 'forge', None))}, 'hash': hash, 'name': t['name'], 'complete': complete, 'paused': t['state'].startswith('paused'),
                 'total': sum(f['size'] for f in files), 'done': sum(int(f['size'] * f['progress']) for f in files),
                 'rate': t['dlspeed'], 'upload': t['upspeed'], 'peers': t['num_seeds'] + t['num_leechs'],
                 'files': [{'index': f['index'], 'name': f['name'], 'size': f['size']} for f in files]}
+        if require_owned and self.owned[hash].get('platform') == 'switch':
+            result['platform'] = 'switch'
+            result['complete'] = False
+            result['preparation'] = {'status': 'waiting', 'phase': 'Waiting for complete Switch download'}
+            if complete:
+                if not self.owned[hash].get('automatic', False):
+                    result['preparation'] = {'status': 'download-only', 'phase': 'Switch archives kept on server; choose Prepare to verify and import'}
+                elif not getattr(self, 'switch', None):
+                    result['preparation'] = {'status': 'failed', 'phase': 'Switch server preparation unavailable', 'error': 'Configure switchBinary and private switchKeys on the dedicated server'}
+                else:
+                    state = self.switch.poll(hash, t['save_path'], files, t['name'])
+                    result['preparation'] = {k: v for k, v in state.items() if k in ('status', 'phase', 'file', 'bytes', 'total', 'error')}
+                    if state['status'] == 'ready':
+                        public = [{k: f[k] for k in ('index', 'name', 'size')} for f in state['files']]
+                        size = sum(f['size'] for f in public)
+                        result.update(complete=True, total=size, done=size, files=public)
+                        published = dict(output=state['output'], files=state['files'])
+                        if self.owned[hash].get('preparedSwitch') != published:
+                            self.owned[hash]['preparedSwitch'] = published
+                            self.save()
+            return result
+        packages = [f for f in files if f['name'].lower().endswith(('.pkg', '.fpkg'))]
+        if packages and require_owned:
+            result['complete'] = False  # A raw package must never be sent to the PS5.
+            result['preparation'] = {'status': 'waiting', 'phase': 'Waiting for package download'}
+            if complete:
+                forge = getattr(self, 'forge', None)
+                if not self.owned[hash].get('automatic', False):
+                    result['preparation'] = {'status': 'download-only', 'phase': 'Package kept on server; choose Prepare to convert', 'packages': [p['name'] for p in packages]}
+                elif not forge:
+                    result['preparation'] = {'status': 'failed', 'error': 'Configure forgeBinary on the dedicated server', 'phase': 'Server conversion unavailable'}
+                else:
+                    selected = self.owned[hash].get('package')
+                    choices = [p for p in packages if p['name'] == selected] if selected else packages
+                    if len(choices) != 1:
+                        result['preparation'] = {'status': 'failed', 'phase': 'Choose a package',
+                            'error': 'Multiple packages: choose the game or backport to convert',
+                            'packages': [p['name'] for p in packages]}
+                        return result
+                    package = choices[0]
+                    fd = open_member(t['save_path'], package['name'])
+                    os.close(fd)
+                    state = forge.poll(hash, Path(t['save_path']) / package['name'])
+                    result['preparation'] = dict(state, packages=[p['name'] for p in packages])
+                    if state['status'] == 'ready':
+                        size = state['outputIdentity']['size']
+                        result.update(complete=True, total=size, done=size,
+                                      files=[{'index': 0, 'name': state['titleId'] + '.exfat', 'size': size}], converted=True)
+                        published = dict(name=state['titleId'] + '.exfat', size=size, identity=state['outputIdentity'])
+                        if self.owned[hash].get('preparedImage') != published:
+                            self.owned[hash]['preparedImage'] = published
+                            self.save()
+        return result
+
 
     def file_member(self, hash, index, expected_name, expected_size):
         # Avoid fetching the entire torrent inventory for every small file.
+        prepared = self.owned[hash].get('preparedSwitch')
+        if prepared:
+            member = next((f for f in prepared['files'] if str(f['index']) == str(index)), None)
+            if not member or member['name'] != expected_name or member['size'] != expected_size:
+                raise ValueError('Prepared Switch manifest changed')
+            root = str(Path(prepared['output']) / 'content')
+            with Forge.open_source(Path(root) / member['name']) as f:
+                if Forge.identity(Path(root) / member['name'], f.fileno()) != member['identity']:
+                    raise ValueError('Prepared Switch file changed')
+            return root, {k: member[k] for k in ('index', 'name', 'size', 'identity')}
+        published = self.owned[hash].get('preparedImage')
+        if published:
+            forge = getattr(self, 'forge', None)
+            if not forge or str(index) != '0' or expected_name != published['name'] or expected_size != published['size']:
+                raise ValueError('Converted image manifest changed')
+            output = forge.output(hash)
+            if Forge.identity(output) != published['identity']:
+                raise ValueError('Converted image changed')
+            return str(output.parent), {'index': 0, 'name': output.name, 'size': published['size'], 'identity': published['identity']}
         root = self.owned[hash]['root']
         now = time.monotonic()
         cached = self.file_cache.get(hash)
@@ -234,6 +354,8 @@ class Bridge:
             snapshot = self.snapshot(hash)
             if not snapshot['complete']:
                 raise ValueError('All torrent files must be complete')
+            if self.owned[hash].get('preparedImage') or self.owned[hash].get('preparedSwitch'):
+                return self.file_member(hash, index, expected_name, expected_size)
             cached = {'root': root, 'at': now,
                       'files': {str(f['index']): f for f in snapshot['files']}}
             self.file_cache.pop(hash, None)
@@ -300,20 +422,50 @@ class Bridge:
         self.discovery_cache = cache
         return list(cache.values())
 
-    def import_torrent(self, hash):
+    def import_torrent(self, hash, automatic=True, platform=None):
         t, files, complete = self.info(hash)
+        if platform not in (None, 'ps5', 'switch'): raise ValueError('Invalid platform')
         kind = compatibility(t['name'], files, t['save_path'], complete)
-        if not kind:
-            raise ValueError('No supported PS5 content detected')
+        if not kind and platform != 'switch':
+            raise ValueError('No supported PS5 or Switch content detected')
         if hash not in self.owned:
             self.owned[hash] = {'root': t['save_path'], 'created': False}
         else:
             self.owned[hash]['root'] = t['save_path']
+        if platform not in (None, 'ps5', 'switch'): raise ValueError('Invalid platform')
+        self.owned[hash]['platform'] = platform or ('switch' if kind['kind'] == 'switch' else 'ps5')
+        self.owned[hash]['automatic'] = automatic
         self.save()
         return self.snapshot(hash)
 
+    def prepare(self, hash, package=None):
+        if hash not in self.owned:
+            raise ValueError('Import the torrent first')
+        t, files, complete = self.info(hash)
+        if Path(t['save_path']) != Path(self.owned[hash]['root']):
+            raise ValueError('Source location changed')
+        if self.owned[hash].get('platform') == 'switch':
+            if not complete or not getattr(self, 'switch', None):
+                raise ValueError('Complete Switch download and configured server verifier required')
+            state = self.switch.poll(hash, t['save_path'], files, t['name'], retry=True)
+            self.owned[hash]['automatic'] = True
+            self.save()
+            return state
+        packages = [f for f in files if f['name'].lower().endswith(('.pkg', '.fpkg'))]
+        choices = [p for p in packages if p['name'] == package] if package else packages
+        if not complete or len(choices) != 1 or not self.forge:
+            raise ValueError('One completed package and Dump Forge are required')
+        package = choices[0]
+        fd = open_member(t['save_path'], package['name']); os.close(fd)
+        state = self.forge.poll(hash, Path(t['save_path']) / package['name'], retry=True)
+        self.owned[hash]['package'] = package['name']
+        self.owned[hash]['automatic'] = True
+        self.save()
+        return state
+
     def add(self, body):
         hash = body['hash']
+        if body.get('platform', 'ps5') not in ('ps5', 'switch'): raise ValueError('Invalid platform')
         if not HASH.fullmatch(hash):
             raise ValueError('Invalid hash')
         existing = json.loads(self.qb('torrents/info?hashes=' + hash))
@@ -335,7 +487,7 @@ class Bridge:
         fields = {'savepath': root, 'autoTMM': 'false', 'category': 'botty-ps5', 'paused': 'false'}
         def record_intent():
             # Persist before dispatch: an accepted add can lose its HTTP response.
-            self.owned[hash] = {'root': root, 'created': True, 'pending': True}
+            self.owned[hash] = {'root': root, 'created': True, 'pending': True, 'automatic': body.get('automatic', False), 'platform': body.get('platform', 'ps5')}
             self.save()
         if 'filename' in body:
             magnet = body['filename']
@@ -366,11 +518,18 @@ class Bridge:
                 self.login()
                 with self.opener.open(req, timeout=self.qb_timeout()) as r:
                     result = r.read(1024)
-        if result != b'Ok.':
+        accepted = result in (b'Ok.', b'')
+        if not accepted:
+            try:
+                summary = json.loads(result)
+                accepted = isinstance(summary, dict) and summary.get('failure_count') == 0 and isinstance(summary.get('added_torrent_ids'), list) and hash in summary['added_torrent_ids']
+            except (ValueError, TypeError):
+                pass
+        if not accepted:
             del self.owned[hash]
             self.save()
             raise ValueError('qBittorrent rejected torrent')
-        self.owned[hash] = {'root': root, 'created': True}
+        self.owned[hash] = {'root': root, 'created': True, 'automatic': body.get('automatic', False), 'platform': body.get('platform', 'ps5')}
         self.save()
         return {'hash': hash}
 
@@ -452,6 +611,8 @@ class Handler(BaseHTTPRequestHandler):
                     with os.fdopen(fd, 'rb') as source:
                         if os.fstat(source.fileno()).st_size != file['size']:
                             raise ValueError('File size changed')
+                        if file.get('identity') and Forge.identity(Path(root) / file['name'], source.fileno()) != file['identity']:
+                            raise ValueError('Verified file identity changed before transfer')
                         start = 0
                         end = file['size'] - 1
                         range_header = self.headers.get('Range')
@@ -488,7 +649,9 @@ class Handler(BaseHTTPRequestHandler):
                     if route == ['add']:
                         result = b.add(body)
                     elif route == ['import']:
-                        result = b.import_torrent(body['hash'])
+                        result = b.import_torrent(body['hash'], body.get('automatic', True), body.get('platform'))
+                    elif route == ['prepare']:
+                        result = b.prepare(body['hash'], body.get('package'))
                     elif route == ['action']:
                         hash = body['hash']; action = body['action']
                         if hash not in b.owned or action not in ('pause', 'resume'):

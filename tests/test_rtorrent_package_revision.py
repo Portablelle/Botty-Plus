@@ -15,7 +15,7 @@ class RtorrentPackageRevisionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             (root / 'scripts').mkdir()
-            for name in ['package-rtorrent.py', 'botty-packages.py']:
+            for name in ['package-rtorrent.py', 'botty-packages.py', 'source_parts.py']:
                 shutil.copyfile(project / 'scripts' / name, root / 'scripts' / name)
             native_source = root / 'homebrew/botty-native'
             for name in ['tools', 'src', 'sce_sys', 'assets']:

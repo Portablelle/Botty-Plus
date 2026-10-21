@@ -9,6 +9,9 @@
 set -euo pipefail
 cd "${BOTTY_HOST_CHECK_ROOT:-$(dirname "$0")/..}"
 
+jobs=${BOTTY_HOST_JOBS:-2}
+[[ "$jobs" =~ ^[1-4]$ ]] || { echo "BOTTY_HOST_JOBS must be between 1 and 4" >&2; exit 2; }
+
 service=true native=true rtorrent=true
 if [ -n "${BOTTY_CHANGED_FILES:-}" ] && [ -r "$BOTTY_CHANGED_FILES" ]; then
   service=false native=false rtorrent=false
@@ -69,24 +72,26 @@ skip_check() {
 run_check "Runner infrastructure" python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
 run_check "Release packages" python3 scripts/botty-packages.py --check
 run_check "Repository contracts" python3 -m unittest discover -s tests -p 'test_*.py' -v
+run_check "Source archive parts" python3 -m unittest discover -s scripts -p test_source_parts.py -v
+run_check "Engine source provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_sources.py -v
 run_check "Archive fixtures" python3 homebrew/botty/tests/make_fixtures.py
 run_check "Rest companion protocol" make -C homebrew/rest-mode-companion test
 run_check "Service UI" node homebrew/botty/tests/ui-test.js
 # Bound compilation rather than using the host CPU count from nproc.
-# Build prerequisites and independent service tests run four at a time.
+# Build prerequisites and independent service tests run at the configured parallelism (two by default).
 if [ "$service" = true ] && [ "$build_only" = true ]; then
-  run_check "Service build" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" test-build
+  run_check "Service build" make -C homebrew/botty -j"$jobs" NATIVE_CXX="$cxx" test-build
 elif [ "$service" = true ]; then
-  run_check "Service build and tests" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" TEST_JOBS=4 test
+  run_check "Service build and tests" make -C homebrew/botty -j"$jobs" NATIVE_CXX="$cxx" TEST_JOBS="$jobs" test
 else
   skip_check "Service build and tests"
 fi
 if [ "$native" = true ]; then
   # Native integration launches the service executable even when its suite is skipped.
   if [ "$service" != true ]; then
-    run_check "Service executable" make -C homebrew/botty -j4 NATIVE_CXX="$cxx" native
+    run_check "Service executable" make -C homebrew/botty -j"$jobs" NATIVE_CXX="$cxx" native
   fi
-  run_check "Native build" make -C homebrew/botty-native -j4 CXX="$cxx" host-test-build
+  run_check "Native build" make -C homebrew/botty-native -j"$jobs" CXX="$cxx" host-test-build
   if [ "$build_only" = true ]; then
     skip_check "Native tests" "build only"
   else
