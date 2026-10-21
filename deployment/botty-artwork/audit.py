@@ -25,12 +25,13 @@ def audit(resolver, row, images=False):
         if ident:
             result.update(status='no-portrait' if images else 'matched', provider='SteamGridDB')
         else:
-            # A Steam game may exist without a usable portrait.
-            steam_key = hashlib.sha256(('steam-game-v1:' + title.casefold()).encode()).hexdigest()
-            try:
-                previous = json.loads((resolver.CACHE / (steam_key + '.steam.json')).read_text())
-                if previous.get('title') == title: result.update(game=previous['item']['appid'], provider='Steam')
-            except (OSError, ValueError, KeyError): pass
+            # Resolve fallback metadata on cold caches as well; do not infer
+            # support from files left by a previous image request.
+            for candidates in (resolver.steam_candidates, resolver.playstation_candidates):
+                match = next(iter(candidates(title, 'cover')), None)
+                if match:
+                    result.update(game=match['game'], provider=match['provider'])
+                    break
             if result.get('game'):
                 result['status'] = 'no-portrait' if images else 'matched'
             else:

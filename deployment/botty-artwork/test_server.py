@@ -11,6 +11,17 @@ class Covers(unittest.TestCase):
   spec=importlib.util.spec_from_file_location('artwork',pathlib.Path(__file__).with_name('server.py'));self.module=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.module)
   self.steam_candidates=self.module.steam_candidates;self.module.steam_candidates=lambda *_:iter(())
  def tearDown(self):self.temp.cleanup()
+ def test_audit_resolves_fallbacks_without_a_warm_image_cache(self):
+  spec=importlib.util.spec_from_file_location('artwork_audit',pathlib.Path(__file__).with_name('audit.py'))
+  audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
+  for provider in ('Steam','PlayStation'):
+   with self.subTest(provider=provider), patch.object(self.module,'game',return_value=None), \
+        patch.object(self.module,'steam_candidates',return_value=iter([{'game':123,'provider':'Steam'}] if provider=='Steam' else [])), \
+        patch.object(self.module,'playstation_candidates',return_value=iter([{'game':'product','provider':'PlayStation'}] if provider=='PlayStation' else [])), \
+        patch.object(self.module,'cover',side_effect=AssertionError('Metadata audit must not download images')):
+    result=audit.audit(self.module,'Fixture')
+    self.assertEqual(result['status'],'matched')
+    self.assertEqual(result['provider'],provider)
  def test_accents_and_punctuation(self):
   self.assertEqual(self.module.normalize("Ghost of Yōtei"), self.module.normalize("ghost of yotei"))
   self.assertEqual(self.module.normalize("Marvel's Wolverine"), self.module.normalize("marvels wolverine"))
