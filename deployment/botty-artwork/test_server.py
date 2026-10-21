@@ -1,4 +1,5 @@
-import importlib.util, io, json, os, pathlib, tempfile, unittest
+import concurrent.futures, importlib.util, io, json, os, pathlib, tempfile, threading, time, unittest
+from unittest.mock import patch
 from PIL import Image
 class Covers(unittest.TestCase):
  def setUp(self):
@@ -334,6 +335,56 @@ class Covers(unittest.TestCase):
   self.steam_provider()
   self.module.playstation_candidates=lambda *_:self.fail('PlayStation must not replace an available Steam image')
   self.assertEqual(len(self.module.cover('EA SPORTS FC 27')),115200)
+ def test_parenthesized_fan_game_is_not_the_base_game(self):
+  self.module.sgdb=lambda _: [{'id':5512976,'name':'Hollow Knight Silksong (Gameboy Demake)'}]
+  self.assertIsNone(self.module.game('Hollow Knight Silksong',pathlib.Path(self.temp.name)/'game'))
+  self.assertNotEqual(self.module.match_key('Hollow Knight Silksong (Gameboy Demake)'),self.module.match_key('Hollow Knight Silksong'))
+  self.assertEqual(self.module.normalize('Resident Evil 4 (2023 video game)'),self.module.normalize('Resident Evil 4'))
+  self.steam_provider(title='Hollow Knight Silksong (Gameboy Demake)',appid=12)
+  self.assertEqual(self.module.cover('Hollow Knight Silksong'),b'')
+ def test_failed_saved_steam_url_refreshes_metadata(self):
+  calls,assets=self.steam_provider()
+  self.module.cover('EA SPORTS FC 27')
+  image=next(pathlib.Path(self.temp.name).glob('*.cover.rgb'));os.utime(image,(0,0))
+  assets['library_capsule_2x']='d'*40+'/library_capsule_2x.jpg'
+  assets['library_capsule']='e'*40+'/library_capsule.jpg'
+  fetch=self.module.fetch
+  def request(url,*args):
+   if '/'+('a'*40)+'/' in url or '/'+('b'*40)+'/' in url:
+    raise self.module.urllib.error.HTTPError(url,404,'removed',{},None)
+   return fetch(url,*args)
+  self.module.fetch=request
+  self.assertEqual(len(self.module.cover('EA SPORTS FC 27')),115200)
+  self.assertEqual(sum('/GetItems/' in url for url,_ in calls),2)
+  metadata=json.loads(next(pathlib.Path(self.temp.name).glob('*.cover.json')).read_text())
+  self.assertIn('d'*40,metadata['match']['image'])
+ def test_atomic_metadata_writes_use_unique_temporary_files(self):
+  target=pathlib.Path(self.temp.name)/'concurrent.json';barrier=threading.Barrier(2)
+  replace=pathlib.Path.replace;temporaries=[]
+  def synchronized_replace(source,destination):
+   temporaries.append(str(source));barrier.wait(timeout=5)
+   return replace(source,destination)
+  with patch.object(pathlib.Path,'replace',synchronized_replace):
+   with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    list(pool.map(lambda value:self.module.save_json(target,{'value':value}),[1,2]))
+  self.assertEqual(len(set(temporaries)),2)
+  self.assertIn(json.loads(target.read_text())['value'],[1,2])
+  self.assertFalse(list(pathlib.Path(self.temp.name).glob('concurrent.json.*.tmp')))
+ def test_cover_and_hero_coalesce_game_resolution(self):
+  calls=self.provider();game=self.module.game;barrier=threading.Barrier(2);gate=threading.Lock()
+  active=0;maximum=0
+  def resolve(*args):
+   nonlocal active,maximum
+   with gate:active+=1;maximum=max(maximum,active)
+   try:time.sleep(.01);return game(*args)
+   finally:
+    with gate:active-=1
+  self.module.game=resolve
+  def download(kind):barrier.wait(timeout=5);return self.module.cover('Demo III',kind)
+  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:images=list(pool.map(download,['cover','hero']))
+  self.assertEqual([len(data) for data in images],[115200,691200])
+  self.assertEqual(maximum,1)
+  self.assertEqual(sum('/search/' in url for url,_ in calls),1)
  def test_untrusted_sources_and_redirects(self):
   for url in ['http://localhost/private','https://evil.test/image','https://cdn2.steamgriddb.com.evil.test/a','https://cdn2.steamgriddb.com:444/a']:
    self.assertFalse(self.module.allowed(url))

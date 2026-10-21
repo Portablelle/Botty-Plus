@@ -61,7 +61,9 @@ Release metadata, regions, editions, accents, punctuation and Roman numerals are
 Switch scene suffixes (`NSW-GROUP`, `NSW Switch`) and PS5 VR markers are removed.
 Only a parenthesized year disambiguates releases; numbers inside a game name,
 such as Cyberpunk 2077, remain part of its identity. Canonical SteamGridDB names
-are compared without release cleanup so editions, DLC and fan demakes stay distinct.
+are compared without release cleanup so editions, DLC and fan demakes stay distinct,
+including qualifiers in parentheses. Only explicit release-year parentheses are
+ignored when comparing names.
 A match must preserve title/sequel identity. Multiple matching games (for example
 a remake) require an explicit year in the canonical alias or a game-ID override.
 Missing conjunctions and articles can be normalized and a distinctive subtitle
@@ -77,11 +79,13 @@ operator files are read on lookup and survive upgrades. `sources.json` from the
 previous resolver is preserved but no longer used. When changing an override,
 back up/remove that title's `sgdb-v1` cache entries to apply it immediately.
 
-Successful Steam game metadata is cached alongside SteamGridDB matches.
+Successful Steam game metadata is cached alongside SteamGridDB matches. Removed Steam image URLs
+trigger fresh asset metadata rather than pinning a stale hash directory.
 Server matches, portraits and heroes persist in `/var/cache/botty-artwork`.
 Positive images and game matches last thirty days; confirmed misses last an hour.
 Authentication, rate limits and network errors are retried rather than saved as
-missing artwork. A title lock coalesces concurrent cover/hero lookups; network
+missing artwork. A canonical-title lock coalesces concurrent cover/hero lookups and unique
+temporary files make metadata/image publication atomic across processes; network
 concurrency is bounded to four. Credentials never enter saved metadata. Images,
 response sizes and HTTPS origins/redirects are checked, including rejecting
 landscape grids, animated images and blank CDN tiles.

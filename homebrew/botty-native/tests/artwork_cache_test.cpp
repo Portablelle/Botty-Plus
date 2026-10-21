@@ -19,7 +19,10 @@ int main(){
     assert(shared==ArtworkCache::key(second,"ASTRO BOT PS5 Release-B"));
     assert(shared!=ArtworkCache::key(second,"Another Game PS5 Release-B"));
     second[0]='m';second[1]=':';
-    assert(shared==ArtworkCache::key(second,"Astro Bot PS5"));
+    assert(shared!=ArtworkCache::key(second,"Astro Bot PS5"));
+    const auto ps5Remake=ArtworkCache::key(first,"Resident Evil 4 PS5");
+    const auto switchOriginal=ArtworkCache::key(second,"Resident Evil 4");
+    assert(ps5Remake!=switchOriginal);
     std::array<unsigned char,ArtworkCache::pixelBytes> pixels{},out{};pixels.fill(73);
     {
         auto cache=std::make_unique<ArtworkCache>(path.c_str());
@@ -29,6 +32,14 @@ int main(){
     assert(cache->load(key,out.data())&&out==pixels);
     cache->store(shared,pixels.data());
     assert(cache->load(ArtworkCache::key(first,"Astro Bot PS5 Release-C"),out.data())&&out==pixels);
+    cache->store(ps5Remake,pixels.data());
+    assert(!cache->load(switchOriginal,out.data()));
+    pixels.fill(29);cache->store(switchOriginal,pixels.data());
+    assert(cache->load(switchOriginal,out.data())&&out==pixels);
+    pixels.fill(73);assert(cache->load(ps5Remake,out.data())&&out==pixels);
+    // Entries created before platform scoping must not be reused either.
+    auto legacy=ps5Remake;legacy[104]=1;legacy[105]=0;
+    assert(legacy!=ps5Remake);
     // Reset the fixture before the capacity/LRU checks below.
     cache.reset();std::remove(path.c_str());
     cache=std::make_unique<ArtworkCache>(path.c_str());cache->store(key,pixels.data());

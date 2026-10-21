@@ -18,8 +18,8 @@ public:
             // A missing title must never share an entry with another game.
             for(unsigned i=0;i<id.size()&&id[i];++i)out[i]=static_cast<unsigned char>(id[i]);
         }else{
-            // Match Search::gameKey: rankings use random result IDs, while the
-            // service resolves their cover by normalized title before "PS5".
+            // Rankings use random result IDs; retain their shared title identity
+            // within a platform, without sharing remake art with emulation.
             std::array<unsigned char,200> normalized{};unsigned length=0;
             const auto lower=[](unsigned char c){return c>='A'&&c<='Z'?static_cast<unsigned char>(c+32):c;};
             const auto wordChar=[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c>=128;};
@@ -36,7 +36,8 @@ public:
             std::uint64_t hash=14695981039346656037ULL;
             for(unsigned i=0;i<length;++i){hash^=normalized[i];hash*=1099511628211ULL;}
             for(unsigned i=0;i<8;++i)out[96+i]=static_cast<unsigned char>(hash>>(i*8));
-            out[104]=1;return out;
+            // Emulation and PS5 may resolve different releases of the same title.
+            out[104]=2;out[105]=(id[0]=='m'&&id[1]==':')?2:1;return out;
         }
         std::uint64_t hash=14695981039346656037ULL;
         for(unsigned char c:title){hash^=c;hash*=1099511628211ULL;}

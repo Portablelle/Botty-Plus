@@ -59,7 +59,14 @@ int main(){
             assert(artwork->read(*immediate)&&immediate->ready[0]&&immediate->backgroundReady);
             assert(immediate->ids[0]==ids[0]&&immediate->backgroundId==ids[0]);
         }
-        assert(calls==0);artwork->stop();
+        assert(calls==0);
+        std::snprintf(ids[0].data(),ids[0].size(),"m:switch-demo");names[0]="Demo";
+        artwork->request(ids,names,ids[0],names[0]);
+        assert(artwork->read(*immediate)&&!immediate->ready[0]&&!immediate->backgroundReady);
+        std::snprintf(ids[0].data(),ids[0].size(),"ranking-seeders");names[0]="Demo PS5";
+        artwork->request(ids,names,ids[0],names[0]);
+        assert(artwork->read(*immediate)&&immediate->ready[0]&&immediate->backgroundReady);
+        artwork->stop();
     }
     // A fresh worker/app instance must restore both images with the service offline.
     auto artwork=std::make_unique<botty::Artwork>(coverPath.c_str(),heroPath.c_str());artwork->start();

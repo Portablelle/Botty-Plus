@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Game cover resolver with bounded fetching, persistent SteamGridDB portraits and backgrounds."""
-import html, hashlib, hmac, io, json, os, pathlib, re, threading, time, unicodedata, urllib.parse, urllib.request
+import html, hashlib, hmac, io, json, os, pathlib, re, threading, time, tempfile, unicodedata, urllib.error, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from PIL import Image, ImageOps, ImageFilter, ImageStat
 CACHE = pathlib.Path(os.environ.get('BOTTY_ARTWORK_CACHE', '/var/cache/botty-artwork'))
@@ -13,7 +13,7 @@ UA = 'Botty/0.3 (personal game library; https://github.com/Portablelle/Botty-Plu
 HOSTS = {'www.steamgriddb.com', 'cdn2.steamgriddb.com', 'cdn.steamgriddb.com'}
 STEAM_CDNS = {'shared.akamai.steamstatic.com', 'shared.fastly.steamstatic.com'}
 SIZES = {'cover': (160, 240), 'hero': (640, 360)}
-RESOLVER = 11
+RESOLVER = 12
 LOCKS = [threading.Lock() for _ in range(32)]
 NETWORK = threading.BoundedSemaphore(4)
 Image.MAX_IMAGE_PIXELS = 12000000
@@ -68,8 +68,13 @@ def clean_title(title):
         title = trimmed
     return re.sub(r'\s+', ' ', title).strip(' .-')
 
+EXPLICIT_YEAR = r'\(((?:19|20)\d{2})(?:\s+video game)?\)'
+
+def without_release_year(title):
+    return re.sub(r'\s*' + EXPLICIT_YEAR, '', title, flags=re.I)
+
 def normalize(title):
-    title = re.sub(r'\s*\([^)]*\)', '', title.casefold()).replace('&', ' and ').replace('™', '').replace('®', '').replace('+', ' and ')
+    title = without_release_year(title).casefold().replace('&', ' and ').replace('™', '').replace('®', '').replace('+', ' and ')
     title = re.sub(r'^ea\s+sports\s+', '', title)
     title = ''.join(c for c in unicodedata.normalize('NFKD', title) if not unicodedata.combining(c))
     roman = {'ii':'2', 'iii':'3', 'iv':'4', 'v':'5', 'vi':'6', 'vii':'7', 'viii':'8', 'ix':'9', 'x':'10'}
@@ -121,8 +126,8 @@ def game(title, cache):
     except (OSError, ValueError, KeyError, TypeError): pass
     # Only an explicit parenthesized year disambiguates releases. "2077" in
     # Cyberpunk and "2024" in Football Cup are parts of their actual names.
-    year = re.search(r'\(((?:19|20)\d{2})(?:\s+[^)]*)?\)', title)
-    query = re.sub(r'\s*\([^)]*\)', '', title)
+    year = re.search(EXPLICIT_YEAR, title, re.I)
+    query = without_release_year(title)
     queries = [query]
     without_joiners = re.sub(r'\b(?:and|the)\b|[&+]', ' ', query, flags=re.I)
     without_joiners = re.sub(r'\s+', ' ', without_joiners).strip()
@@ -164,7 +169,7 @@ def candidates(ident, kind):
                'width': size[0], 'height': size[1], 'kind': kind}
 
 
-def steam_candidates(title, kind):
+def steam_candidates(title, kind, refresh=False):
     """Use the publisher's library assets, never a cropped store banner."""
     cache = CACHE / (hashlib.sha256(('steam-game-v1:' + title.casefold()).encode()).hexdigest() + '.steam.json')
     fields = ('library_capsule_2x', 'library_capsule') if kind == 'cover' else ('library_hero', 'library_hero_2x')
@@ -173,11 +178,11 @@ def steam_candidates(title, kind):
         previous = json.loads(cache.read_text())
         assets = previous['item'].get('assets', {})
         ttl = 2592000 if any(assets.get(field) for field in fields) else 3600
-        if previous.get('title') == title and time.time() - previous['saved'] < ttl:
+        if not refresh and previous.get('title') == title and time.time() - previous['saved'] < ttl:
             item = previous['item']
     except (OSError, ValueError, KeyError, TypeError): pass
     if item is None:
-        query = re.sub(r'\s*\([^)]*\)', '', title)
+        query = without_release_year(title)
         url = 'https://store.steampowered.com/api/storesearch/?' + urllib.parse.urlencode({'term': query, 'l': 'english', 'cc': 'fr'})
         rows = json.loads(fetch(url, 1048576)).get('items', [])
         rows = [row for row in rows if row.get('type') == 'app' and type(row.get('id')) is int and row['id'] > 0]
@@ -190,7 +195,7 @@ def steam_candidates(title, kind):
                    'data_request': {'include_assets': True, 'include_release': True}}
         url = 'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?' + urllib.parse.urlencode({'input_json': json.dumps(request, separators=(',', ':'))})
         rows = json.loads(fetch(url, 1048576)).get('response', {}).get('store_items', [])
-        year = re.search(r'\(((?:19|20)\d{2})(?:\s+[^)]*)?\)', title)
+        year = re.search(EXPLICIT_YEAR, title, re.I)
         matches = [row for row in rows if row.get('success') == 1 and row.get('type') == 0
                    and row.get('appid') in ids and match_key(row.get('name', '')) == match_key(title)
                    and (not year or time.gmtime(row.get('release', {}).get('steam_release_date') or 0).tm_year == int(year[1]))]
@@ -307,8 +312,19 @@ def hero_quality(data):
     return max(ImageStat.Stat(image.crop((image.width*3//5, image.height//5, image.width, image.height*4//5))).stddev)
 
 
+def save_bytes(path, data):
+    # Unique siblings also protect shared provider metadata across processes.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + '.', suffix='.tmp', delete=False) as stream:
+            temporary = pathlib.Path(stream.name)
+            stream.write(data)
+        temporary.replace(path)
+    finally:
+        if temporary is not None: temporary.unlink(missing_ok=True)
+
 def save_json(path, data):
-    temp = path.with_suffix('.tmp-json'); temp.write_text(json.dumps(data)); temp.replace(path)
+    save_bytes(path, json.dumps(data).encode())
 
 def cover(title, kind='cover'):
     if kind not in SIZES: raise ValueError('Invalid artwork kind')
@@ -319,11 +335,11 @@ def cover(title, kind='cover'):
     ident = hashlib.sha256((('sgdb-hero-v2:' if kind == 'hero' else 'sgdb-v1:') + title.casefold()).encode()).hexdigest()
     game_ident = hashlib.sha256(('sgdb-v1:' + title.casefold()).encode()).hexdigest()
     path = CACHE / (ident + '.' + kind + '.rgb'); metadata = CACHE / (ident + '.' + kind + '.json')
-    with LOCKS[int(ident[:2], 16) % len(LOCKS)]:
+    with LOCKS[int(game_ident[:2], 16) % len(LOCKS)]:
         try: previous = json.loads(metadata.read_text())
         except (OSError, ValueError): previous = {}
         age = time.time() - path.stat().st_mtime if path.exists() else float('inf')
-        if path.exists() and (previous.get('resolver') == RESOLVER or (previous.get('resolver') in (7, 8, 9, 10) and path.stat().st_size > 0)) and age < (2592000 if path.stat().st_size else 3600):
+        if path.exists() and (previous.get('resolver') == RESOLVER or (previous.get('resolver') in (7, 8, 9, 10, 11) and path.stat().st_size > 0)) and age < (2592000 if path.stat().st_size else 3600):
             data = path.read_bytes()
             if not data or usable_rgb(data, kind): return data
         errors = []
@@ -331,7 +347,7 @@ def cover(title, kind='cover'):
         if match and match.get('provider') == 'SteamGridDB' and match.get('kind') == kind:
             try:
                 result = raster(match, kind)
-                temporary = path.with_suffix('.tmp'); temporary.write_bytes(result); temporary.replace(path)
+                save_bytes(path, result)
                 save_json(metadata, {**previous, 'resolver': RESOLVER, 'saved': time.time()}); return result
             except Exception as error: errors.append(type(error).__name__)
         selected = None
@@ -348,12 +364,20 @@ def cover(title, kind='cover'):
         except Exception as error: errors.append(type(error).__name__)
         if selected is None:
             try:
-                # Recheck SteamGridDB before renewing an expired fallback image.
-                fallback = [match] if match and match.get('provider') == 'Steam' and match.get('kind') == kind else steam_candidates(title, kind)
-                for candidate in fallback:
+                # Resolve metadata again instead of pinning an expired saved URL.
+                refresh_needed = False
+                for candidate in steam_candidates(title, kind):
                     try: result = raster(candidate, kind)
-                    except Exception as error: errors.append(type(error).__name__); continue
+                    except Exception as error:
+                        errors.append(type(error).__name__)
+                        refresh_needed |= isinstance(error, urllib.error.HTTPError) and error.code in (404, 410)
+                        continue
                     selected = (candidate, result); break
+                if selected is None and refresh_needed:
+                    for candidate in steam_candidates(title, kind, refresh=True):
+                        try: result = raster(candidate, kind)
+                        except Exception as error: errors.append(type(error).__name__); continue
+                        selected = (candidate, result); break
             except Exception as error: errors.append(type(error).__name__)
         if selected is None:
             try:
@@ -364,12 +388,12 @@ def cover(title, kind='cover'):
             except Exception as error: errors.append(type(error).__name__)
         if selected:
             candidate, result = selected
-            temporary = path.with_suffix('.tmp'); temporary.write_bytes(result); temporary.replace(path)
+            save_bytes(path, result)
             save_json(metadata, {'resolver': RESOLVER, 'canonical': title, 'match': candidate, 'saved': time.time()})
             return result
         if errors: raise RuntimeError('Artwork temporarily unavailable')
         # Confirmed misses expire after an hour. Authentication/outage errors above never do.
-        temporary = path.with_suffix('.tmp'); temporary.write_bytes(b''); temporary.replace(path)
+        save_bytes(path, b'')
         save_json(metadata, {'resolver': RESOLVER, 'canonical': title, 'match': None, 'saved': time.time()})
         return b''
 

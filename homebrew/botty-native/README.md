@@ -216,7 +216,8 @@ The native app keeps up to 512 portraits in
 `/download0/botty-sgdb-covers-v1.cache` (about 56 MiB) and 128 heroes in
 `/download0/botty-sgdb-backgrounds-v2.cache` (about 84 MiB). Normalized game titles
 share entries across rankings, searches and the library, independently of result
-IDs. A decoded RAM LRU retains 96 covers and 12 heroes (~18 MiB): returning
+IDs, while keeping PS5 and emulation identities separate for platform-specific
+remakes. Older unscoped entries are treated as misses on the first lookup. A decoded RAM LRU retains 96 covers and 12 heroes (~18 MiB): returning
 to a recent page publishes them in the same UI request, with no worker/disk wait.
 Disk reads/writes run on the artwork worker; disk hits appear without contacting
 the service, including after an app restart. The least recently used entries are
