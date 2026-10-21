@@ -4,6 +4,7 @@
 #include "switch-format.hpp"
 #include <zlib.h>
 #include <limits>
+#include <vector>
 namespace botty {
 inline void extractZip(const fs::path& archive,const fs::path& destination,const Reporter& report,const std::function<bool()>& cancelled={}){
  const int fd=::open(archive.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK);
@@ -109,7 +110,7 @@ inline void extractZip(const fs::path& archive,const fs::path& destination,const
  if(available<512ULL*1024*1024||total>available-512ULL*1024*1024)throw std::runtime_error("Not enough space for ZIP extraction plus 512 MiB reserve");
  if(!fs::create_directory(destination))throw std::runtime_error("ZIP staging already exists; partial files retained");
  Progress p{"Extracting ZIP and checking CRC","",0,total};
- std::array<unsigned char,1024*1024> output{};
+ std::vector<unsigned char> output(1024*1024);
  for(const auto& m:members){check();
  const auto target=destination/m.name;
  fs::create_directories(target.parent_path());
