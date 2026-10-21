@@ -20,6 +20,11 @@ build/preview-tests/%.o: tests/%.cpp
 
 build/model-test: tests/model_test.cpp $(MODEL_OBJ)
 	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
+build/artwork-worker-test: tests/artwork_worker_test.cpp $(MODEL_OBJ)
+	$(CXX) $(HOST_FLAGS) $(filter %.cpp %.o,$^) -o $@
+build/artwork-cache-test: tests/artwork_cache_test.cpp src/artwork_cache.hpp
+	@mkdir -p $(@D)
+	$(CXX) $(HOST_FLAGS) $< -o $@
 build/keyboard-test: tests/keyboard_test.cpp build/host/keyboard.o
 	$(CXX) $(HOST_FLAGS) -MMD -MP $(filter %.cpp %.o,$^) -o $@
 build/native-update-test: tests/native_update_test.cpp $(MODEL_OBJ)
@@ -29,10 +34,12 @@ build/action-client: tests/action_client.cpp $(MODEL_OBJ)
 build/keyboard-overlay-test: build/preview-tests/keyboard_overlay_test.o build/preview-tests/preview_stubs.o $(PREVIEW_OBJ)
 	$(CXX) $(HOST_FLAGS) $(filter %.o,$^) -o $@
 
-host-test-build: build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test build/action-client
+host-test-build: build/artwork-cache-test build/artwork-worker-test build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test build/action-client
 
 # Prerequisite compilation is bounded by the caller's -j; tests stay sequential.
-test: build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test
+test: build/artwork-worker-test build/model-test build/keyboard-test build/native-update-test build/keyboard-overlay-test build/artwork-cache-test
+	./build/artwork-worker-test
+	./build/artwork-cache-test
 	./build/model-test
 	./build/keyboard-test
 	./build/native-update-test

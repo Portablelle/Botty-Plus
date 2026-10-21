@@ -266,9 +266,17 @@ void art(Canvas& c,unsigned x,unsigned y,unsigned w,unsigned h,unsigned radius,c
     if(alpha<255)c.rounded(x,y,w,h,0,behind,255-alpha);
     c.clip_corners(x,y,w,h,radius,behind);
 }
-// Cover art blown up behind the hero, faded into velvet on the left and bottom.
+// SteamGridDB hero with a blurred cover fallback, faded under readable text.
 void hero(Canvas& c,const std::array<char,96>& id,unsigned seed,unsigned fadeTop) noexcept {
-    if(const auto* pixels=coverFor(id))c.poster(532,0,1388,780,*pixels,0,255,true);
+    if(covers.backgroundReady&&covers.backgroundId==id)c.image(532,0,1388,780,covers.background,640,360,0,255,true);
+    else if(const auto* pixels=coverFor(id)){
+        std::array<unsigned char,10*15*3> blurred{};
+        for(unsigned y=0;y<15;++y)for(unsigned x=0;x<10;++x)for(unsigned channel=0;channel<3;++channel){
+            unsigned total=0;for(unsigned dy=0;dy<16;++dy)for(unsigned dx=0;dx<16;++dx)total+=(*pixels)[((y*16+dy)*160+x*16+dx)*3+channel];
+            blurred[(y*10+x)*3+channel]=static_cast<unsigned char>(total/256);
+        }
+        c.image(532,0,1388,780,blurred,10,15,0,255,true);
+    }
     else gamePattern(c,532,0,1388,780,seed);
     c.fade(532,0,287,780,bg,255,209,true);c.fade(819,0,533,780,bg,209,0,true);
     c.fade(0,fadeTop,1920,780-fadeTop,bg,0,255,false);
@@ -1239,6 +1247,7 @@ void drawToast(Canvas& c,bool sheet) noexcept {
 }
 
 void drawEmulation(Canvas& c) noexcept {
+    if(const auto* selected=botty::emulationAt(catalog,model.filter,model.selected))hero(c,artworkId(*selected,'m'),model.selected,500);
     text(c,96,146,"Emulation",56,68,ink,bold);
     const char* filters[]={"Games","Updates / DLC","Available files"};
     unsigned x=1100;for(unsigned i=0;i<3;++i)x+=chip(c,x,202,filters[i],model.filter==i)+12;
@@ -1552,7 +1561,15 @@ bool draw(Canvas& c) noexcept {
             const unsigned first=(model.selected/6)*6;
             for(unsigned i=0;i<6&&first+i<model.count;++i){const auto* entry=botty::emulationAt(catalog,model.filter,first+i);if(entry){ids[i]=artworkId(*entry,'m');names[i]=entry->name.data();}}
         }
-        artwork.request(ids);if(artwork.read(covers))++displayRevision;
+        std::array<char,96> backgroundId{};std::string_view backgroundName;
+        if(model.tab==Model::discover&&!model.searchResults&&model.selected<catalog.exploreCount){
+            const auto& entry=catalog.exploreResults[model.selected];backgroundId=entry.id;backgroundName=entry.name.data();
+        }else if(model.tab==Model::emulation){
+            if(const auto* entry=botty::emulationAt(catalog,model.filter,model.selected)){backgroundId=artworkId(*entry,'m');backgroundName=entry->name.data();}
+        }else if(model.details){
+            const auto item=focused();if(item.entry){backgroundId=artworkId(*item.entry,artSource(item));backgroundName=item.entry->name.data();}
+        }
+        artwork.request(ids,names,backgroundId,backgroundName);if(artwork.read(covers))++displayRevision;
 #ifdef BOTTY_HOST_PREVIEW
         // Cover fixtures are matched by title, so a cover never lands on another game:
         // "Astro Bot" loads <BOTTY_PREVIEW_COVERS>/astro-bot.rgb when it exists.
@@ -1568,6 +1585,12 @@ bool draw(Canvas& c) noexcept {
             char path[256];std::snprintf(path,sizeof(path),"%s/%s.rgb",directory,slug);
             FILE* file=std::fopen(path,"rb");if(!file)continue;
             covers.ready[i]=std::fread(covers.pixels[i].data(),1,covers.pixels[i].size(),file)==covers.pixels[i].size();std::fclose(file);covers.ids[i]=ids[i];
+        }
+        if(const char* path=std::getenv("BOTTY_PREVIEW_BACKGROUND");path&&backgroundId[0]&&(!covers.backgroundReady||covers.backgroundId!=backgroundId)){
+            if(FILE* file=std::fopen(path,"rb")){
+                covers.backgroundReady=std::fread(covers.background.data(),1,covers.background.size(),file)==covers.background.size();
+                std::fclose(file);covers.backgroundId=backgroundId;
+            }
         }
 #endif
     }

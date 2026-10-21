@@ -155,35 +155,44 @@ public:
     for(const auto& row:torrents){if(count++==256)break;catalogTitles["t:"+std::to_string(row.at("id").get<int>())]=row.value("name","");}
     count=0;for(const auto& row:jobs){if(count++==256)break;catalogTitles["j:"+row.at("id").get<std::string>()]=row.value("name","");}
   }
-  std::string artwork(const Paths& paths,const std::string& id,bool catalog=false){
+  std::string artwork(const Paths& paths,const std::string& id,bool catalog=false,const std::string& kind="cover"){
     std::lock_guard<std::mutex> guard(mutex);std::string title;
-    if(catalog){const auto found=catalogTitles.find(id);if(found!=catalogTitles.end())title=gameKey(found->second);}
-    else for(const auto& row:rows)if(row.at("id")==id)title=gameKey(row.value("name",""));
+    if(catalog){const auto found=catalogTitles.find(id);if(found!=catalogTitles.end())title=found->second;}
+    else for(const auto& row:rows)if(row.at("id")==id)title=row.value("name","");
+    return artworkLocked(paths,title,kind);
+  }
+  std::string artworkTitle(const Paths& paths,const std::string& title,const std::string& kind="cover"){
+    std::lock_guard<std::mutex> guard(mutex);return artworkLocked(paths,title,kind);
+  }
+  std::string artworkLocked(const Paths& paths,std::string title,const std::string& kind){
+    if(kind!="cover"&&kind!="hero")throw std::runtime_error("Invalid artwork kind");
     if(title.empty())return {};if(title.size()>200)title.resize(200);
+    const auto bytes=kind=="hero"?640*360*3:160*240*3;
+    const auto cacheKey=kind+":"+title;
     unsigned long long hash=14695981039346656037ULL;for(unsigned char c:title){hash^=c;hash*=1099511628211ULL;}
     char key[17];std::snprintf(key,sizeof(key),"%016llx",hash);
-    const auto folder=paths.root/"cache/covers-v4",file=folder/(std::string(key)+".rgb"),meta=folder/(std::string(key)+".json");
-    const auto found=covers.find(title);if(found!=covers.end()){if(!found->second.empty()||std::time(nullptr)-coverFailedAt[title]<60)return found->second;covers.erase(found);coverFailedAt.erase(title);}
+    const auto folder=paths.root/(kind=="hero"?"cache/sgdb-heroes-v2":"cache/sgdb-covers-v1"),file=folder/(std::string(key)+".rgb"),meta=folder/(std::string(key)+".json");
+    const auto found=covers.find(cacheKey);if(found!=covers.end()){if(!found->second.empty()||std::time(nullptr)-coverFailedAt[cacheKey]<60)return found->second;covers.erase(found);coverFailedAt.erase(cacheKey);}
     if(coversLoading>=6)return "pending";
-    if(covers.size()>=36){for(auto it=covers.begin();it!=covers.end();++it)if(it->second!="pending"){covers.erase(it);break;}}
-    try{auto saved=json::parse(readText(meta,4096));if(saved.at("title")==title&&std::time(nullptr)-saved.at("saved").get<long long>()<2592000){auto data=readText(file,160*240*3);if(data.size()==160*240*3){covers[title]=data;return data;}}}catch(...){}
-    covers[title]="pending";++coversLoading;
-    try{std::thread([this,paths,title,folder,file,meta]{
+    if(covers.size()>=24){for(auto it=covers.begin();it!=covers.end();++it)if(it->second!="pending"){covers.erase(it);break;}}
+    try{auto saved=json::parse(readText(meta,4096));if(saved.at("title")==title&&std::time(nullptr)-saved.at("saved").get<long long>()<2592000){auto data=readText(file,bytes);if(data.size()==size_t(bytes)){covers[cacheKey]=data;return data;}}}catch(...){}
+    covers[cacheKey]="pending";++coversLoading;
+    try{std::thread([this,paths,title,folder,file,meta,kind,bytes,cacheKey]{
       std::string data;try{std::string encoded;const char* hex="0123456789ABCDEF";for(unsigned char c:title){if(std::isalnum(c))encoded+=c;else{encoded+='%';encoded+=hex[c>>4];encoded+=hex[c&15];}}
-        data=fetch(paths,"/artwork?title="+encoded,160*240*3,12);if(data.size()!=160*240*3)data.clear();
+        data=fetch(paths,"/artwork?title="+encoded+"&kind="+kind,bytes,12);if(data.size()!=size_t(bytes))data.clear();
       }catch(...){}
       if(!data.empty())try{
         fs::create_directories(folder);fs::permissions(folder,fs::perms::owner_all);
         const auto temp=file.string()+".tmp";{std::ofstream out(temp,std::ios::binary);out.write(data.data(),data.size());if(!out)throw std::runtime_error("Cover cache write failed");}
         fs::rename(temp,file);writeJson(meta,{{"title",title},{"saved",std::time(nullptr)}});
-        // Bound disk usage to roughly 15 MiB; concurrent writers only prune old entries.
+        // Separate bounded namespaces: ~56 MiB of portraits and ~84 MiB of heroes.
         std::lock_guard<std::mutex> cacheGuard(mutex);std::vector<fs::path> files;
         for(const auto& item:fs::directory_iterator(folder))if(item.path().extension()==".rgb")files.push_back(item.path());
         std::sort(files.begin(),files.end(),[](const auto& a,const auto& b){return fs::last_write_time(a)<fs::last_write_time(b);});
-        while(files.size()>128){auto oldest=files.front();fs::remove(oldest);oldest.replace_extension(".json");fs::remove(oldest);files.erase(files.begin());}
+        while(files.size()>size_t(kind=="hero"?128:512)){auto oldest=files.front();fs::remove(oldest);oldest.replace_extension(".json");fs::remove(oldest);files.erase(files.begin());}
       }catch(...){}
-      std::lock_guard<std::mutex> finished(mutex);if(data.empty())coverFailedAt[title]=std::time(nullptr);covers[title]=std::move(data);--coversLoading;
-    }).detach();}catch(...){covers.erase(title);--coversLoading;return {};}
+      std::lock_guard<std::mutex> finished(mutex);if(data.empty())coverFailedAt[cacheKey]=std::time(nullptr);covers[cacheKey]=std::move(data);--coversLoading;
+    }).detach();}catch(...){covers.erase(cacheKey);--coversLoading;return {};}
     return "pending";
   }
   template<class RPC> void add(const Paths& paths,const std::string& id,RPC rpc){

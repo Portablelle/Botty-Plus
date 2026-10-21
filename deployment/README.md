@@ -68,6 +68,12 @@ require manual attention. Original download archives remain available for seedin
 
 ## Optional cover resolver
 
+SteamGridDB supplies portraits and hero backgrounds for PS5 and Switch, with
+official Steam library assets as a fallback for missing games/images and verified
+PlayStation Store products for configured console-only editions. Configure
+its separate provider key in `/opt/botty-artwork/steamgriddb-api-key` (root:botty-artwork,
+0640); see [key setup and cache behavior](botty-artwork/README.md).
+
 The resolver listens on `127.0.0.1:9697`; Nginx exposes only its authenticated
 artwork route. It uses the **same API key** as the console's Prowlarr configuration.
 
@@ -78,10 +84,13 @@ sudo apt-get install python3-pil
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin botty-artwork
 sudo install -d -o root -g botty-artwork -m 0750 /opt/botty-artwork
 sudo install -m 0644 deployment/botty-artwork/server.py /opt/botty-artwork/server.py
-sudo install -m 0644 deployment/botty-artwork/sources.json /opt/botty-artwork/sources.json
+sudo install -m 0644 deployment/botty-artwork/steamgriddb-games.json /opt/botty-artwork/steamgriddb-games.json
+sudo install -m 0644 deployment/botty-artwork/playstation-games.json /opt/botty-artwork/playstation-games.json
 sudo install -m 0644 deployment/botty-artwork/aliases.json /opt/botty-artwork/aliases.json
 sudo install -o root -g botty-artwork -m 0640 /dev/null /opt/botty-artwork/api-key
 sudoedit /opt/botty-artwork/api-key
+sudo install -o root -g botty-artwork -m 0640 /dev/null /opt/botty-artwork/steamgriddb-api-key
+sudoedit /opt/botty-artwork/steamgriddb-api-key
 sudo install -m 0644 deployment/botty-artwork/botty-artwork.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now botty-artwork
@@ -90,9 +99,10 @@ sudo systemctl status botty-artwork
 
 Skip user creation if the account already exists. Enter only the API key into the
 key file; do not put it in shell arguments or source control. On updates, preserve
-`api-key`, `aliases.json`, `sources.json` and `/var/cache/botty-artwork`; do not
-repeat the command that creates an empty key file. Source mappings may have
-local additions. See [resolver behavior](botty-artwork/README.md).
+both key files, `aliases.json`, `steamgriddb-games.json`, `playstation-games.json`
+and `/var/cache/botty-artwork`; merge new default mappings with operator additions.
+Do not repeat the command that creates an empty key file. Legacy `sources.json`
+mappings are left untouched. See [resolver behavior](botty-artwork/README.md).
 
 ## Updates and rollback
 

@@ -895,14 +895,19 @@ int main(int argc,char** argv) {
       result["torrentRemovalSupported"]=true;result["exploreSupported"]=true;result["explore"]=explore.state(owned);
       reply(res,result);
     });
-    server.Get("/api/explore/artwork",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();auto data=explore.artwork(paths,req.get_param_value("id"));if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}else res.set_content(data,"application/octet-stream");});
+    server.Get("/api/explore/artwork",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto kind=req.has_param("kind")?req.get_param_value("kind"):"cover";auto data=explore.artwork(paths,req.get_param_value("id"),false,kind);if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}else res.set_content(data,"application/octet-stream");});
     // Resolve only known local entries or search IDs, never client-supplied URLs/titles.
     server.Get("/api/artwork",[](const auto& req,auto& res){
       std::unique_lock<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       const auto id=req.get_param_value("id");
+      const auto kind=req.has_param("kind")?req.get_param_value("kind"):"cover";
+      if(kind!="cover"&&kind!="hero")throw std::runtime_error("Invalid artwork kind");
       std::string data;
-      if(id.rfind("m:",0)==0){guard.unlock();data=emulation.artwork(id.substr(2));if(data.empty())data=legacyEmulation.artwork(id.substr(2));}
-      else data=id.rfind("s:",0)==0?search.artwork(paths,id.substr(2)):explore.artwork(paths,id,true);
+      if(id.rfind("m:",0)==0){
+        guard.unlock();auto title=emulation.artworkTitle(id.substr(2));if(title.empty())title=legacyEmulation.artworkTitle(id.substr(2));
+        if(!title.empty())data=search.artworkTitle(paths,title,kind);
+      }
+      else data=id.rfind("s:",0)==0?search.artwork(paths,id.substr(2),false,kind):explore.artwork(paths,id,true,kind);
       if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}
       else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}
       else res.set_content(data,"application/octet-stream");

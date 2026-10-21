@@ -11,6 +11,12 @@ bool overlayFrame(Canvas& canvas) noexcept {
     using Buttons=botty::Buttons;
     unsigned edge=0;
     if(frame==0){
+        // Near-identical source/destination aspect ratios must not underflow
+        // the centered source window (640×360 -> 1388×780 previously did).
+        std::array<unsigned char,640*360*3> heroPixels{};heroPixels.fill(123);
+        canvas.image(532,0,1388,780,heroPixels,640,360,0,255,true);
+        canvas.image(532,0,1388,780,heroPixels,640,360,0,255,false);
+
         model.tab=Model::activity;pad=1;workflow.add();textEntryState=TextEntryState::ready;
         notify(Toast::Kind::error,"Request failed","Fixture failure");edge=Buttons::circle;
     }else if(frame==1){

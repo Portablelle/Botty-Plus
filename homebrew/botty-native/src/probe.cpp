@@ -3,6 +3,7 @@
 #include "platform.hpp"
 #include "json_flat.hpp"
 #include <array>
+#include <algorithm>
 #include <cstdio>
 #include <string_view>
 #include <memory>
@@ -336,9 +337,20 @@ void* Network::worker(void* context) noexcept {
 }
 void Artwork::start() noexcept {stop_.store(false);(void)platform::startWorker(worker,this,&thread_);}
 void Artwork::stop() noexcept {stop_.store(true);if(thread_){platform::joinWorker(thread_);thread_=nullptr;}}
-void Artwork::request(const CoverIds& ids) noexcept {
+void Artwork::request(const CoverIds& ids,const std::array<std::string_view,coverSlots>& names,const std::array<char,96>& backgroundId,std::string_view backgroundName) noexcept {
+    std::array<ArtworkCache::Key,coverSlots> keys{};
+    for(unsigned i=0;i<ids.size();++i)keys[i]=ArtworkCache::key(ids[i],names[i]);
     if(gate_.test_and_set(std::memory_order_acquire))return;
-    if(ids!=requested_){requested_=ids;++requestRevision_;}
+    const auto backgroundKey=ArtworkCache::key(backgroundId,backgroundName);
+    if(ids!=requested_||keys!=requestedKeys_||backgroundId!=backgroundId_||backgroundKey!=backgroundKey_){
+        requested_=ids;requestedKeys_=keys;backgroundId_=backgroundId;backgroundKey_=backgroundKey;++requestRevision_;
+        // Publish RAM hits in this request, before returning to the same UI frame.
+        page_.ids=ids;
+        for(unsigned i=0;i<ids.size();++i)page_.ready[i]=ids[i][0]&&retainedCovers_.load(keys[i],page_.pixels[i].data());
+        page_.backgroundId=backgroundId;
+        page_.backgroundReady=backgroundId[0]&&retainedBackgrounds_.load(backgroundKey,page_.background.data());
+        ++page_.revision;
+    }
     gate_.clear(std::memory_order_release);
 }
 bool Artwork::read(ArtworkPage& out) noexcept {
@@ -348,44 +360,74 @@ bool Artwork::read(ArtworkPage& out) noexcept {
 }
 void* Artwork::worker(void* context) noexcept {
     auto& self=*static_cast<Artwork*>(context);unsigned handled=0;
+    auto& cache=self.cache_;auto& backgrounds=self.backgrounds_;
+    // Large pixel/HTTP buffers live outside the PS5 worker's bounded stack.
+    static std::array<unsigned char,BackgroundCache::pixelBytes> pixels;
+    static Response<BackgroundCache::pixelBytes+1> response;
     while(!self.stop_.load()){
-        CoverIds ids;unsigned requestRevision;
+        CoverIds ids;std::array<ArtworkCache::Key,coverSlots> keys;unsigned revision;
+        std::array<char,96> backgroundId;ArtworkCache::Key backgroundKey;
         while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
-        ids=self.requested_;requestRevision=self.requestRevision_;self.gate_.clear(std::memory_order_release);
-        if(requestRevision==handled){platform::sleep(100000);continue;}handled=requestRevision;
-        // Scrolling shifts covers between slots: keep any that are already loaded.
-        static ArtworkPage previous;
-        std::array<bool,coverSlots> done{};
+        ids=self.requested_;keys=self.requestedKeys_;revision=self.requestRevision_;
+        backgroundId=self.backgroundId_;backgroundKey=self.backgroundKey_;self.gate_.clear(std::memory_order_release);
+        if(revision==handled){platform::sleep(16000);continue;}handled=revision;
+        std::array<bool,coverSlots> done{};bool backgroundDone=!backgroundId[0],stale=false;
         while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
-        previous=self.page_;self.page_.ids=ids;self.page_.ready.fill(false);
-        for(unsigned i=0;i<ids.size();++i)for(unsigned j=0;ids[i][0]&&j<previous.ids.size();++j)
-            if(previous.ready[j]&&previous.ids[j]==ids[i]){self.page_.pixels[i]=previous.pixels[j];self.page_.ready[i]=done[i]=true;break;}
-        ++self.page_.revision;self.gate_.clear(std::memory_order_release);
+        // request() already installed the current page and all retained RAM hits.
+        stale=self.requestRevision_!=revision;
+        if(!stale){done=self.page_.ready;backgroundDone=backgroundDone||self.page_.backgroundReady;}
+        self.gate_.clear(std::memory_order_release);if(stale)continue;
+        const auto publish=[&](unsigned slot,bool background,bool ready) noexcept {
+            while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
+            stale=self.requestRevision_!=revision;
+            // A request completed during navigation is still useful on the return trip.
+            if(ready){if(background)self.retainedBackgrounds_.store(backgroundKey,pixels.data());else self.retainedCovers_.store(keys[slot],pixels.data());}
+            if(!stale&&ready){
+                if(background){self.page_.background=pixels;self.page_.backgroundReady=backgroundDone=true;}
+                else{std::copy_n(pixels.begin(),ArtworkCache::pixelBytes,self.page_.pixels[slot].begin());self.page_.ready[slot]=done[slot]=true;}
+                ++self.page_.revision;
+            }
+            self.gate_.clear(std::memory_order_release);
+        };
+        // Publish every disk hit before contacting the service.
+        for(unsigned i=0;i<ids.size()&&!self.stop_.load();++i){
+            if(!done[i]&&ids[i][0])publish(i,false,cache.load(keys[i],pixels.data()));
+            if(stale)break;
+        }
+        if(!stale&&!backgroundDone)publish(0,true,backgrounds.load(backgroundKey,pixels.data()));
+        bool missing=!backgroundDone;for(unsigned i=0;i<ids.size();++i)if(ids[i][0]&&!done[i])missing=true;
+        if(stale||!missing)continue;
         Response bootstrap;FlatJSON json;
         if(get("/api/bootstrap",{},bootstrap,platform::now()+5000000)!=Probe::ready||!json.parse(bootstrap.view()))continue;
         const auto token=json.string("token");if(token.size()!=32)continue;
-        bool stale=false;
-        for(unsigned attempt=0;attempt<20&&!self.stop_.load()&&!stale;++attempt){
-        for(unsigned i=0;i<ids.size()&&!self.stop_.load();++i){
-            if(done[i])continue;
-            if(!ids[i][0])continue;
-            std::array<char,288> encoded{};unsigned length=0;
-            constexpr char hex[]="0123456789ABCDEF";
-            for(unsigned char ch:std::string_view(ids[i].data())){
+        const auto download=[&](unsigned slot,bool background) noexcept {
+            const auto& id=background?backgroundId:ids[slot];
+            std::array<char,288> encoded{};unsigned length=0;constexpr char hex[]="0123456789ABCDEF";
+            for(unsigned char ch:std::string_view(id.data())){
                 if((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='-')encoded[length++]=static_cast<char>(ch);
-                else {encoded[length++]='%';encoded[length++]=hex[ch>>4];encoded[length++]=hex[ch&15];}
+                else{encoded[length++]='%';encoded[length++]=hex[ch>>4];encoded[length++]=hex[ch&15];}
             }
-            char path[340];std::snprintf(path,sizeof(path),ids[i][1]==':'?"/api/artwork?id=%s":"/api/explore/artwork?id=%s",encoded.data());
-            static Response<160*240*3+1> response;response.status=0;response.length=0;
-            const bool ready=get(path,token,response,platform::now()+14000000)==Probe::ready&&response.length==160*240*3;
+            char path[360];std::snprintf(path,sizeof(path),id[1]==':'?"/api/artwork?id=%s&kind=%s":"/api/explore/artwork?id=%s&kind=%s",encoded.data(),background?"hero":"cover");
+            response.status=0;response.length=0;
+            const unsigned bytes=background?BackgroundCache::pixelBytes:ArtworkCache::pixelBytes;
+            const bool ready=get(path,token,response,platform::now()+14000000)==Probe::ready&&response.length==bytes;
+            if(ready){
+                if(background)backgrounds.store(backgroundKey,response.body.data());else cache.store(keys[slot],response.body.data());
+                std::memcpy(pixels.data(),response.body.data(),bytes);
+            }
+            publish(slot,background,ready);
+            if(response.status==404){if(background)backgroundDone=true;else done[slot]=true;}
+        };
+        for(unsigned attempt=0;attempt<20&&!self.stop_.load()&&!stale;++attempt){
+            // Start the selected game's background without waiting for an entire cover row.
+            if(!self.stop_.load()&&!backgroundDone)download(0,true);
+            for(unsigned i=0;i<ids.size()&&!self.stop_.load()&&!stale;++i)if(ids[i][0]&&!done[i])download(i,false);
+            bool complete=backgroundDone;for(unsigned i=0;i<ids.size();++i)if(ids[i][0]&&!done[i])complete=false;
+            if(complete)break;
+            for(unsigned wait=0;wait<20&&!self.stop_.load();++wait)platform::sleep(100000);
+            // Navigation immediately abandons old retries, including pending heroes.
             while(self.gate_.test_and_set(std::memory_order_acquire))platform::sleep(1000);
-            stale=self.requestRevision_!=requestRevision;
-            done[i]=ready||response.status==404;
-            if(!stale&&ready){for(unsigned b=0;b<response.length;++b)self.page_.pixels[i][b]=static_cast<unsigned char>(response.body[b]);self.page_.ready[i]=true;++self.page_.revision;}
-            self.gate_.clear(std::memory_order_release);if(stale)break;
-        }
-        bool complete=true;for(unsigned i=0;i<ids.size();++i)if(ids[i][0]&&!done[i])complete=false;if(complete)break;
-        for(unsigned wait=0;wait<20&&!self.stop_.load();++wait)platform::sleep(100000);
+            stale=self.requestRevision_!=revision;self.gate_.clear(std::memory_order_release);
         }
     }
     return nullptr;

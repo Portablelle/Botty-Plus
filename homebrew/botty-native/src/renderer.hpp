@@ -43,6 +43,8 @@ class Canvas final
     // Crop fills the box like CSS "cover"; radius and alpha mask the result.
     void poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,
                 unsigned radius=0,unsigned alpha=255,bool crop=false) noexcept;
+    void image(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,
+               unsigned sourceWidth,unsigned sourceHeight,unsigned radius=0,unsigned alpha=255,bool crop=false) noexcept;
     void gameCase(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb) noexcept;
     void clear(Color color) noexcept;
     void backdrop(bool subdued) noexcept;

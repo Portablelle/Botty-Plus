@@ -251,6 +251,13 @@ public:
     try{enrich(out,root());}catch(...){out["error"]="Some game details are unavailable; files were left unchanged";}
     return out;
   }
+  std::string artworkTitle(const std::string& id) const {
+    std::lock_guard<std::mutex> guard(*displayLock_);
+    const auto found=std::find_if(display_.begin(),display_.end(),[&](const auto& entry){return entry.second.id==id||entry.second.artworkId==id;});
+    if(found==display_.end())return {};
+    try{containedExisting(root(),found->first);if(sourceIdentity(found->first)!=found->second.identity)return {};}catch(...){return {};}
+    return found->second.data.value("name",std::string{});
+  }
   std::string artwork(const std::string& id) const {
     std::lock_guard<std::mutex> guard(*displayLock_);
     auto found=std::find_if(display_.begin(),display_.end(),[&](const auto& entry){return entry.second.id==id||entry.second.artworkId==id;});
