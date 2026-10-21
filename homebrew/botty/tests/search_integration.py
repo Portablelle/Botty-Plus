@@ -2,11 +2,17 @@
 import hashlib, importlib.util, json, pathlib, socket, ssl, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from rtorrent_fixture import RtorrentFixture
+from switch_fixtures import package
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('fixtures', HERE/'make_fixtures.py')
 fixtures = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixtures)
 with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
  root=pathlib.Path(temp); fixtures.build(root/'fixtures')
+ (root/'eden/roms').mkdir(parents=True);(root/'eden/keys').mkdir(parents=True)
+ (root/'eden/keys/prod.keys').write_text('# synthetic fixture')
+ (root/'eden/roms/demo.nsp').write_bytes(package(display=('Switch Fixture','1.0.0')))
+ (root/'eden/updates').mkdir()
+ (root/'eden/updates/dlc.nsp').write_bytes(package('dlc'))
  complete=root/'downloads/complete'; complete.mkdir(parents=True)
  (complete/'sample.rar').write_bytes((root/'fixtures/app.rar').read_bytes())
  size=(complete/'sample.rar').stat().st_size
@@ -48,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
     else:self.reply([dict(row,indexerId=2),dict(row,categories=[{'id':2000}]),row,dict(other,title='Other homebrew PS5 fixture',seeders=6),dict(row,title='Original homebrew PS5 fixture',grabs=4)])
    elif url.path=='/artwork':
     cover_calls.append(self.path)
-    data=bytes([12,80,160])*(160*240);self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+    hero=urllib.parse.parse_qs(url.query).get('kind')==['hero']
+    data=bytes([12,80,160])*(640*360 if hero else 160*240);self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
    else:
     assert url.path in ['/1/download','/8/download'] and 'apikey' not in urllib.parse.parse_qs(url.query)
     data=remote_payload or b'd4:infod4:name7:fixtureee';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
@@ -165,13 +172,23 @@ with tempfile.TemporaryDirectory(prefix='botty-search-') as temp:
    with urllib.request.urlopen(req,timeout=2) as response:
     data=response.read();return data if response.status==200 else None
   assert until(artwork)==bytes([12,80,160])*(160*240)
-  def catalog_artwork(ident):
-   req=urllib.request.Request(f'http://127.0.0.1:{port}/api/artwork?id='+urllib.parse.quote(ident),headers={'X-Botty-Token':token})
+  assert urllib.parse.parse_qs(urllib.parse.urlsplit(cover_calls[-1]).query)['title']==[browse['results'][0]['name']] # Preserve release markers for the resolver.
+  def catalog_artwork(ident,kind="cover"):
+   req=urllib.request.Request(f'http://127.0.0.1:{port}/api/artwork?id='+urllib.parse.quote(ident)+'&kind='+kind,headers={'X-Botty-Token':token})
    with urllib.request.urlopen(req,timeout=2) as response:
     data=response.read();return data if response.status==200 else None
   assert state['catalogArtworkSupported']
   assert until(lambda:catalog_artwork('t:1'))==bytes([12,80,160])*(160*240)
   assert until(lambda:catalog_artwork('s:'+results[0]['id']))==bytes([12,80,160])*(160*240)
+  switch=next(row for row in request('/api/state')['emulation']['entries'] if row['name']=='Switch Fixture')
+  assert until(lambda:catalog_artwork('m:'+switch['artworkId']))==bytes([12,80,160])*(160*240)
+  assert until(lambda:catalog_artwork('m:'+switch['artworkId'],'hero'))==bytes([12,80,160])*(640*360)
+  dlc=next(row for row in request('/api/state')['emulation']['entries'] if row['path'].endswith('/dlc.nsp'))
+  assert dlc['name']=='Switch Fixture'
+  # DLC has no Control NACP: resolve through its projected base-game name.
+  assert until(lambda:catalog_artwork('m:'+dlc['artworkId']))==bytes([12,80,160])*(160*240)
+  assert until(lambda:catalog_artwork('m:'+dlc['artworkId'],'hero'))==bytes([12,80,160])*(640*360)
+  assert until(lambda:catalog_artwork('t:1','hero'))==bytes([12,80,160])*(640*360)
   for invalid in ['t:999','j:unknown','https://example.com/image.jpg','../../outside']:
    try:catalog_artwork(invalid);raise AssertionError('Unknown artwork ID accepted')
    except urllib.error.HTTPError as e:assert e.code==404

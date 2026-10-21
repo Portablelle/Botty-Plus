@@ -47,6 +47,17 @@ with tempfile.TemporaryDirectory(prefix='botty-library-') as folder:
         except urllib.error.HTTPError as error:response=error
         assert response.status==status,(response.status,response.read())
         value=response.read();return value if binary else json.loads(value)
+    def no_embedded_cover(ident):
+        # No remote artwork configuration in this fixture: never substitute square icons.
+        req=urllib.request.Request(f'http://127.0.0.1:{port}/api/artwork?id=m:'+ident,headers={'X-Botty-Token':token})
+        for _ in range(100):
+            try:
+                with urllib.request.urlopen(req,timeout=5) as response:
+                    assert response.status==202;response.read()
+            except urllib.error.HTTPError as error:
+                assert error.code==404;return
+            time.sleep(.02)
+        raise AssertionError('Artwork did not settle')
     def entries():return get('/api/state')['emulation']['entries']
     try:
         for _ in range(200):
@@ -56,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='botty-library-') as folder:
         rows=entries();selected=next(r for r in rows if r['kind']=='roms')
         legacy_entry=next(r for r in rows if r.get('source')=='existing-ps5')
         assert legacy_entry['name']=='Legacy fixture'
-        assert len(get('/api/artwork?id=m:'+legacy_entry['artworkId'],binary=True))==160*240*3
+        no_embedded_cover(legacy_entry['artworkId'])
         assert selected['name']=='Mario Kart 8 Deluxe',selected
         assert selected['titleId']==TITLE
         assert selected['baseVersion']=='v1.0.0' and selected['updateVersion']=='v3.0.5'
@@ -67,25 +78,21 @@ with tempfile.TemporaryDirectory(prefix='botty-library-') as folder:
         assert selected['library']['verified'] is False # display is not import verification
         orphan=next(r for r in rows if r['path'].endswith('unrelated.nsp'))
         assert orphan['dependencyStatus']=='base-game-missing'
-        pixels=get('/api/artwork?id=m:'+selected['id'],binary=True)
-        assert len(pixels)==160*240*3
-        assert pixels[(120*160+80)*3:(120*160+80)*3+3]==bytes([255,0,0])
+        no_embedded_cover(selected['id'])
         old_artwork=selected['artworkId']
         hash_value=2166136261
         for ch in game.name.encode():hash_value=((hash_value^ch)*16777619)&0xffffffff
         cover=root/'eden/covers'/f'{hash_value:08x}.tga';cover.parent.mkdir()
-        # Custom covers from the embedded launcher's cache take precedence.
+        # Embedded launcher artwork changes no longer replace uniform remote portraits.
         cover.write_bytes(bytes([0,0,2])+bytes(9)+bytes([2,0,2,0,24,32])+bytes([255,0,0])*4)
         selected=next(r for r in entries() if r['kind']=='roms')
         assert selected['artworkId']!=old_artwork
-        pixels=get('/api/artwork?id=m:'+selected['artworkId'],binary=True)
-        assert pixels[(120*160+80)*3:(120*160+80)*3+3]==bytes([0,0,255])
+        no_embedded_cover(selected['artworkId'])
         # A valid TGA header with no pixels must fall back to the embedded icon,
         # never expose an uninitialized decoder buffer.
         cover.write_bytes(cover.read_bytes()[:18])
         selected=next(r for r in entries() if r['kind']=='roms')
-        pixels=get('/api/artwork?id=m:'+selected['artworkId'],binary=True)
-        assert pixels[(120*160+80)*3:(120*160+80)*3+3]==bytes([255,0,0])
+        no_embedded_cover(selected['artworkId'])
         get('/api/artwork?id=m:not-a-file',binary=True,status=404)
         # Settings changes do not require re-reading a multi-GB game.
         settings.write_text(json.dumps({'games':{TITLE:{'mods':False}}}))

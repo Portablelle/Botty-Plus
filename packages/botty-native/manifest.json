@@ -53,8 +53,8 @@
     },
     {
       "path": "eboot.bin",
-      "size": 33222252,
-      "sha256": "ffc310a4388d8dcd94ed45b1b51097333a2554833314a6924e938c506c1f4c02"
+      "size": 33234524,
+      "sha256": "5041b8c23ae9febfbfbac265b6700727eb74e381ff95f00a45612c307fae3bb5"
     },
     {
       "path": "emulation-runtime.json",

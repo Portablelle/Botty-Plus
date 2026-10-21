@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "artwork_cache.hpp"
 #include "model.hpp"
 #include "catalog.hpp"
 #include "actions.hpp"
@@ -60,20 +61,38 @@ struct ArtworkPage {
     CoverIds ids{};
     std::array<std::array<unsigned char,160*240*3>,coverSlots> pixels{};
     std::array<bool,coverSlots> ready{};
+    std::array<char,96> backgroundId{};
+    std::array<unsigned char,640*360*3> background{};
+    bool backgroundReady=false;
     unsigned revision=0;
 };
+#if defined(__PROSPERO__) && !defined(BOTTY_HOST_PREVIEW)
+inline constexpr const char* coverCachePath="/download0/botty-sgdb-covers-v1.cache";
+inline constexpr const char* backgroundCachePath="/download0/botty-sgdb-backgrounds-v2.cache";
+#else
+inline constexpr const char* coverCachePath=nullptr;
+inline constexpr const char* backgroundCachePath=nullptr;
+#endif
 class Artwork final {
+    ArtworkCache cache_;
+    BackgroundCache backgrounds_;
+    RetainedArtwork<ArtworkCache::pixelBytes,96> retainedCovers_;
+    RetainedArtwork<BackgroundCache::pixelBytes,12> retainedBackgrounds_;
     std::atomic<bool> stop_{false};
     std::atomic_flag gate_=ATOMIC_FLAG_INIT;
     CoverIds requested_{};
+    std::array<ArtworkCache::Key,coverSlots> requestedKeys_{};
+    std::array<char,96> backgroundId_{};
+    ArtworkCache::Key backgroundKey_{};
     unsigned requestRevision_=0;
     ArtworkPage page_{};
     void* thread_=nullptr;
     static void* worker(void*) noexcept;
 public:
+    explicit Artwork(const char* covers=coverCachePath,const char* backgrounds=backgroundCachePath) noexcept:cache_(covers),backgrounds_(backgrounds){}
     void start() noexcept;
     void stop() noexcept;
-    void request(const CoverIds&) noexcept;
+    void request(const CoverIds&,const std::array<std::string_view,coverSlots>& names={},const std::array<char,96>& backgroundId={},std::string_view backgroundName={}) noexcept;
     bool read(ArtworkPage&) noexcept;
 };
 

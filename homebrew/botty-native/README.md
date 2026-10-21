@@ -143,7 +143,8 @@ toast) and `error-toast`. Others include `offline`, `reconnecting`, `quit`,
 provide synthetic state for long-name and full-list layout checks, and
 `BOTTY_PREVIEW_COVERS` can name a directory of 160×240 RGB covers matched by
 title (`Astro Bot` loads `astro-bot.rgb`); titles without a file keep the
-generated fallback. Font and illustration tools use Pillow; the recorded asset-generation
+generated fallback. `BOTTY_PREVIEW_BACKGROUND` can name a 640×360 RGB hero
+fixture for the selected game. Font and illustration tools use Pillow; the recorded asset-generation
 version is 12.0.0. Assets are already bundled. The font atlas holds Manrope at
 600 (text) and 800 (titles) for sizes 20–76, plus the separators and arrows the
 interface uses.
@@ -199,6 +200,33 @@ remove `/data/botty` to uninstall the native title. Keep the console awake durin
 work; rest-mode support is not established.
 
 During a slow local refresh, the app keeps its last catalog with a Reconnecting indicator and disables mutations until a fresh response arrives. Transmission RPC failures preserve the previous downloads while extraction jobs continue updating. Transient failures retry automatically after one second; the receive timeout allows five seconds under disk load.
+
+### Persistent game artwork
+
+PS5 and Switch prefer SteamGridDB portraits (decoded at 160×240) and heroes
+(decoded at 640×360). Heroes appear behind Discover, game details and the Switch
+library; a blurred cover fills in when no hero exists. Missing portraits retain
+a uniform title placeholder. Both kinds are fetched through the authenticated
+Botty service, so the provider API key stays on the server. Official Steam
+library portraits/heroes provide a fallback when SteamGridDB has no matching
+game or image, with the same output sizes and persistent caches. Verified
+PlayStation Store products fill remaining configured console-only editions.
+
+The native app keeps up to 512 portraits in
+`/download0/botty-sgdb-covers-v1.cache` (about 56 MiB) and 128 heroes in
+`/download0/botty-sgdb-backgrounds-v2.cache` (about 84 MiB). Normalized game titles
+share entries across rankings, searches and the library, independently of result
+IDs, while keeping explicitly marked PS5 releases, Switch/emulation entries
+and unmarked search results separate for platform-specific remakes. Older unscoped entries are treated as misses on the first lookup. A decoded RAM LRU retains 96 covers and 12 heroes (~18 MiB): returning
+to a recent page publishes them in the same UI request, with no worker/disk wait.
+Disk reads/writes run on the artwork worker; disk hits appear without contacting
+the service, including after an app restart. The least recently used entries are
+replaced; incomplete/corrupt images are fetched again. Unavailable storage falls
+back to normal loading. Only successful image responses are saved.
+
+With the app closed, deleting the two cache files resets them. New filenames
+bypass old mixed-provider images; previous caches are left untouched. Configure
+the SteamGridDB key as described in [the artwork service guide](../../deployment/botty-artwork/README.md).
 
 ### Library deletion
 

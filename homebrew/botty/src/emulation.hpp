@@ -13,7 +13,7 @@ namespace botty {
 // Eden owns metadata, keys, profiles and saves. Botty only inventories content.
 class Emulation {
   fs::path data_, install_;
-  struct Cached {std::array<uint64_t,4> identity{},coverIdentity{};json data;std::string pixels,id,artworkId,kind;};
+  struct Cached {std::array<uint64_t,4> identity{},coverIdentity{};json data;std::string pixels,id,artworkId,artworkName,kind;};
   std::shared_ptr<std::mutex> displayLock_=std::make_shared<std::mutex>();
   mutable std::map<std::string,Cached> display_;
   mutable std::string keysIdentity_;
@@ -103,6 +103,11 @@ class Emulation {
       if(!modsByGame.count(baseId))modsByGame.emplace(baseId,discoverMods(base,baseId,config,settingsKnown));
     }
     project(out,modsByGame);
+    // Receipts and base-game associations can provide a name without a NACP.
+    for(const auto& item:out["entries"]){
+      const auto found=display_.find(item.at("path").get<std::string>());
+      if(found!=display_.end())found->second.artworkName=item.at("name").get<std::string>();
+    }
   }
   static void project(json& out,const std::map<std::string,ModInventory>& modsByGame) {
     const auto version=[](const json& m){const auto label=m.value("versionLabel",std::string{});return label.empty()?"revision "+std::to_string(m.value("version",uint64_t(0))):"v"+label;};
@@ -250,6 +255,13 @@ public:
     auto out=inventory();
     try{enrich(out,root());}catch(...){out["error"]="Some game details are unavailable; files were left unchanged";}
     return out;
+  }
+  std::string artworkTitle(const std::string& id) const {
+    std::lock_guard<std::mutex> guard(*displayLock_);
+    const auto found=std::find_if(display_.begin(),display_.end(),[&](const auto& entry){return entry.second.id==id||entry.second.artworkId==id;});
+    if(found==display_.end())return {};
+    try{containedExisting(root(),found->first);if(sourceIdentity(found->first)!=found->second.identity)return {};}catch(...){return {};}
+    return found->second.artworkName;
   }
   std::string artwork(const std::string& id) const {
     std::lock_guard<std::mutex> guard(*displayLock_);

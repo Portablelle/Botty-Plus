@@ -597,13 +597,16 @@ void Canvas::clear(Color color) noexcept
 }
 
 void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,unsigned radius,unsigned alpha,bool crop) noexcept {
-    if(rgb.size()!=160*240*3||!width||!height||!alpha)return;
+    image(x,y,width,height,rgb,160,240,radius,alpha,crop);
+}
+void Canvas::image(unsigned x,unsigned y,unsigned width,unsigned height,std::span<const unsigned char> rgb,unsigned sourceWidth,unsigned sourceHeight,unsigned radius,unsigned alpha,bool crop) noexcept {
+    if(sourceWidth<2||sourceHeight<2||rgb.size()!=std::size_t(sourceWidth)*sourceHeight*3||!width||!height||!alpha)return;
     if(radius>width/2)radius=width/2;
     if(radius>height/2)radius=height/2;
     // Source window in 1/256 pixels. Cover crops the long axis around its center.
-    std::uint64_t windowX=0,windowY=0,windowWidth=159*256,windowHeight=239*256;
-    if(crop&&std::uint64_t{width}*240>std::uint64_t{height}*160){windowHeight=std::uint64_t{159}*256*height/width;windowY=(239*256-windowHeight)/2;}
-    else if(crop){windowWidth=std::uint64_t{239}*256*width/height;windowX=(159*256-windowWidth)/2;}
+    std::uint64_t windowX=0,windowY=0,windowWidth=(sourceWidth-1)*256,windowHeight=(sourceHeight-1)*256;
+    if(crop&&std::uint64_t{width}*(sourceHeight-1)>std::uint64_t{height}*(sourceWidth-1)){windowHeight=std::uint64_t{sourceWidth-1}*256*height/width;windowY=((sourceHeight-1)*256-windowHeight)/2;}
+    else if(crop){windowWidth=std::uint64_t{sourceHeight-1}*256*width/height;windowX=((sourceWidth-1)*256-windowWidth)/2;}
     for(unsigned row=0;row<height&&y+row<frame_height;++row)for(unsigned col=0;col<width&&x+col<frame_width;++col){
         unsigned mask=alpha>255?255:alpha;
         if(radius){
@@ -615,11 +618,11 @@ void Canvas::poster(unsigned x,unsigned y,unsigned width,unsigned height,std::sp
         // Bilinear enlargement keeps covers smooth at TV viewing sizes.
         const unsigned sx=static_cast<unsigned>(windowX+(width>1?windowWidth*col/(width-1):0));
         const unsigned sy=static_cast<unsigned>(windowY+(height>1?windowHeight*row/(height-1):0));
-        const unsigned x0=sx/256,y0=sy/256,x1=x0<159?x0+1:x0,y1=y0<239?y0+1:y0;
+        const unsigned x0=sx/256,y0=sy/256,x1=x0<sourceWidth-1?x0+1:x0,y1=y0<sourceHeight-1?y0+1:y0;
         const unsigned fx=sx%256,fy=sy%256;std::uint32_t color=0xff000000U;
         for(unsigned channel=0;channel<3;++channel){
-            const unsigned top=rgb[(y0*160+x0)*3+channel]*(256-fx)+rgb[(y0*160+x1)*3+channel]*fx;
-            const unsigned bottom=rgb[(y1*160+x0)*3+channel]*(256-fx)+rgb[(y1*160+x1)*3+channel]*fx;
+            const unsigned top=rgb[(y0*sourceWidth+x0)*3+channel]*(256-fx)+rgb[(y0*sourceWidth+x1)*3+channel]*fx;
+            const unsigned bottom=rgb[(y1*sourceWidth+x0)*3+channel]*(256-fx)+rgb[(y1*sourceWidth+x1)*3+channel]*fx;
             color|=((top*(256-fy)+bottom*fy)/65536)<<(channel*8);
         }
         blend_pixel(pixels_,x+col,y+row,static_cast<Color>(color),mask);
