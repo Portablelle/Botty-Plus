@@ -23,6 +23,8 @@ int main(){
     const auto ps5Remake=ArtworkCache::key(first,"Resident Evil 4 PS5");
     const auto switchOriginal=ArtworkCache::key(second,"Resident Evil 4");
     assert(ps5Remake!=switchOriginal);
+    const auto unmarkedSearch=ArtworkCache::key(first,"Resident Evil 4");
+    assert(ps5Remake!=unmarkedSearch);
     std::array<unsigned char,ArtworkCache::pixelBytes> pixels{},out{};pixels.fill(73);
     {
         auto cache=std::make_unique<ArtworkCache>(path.c_str());
@@ -34,6 +36,7 @@ int main(){
     assert(cache->load(ArtworkCache::key(first,"Astro Bot PS5 Release-C"),out.data())&&out==pixels);
     cache->store(ps5Remake,pixels.data());
     assert(!cache->load(switchOriginal,out.data()));
+    assert(!cache->load(unmarkedSearch,out.data()));
     pixels.fill(29);cache->store(switchOriginal,pixels.data());
     assert(cache->load(switchOriginal,out.data())&&out==pixels);
     pixels.fill(73);assert(cache->load(ps5Remake,out.data())&&out==pixels);

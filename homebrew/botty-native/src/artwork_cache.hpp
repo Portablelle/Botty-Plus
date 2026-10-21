@@ -21,13 +21,24 @@ public:
             // Rankings use random result IDs; retain their shared title identity
             // within a platform, without sharing remake art with emulation.
             std::array<unsigned char,200> normalized{};unsigned length=0;
+            const bool emulation=id[0]=='m'&&id[1]==':';unsigned char platform=emulation?2:0;
             const auto lower=[](unsigned char c){return c>='A'&&c<='Z'?static_cast<unsigned char>(c+32):c;};
             const auto wordChar=[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c>=128;};
             for(std::size_t at=0;at<title.size();){
                 while(at<title.size()&&!wordChar(title[at]))++at;
                 const auto start=at;while(at<title.size()&&wordChar(title[at]))++at;
                 if(start==at)break;
-                if(at-start==3&&lower(title[start])=='p'&&lower(title[start+1])=='s'&&title[start+2]=='5')break;
+                const auto word=title.substr(start,at-start);
+                const auto equals=[&](std::string_view expected){
+                    if(word.size()!=expected.size())return false;
+                    for(unsigned i=0;i<word.size();++i)if(lower(word[i])!=expected[i])return false;
+                    return true;
+                };
+                bool ppsa=word.size()>4&&lower(word[0])=='p'&&lower(word[1])=='p'&&lower(word[2])=='s'&&lower(word[3])=='a';
+                for(unsigned i=4;ppsa&&i<word.size();++i)ppsa=word[i]>='0'&&word[i]<='9';
+                if(equals("ps5")){if(!emulation)platform=1;break;}
+                if(ppsa&&!emulation)platform=1;
+                else if(platform!=1&&(equals("nsw")||equals("nsp")||equals("xci")||equals("switch")))platform=2;
                 if(length&&length<normalized.size())normalized[length++]=' ';
                 for(auto i=start;i<at&&length<normalized.size();++i)normalized[length++]=lower(title[i]);
             }
@@ -37,7 +48,7 @@ public:
             for(unsigned i=0;i<length;++i){hash^=normalized[i];hash*=1099511628211ULL;}
             for(unsigned i=0;i<8;++i)out[96+i]=static_cast<unsigned char>(hash>>(i*8));
             // Emulation and PS5 may resolve different releases of the same title.
-            out[104]=2;out[105]=(id[0]=='m'&&id[1]==':')?2:1;return out;
+            out[104]=2;out[105]=platform;return out;
         }
         std::uint64_t hash=14695981039346656037ULL;
         for(unsigned char c:title){hash^=c;hash*=1099511628211ULL;}

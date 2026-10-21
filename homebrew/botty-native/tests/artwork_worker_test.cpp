@@ -60,6 +60,9 @@ int main(){
             assert(immediate->ids[0]==ids[0]&&immediate->backgroundId==ids[0]);
         }
         assert(calls==0);
+        std::snprintf(ids[0].data(),ids[0].size(),"search-unmarked");names[0]="Demo";
+        artwork->request(ids,names,ids[0],names[0]);
+        assert(artwork->read(*immediate)&&!immediate->ready[0]&&!immediate->backgroundReady);
         std::snprintf(ids[0].data(),ids[0].size(),"m:switch-demo");names[0]="Demo";
         artwork->request(ids,names,ids[0],names[0]);
         assert(artwork->read(*immediate)&&!immediate->ready[0]&&!immediate->backgroundReady);
