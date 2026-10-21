@@ -196,7 +196,10 @@ def steam_candidates(title, kind, refresh=False):
         url = 'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?' + urllib.parse.urlencode({'input_json': json.dumps(request, separators=(',', ':'))})
         rows = json.loads(fetch(url, 1048576)).get('response', {}).get('store_items', [])
         year = re.search(EXPLICIT_YEAR, title, re.I)
-        matches = [row for row in rows if row.get('success') == 1 and row.get('type') == 0
+        # GetItems exposes item_type (0 = app) separately from app subtype
+        # in type (0 = game, 1 = demo, 4 = DLC), not an app_type field.
+        matches = [row for row in rows if row.get('success') == 1
+                   and row.get('item_type', 0) == 0 and row.get('type') == 0
                    and row.get('appid') in ids and match_key(row.get('name', '')) == match_key(title)
                    and (not year or time.gmtime(row.get('release', {}).get('steam_release_date') or 0).tm_year == int(year[1]))]
         if len(matches) != 1: return

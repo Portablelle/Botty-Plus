@@ -230,7 +230,7 @@ class Covers(unittest.TestCase):
    if '/storesearch/' in url:
     return json.dumps({'items':[{'id':appid,'name':title,'type':'app'},{'id':99,'name':'EA SPORTS FC 26','type':'app'}]}).encode()
    if '/GetItems/' in url:
-    return json.dumps({'response':{'store_items':[{'appid':appid,'name':returned_name or title,'type':app_type,'success':1,'assets':assets,'release':{'steam_release_date':1790290781}}]}}).encode()
+    return json.dumps({'response':{'store_items':[{'appid':appid,'name':returned_name or title,'item_type':0,'type':app_type,'success':1,'assets':assets,'release':{'steam_release_date':1790290781}}]}}).encode()
    size=(1920,620) if 'library_hero' in url else (600,900)
    im=Image.new('RGB',size,(10,20,40));im.paste((240,180,20),(0,0,size[0]//2,size[1]))
    out=io.BytesIO();im.save(out,format='PNG');return out.getvalue()
@@ -250,8 +250,11 @@ class Covers(unittest.TestCase):
  def test_steam_does_not_substitute_another_year_or_dlc(self):
   self.steam_provider(returned_name='EA SPORTS FC 26')
   self.assertEqual(self.module.cover('EA SPORTS FC 27'),b'')
-  self.steam_provider(title='BLUE REFLECTION Quartet',appid=3825390,app_type=1)
-  self.assertEqual(self.module.cover('BLUE REFLECTION Quartet'),b'')
+  # Actual GetItems app subtypes: both are still item_type=0 (app).
+  for title, subtype in [('BLUE REFLECTION Quartet',1),('NHL 27',4)]:
+   self.steam_provider(title=title,appid=3825390,app_type=subtype)
+   self.assertEqual(self.module.cover(title),b'')
+
  def test_steam_fallback_does_not_override_steamgriddb(self):
   self.provider()
   self.module.steam_candidates=lambda *_:self.fail('SteamGridDB must stay first')
