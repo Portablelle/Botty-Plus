@@ -28,7 +28,7 @@ public:
                 while(at<title.size()&&!wordChar(title[at]))++at;
                 const auto start=at;while(at<title.size()&&wordChar(title[at]))++at;
                 if(start==at)break;
-                const auto word=title.substr(start,at-start);
+                const std::string_view word(title.data()+start,at-start);
                 const auto equals=[&](std::string_view expected){
                     if(word.size()!=expected.size())return false;
                     for(unsigned i=0;i<word.size();++i)if(lower(word[i])!=expected[i])return false;
