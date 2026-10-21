@@ -241,7 +241,7 @@ std::array<char,96> artworkId(const std::array<char,96>& entryId,char source) no
     std::array<char,96> id{};
     std::snprintf(id.data(),id.size(),"%c:%.93s",source,entryId.data());return id;
 }
-std::array<char,96> artworkId(const botty::Entry& entry,char source) noexcept {return artworkId(entry.id,source);}
+std::array<char,96> artworkId(const botty::Entry& entry,char source) noexcept {return artworkId(source=='m'&&entry.emulation.artwork[0]?entry.emulation.artwork:entry.id,source);}
 // Cover of the game a Get game sheet opened for: Explore ids are raw, search ids prefixed.
 std::array<char,96> sheetCover() noexcept {return artworkId(workflow.gameId,workflow.command.operation==botty::Operation::grab?'s':'e');}
 const std::array<unsigned char,160*240*3>* coverFor(const std::array<char,96>& id) noexcept {
@@ -1249,10 +1249,37 @@ void drawEmulation(Canvas& c) noexcept {
     for(unsigned i=0;i<6&&first+i<model.count;++i){
         const auto* e=botty::emulationAt(catalog,model.filter,first+i);if(!e)break;
         const unsigned y=300+i*102;const bool focused=first+i==model.selected;
-        c.rounded(96,y,1728,88,12,focused?raised:surface);
-        if(focused)focusRing(c,96,y,1728,88,12,3,bg);
-        fit(c,120,y+14,e->name.data(),28,34,1400,ink,bold);
-        char size[48];botty::formatBytes(e->total,size,sizeof(size));fit(c,120,y+52,e->phase[0]?e->phase.data():size,20,24,1680,muted);
+        c.rounded(96,y,1056,88,12,focused?raised:surface);
+        if(focused)focusRing(c,96,y,1056,88,12,3,bg);
+        art(c,108,y+5,52,78,6,artworkId(*e,'m'),e->name.data(),i,focused?raised:surface);
+        fit(c,180,y+12,e->name.data(),27,34,948,ink,bold);
+        char size[48];botty::formatBytes(e->total,size,sizeof(size));fit(c,180,y+50,e->phase[0]?e->phase.data():size,19,24,948,muted);
+    }
+    if(const auto* selected=botty::emulationAt(catalog,model.filter,model.selected)){
+        c.rounded(1176,300,648,598,16,surface);
+        art(c,1200,324,128,192,10,artworkId(*selected,'m'),selected->name.data(),model.selected,surface);
+        wrap(c,1352,324,selected->name.data(),30,38,448,3,ink,bold);
+        fit(c,1352,450,selected->titleId.data(),18,24,448,muted);
+        char size[48];botty::formatBytes(selected->total,size,sizeof(size));fit(c,1352,486,size,22,28,448,muted);
+        c.rounded(1200,540,600,1,0,line);
+        const auto& info=selected->emulation;
+        if(info.baseVersion[0]){
+            text(c,1200,560,"BASE VERSION",17,24,muted,bold);
+            fit(c,1200,590,info.baseVersion.data(),28,34,276,ink,bold);
+            text(c,1500,560,"UPDATE PRESENT",17,24,muted,bold);
+            fit(c,1500,590,info.updateVersion.data(),28,34,300,ink,bold);
+            c.rounded(1200,642,284,76,10,raised);c.rounded(1496,642,304,76,10,raised);
+            text(c,1216,652,"DLC",17,22,muted,bold);text(c,1512,652,"MODS",17,22,muted,bold);
+            char dlc[64],mods[64];std::snprintf(dlc,sizeof(dlc),"%u detected",info.dlcCount);
+            if(!info.modsKnown)std::snprintf(mods,sizeof(mods),"Status unavailable");
+            else if(!info.modCount)std::snprintf(mods,sizeof(mods),"None detected");
+            else std::snprintf(mods,sizeof(mods),"%u of %u switched on",info.modsOn,info.modCount);
+            fit(c,1216,680,dlc,23,28,252,ink,bold);fit(c,1512,680,mods,23,28,272,ink,bold);
+            if(info.mods[0])wrap(c,1200,740,info.mods.data(),20,26,600,3,muted);
+            else wrap(c,1200,740,"Triangle opens the update and DLC files. Options opens this game's settings.",20,26,600,3,muted);
+            const std::string_view path=selected->destination.data();const auto slash=path.find_last_of('/');
+            fit(c,1200,850,slash==std::string_view::npos?path:botty::slice(path,slash+1,path.size()-slash-1),17,22,600,faint);
+        }else wrap(c,1200,566,selected->files[0]?selected->files.data():selected->phase.data(),20,27,600,10,ink);
     }
     unsigned hx=96;
     if(model.filter==0){hx=hint(c,hx,Glyph::cross,"Play",true);hx=hint(c,hx,Glyph::menu,"Game configuration");}
@@ -1520,6 +1547,10 @@ bool draw(Canvas& c) noexcept {
         }else if(catalog.catalogArtworkSupported&&model.tab==Model::library){
             const unsigned first=(model.selected/Model::libraryColumns)*Model::libraryColumns;
             for(unsigned i=0;i<botty::coverSlots&&first+i<model.count;++i){const auto* entry=botty::libraryAt(catalog,model.filter,first+i);if(entry){ids[i]=artworkId(*entry,'j');names[i]=entry->name.data();}}
+        }
+        if(model.tab==Model::emulation){
+            const unsigned first=(model.selected/6)*6;
+            for(unsigned i=0;i<6&&first+i<model.count;++i){const auto* entry=botty::emulationAt(catalog,model.filter,first+i);if(entry){ids[i]=artworkId(*entry,'m');names[i]=entry->name.data();}}
         }
         artwork.request(ids);if(artwork.read(covers))++displayRevision;
 #ifdef BOTTY_HOST_PREVIEW

@@ -3,6 +3,38 @@ import hashlib
 import struct
 from pathlib import Path
 
+def encrypted_headers(package_bytes, nca2=False):
+    """Public deterministic test keys, with the two distinct NCA XTS layouts."""
+    import ctypes as c
+    import ctypes.util
+    crypto=c.CDLL(ctypes.util.find_library('crypto'))
+    crypto.EVP_CIPHER_CTX_new.restype=c.c_void_p
+    crypto.EVP_aes_128_xts.restype=c.c_void_p
+    crypto.EVP_EncryptInit_ex.argtypes=[c.c_void_p,c.c_void_p,c.c_void_p,c.c_void_p,c.c_void_p]
+    crypto.EVP_CIPHER_CTX_set_padding.argtypes=[c.c_void_p,c.c_int]
+    crypto.EVP_EncryptUpdate.argtypes=[c.c_void_p,c.c_void_p,c.POINTER(c.c_int),c.c_void_p,c.c_int]
+    crypto.EVP_EncryptFinal_ex.argtypes=[c.c_void_p,c.c_void_p,c.POINTER(c.c_int)]
+    crypto.EVP_CIPHER_CTX_free.argtypes=[c.c_void_p]
+    key=bytes(range(32));out=bytearray(package_bytes)
+    count,strings=struct.unpack_from('<II',out,4);data_at=16+count*24+strings
+    for i in range(count):
+        offset,size,_=struct.unpack_from('<QQI',out,16+i*24)
+        start=data_at+offset
+        if out[start+0x200:start+0x204]!=b'NCA3':continue
+        if nca2:out[start+0x200:start+0x204]=b'NCA2'
+        for sector in range(6):
+            at=start+sector*512
+            iv=bytes(15)+bytes([0 if nca2 and sector>=2 else sector])
+            context=crypto.EVP_CIPHER_CTX_new();encoded=c.create_string_buffer(544);n=c.c_int();last=c.c_int()
+            try:
+                assert crypto.EVP_EncryptInit_ex(context,crypto.EVP_aes_128_xts(),None,key,iv)==1
+                assert crypto.EVP_CIPHER_CTX_set_padding(context,0)==1
+                assert crypto.EVP_EncryptUpdate(context,encoded,c.byref(n),bytes(out[at:at+512]),512)==1
+                assert crypto.EVP_EncryptFinal_ex(context,c.byref(encoded,n.value),c.byref(last))==1
+                out[at:at+512]=encoded.raw[:n.value+last.value]
+            finally:crypto.EVP_CIPHER_CTX_free(context)
+    return bytes(out),key.hex()
+
 def partition(files, hashed=False):
     names=b'';entries=b'';data=b''
     for name,value in files:
@@ -12,7 +44,33 @@ def partition(files, hashed=False):
     names+=bytes((-len(names)-16-len(entries))%16)
     return (b'HFS0' if hashed else b'PFS0')+struct.pack('<III',len(files),len(names),0)+entries+names+data
 
-def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, missing_delta=False, empty=False, duplicate=False, extra_nca=False, corrupt_metadata=False, wrong_program_id=False, wrong_meta_id=False, id_offset=0, update_program_uses_patch_id=False, dlc_content_type=5):
+def control_nca(base, name, version):
+    nacp=bytearray(0x4000)
+    title=name.encode();nacp[:len(title)]=title
+    label=version.encode();nacp[0x3060:0x3060+len(label)]=label
+    # Four red pixels in an uncompressed, top-origin TGA. No copyrighted assets.
+    icon=bytes([0,0,2])+bytes(9)+struct.pack('<HHBB',2,2,24,0x20)+bytes([0,0,255])*4
+    table=bytearray();data=bytearray()
+    for filename,content in [('control.nacp',nacp),('icon_AmericanEnglish.dat',icon)]:
+        encoded=filename.encode()
+        table+=struct.pack('<IIQQII',0,0xffffffff,len(data),len(content),0xffffffff,len(encoded))+encoded
+        table+=bytes((-len(table))%4);data+=content
+    rom=bytearray(0x50)
+    struct.pack_into('<Q',rom,0,0x50)
+    struct.pack_into('<QQQ',rom,0x38,0x50,len(table),0x50+len(table))
+    rom+=table+data
+    section=rom+bytes((-len(rom))%512)
+    out=bytearray(0xc00)+section
+    out[0x200:0x204]=b'NCA3';out[0x205]=2
+    struct.pack_into('<QQ',out,0x208,len(out),base)
+    struct.pack_into('<II',out,0x240,6,len(out)//512)
+    fs=bytearray(512);struct.pack_into('<HBBB',fs,0,2,0,3,1)
+    fs[8:12]=b'IVFC';struct.pack_into('<I',fs,0x14,2)
+    struct.pack_into('<QQ',fs,0x18,0,len(rom))
+    out[0x400:0x600]=fs;out[0x280:0x2a0]=hashlib.sha256(fs).digest()
+    return bytes(out)
+
+def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, missing_delta=False, empty=False, duplicate=False, extra_nca=False, corrupt_metadata=False, wrong_program_id=False, wrong_meta_id=False, id_offset=0, update_program_uses_patch_id=False, dlc_content_type=5, display=None):
     title=base if kind=='game' else base+0x800 if kind=='update' else base+0x1001
     program=bytearray(4096)
     program[0x200:0x204]=b'NCA3';program[0x205]=dlc_content_type if kind in ('dlc','unlocker') else 0
@@ -25,6 +83,12 @@ def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, miss
     extra=struct.pack('<QII',base if kind!='game' else base+0x800,0,0)
     if kind in ('dlc','unlocker'):extra=struct.pack('<QII',base,65536,0)
     cnmt+=extra+digest+digest[:16]+len(program).to_bytes(6,'little')+bytes([2 if kind in ('dlc','unlocker') else 1,id_offset])
+    control=None
+    if display:
+        control=control_nca(base,*display)
+        control_hash=hashlib.sha256(control).digest()
+        struct.pack_into('<H',cnmt,16,2)
+        cnmt+=control_hash+control_hash[:16]+len(control).to_bytes(6,'little')+bytes([3,0])
     if missing_delta:
         struct.pack_into('<H',cnmt,16,2)
         cnmt+=bytes(48)+(4096).to_bytes(6,'little')+bytes([6,0])
@@ -47,6 +111,7 @@ def package(kind='game', version=0, base=0x0100000000000000, corrupt=False, miss
     if corrupt_metadata:meta[0xc00+512+100]^=1
     if corrupt:program[-1]^=1
     files=[(name,bytes(program)),(hashlib.sha256(meta).digest()[:16].hex()+'.cnmt.nca',bytes(meta))]
+    if control:files.append((control_hash[:16].hex()+'.nca',control))
     if extra_nca:
         other=program.copy();other[-1]^=2
         files.append((hashlib.sha256(other).digest()[:16].hex()+'.nca',bytes(other)))

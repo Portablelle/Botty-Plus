@@ -2,6 +2,7 @@
 #pragma once
 #include "core.hpp"
 #include "native-transaction.hpp"
+#include "switch-library.hpp"
 #include <fstream>
 #include <map>
 #include <regex>
@@ -10,6 +11,157 @@ namespace botty {
 // Eden owns metadata, keys, profiles and saves. Botty only inventories content.
 class Emulation {
   fs::path data_, install_;
+  struct Cached {std::array<uint64_t,4> identity{},coverIdentity{};json data;std::string pixels,id,artworkId,kind;};
+  mutable std::map<std::string,Cached> display_;
+  mutable std::string keysIdentity_;
+  static json selectEntry(const json& inventory,const std::string& id){
+    for(const auto& item:inventory.at("entries"))if(item.at("id")==id)return item;
+    throw std::runtime_error("Game no longer available; refresh Emulation");
+  }
+  fs::path coverPath(const json& item,const fs::path& base) const {
+    if(item.at("kind")!="roms")return {};
+    const auto relative=fs::path(item.at("path").get<std::string>()).lexically_relative(base/"roms").generic_string();
+    uint32_t hash=2166136261u;for(unsigned char c:relative)hash=(hash^c)*16777619u;
+    char name[16];std::snprintf(name,sizeof(name),"%08x.tga",hash);
+    return data_/"covers"/name;
+  }
+  struct ModInventory {json entries=json::array();bool known=true;};
+  ModInventory discoverMods(const fs::path& base,const std::string& baseId,const json& config,bool settingsKnown) const {
+    json mods=json::array();
+  bool modsKnown=settingsKnown;json settings=json::object();
+  try{if(config.contains("games")&&config.at("games").contains(baseId))settings=config.at("games").at(baseId);
+    const bool enabled=settings.value("mods",true);const auto off=settings.value("mods_off",json::array());
+    const auto folder=base/"mods";
+    unsigned visited=0;
+    if(fs::exists(folder))for(const auto& title:fs::directory_iterator(containedExisting(base,folder))){
+      if(++visited>256){modsKnown=false;break;}
+      if(title.is_symlink()||!title.is_directory()||asciiLower(title.path().filename().string())!=asciiLower(baseId))continue;
+      for(const auto& mod:fs::directory_iterator(title.path())){
+        if(++visited>512||mods.size()>=64){modsKnown=false;break;}
+        if(mod.is_symlink())continue;bool present=false;
+        if(mod.is_directory())for(const auto& part:fs::directory_iterator(mod.path())){
+          if(++visited>1024){modsKnown=false;break;}if(part.is_symlink()||!part.is_directory())continue;
+          const auto kind=asciiLower(part.path().filename().string());
+          if(kind!="exefs"&&kind!="romfs"&&kind!="romfs_ext"&&kind!="romfslite"&&kind!="cheats")continue;
+          for(const auto& file:fs::directory_iterator(part.path())){
+            if(++visited>1024){modsKnown=false;break;}if(file.is_symlink())continue;
+            const auto name=file.path().filename().string(),ext=file.path().extension().string();
+            if(kind!="exefs"||ext==".ips"||ext==".pchtxt"||name=="main"||name=="main.npdm"||name=="rtld"||name=="sdk"||std::regex_match(name,std::regex("subsdk[0-9]")))present=true;
+            if(present)break;
+          }
+        }
+        else if(mod.is_regular_file()&&mod.path().filename().string().rfind("cheat_",0)==0&&mod.path().extension()==".txt")present=true;
+        if(!present)continue;const auto name=mod.path().filename().string();bool selected=true;
+        for(const auto& disabled:off)if(disabled==name)selected=false;
+        mods.push_back({{"name",name},{"enabled",enabled&&selected}});
+      }
+    }
+  }catch(...){modsKnown=false;}
+    return {std::move(mods),modsKnown};
+  }
+  void enrich(json& out,const fs::path& base) const {
+    std::string keysIdentity;
+    const auto keyFile=base/"keys/prod.keys";
+    try{keysIdentity=json(sourceIdentity(containedExisting(base,keyFile))).dump();}catch(...){}
+    if(keysIdentity!=keysIdentity_){display_.clear();keysIdentity_=keysIdentity;}
+    SwitchKeys keys(keysIdentity.empty()?fs::path{}:keyFile);
+    std::set<std::string> current;
+    for(auto& item:out["entries"]){
+      const auto path=item.at("path").get<std::string>();current.insert(path);
+      const auto identity=sourceIdentity(path);auto found=display_.find(path);
+      if(found==display_.end()||found->second.identity!=identity){
+        Cached cached;cached.identity=identity;cached.data=json::object();
+        try{cached.data["inventory"]=inspectSwitchDisplayMetadata(path,keys);}catch(...){cached.data["status"]="Content identity unavailable";}
+        try{const auto controlNca=cached.data.value("inventory",json::object()).value("controlNca",std::string{});
+          const auto display=SwitchLibraryFile(path,keys).display(controlNca);for(auto it=display.begin();it!=display.end();++it)cached.data[it.key()]=it.value();
+        }catch(...){cached.data["status"]="Game details unavailable";}
+        if(sourceIdentity(path)!=identity){item["library"]=json::object();continue;}
+        found=display_.insert_or_assign(path,std::move(cached)).first;
+      }
+      const auto& d=found->second.data;
+      std::array<uint64_t,4> coverIdentity{};
+      try{const auto cover=coverPath(item,base);if(!cover.empty()&&fs::exists(cover))coverIdentity=sourceIdentity(containedExisting(data_,cover));}catch(...){}
+      if(found->second.coverIdentity!=coverIdentity){found->second.coverIdentity=coverIdentity;found->second.pixels.clear();}
+      item["artworkId"]=nativeSha256(path+json(identity).dump()+keysIdentity_+json(coverIdentity).dump());
+      found->second.id=item.at("id");found->second.kind=item.at("kind");found->second.artworkId=item.at("artworkId");
+      json library=item.contains("metadata")?item.at("metadata"):d.value("inventory",json::object());
+      if(d.contains("name")){item["name"]=d.at("name");library["name"]=d.at("name");}
+      if(d.contains("versionLabel")&&!d.at("versionLabel").get<std::string>().empty())library["versionLabel"]=d.at("versionLabel");
+      item["library"]=library;
+      if(d.contains("status"))item["metadataStatus"]=d.at("status");
+    }
+    for(auto it=display_.begin();it!=display_.end();)if(!current.count(it->first))it=display_.erase(it);else ++it;
+    json config=json::object();bool settingsKnown=true;
+    try{const auto p=data_/"config/prosperoeden.json";if(fs::exists(p))config=json::parse(readText(containedExisting(data_,p),1024*1024));}catch(...){settingsKnown=false;}
+    std::map<std::string,ModInventory> modsByGame;
+    for(const auto& item:out["entries"]){const auto& m=item.at("library");
+      if(m.value("type",std::string{})!="game")continue;
+      const auto baseId=m.value("baseTitleId",std::string{});
+      if(!modsByGame.count(baseId))modsByGame.emplace(baseId,discoverMods(base,baseId,config,settingsKnown));
+    }
+    project(out,modsByGame);
+  }
+  static void project(json& out,const std::map<std::string,ModInventory>& modsByGame) {
+    const auto version=[](const json& m){const auto label=m.value("versionLabel",std::string{});return label.empty()?"revision "+std::to_string(m.value("version",uint64_t(0))):"v"+label;};
+    std::map<std::string,std::string> names;
+    std::map<std::string,uint64_t> games,updates;
+    for(const auto& item:out["entries"]){const auto& m=item.at("library");for(const auto& title:m.value("titles",json::array())){
+      const auto baseId=title.value("baseTitleId",std::string{}),type=title.value("type",std::string{});
+      if(type=="game"){games[baseId]=std::max(games[baseId],title.value("version",uint64_t(0)));names[baseId]=item.at("name");}
+      if(type=="update")updates[baseId]=std::max(updates[baseId],title.value("version",uint64_t(0)));
+    }}
+    for(auto& item:out["entries"]){
+      const auto& m=item.at("library");const auto baseId=m.value("baseTitleId",std::string{}),type=m.value("type",std::string{});
+      item["titleId"]=baseId;
+      if(type.empty()){item["phase"]="Details unavailable | "+fs::path(item.at("path").get<std::string>()).filename().string();item["details"]="Game identity and version could not be read.\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();continue;}
+      if(type!="game"){
+        if(names.count(baseId))item["name"]=names[baseId];
+        std::string phase=(type=="update"?"Update ":type=="unlocker"?"DLC unlocker ":"DLC ")+version(m);
+        if(!games.count(baseId)){item["dependencyStatus"]="base-game-missing";phase+=" | Base game missing";}
+        else if(m.value("requiredApplicationVersion",uint64_t(0))>std::max(games[baseId],updates[baseId])){item["dependencyStatus"]="update-required";phase+=" | Required update missing";}
+        else {item["dependencyStatus"]="ready";phase+=" | Base game found";}
+        item["phase"]=phase;item["details"]=phase+"\nTitle ID: "+m.value("titleId",baseId)+"\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();continue;
+      }
+      json additions=json::array(),dlc=json::array();std::set<std::string> seenDlc;
+      const json* newest=nullptr;uint64_t newestRevision=0;
+      // Include updates/DLC bundled in the game as well as separately imported files.
+      for(const auto& other:out["entries"]){const auto& metadata=other.at("library");for(const auto& title:metadata.value("titles",json::array())){
+        if(title.value("baseTitleId",std::string{})!=baseId)continue;
+        const auto kind=title.value("type",std::string{});
+        if(kind=="update"){
+          json update=title;update["file"]=fs::path(other.at("path").get<std::string>()).filename().string();
+          // A game's NACP describes its base, not a bundled update's display version.
+          if(metadata.value("type",std::string{})=="update"&&metadata.contains("versionLabel"))update["versionLabel"]=metadata.at("versionLabel");
+          additions.push_back(update);
+          const auto revision=title.value("version",uint64_t(0));
+          if(!newest||revision>newestRevision){newest=&other;newestRevision=revision;}
+        }else if(kind=="dlc"&&seenDlc.insert(title.value("titleId",std::string{})).second){json entry=title;entry["file"]=fs::path(other.at("path").get<std::string>()).filename().string();entry["unlocker"]=metadata.value("type",std::string{})=="unlocker";dlc.push_back(entry);}
+      }}
+      const auto& inventory=modsByGame.at(baseId);const auto& mods=inventory.entries;const bool modsKnown=inventory.known;
+      unsigned on=0;for(const auto& mod:mods)if(mod.at("enabled")==true)++on;
+      std::string phase="Base "+version(m),updateVersion="None detected";
+      std::string detail="Title ID: "+baseId+"\nBase: "+version(m);
+      if(newest){
+        const auto& meta=newest->at("library");const auto updateLabel=meta.value("type",std::string{})=="update"?version(meta):"revision "+std::to_string(newestRevision);
+        updateVersion=updateLabel;phase+=" | Update "+updateLabel;detail+="\nUpdate present: "+updateLabel;
+      }else detail+="\nUpdate: none detected";
+      phase+=" | "+std::to_string(dlc.size())+" DLC";
+      phase+=modsKnown?(mods.empty()?" | No mods":" | Mods "+std::to_string(on)+"/"+std::to_string(mods.size())+" on"):" | Mods unknown";
+      detail+="\nDLC: "+std::to_string(dlc.size())+" detected";
+      for(const auto& addon:dlc)if(detail.size()<900)detail+="\n  "+addon.at("titleId").get<std::string>()+(addon.at("unlocker")==true?" (unlocker)":"");
+      detail+="\nMods: "+(modsKnown?std::to_string(on)+"/"+std::to_string(mods.size())+" switched on":std::string("unavailable"));
+      for(const auto& mod:mods)if(detail.size()<1500)detail+="\n  "+mod.at("name").get<std::string>()+(mod.at("enabled")==true?" (on)":" (off)");
+      detail+="\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();
+      item["phase"]=phase;item["details"]=detail;item["updates"]=additions;item["dlc"]=dlc;item["mods"]=mods;item["modsKnown"]=modsKnown;
+      item["baseVersion"]=version(m);item["updateVersion"]=updateVersion;
+      item["dlcCount"]=dlc.size();item["modCount"]=mods.size();item["modsOn"]=on;
+      std::string modSummary;unsigned shown=0;
+      for(const auto& mod:mods){if(shown++==3)break;if(!modSummary.empty())modSummary+='\n';modSummary+=mod.at("name").get<std::string>()+(mod.at("enabled")==true?" (on)":" (off)");}
+      if(mods.size()>3)modSummary+="\n+ "+std::to_string(mods.size()-3)+" more in Game configuration";
+      item["modSummary"]=modSummary;
+    }
+    std::stable_sort(out["entries"].begin(),out["entries"].end(),[](const json& a,const json& b){return asciiLower(a.at("name").get<std::string>())<asciiLower(b.at("name").get<std::string>());});
+  }
 public:
   explicit Emulation(fs::path data="/data/botty/emulation/switch",fs::path install="/data/homebrew/PPSA99071")
       :data_(std::move(data)),install_(std::move(install)){}
@@ -61,21 +213,22 @@ public:
     }
     return result;
   }
-  json state() const {
+  json inventory() const {
     json out={{"supported",true},{"installed",false},{"entries",json::array()},{"error",""}};
     try {
       out["installed"]=fs::is_regular_file(fs::symlink_status(install_/"emulation/eboot.bin")) &&
           fs::is_regular_file(fs::symlink_status(install_/"emulation-runtime.json"));
       const auto base=root();out["root"]=base.string();unsigned visited=0;std::map<std::string,bool> batches;
       for(const auto& kind:{"roms","updates"}){
+        if(visited>4096||out["entries"].size()>=256)break;
         const auto folder=base/kind;if(!fs::exists(folder))continue;
         containedExisting(base,folder);
         for(auto it=fs::recursive_directory_iterator(folder);it!=fs::recursive_directory_iterator();++it){
-          if(++visited>4096){out["error"]="Library scan limit reached; showing the first files";return out;}
+          if(++visited>4096){out["error"]="Library scan limit reached; showing the first files";break;}
           if(it.depth()>=8)it.disable_recursion_pending();
           if(it->is_symlink()){it.disable_recursion_pending();continue;}
           if(!it->is_regular_file()||!supported(it->path()))continue;
-          if(out["entries"].size()>=256){out["error"]="Library display limit reached (256 files)";return out;}
+          if(out["entries"].size()>=256){out["error"]="Library display limit reached (256 files)";break;}
           const auto relative=it->path().lexically_relative(folder);const auto first=relative.begin()->string();
           if(first.rfind(".botty-batch-",0)==0){const auto id=first.substr(13);if(!std::regex_match(id,std::regex("[a-f0-9]{32}")))continue;if(!batches.count(id)){bool complete=false;try{complete=json::parse(readText(containedExisting(base,base/"imports"/(id+".json")),1024*1024)).at("status")=="complete";}catch(...){}batches[id]=complete;}if(!batches[id])continue;}
           try{out["entries"].push_back(entry(base,it->path(),kind));}
@@ -83,23 +236,45 @@ public:
         }
       }
     }catch(const std::exception& e){out["error"]=e.what();}
-    std::map<std::string,uint64_t> games,updates;
-    for(const auto& item:out["entries"])if(item.contains("metadata"))for(const auto& m:item.at("metadata").at("titles")){const auto base=m.value("baseTitleId",std::string{});if(m.value("type",std::string{})=="game")games[base]=std::max(games[base],m.value("version",uint64_t(0)));else if(m.value("type",std::string{})=="update")updates[base]=std::max(updates[base],m.value("version",uint64_t(0)));}
-    for(auto& item:out["entries"])if(item.contains("metadata")){const auto& m=item.at("metadata");const auto type=m.value("type",std::string{}),base=m.value("baseTitleId",std::string{});std::string phase=type=="game"?"Game":type=="update"?"Game update":type=="unlocker"?"DLC unlocker":"DLC";
-      phase+=" | "+(m.contains("versionLabel")?"v"+m.at("versionLabel").get<std::string>():"Version "+std::to_string(m.value("version",uint64_t(0))));
-      if(type!="game"){
-        if(!games.count(base)){item["dependencyStatus"]="base-game-missing";phase+=" | Add base game "+base+" first";}
-        else if(m.value("requiredApplicationVersion",uint64_t(0))>std::max(games[base],updates[base])){item["dependencyStatus"]="update-required";phase+=" | Required game update is missing";}
-        else{item["dependencyStatus"]="ready";phase+=" | Base game found";}
-        if(m.contains("requiredUpdateLabel"))phase+=" | Requires update v"+m.at("requiredUpdateLabel").get<std::string>();
-      }else if(updates.count(base))phase+=" | Update present";
-      if(m.contains("requiredFirmwareLabel"))phase+=" | Firmware "+m.at("requiredFirmwareLabel").get<std::string>()+" required";
-      item["phase"]=phase;
-    }
     return out;
   }
+  json state() const {
+    auto out=inventory();
+    try{enrich(out,root());}catch(...){out["error"]="Some game details are unavailable; files were left unchanged";}
+    return out;
+  }
+  std::string artwork(const std::string& id) const {
+    auto found=std::find_if(display_.begin(),display_.end(),[&](const auto& entry){return entry.second.id==id||entry.second.artworkId==id;});
+    if(found==display_.end())return {};
+    const auto path=found->first;fs::path base;
+    try{base=root();containedExisting(base,path);if(sourceIdentity(path)!=found->second.identity)return {};
+      std::string keysIdentity;const auto key=base/"keys/prod.keys";
+      if(fs::exists(key))keysIdentity=json(sourceIdentity(containedExisting(base,key))).dump();
+      if(keysIdentity!=keysIdentity_)return {};
+    }catch(...){return {};}
+    const json item={{"kind",found->second.kind},{"path",path}};
+    fs::path cover;std::array<uint64_t,4> coverIdentity{};
+    if(item.at("kind")=="roms")try{
+      const auto candidate=coverPath(item,root());
+      if(fs::exists(candidate)){cover=containedExisting(data_,candidate);coverIdentity=sourceIdentity(cover);}
+    }catch(...){}
+    if(found->second.coverIdentity!=coverIdentity){found->second.pixels.clear();found->second.coverIdentity=coverIdentity;}
+    if(found->second.pixels.empty()){
+      std::string pixels;
+      if(!cover.empty())try{const auto bytes=readText(cover,2*1024*1024);pixels=switchLibraryPixels({bytes.begin(),bytes.end()});}catch(...){}
+      try{SwitchKeys keys(keysIdentity_.empty()?fs::path{}:containedExisting(root(),root()/"keys/prod.keys"));
+        const auto controlNca=found->second.data.value("inventory",json::object()).value("controlNca",std::string{});
+        if(pixels.empty())pixels=switchLibraryPixels(SwitchLibraryFile(path,keys).icon(controlNca));
+        if(sourceIdentity(path)!=found->second.identity)return {};
+        // Keep at most 24 decoded covers (~2.7 MiB); names/versions stay cached.
+        unsigned count=0;for(auto& cached:display_)if(!cached.second.pixels.empty()&&++count>=24)cached.second.pixels.clear();
+        found->second.pixels=std::move(pixels);
+      }catch(...){return {};}
+    }
+    return found->second.pixels;
+  }
   std::string launchPath(const std::string& id) const {
-    const auto snapshot=state();
+    const auto snapshot=inventory();
     if(!snapshot.at("installed").get<bool>())throw std::runtime_error("Install the Botty+ package with its embedded Switch engine");
     const auto base=root();
     if(!fs::exists(base/"keys/prod.keys")||fs::file_size(containedExisting(base,base/"keys/prod.keys"))==0)
@@ -107,16 +282,14 @@ public:
     if(!fs::is_directory(base/"firmware")||fs::is_empty(containedExisting(base,base/"firmware")))
       throw std::runtime_error("Provision your private Switch firmware from Portal first");
     if(!fs::exists(base/"private-runtime.json"))throw std::runtime_error("Private Switch provisioning is incomplete; finish it in Portal");
-    const auto item=resolve(id);
+    const auto item=selectEntry(snapshot,id);
     if(item.at("kind")!="roms")throw std::runtime_error("Only games in the emulator library can be launched");
     const auto path=item.at("path").get<std::string>();
     if(path.size()>=4096)throw std::runtime_error("Game path is too long");
     return path;
   }
   json resolve(const std::string& id) const {
-    const auto snapshot=state();
-    for(const auto& item:snapshot.at("entries"))if(item.at("id")==id)return item;
-    throw std::runtime_error("Game no longer available; refresh Emulation");
+    return selectEntry(inventory(),id);
   }
 };
 }

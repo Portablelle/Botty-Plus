@@ -900,7 +900,9 @@ int main(int argc,char** argv) {
     server.Get("/api/artwork",[](const auto& req,auto& res){
       std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       const auto id=req.get_param_value("id");
-      auto data=id.rfind("s:",0)==0?search.artwork(paths,id.substr(2)):explore.artwork(paths,id,true);
+      std::string data;
+      if(id.rfind("m:",0)==0){data=emulation.artwork(id.substr(2));if(data.empty())data=legacyEmulation.artwork(id.substr(2));}
+      else data=id.rfind("s:",0)==0?search.artwork(paths,id.substr(2)):explore.artwork(paths,id,true);
       if(data=="pending"){res.status=202;res.set_content("Pending","text/plain");}
       else if(data.empty()){res.status=404;res.set_content("Unavailable","text/plain");}
       else res.set_content(data,"application/octet-stream");
