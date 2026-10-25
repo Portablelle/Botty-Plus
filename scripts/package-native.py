@@ -59,6 +59,11 @@ def main():
         engine_sources = source / 'build/emulation-source.tar.gz'
         if not engine_sources.is_file():
             raise RuntimeError('Build emulation-source.tar.gz before distributing the embedded engine')
+        runtime = json.loads((out / 'emulation-runtime.json').read_text())
+        with engine_sources.open('rb') as stream:
+            sources_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if sources_sha != runtime.get('sourcesSha256'):
+            raise RuntimeError('Corresponding sources do not match the packaged engine; rebuild sources and assemble together')
         source_names.append('build/emulation-source.tar.gz')
     source_archive(source, out / 'botty-native-source.tar.gz',
                    ['src', 'assets', 'sce_sys', 'vendor', 'tests', 'tools', 'artwork', 'emulation',
@@ -70,11 +75,11 @@ def main():
     if source_names:
         with (out / 'NOTICE.md').open('a') as notice:
             notice.write('\nEmbedded Switch engine: ProsperoEden (GPL-3.0-or-later), commit '
-                         '8f392248f7d49fc2be47f60ad7764ac5a392b1fe.\n'
+                         + json.loads((out / 'emulation-runtime.json').read_text())['commit'] + '.\n'
                          'Complete corresponding sources are distributed as checked parts in source/.\n'
                          'botty-native-source.tar.gz contains their index and restore.py; run it against this package folder '
                          'to reconstruct the complete archive, including build/emulation-source.tar.gz.\n'
-                         'https://github.com/blackbearreloaded/ProsperoEden\n')
+                         'https://github.com/Swordpdf/ProsperoEden\n')
     with (out / 'NOTICE.md').open('a') as notice:
         notice.write('\nOptional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.\nSee emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.\n')
     print('Native source and notices refreshed')

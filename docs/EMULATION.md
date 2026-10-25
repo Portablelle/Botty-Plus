@@ -84,7 +84,7 @@ Configuring this endpoint is a deployment step, not part of the compiler setup.
 
 1. Build `emulation/Dockerfile` on `dedie` in an isolated directory.
 2. Run `emulation/prepare.py CHECKOUT` against a fresh checkout; it verifies
-   upstream commit `8f392248f7d49fc2be47f60ad7764ac5a392b1fe` and applies the Botty
+   upstream commit `a26ba788222465ec7fb94dc813958fc749734e07` and applies the Botty
    title, storage, helper and lifecycle changes. Modified checkouts are refused.
 3. Inside that builder, run `make package JOBS=3` in the prepared checkout. Keep
    its parent directory isolated: upstream dependencies use sibling directories.
@@ -123,7 +123,7 @@ and canonical path and are resolved again on action.
 The dedicated bridge recognizes completed NSP/XCI members and preserves the
 server-download/import flow. Its code changes require separate deployment.
 
-Upstream: https://github.com/blackbearreloaded/ProsperoEden (GPL-3.0-or-later).
+Upstream: https://github.com/Swordpdf/ProsperoEden (GPL-3.0-or-later).
 
 ### UltraCam per-game configuration
 
@@ -186,3 +186,39 @@ complete package directory to reconstruct the full archive. Parts are source
 artifacts only and are never installed on the PS5.
 
 Direct Botty launches use the built-in launcher’s normal save-sync and play-registration lifecycle. Save conflicts are resolved before launch; pending post-game saves are synchronized before returning to Botty, with failed synchronization retained for retry. Per-game configuration accepts safe nested library paths as well as owned import batches.
+
+## Engine 1.005 integration
+
+The embedded engine is pinned to ProsperoEden v1.005.000. It includes the RADV
+transfer-stream split, NaN fragment-output guard and sparse GPU address-table
+fixes. Speed limit and MihawkGen are available globally and per game; frame
+generation remains optional and does not increase the game's simulation rate.
+MihawkGen's pinned sources and bundled `mihawkgen/network.fgw` ship with the
+corresponding-source archive and runtime package respectively.
+
+A game folder can hold its updates/DLC, `mods/`, `cheats/` and `reshade/`.
+Botty's mod summary gives a same-name local mod precedence over a shared mod,
+and reports cheat files separately from patch/file mods. Cheat-file counts
+are inventory only; the engine's Cheats panel owns individual activation.
+UltraCam's version gate examines the same shared and game-local update roots
+as the running engine.
+
+Engine assembly requires `botty-engine.json`, produced after compilation. It
+binds the pinned source commit and Botty patch hash to the packaged files,
+including the exact-title helper and MihawkGen weights. Source changes after
+preparation are refused. SHA-256 checks bind the runtime receipt and binary to
+that provenance; these are reproducibility checks, not a signed attestation or
+hardware acceptance. Automatic engine updates remain disabled.
+
+Dedicated-host checks: `bash emulation/tests/run.sh CHECKOUT OUTPUT` covers
+configuration persistence, shared/game-local content roots, UltraCam, lifecycle
+and provenance. The actual Linux renderer is exercised by `config_ui.py`,
+`ultracam_ui.py` and `forwarded_ui.py` with the built runtime preview binary.
+
+![Engine per-game settings with separate Mods and Cheats](images/switch-eden-1005-game-settings.png)
+
+![Engine speed-limit setting](images/switch-eden-1005-performance.png)
+
+These images use the host renderer and synthetic preview data.
+The runtime receipt also binds the corresponding-source archive by SHA-256;
+source-only repackaging refuses a stale archive from an earlier engine build.

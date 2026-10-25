@@ -28,39 +28,69 @@ class Emulation {
     char name[16];std::snprintf(name,sizeof(name),"%08x.tga",hash);
     return data_/"covers"/name;
   }
-  struct ModInventory {json entries=json::array();bool known=true;};
-  ModInventory discoverMods(const fs::path& base,const std::string& baseId,const json& config,bool settingsKnown) const {
-    json mods=json::array();
-  bool modsKnown=settingsKnown;json settings=json::object();
-  try{if(config.contains("games")&&config.at("games").contains(baseId))settings=config.at("games").at(baseId);
-    const bool enabled=settings.value("mods",true);const auto off=settings.value("mods_off",json::array());
-    const auto folder=base/"mods";
-    unsigned visited=0;
-    if(fs::exists(folder))for(const auto& title:fs::directory_iterator(containedExisting(base,folder))){
-      if(++visited>256){modsKnown=false;break;}
-      if(title.is_symlink()||!title.is_directory()||asciiLower(title.path().filename().string())!=asciiLower(baseId))continue;
-      for(const auto& mod:fs::directory_iterator(title.path())){
-        if(++visited>512||mods.size()>=64){modsKnown=false;break;}
-        if(mod.is_symlink())continue;bool present=false;
-        if(mod.is_directory())for(const auto& part:fs::directory_iterator(mod.path())){
-          if(++visited>1024){modsKnown=false;break;}if(part.is_symlink()||!part.is_directory())continue;
-          const auto kind=asciiLower(part.path().filename().string());
-          if(kind!="exefs"&&kind!="romfs"&&kind!="romfs_ext"&&kind!="romfslite"&&kind!="cheats")continue;
-          for(const auto& file:fs::directory_iterator(part.path())){
-            if(++visited>1024){modsKnown=false;break;}if(file.is_symlink())continue;
-            const auto name=file.path().filename().string(),ext=file.path().extension().string();
-            if(kind!="exefs"||ext==".ips"||ext==".pchtxt"||name=="main"||name=="main.npdm"||name=="rtld"||name=="sdk"||std::regex_match(name,std::regex("subsdk[0-9]")))present=true;
-            if(present)break;
-          }
+  struct ModInventory {json entries=json::array();bool known=true;unsigned cheatFiles=0;bool cheatsEnabled=true;};
+  ModInventory discoverMods(const fs::path& base,const fs::path& game,const std::string& baseId,const json& config,bool settingsKnown) const {
+    ModInventory result;result.known=settingsKnown;
+    try {
+      json settings=json::object();
+      if(config.contains("games")&&config.at("games").contains(baseId))settings=config.at("games").at(baseId);
+      const bool enabled=settings.value("mods",true);const auto off=settings.value("mods_off",json::array());
+      result.cheatsEnabled=settings.value("cheats",true);
+      unsigned visited=0;std::set<std::string> names,cheats;
+      const auto visit=[&](){if(++visited>1024)throw std::runtime_error("Mod inventory limit reached");};
+      const auto list=[&](const fs::path& directory){
+        std::vector<fs::directory_entry> entries;
+        if(!fs::exists(directory))return entries;
+        for(const auto& entry:fs::directory_iterator(containedExisting(base,directory))){
+          visit();if(!entry.is_symlink())entries.push_back(entry);
         }
-        else if(mod.is_regular_file()&&mod.path().filename().string().rfind("cheat_",0)==0&&mod.path().extension()==".txt")present=true;
-        if(!present)continue;const auto name=mod.path().filename().string();bool selected=true;
-        for(const auto& disabled:off)if(disabled==name)selected=false;
-        mods.push_back({{"name",name},{"enabled",enabled&&selected}});
+        std::sort(entries.begin(),entries.end(),[](const auto& a,const auto& b){return a.path()<b.path();});
+        return entries;
+      };
+      const auto cheatFolder=[&](const fs::path& folder,const std::string& name){
+        const auto files=list(folder);
+        for(const auto& file:files)if(file.is_regular_file()&&asciiLower(file.path().extension().string())==".txt")
+          cheats.insert(name+"/"+asciiLower(file.path().filename().string()));
+        return !files.empty();
+      };
+      const auto addMods=[&](const fs::path& folder){
+        for(const auto& mod:list(folder)){
+          const auto name=mod.path().filename().string();if(name=="Cheats folder"||names.count(name))continue;
+          bool present=false,hasCheats=false;
+          if(mod.is_directory())for(const auto& part:list(mod.path())){
+            if(!part.is_directory())continue;
+            const auto kind=asciiLower(part.path().filename().string());
+            if(kind=="cheats"){hasCheats=cheatFolder(part.path(),name);continue;}
+            if(kind!="exefs"&&kind!="romfs"&&kind!="romfs_ext"&&kind!="romfslite")continue;
+            for(const auto& file:list(part.path())){
+              const auto filename=file.path().filename().string(),ext=file.path().extension().string();
+              if(kind!="exefs"||ext==".ips"||ext==".pchtxt"||filename=="main"||filename=="main.npdm"||filename=="rtld"||filename=="sdk"||std::regex_match(filename,std::regex("subsdk[0-9]")))present=true;
+            }
+          }
+          else if(mod.is_regular_file()&&name.rfind("cheat_",0)==0){cheats.insert(name);hasCheats=true;}
+          if(!present&&!hasCheats)continue;
+          names.insert(name);
+          // Cheat-only collections belong to the engine's separate Cheats panel.
+          if(!present)continue;
+          if(result.entries.size()>=64)throw std::runtime_error("Mod display limit reached");
+          bool selected=true;for(const auto& disabled:off)if(disabled==name)selected=false;
+          result.entries.push_back({{"name",name},{"enabled",enabled&&selected}});
+        }
+      };
+      // The engine gives a same-name mod in the game's own folder precedence.
+      const auto own=game.parent_path();
+      if(own!=base/"roms")for(const auto& part:list(own))if(part.is_directory()){
+        const auto kind=asciiLower(part.path().filename().string());
+        if(kind=="mods")addMods(part.path());
+        if(kind=="cheats")cheatFolder(part.path(),"Cheats folder");
       }
-    }
-  }catch(...){modsKnown=false;}
-    return {std::move(mods),modsKnown};
+      for(const auto& title:list(base/"mods"))
+        if(title.is_directory()&&asciiLower(title.path().filename().string())==asciiLower(baseId))addMods(title.path());
+      for(const auto& title:list(base/"cheats"))
+        if(title.is_directory()&&asciiLower(title.path().filename().string())==asciiLower(baseId))cheatFolder(title.path(),"Cheats folder");
+      result.cheatFiles=cheats.size();
+    }catch(...){result.known=false;}
+    return result;
   }
   void enrich(json& out,const fs::path& base) const {
     std::string keysIdentity;
@@ -100,7 +130,8 @@ class Emulation {
     for(const auto& item:out["entries"]){const auto& m=item.at("library");
       if(m.value("type",std::string{})!="game")continue;
       const auto baseId=m.value("baseTitleId",std::string{});
-      if(!modsByGame.count(baseId))modsByGame.emplace(baseId,discoverMods(base,baseId,config,settingsKnown));
+      const auto path=item.at("path").get<std::string>();
+      modsByGame.emplace(path,discoverMods(base,path,baseId,config,settingsKnown));
     }
     project(out,modsByGame);
     // Receipts and base-game associations can provide a name without a NACP.
@@ -149,7 +180,7 @@ class Emulation {
         item["phase"]=phase;item["details"]=phase+"\nTitle ID: "+m.value("titleId",baseId)+"\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();continue;
       }
       const auto& additions=r.updates;const auto& dlc=r.dlc;
-      const auto& inventory=modsByGame.at(baseId);const auto& mods=inventory.entries;const bool modsKnown=inventory.known;
+      const auto& inventory=modsByGame.at(item.at("path").get<std::string>());const auto& mods=inventory.entries;const bool modsKnown=inventory.known;
       unsigned on=0;for(const auto& mod:mods)if(mod.at("enabled")==true)++on;
       std::string phase="Base "+version(m),updateVersion="None detected";
       std::string detail="Title ID: "+baseId+"\nBase: "+version(m);
@@ -162,9 +193,11 @@ class Emulation {
       detail+="\nDLC: "+std::to_string(dlc.size())+" detected";
       for(const auto& addon:dlc)if(detail.size()<900)detail+="\n  "+addon.at("titleId").get<std::string>()+(addon.at("unlocker")==true?" (unlocker)":"");
       detail+="\nMods: "+(modsKnown?std::to_string(on)+"/"+std::to_string(mods.size())+" switched on":std::string("unavailable"));
+      detail+="\nCheat files: "+(modsKnown?std::to_string(inventory.cheatFiles):std::string("unavailable"))+" | All cheats: "+(inventory.cheatsEnabled?"on":"off");
       for(const auto& mod:mods)if(detail.size()<1500)detail+="\n  "+mod.at("name").get<std::string>()+(mod.at("enabled")==true?" (on)":" (off)");
       detail+="\nFile: "+fs::path(item.at("path").get<std::string>()).filename().string();
       item["phase"]=phase;item["details"]=detail;item["updates"]=additions;item["dlc"]=dlc;item["mods"]=mods;item["modsKnown"]=modsKnown;
+      item["cheatFileCount"]=inventory.cheatFiles;item["cheatsEnabled"]=inventory.cheatsEnabled;
       item["baseVersion"]=version(m);item["updateVersion"]=updateVersion;
       item["dlcCount"]=dlc.size();item["modCount"]=mods.size();item["modsOn"]=on;
       std::string modSummary;unsigned shown=0;

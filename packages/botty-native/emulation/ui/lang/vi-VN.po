@@ -66,6 +66,10 @@ msgstr "Còn khoảng {0} phút"
 msgid "About {0} s left"
 msgstr "Còn khoảng {0} giây"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "Trên 100%, trò chơi bị khóa ở 30 FPS có thể đạt 60, và trò chơi đếm khung hình của nó cũng chạy nhanh hơn."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "Đã thêm vào mục tải xuống. Cài đặt, Tải xuống hiển t
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Đã thêm. Chéo để chơi bằng hồ sơ này; trái và phải đổi tên."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Tất cả mã gian lận"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Đã đổi"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Mã gian lận"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Thư mục mã gian lận"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Biệt danh"
 msgid "Nickname: {0}"
 msgstr "Biệt danh: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Không có mã gian lận"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Trò chơi này chưa có mã gian lận. Hãy chép các tệp mã gian lận của nó (<build ID>.txt) vào {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "Chưa thiết lập nguồn tải xuống. Lưu một tệp tên {0} liệt kê các nguồn của bạn, như tệp này làm với một máy chủ RomM, rồi mở lại menu này. Tải xuống cần một máy chủ FTP chạy trên máy, ở cổng {1}."
@@ -1118,10 +1140,9 @@ msgstr "Không có thư mục nào."
 msgid "No mods"
 msgstr "Không có mod"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Trò chơi này chưa có mod. Hãy chép thư mục của từng mod vào {0}, cạnh roms/."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Trò chơi này chưa có mod. Hãy chép thư mục của từng mod vào {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Lưu lúc {0}. Dữ liệu sẽ thay cho của máy này."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Đã lưu. Màn hình không hỗ trợ 120 Hz sẽ giữ ở 60 Hz."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Đã lưu. Có hiệu lực từ lần mở ProsperoEden tiếp theo."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Đã lưu. Áp dụng khi mở trò chơi."
@@ -1638,6 +1663,11 @@ msgstr "Đã lưu. Hậu kỳ cần trình kết xuất Vulkan."
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Đã lưu. Hãy mở lại ProsperoEden để dùng thư mục này."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "Báo khi homebrew.page có phiên bản mới hơn. Khi tắt, chỉ mục Giới thiệu nhắc đến."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "Tiếng Tây Ban Nha (Mỹ Latinh)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Tốc độ"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Giới hạn tốc độ"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "Không khả dụng"
 msgid "Understood"
 msgstr "Đã hiểu"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Không giới hạn"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Hủy liên kết"
@@ -2031,6 +2071,11 @@ msgstr "LÊN"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Có bản cập nhật"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Thông báo cập nhật"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "Phiên bản {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "Phiên bản {0} có trên homebrew.page"
 

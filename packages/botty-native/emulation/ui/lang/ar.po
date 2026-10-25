@@ -66,6 +66,10 @@ msgstr "يتبقى نحو {0} د"
 msgid "About {0} s left"
 msgstr "يتبقى نحو {0} ث"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "فوق 100%، يمكن للعبة المقيّدة بـ 30 FPS أن تصل إلى 60، واللعبة التي تحسب إطاراتها تُلعب أسرع أيضًا."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "أُضيفت إلى التنزيلات. قائمة الانتظار في
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "تمت الإضافة. زر إكس للّعب بهذا الملف؛ يسار ويمين لتغيير اسمه."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "كل شفرات الغش"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "مُعدَّل"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "شفرات غش"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "مجلد شفرات الغش"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "الاسم المستعار"
 msgid "Nickname: {0}"
 msgstr "الاسم المستعار: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "لا توجد شفرات غش"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "لا توجد شفرات غش لهذه اللعبة بعد. انسخ ملفات شفرات الغش الخاصة بها (<build ID>.txt) إلى {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "لم يُعَدّ أي مصدر تنزيل. احفظ ملفًا باسم {0} يسرد مصادرك، كما يفعل هذا الملف مع خادم RomM، ثم افتح هذه القائمة مجددًا. التنزيلات تحتاج إلى خادم FTP يعمل على الجهاز، على المنفذ {1}."
@@ -1118,10 +1140,9 @@ msgstr "لا توجد مجلدات هنا."
 msgid "No mods"
 msgstr "لا توجد تعديلات"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "لا توجد تعديلات لهذه اللعبة بعد. انسخ مجلد كل تعديل إلى {0} بجوار roms/"
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "لا توجد تعديلات لهذه اللعبة بعد. انسخ مجلد كل تعديل إلى {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "حُفظت في {0}. تحلّ محل بيانات هذا الجهاز."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "تم الحفظ. الشاشة التي لا تدعم 120 هرتز تبقى على 60 هرتز."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "تم الحفظ. يُطبَّق في المرة القادمة التي يُفتح فيها ProsperoEden."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "تم الحفظ. يُطبَّق عند بدء اللعبة."
@@ -1638,6 +1663,11 @@ msgstr "تم الحفظ. تحتاج المعالجة اللاحقة إلى مُ�
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "تم الحفظ. أعد فتح ProsperoEden لاستخدام هذا المجلد."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "يُعلمك عندما يتوفر إصدار أحدث على homebrew.page. عند إيقافه، يذكره قسم حول فقط."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "الإسبانية (أمريكا اللاتينية)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "السرعة"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "حد السرعة"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "غير متوفر"
 msgid "Understood"
 msgstr "مفهوم"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "بلا حد"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "إلغاء الربط"
@@ -2031,6 +2071,11 @@ msgstr "أعلى"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "يتوفر تحديث"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "إشعارات التحديث"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "الإصدار {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "الإصدار {0} متوفر على homebrew.page"
 

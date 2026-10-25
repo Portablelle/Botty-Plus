@@ -12,6 +12,11 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
 contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
+    def test_service_engine_inventory_matches_the_pinned_native_package(self):
+        engine=json.loads((ROOT/'homebrew/botty-native/emulation/runtime-files.json').read_text())
+        header=(ROOT/'homebrew/botty/src/emulation-runtime-files.hpp').read_text()
+        actual=re.findall(r'^  "([^"]+)",$',header,re.MULTILINE)
+        self.assertEqual(actual,['emulation-runtime.json']+['emulation/'+name for name in engine['files']])
     def test_current_delivery_is_complete_and_verified(self):
         contract.verify(ROOT/'packages')
     def test_service_source_archive_bundles_remote_test_dependencies(self):
@@ -59,6 +64,9 @@ class PackageTests(unittest.TestCase):
         self.assertIsNotNone(match, 'BOTTY_UI define not found in server.cpp')
         self.assertEqual(match.group(1), expected)
         self.assertIn(expected.encode()+b'\0', (ROOT/'packages/botty/botty-manager.elf').read_bytes())
+        updater=re.search(r'updaterConfig\.managerVersion="([^"\n]+)"',source)
+        self.assertIsNotNone(updater, 'Updater manager version not found')
+        self.assertEqual(updater.group(1), version)
         source_ui=ROOT/'homebrew/botty/ui'
         shipped_ui=ROOT/'packages/botty/ui'
         names={p.relative_to(source_ui) for p in source_ui.rglob('*') if p.is_file()}

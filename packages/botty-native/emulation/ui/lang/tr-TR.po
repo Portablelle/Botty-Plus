@@ -66,6 +66,10 @@ msgstr "Yaklaşık {0} dk kaldı"
 msgid "About {0} s left"
 msgstr "Yaklaşık {0} sn kaldı"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "%100'ün üzerinde, 30 FPS'ye kilitli bir oyun 60'a ulaşabilir ve karelerini sayan bir oyun da daha hızlı oynanır."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "İndirmelere eklendi. Ayarlar, İndirmeler sırayı gösterir."
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Eklendi. Çarpı bu profille oynar; sol ve sağ adını değiştirir."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Tüm hileler"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Değiştirildi"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Hileler"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Hile klasörü"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Takma ad"
 msgid "Nickname: {0}"
 msgstr "Takma ad: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Hile yok"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Bu oyun için henüz hile yok. Hile dosyalarını (<build ID>.txt) {0} konumuna kopyalayın."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "Hiçbir indirme kaynağı ayarlanmamış. Buradaki RomM sunucusu örneği gibi, kaynaklarınızı listeleyen {0} adlı bir dosya kaydedin, sonra bu menüyü yeniden açın. İndirmeler için konsolda {1} numaralı bağlantı noktasında çalışan bir FTP sunucusu gerekir."
@@ -1118,10 +1140,9 @@ msgstr "Burada klasör yok."
 msgid "No mods"
 msgstr "Mod yok"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Bu oyun için henüz mod yok. Her modun klasörünü roms/ klasörünün yanındaki {0} konumuna kopyalayın."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Bu oyun için henüz mod yok. Her modun klasörünü {0} konumuna kopyalayın."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Kaydedildi: {0}. Bu konsoldakinin yerini alır."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Kaydedildi. 120 Hz gösteremeyen ekran 60 Hz'te kalır."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Kaydedildi. ProsperoEden bir dahaki açılışında geçerli olur."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Kaydedildi. Oyun başlatıldığında geçerli olur."
@@ -1638,6 +1663,11 @@ msgstr "Kaydedildi. Son işleme için Vulkan oluşturucu gerekir."
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Kaydedildi. Bu klasörü kullanmak için ProsperoEden'i yeniden açın."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "homebrew.page'de daha yeni bir sürüm olduğunda haber verir. Kapalıyken yalnızca Hakkında gösterir."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "İspanyolca (Latin Amerika)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Hız"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Hız sınırı"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "Kullanılamıyor"
 msgid "Understood"
 msgstr "Anlaşıldı"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Sınırsız"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Bağlantıyı kaldır"
@@ -2031,6 +2071,11 @@ msgstr "YUKARI"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Güncelleme var"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Güncelleme bildirimleri"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "Sürüm {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "{0} sürümü homebrew.page adresinde"
 

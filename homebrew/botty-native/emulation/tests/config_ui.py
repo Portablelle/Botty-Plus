@@ -38,9 +38,12 @@ def run(game=False):
    command('capture '+str(output/'video.png'))
    command('key circle');command('key right');command('key cross')
    command('key right');assert prefs()['block_list']
+   for _ in range(8):command('key down')
+   command('key right');assert prefs()['speed_limit']==1,prefs()
+   command('tick 120');command('capture '+str(output/'performance.png'))
    command('key circle')
   command('key circle')
   assert 'done=1 game= ' in command('status')
   p.stdin.write('exit\n');p.stdin.flush();assert p.wait(timeout=15)==0
 run();run(True)
-print('Real settings renderer: global 2160p, independent render scale, performance switch, per-game override, Circle return PASS')
+print('Real settings renderer: global 2160p, independent render scale, performance switch and speed limit, per-game override, Circle return PASS')

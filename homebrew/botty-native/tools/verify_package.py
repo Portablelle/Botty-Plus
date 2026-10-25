@@ -6,6 +6,9 @@ from pathlib import Path, PurePosixPath
 import stat
 import re
 import zipfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'emulation'))
+from provenance import COMMIT, RECEIPT, digest, validate
 
 def verify(dist, expected):
     dist=Path(dist); title=expected['titleId']; app=dist/title
@@ -53,7 +56,12 @@ def verify(dist, expected):
         if files['emulation/eboot.bin'][:4]!=bytes.fromhex('4f153d1d'):
             raise ValueError('Embedded engine is not a native FSELF')
         runtime=json.loads(files['emulation-runtime.json'])
-        if runtime.get('standalone') is not True or runtime.get('engineSha256')!=hashlib.sha256(files['emulation/eboot.bin']).hexdigest():
+        patch_sha=digest(Path(__file__).resolve().parents[1]/'emulation/patches/standalone.diff')
+        validate(app/'emulation', patch_sha)
+        if (runtime.get('standalone') is not True or runtime.get('commit') != COMMIT or
+            runtime.get('patchSha256') != patch_sha or
+            runtime.get('provenanceSha256') != digest(app/'emulation'/RECEIPT) or
+            runtime.get('engineSha256')!=hashlib.sha256(files['emulation/eboot.bin']).hexdigest()):
             raise ValueError('Engine receipt mismatch')
         required |= extra
     if set(files)!=required:raise ValueError('Unexpected title file set')

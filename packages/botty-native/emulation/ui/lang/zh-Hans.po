@@ -66,6 +66,10 @@ msgstr "约剩 {0} 分钟"
 msgid "About {0} s left"
 msgstr "约剩 {0} 秒"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "高于 100% 时，锁定在 30 FPS 的游戏可以达到 60，按帧计时的游戏也会运行得更快。"
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "已加入下载。可在“设置”的“下载”中查看队列。"
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "已添加。叉键以此档案游玩；左右更改名称。"
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "全部金手指"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "已更改"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "金手指"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "金手指文件夹"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "昵称"
 msgid "Nickname: {0}"
 msgstr "昵称：{0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "没有金手指"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "此游戏还没有金手指。请将它的金手指文件 (<build ID>.txt) 复制到 {0}。"
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "尚未设置下载来源。请保存一个名为 {0} 的文件并列出你的来源（如此示例中的 RomM 服务器），然后重新打开此菜单。下载需要主机上运行 FTP 服务器，端口为 {1}。"
@@ -1118,10 +1140,9 @@ msgstr "这里没有文件夹。"
 msgid "No mods"
 msgstr "没有模组"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "此游戏还没有模组。请将每个模组的文件夹复制到 roms/ 旁边的 {0}。"
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "此游戏还没有模组。请将每个模组的文件夹复制到 {0}。"
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "保存于 {0}。将替换此主机的。"
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "已保存。不支持 120 Hz 的显示设备将保持 60 Hz。"
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "已保存。下次打开 ProsperoEden 时生效。"
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "已保存。启动游戏时生效。"
@@ -1638,6 +1663,11 @@ msgstr "已保存。后期处理需要 Vulkan 渲染器。"
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "已保存。重新打开 ProsperoEden 后使用此文件夹。"
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "homebrew.page 有新版本时提醒你。关闭后只在“关于”中显示。"
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "西班牙语（拉丁美洲）"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "速度"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "速度限制"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "不可用"
 msgid "Understood"
 msgstr "知道了"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "无限制"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "解除关联"
@@ -2031,6 +2071,11 @@ msgstr "上级"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "有可用更新"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "更新通知"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "版本 {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "版本 {0} 已在 homebrew.page 发布"
 

@@ -81,15 +81,15 @@ index 00a8cad..56ceaaa 100644
  	$(PYTHON) tools/install-ftp.py $(PS5_HOST) $(RELEASE_APP) --port $(PS5_PORT)
  
 diff --git a/README.md b/README.md
-index 063dbd4..6591468 100644
+index 7906897..53cbe66 100644
 --- a/README.md
 +++ b/README.md
 @@ -46,13 +46,13 @@ Local-wireless multiplayer through Eden rooms is new in v1.000.110 and experimen
  - **A steadier frame rate in heavy scenes** - some games time their own frames and drop to a lower frame rate (30 to 20, or 60 to 30) as soon as a frame takes a little too long. ProsperoEden lets the game's clock give by up to 15% in those moments, so the game keeps its frame rate and runs a few percent slower instead of losing a third of its frames.
  - **120 Hz output** - on a display that shows 120 Hz, games can run on a 120 Hz output: **Refresh rate** in **Settings > Video**, or in one game's settings. A frame that is a little late is then shown 8 ms later instead of 17 ms, and patches for more than 60 FPS need it. The menu stays at 60 Hz.
- - **Frame generation** - between two of a game's own pictures ProsperoEden can show one made up from them, so a 30 FPS game looks like 60: **Frame generation** in **Settings > Video**, or in one game's settings. It needs your own copy of Lossless Scaling; see [Frame generation](docs/SETTINGS.md#frame-generation).
--- **Post-processing (ReShade FX)** - a look drawn over the game's picture: **Post-processing** in **Settings > Video**, or in one game's settings, with the Vulkan renderer. Six presets come with the app (Anime, Cinematic, Clean, Dreamy, Retro, Vivid). Presets of your own (`.fxp`) go in `/data/prosperoeden/user/post_presets/` and the ReShade FX effects they use (`.fx`, with any `.fxh` they include) in `/data/prosperoeden/user/post_shaders/`; they are listed after a restart. See [Post-processing](docs/SETTINGS.md#post-processing).
-+- **Post-processing (ReShade FX)** - a look drawn over the game's picture: **Post-processing** in **Settings > Video**, or in one game's settings, with the Vulkan renderer. Six presets come with the app (Anime, Cinematic, Clean, Dreamy, Retro, Vivid). Presets of your own (`.fxp`) go in `/data/botty/emulation/switch/user/post_presets/` and the ReShade FX effects they use (`.fx`, with any `.fxh` they include) in `/data/botty/emulation/switch/user/post_shaders/`; they are listed after a restart. See [Post-processing](docs/SETTINGS.md#post-processing).
+ - **Frame generation** - between two of a game's own pictures ProsperoEden can show one made up from them, so a 30 FPS game looks like 60: **Frame generation** in **Settings > Video**, or in one game's settings. Two methods: **MihawkGen**, which comes with the app, or Lossless Scaling with your own copy of it; see [Frame generation](docs/SETTINGS.md#frame-generation).
+-- **Post-processing (ReShade FX)** - a look drawn over the game's picture: **Post-processing** in **Settings > Video**, or in one game's settings, with the Vulkan renderer. Six presets come with the app (Anime, Cinematic, Clean, Dreamy, Retro, Vivid). Presets of your own (`.fxp`) go in `/data/prosperoeden/user/post_presets/` and the ReShade FX effects they use (`.fx`, with any `.fxh` they include) in `/data/prosperoeden/user/post_shaders/`; a game's own presets and effects go in its game folder's `reshade/`, and are offered for that game only. They are listed after a restart. See [Post-processing](docs/SETTINGS.md#post-processing).
++- **Post-processing (ReShade FX)** - a look drawn over the game's picture: **Post-processing** in **Settings > Video**, or in one game's settings, with the Vulkan renderer. Six presets come with the app (Anime, Cinematic, Clean, Dreamy, Retro, Vivid). Presets of your own (`.fxp`) go in `/data/botty/emulation/switch/user/post_presets/` and the ReShade FX effects they use (`.fx`, with any `.fxh` they include) in `/data/botty/emulation/switch/user/post_shaders/`; a game's own presets and effects go in its game folder's `reshade/`, and are offered for that game only. They are listed after a restart. See [Post-processing](docs/SETTINGS.md#post-processing).
  - **Game files anywhere** - keys, firmware, and games can live in any folder the PS5 can read: internal storage, an M.2 or external drive, or a USB device.
  - **Folder browser** - pick the game files folder in **Settings > Game files**. It shows how many keys, firmware files, and games each folder holds. Hold L1/R1 to page quickly.
  - **Library** - your games as covers, with the selected game's details beside them. The home screen has **Continue Playing** and **Recently Played**, which keep working after you move your files.
@@ -106,10 +106,10 @@ index 063dbd4..6591468 100644
  - **In-game shortcuts** - a performance overlay (Touchpad + R1), and Touchpad + L1 to end the game and return to the library. Leaving takes ten seconds at most, also while a game is still loading.
 -- **Settings in one place** - a single JSON file under `/data/prosperoeden`, with game volume, mute, and detailed logging options. Logs keep the previous session.
 +- **Settings in one place** - a single JSON file under `/data/botty/emulation/switch`, with game volume, mute, and detailed logging options. Logs keep the previous session.
- - **Updates from the menu** - when a newer release is listed on [homebrew.page](https://homebrew.page/ps5), ProsperoEden offers to install it each time it opens; **Skip** keeps the current version; see [Updating](docs/INSTALL.md#updating).
+ - **Speed limit** - **Settings > Performance > Speed limit** (and each game's own) lets a game run at 150%, 200%, 300% or without a limit: a game locked to 30 FPS can reach 60 at 200% when the console has time to spare, and a game timed by its frames plays faster with it; see [Speed limit](docs/SETTINGS.md#speed-limit).
+ - **Updates from the menu** - when a newer release is listed on [homebrew.page](https://homebrew.page/ps5), ProsperoEden offers to install it each time it opens; **Skip** keeps the current version, and **Settings > Diagnostics > Update notices** off stops the offer (About still names the newer version); see [Updating](docs/INSTALL.md#updating).
  - **Crash reports** - if ProsperoEden stops because of an error, it saves a report with that session's logs, starts again and shows where the report is. **Settings > Diagnostics** also keeps the FTP log-folder path visible; attach the dated `crash-*.txt` report and its matching logs.
- - **Controllers, audio, and saves** - up to four DualSense controllers (one per signed-in PS5 user) with rumble and motion controls, game audio, and save data work out of the box. A game that gives a player a single Joy-Con is played with the whole DualSense: the shapes are that Joy-Con's four buttons, the D-pad and either stick are its stick, and L1/R1 and L2/R2 are its shoulder buttons. When the game has the Joy-Con held sideways, the DualSense is still held as usual: the stick, the buttons and the motion sensors are turned to match.
-@@ -79,10 +79,10 @@ Local-wireless multiplayer through Eden rooms is new in v1.000.110 and experimen
+@@ -80,10 +80,10 @@ Local-wireless multiplayer through Eden rooms is new in v1.000.110 and experimen
  > **Use [ShadowMountPlus 1.7beta4](https://github.com/drakmor/ShadowMountPlus/releases/tag/1.7beta4) or newer.** It mounts ProsperoEden from the folder (or drive) you copy it to, and it also mounts `/data` and USB and extended storage drives into the app's sandbox, so ProsperoEden reaches its data and your game files with nothing else to load. With an older ShadowMountPlus, ProsperoEden falls back to its bundled [Lapy](https://github.com/blackbearreloaded/PS5-Lapy-JB-Daemon) helper (see [Elevation credits](#elevation-credits)).
  
  1. Download and extract the release ZIP.
@@ -122,7 +122,7 @@ index 063dbd4..6591468 100644
  6. Close and reopen ProsperoEden, then open **Library**. Setup is checked when the app opens, so reopen it after changing the folder or adding keys or firmware.
  
  ## Guides
-@@ -124,8 +124,8 @@ A report that can be acted on has:
+@@ -125,8 +125,8 @@ A report that can be acted on has:
  - the game and its version (and any update or mod in use);
  - the ProsperoEden version, the PS5 model and system software version, and what the console runs (kstuff-lite or etaHEN, ShadowMountPlus version);
  - the renderer, resolution and Performance switches;
@@ -169,10 +169,10 @@ index bb68b3d..9e02f6c 100644
  (`-stderr.log`, `-heap.log`, `-eden_log.txt`); the five newest reports are kept.
  
 diff --git a/docs/CHANGELOG.md b/docs/CHANGELOG.md
-index e18d8c4..a24f457 100644
+index c272ec8..53f9486 100644
 --- a/docs/CHANGELOG.md
 +++ b/docs/CHANGELOG.md
-@@ -8,8 +8,8 @@ This alpha adds post-processing looks and wallpapers of your own, frees more mem
+@@ -42,8 +42,8 @@ This alpha adds post-processing looks and wallpapers of your own, frees more mem
  
  ### New and improved
  
@@ -183,7 +183,7 @@ index e18d8c4..a24f457 100644
  - **More free memory in 64-bit games.** The emulated console's memory is now taken from the PS5 only where a game writes it, and given back where the game's console clears or frees it, or where it holds only zeroes again. Two games measured on the console held 644 MiB and 1,956 MiB less, at the same frame rate. After "A Compressed RAM Service" (Gregory Price, Linux Plumbers 2026).
  - **Compact memory (new Performance setting, off by default).** Gives back memory a game wrote but left mostly empty, 16 KiB at a time: 100 to 300 MiB more in the same two games. A game that keeps rewriting such memory can stutter; leave it off unless a game runs short of memory.
  - **Games with many shaders start, and start faster the next time.** A game with thousands of pipelines could stop during its loading screen because the locks that guard pipeline builds ran out; they are now shared. The graphics driver keeps its compiled shaders between starts on every setup, and its pipeline cache is kept when a write is cut short, so a large game compiles them once instead of at every start. A line at launch says where the cache is kept.
-@@ -127,8 +127,8 @@ And to everyone who tests ProsperoEden on their own console and reports what the
+@@ -161,8 +161,8 @@ And to everyone who tests ProsperoEden on their own console and reports what the
  - **Public rooms.** A list of the rooms in Eden's public directory, with each room's game, how many players it has and whether it asks for a password. Rooms you can join come first, the busiest at the top; Left and Right move a page at a time and Triangle refreshes. Rooms that use another protocol version are marked and cannot be joined.
  - **For a stable multiplayer session**, everyone needs the same game and the same update of it, and the player who hosts the lobby should use 1x resolution with frame generation off. A host that cannot hold full speed ends the session for everyone.
  - **Connection problems are explained.** When a room cannot be joined, a panel says what happened and what to try: a wrong password, a full room, a room that did not answer, a name already in use. **Settings > Diagnostics** has the detailed log to send with a report.
@@ -194,7 +194,7 @@ index e18d8c4..a24f457 100644
  - **120 Hz holds on a display with a variable refresh rate.** With **Refresh rate** at 120 Hz, such a display was read as not having switched and the output went back to 60 Hz.
  - **No more lost graphics device in shader-heavy scenes.** Long scenes could stop a game with `VK_ERROR_DEVICE_LOST`; draws are now handed to the GPU in smaller batches. Contributed by [Bauls Deep](https://github.com/bawsdeep).
  - **Eden updated** to its revision of 8 October (`67bada77`), together with the Vulkan driver (Mesa), its tools and the Payload SDK.
-@@ -176,7 +176,7 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
+@@ -210,7 +210,7 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
  - **ProsperoEden starts wherever it is installed.** On a USB drive, extended storage, an etaHEN games folder or any other place ShadowMountPlus mounts it from, it could not find its own files and closed after a moment. It now reads its files from where the PS5 mounts the running app.
  - **Updates from the menu work on those installs too.** The update helper updates the folder ShadowMountPlus mounted the app from; an app installed as an image is not changed, and the dialog says to replace the image.
  - **Clearer error when the menu cannot start**, naming the file and the reason.
@@ -203,7 +203,7 @@ index e18d8c4..a24f457 100644
  
  ## v1.000.060
  
-@@ -220,10 +220,10 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
+@@ -254,10 +254,10 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
  - **Output resolution.** **Settings > Video** has a new **Output resolution** row: 1080p (as before), 1440p or 2160p. It is the size of the picture ProsperoEden puts out, for the menu and for games. Until now a game's picture was made at 1080p and enlarged, whatever its internal resolution; at 2160p the upscaling filter scales the game straight to a 4K picture. A larger picture needs more graphics memory.
  - **3x and 4x resolution.** The internal resolution now goes up to 4x. These need far more graphics memory than 2x; a game that runs out says so, and can be given its own lower resolution.
  - **Patches for more frames than the display shows.** A game patched to run faster than the output refreshes keeps its pace: the frames the display has no refresh for are left out.
@@ -217,7 +217,7 @@ index e18d8c4..a24f457 100644
  
  ## v1.000.030
  
-@@ -249,7 +249,7 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
+@@ -283,7 +283,7 @@ A bug fix for v1.000.090. If you are on v1.000.090, update.
  
  - **Vulkan is now the recommended and default renderer.** OpenGL remains available in Settings.
  - **Choose where your game files live.** The new **Settings > Game files** browser selects any folder, including external drives and USB devices. The old `assets/` folder keeps working until you choose one.
@@ -227,7 +227,7 @@ index e18d8c4..a24f457 100644
  - **Faster Library navigation**, and covers and recent games that survive folder moves.
  - **New icons** for controller actions, pages, and the Handheld / Docked mode.
 diff --git a/docs/DOWNLOADS.md b/docs/DOWNLOADS.md
-index 4302cda..3816713 100644
+index d780fb9..f097692 100644
 --- a/docs/DOWNLOADS.md
 +++ b/docs/DOWNLOADS.md
 @@ -8,14 +8,14 @@ Download sources and save sync both work with a [RomM](https://github.com/rommap
@@ -274,7 +274,7 @@ index 6511b7a..a52d90d 100644
  
  ## Symptom
 diff --git a/docs/INSTALL.md b/docs/INSTALL.md
-index 6113a7e..84cc734 100644
+index 98c7a74..2cf5b1b 100644
 --- a/docs/INSTALL.md
 +++ b/docs/INSTALL.md
 @@ -7,7 +7,7 @@ Where ProsperoEden looks for your keys, firmware and games, where it keeps its o
@@ -286,7 +286,7 @@ index 6113a7e..84cc734 100644
  ├── keys/
  │   ├── prod.keys
  │   └── title.keys                      # optional
-@@ -36,10 +36,10 @@ The folder browser shows how many keys, firmware files, and games each folder ho
+@@ -40,10 +40,10 @@ The folder browser shows how many keys, firmware files, and games each folder ho
  
  ## App data
  
@@ -299,7 +299,7 @@ index 6113a7e..84cc734 100644
  ├── config/prosperoeden.json            # every profile's settings, and the game files folder
  ├── config/remote/                      # download sources and save sync, when you use them:
  │   ├── sources.json                    #   the sources and how to reach them (written by you)
-@@ -51,22 +51,22 @@ ProsperoEden keeps its own data in `/data/prosperoeden`, separately from the gam
+@@ -55,22 +55,22 @@ ProsperoEden keeps its own data in `/data/prosperoeden`, separately from the gam
  ├── backup/save-sync/                   # save data the save sync replaced, the last three per game
  ├── covers/                             # cached game covers
  ├── logs/                               # current and previous session logs, crash reports
@@ -326,7 +326,7 @@ index 6113a7e..84cc734 100644
  
  Once each time it opens, ProsperoEden asks [homebrew.page](https://homebrew.page/ps5) which release of it is listed there. The request carries the app's title ID and nothing else. If the listed release is newer than the one running, a dialog offers it, with its version and download size:
  
-@@ -76,18 +76,18 @@ Once each time it opens, ProsperoEden asks [homebrew.page](https://homebrew.page
+@@ -82,18 +82,18 @@ To stay on a version without being asked at every start, turn off **Settings > D
  
  If the download or the unpacking fails, the dialog says why and offers **Try again**; the app stays as it was. Without a network, or without an answer, nothing is shown. When ProsperoEden cannot install the release itself (no payload loader, or an install it cannot find), the menu says **Update available** at the top right for ten seconds instead, and the steps below still work:
  
@@ -420,7 +420,7 @@ index b675b41..e97cb74 100644
  initially rejected ftpsrv's successful `226 File deleted` reply; a bounded cleanup accepted
  that response, removed remaining temporary capture state and verified all 66 normal-package
 diff --git a/docs/RUNTIME_LAUNCHERS.md b/docs/RUNTIME_LAUNCHERS.md
-index 859670a..f8b881c 100644
+index 31ef692..2446558 100644
 --- a/docs/RUNTIME_LAUNCHERS.md
 +++ b/docs/RUNTIME_LAUNCHERS.md
 @@ -10,7 +10,7 @@ The built-in launcher remains available as the recovery interface.
@@ -480,10 +480,10 @@ index 7bc3360..5a5afc6 100644
  
  ### RomM
 diff --git a/docs/SETTINGS.md b/docs/SETTINGS.md
-index 3b88045..46678f2 100644
+index ecafc29..a3c5fd0 100644
 --- a/docs/SETTINGS.md
 +++ b/docs/SETTINGS.md
-@@ -81,12 +81,12 @@ Six presets come with the app:
+@@ -104,12 +104,12 @@ Six presets come with the app:
  | Retro | An old television: colour fringing at the edges, curved scanlines with a phosphor mask, darker corners |
  | Vivid | Warmer, more saturated colour, deeper blacks and brighter whites, a light sharpen |
  
@@ -496,11 +496,11 @@ index 3b88045..46678f2 100644
 -| `/data/prosperoeden/user/post_shaders/` | ReShade FX effects (`.fx`) and the files they include (`.fxh`) |
 +| `/data/botty/emulation/switch/user/post_presets/` | Presets (`.fxp`): a name, a description and the chain of effects |
 +| `/data/botty/emulation/switch/user/post_shaders/` | ReShade FX effects (`.fx`) and the files they include (`.fxh`) |
+ | `roms/<game>/reshade/` | One game's own presets and effects, in its game folder (see [Game files folder](INSTALL.md#game-files-folder)) |
  
- Restart ProsperoEden after adding files: the list is read when the menu opens. A ReShade `.ini` preset does not load as it is; write its effects into a `.fxp` chain instead (below). A preset file of your own in that folder is listed beside them by its name: its `chain=` line names the effects in order, each with its technique and values (`Bloom.fx|Bloom|Radius=1.2,Amount=0.25;Sharpen.fx|Sharpen|Amount=0.75`). An effect it names that the console does not have is left out.
- 
-@@ -101,7 +101,7 @@ Frame generation shows, between two pictures a game draws, one that is made up f
- It uses the frame generation of [Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/), which ProsperoEden cannot include: you need your own copy of that program.
+ A game's own `reshade/` folder works like both folders at once: its presets (`.fxp`) are offered in that game's settings only, listed first, and the effects it holds (`.fx`, `.fxh`, and textures in `Textures/`) are used for that game, before an effect of the same name in `post_shaders/`. So a game folder can carry a preset made for it together with the effects it needs.
+@@ -129,7 +129,7 @@ Frame generation shows, between two pictures a game draws, one that is made up f
+ Lossless Scaling's frame generation ([Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/)) cannot be included with ProsperoEden: for it you need your own copy of that program.
  
  1. On the PC where Lossless Scaling is installed, find `Lossless.dll` in its folder (with Steam: `steamapps/common/Lossless Scaling`).
 -2. Copy it to the console as `/data/prosperoeden/user/lossless/Lossless.dll`.
@@ -508,7 +508,7 @@ index 3b88045..46678f2 100644
  3. Set **Frame generation** to on in **Settings > Video**, or for one game: Triangle on the game in the Library, then **Video**. It applies the next time the game starts.
  
  Without the file, the three settings are greyed out and say **Unavailable**.
-@@ -154,6 +154,6 @@ The D-pad, the sticks and the [in-game shortcuts](../README.md#in-game-shortcuts
+@@ -182,7 +182,7 @@ The D-pad, the sticks and the [in-game shortcuts](../README.md#in-game-shortcuts
  
  ## Language and accessibility
  
@@ -516,6 +516,7 @@ index 3b88045..46678f2 100644
 +The launcher follows the language the PS5 is set to: Arabic, Chinese (simplified and traditional), Czech, Danish, Dutch, Finnish, French, German, Greek, Hungarian, Indonesian, Italian, Japanese, Korean, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian and Vietnamese (with the regional variants the PS5 has for French, Portuguese and Spanish), and English otherwise. Arabic, Chinese, Greek, Japanese, Korean and Thai are drawn with the PS5's own system fonts. Arabic text runs right to left; the screens themselves are not mirrored. To use another one, put a file named `language.txt` holding its tag (for example `en-US` or `pt-BR`) in `/data/homebrew/PPSA99071`. The language *games* use is a separate setting, **Settings > Language**.
  
  **Settings > Accessibility** has three switches. **Larger text** draws the menu's small text about a third larger. **High contrast** uses solid panels, brighter text and an outlined highlight. **Reduce motion** stops the background drifting and the screens sliding, in the menu and on the loading screen. There is no screen reader.
+ 
 diff --git a/docs/WALLPAPERS.md b/docs/WALLPAPERS.md
 index 65da70f..c3de3e5 100644
 --- a/docs/WALLPAPERS.md
@@ -530,10 +531,10 @@ index 65da70f..c3de3e5 100644
  
  The app creates the folder when it starts. Put images in it over FTP while the app is
 diff --git a/headless/CMakeLists.txt b/headless/CMakeLists.txt
-index 5741484..febee5a 100644
+index 3495139..1837462 100644
 --- a/headless/CMakeLists.txt
 +++ b/headless/CMakeLists.txt
-@@ -2680,7 +2680,7 @@ if(PS5_NATIVE)
+@@ -2851,7 +2851,7 @@ if(PS5_NATIVE)
          "#elif defined(PS5_NATIVE)\n        eden_path = Eden::UserDir();\n        eden_path_cache = eden_path / CACHE_DIR;\n        eden_path_config = eden_path / CONFIG_DIR;\n#else\n        eden_path = GetCurrentDir() / PORTABLE_DIR;" paths_source "${paths_source}")
      string(REPLACE "#else\n        // In Ryujinx's infinite wisdom"
          "#elif defined(PS5_NATIVE)\n        GenerateLegacyPath(EmuPath::RyujinxDir, eden_path / RYUJINX_DIR);\n#else\n        // In Ryujinx's infinite wisdom" paths_source "${paths_source}")
@@ -597,7 +598,7 @@ index 0000000..f99563e
 +inline std::string game;
 +}
 diff --git a/headless/check_package.py b/headless/check_package.py
-index ec33f6a..e0354d7 100644
+index 5a6aa2b..ab96b92 100644
 --- a/headless/check_package.py
 +++ b/headless/check_package.py
 @@ -11,9 +11,9 @@ import sys
@@ -612,7 +613,16 @@ index ec33f6a..e0354d7 100644
  OUT = ROOT / 'build/headless-native'
  BASE_REQUIRED = {'launcher-runtime.json', 'eboot.bin', 'core-homebrew.nro', 'sce_module/libc.prx',
              'sce_sys/param.json', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/pic1.dds',
-@@ -51,12 +51,12 @@ def check():
+@@ -27,6 +27,8 @@ if (APP / 'dev-settings.txt').is_file():
+     REQUIRED.add('dev-settings.txt')
+ if (APP / 'mihawkgen/network.fgw').is_file():
+     REQUIRED.add('mihawkgen/network.fgw')
++REQUIRED.add('botty-engine.json')
++REQUIRED.add('mihawkgen/network.fgw')
+ RECEIPT = ROOT / 'HEADLESS_CANDIDATE.json'
+ # The pinned OpenGL SDK release (tools/deps.json): digest of its manifest.sha256.
+ GL_SDK_MANIFEST_SHA256 = '0d432edc9d648d6e0cccb4d5eb3db8484f10ba4b075b5ccf23edda3251b66360'
+@@ -53,12 +55,12 @@ def check():
      assert {p.relative_to(APP).as_posix() for p in APP.rglob('*') if p.is_file()} == REQUIRED
      assert all(not (APP / p).is_symlink() and (APP / p).stat().st_size for p in REQUIRED)
      param = json.loads((APP / 'sce_sys/param.json').read_text())
@@ -628,7 +638,7 @@ index ec33f6a..e0354d7 100644
      assert lapy['max_requests'] == 1 and not lapy['service']
      assert lapy['features'] == ['root_layout_probe_retry']
      assert lapy['protocol_sha256'] == LAPY_PROTOCOL_SHA256
-@@ -129,10 +129,10 @@ if __name__ == '__main__':
+@@ -131,10 +133,10 @@ if __name__ == '__main__':
                      if 'dist/PPSA99121/' + p in old['files']}
          if RECEIPT.exists():
              prior = json.loads(RECEIPT.read_text())
@@ -807,11 +817,45 @@ index bce0587..2854342 100644
  inline std::string ResolveForwardedRom(std::string_view rom, std::string_view roms_dir) {
      while (!rom.empty() && (rom.back() == ' ' || rom.back() == '\r' || rom.back() == '\n')) rom.remove_suffix(1);
      if (rom.empty()) return {};
+diff --git a/headless/game_content_paths.h b/headless/game_content_paths.h
+new file mode 100644
+index 0000000..4ee5d64
+--- /dev/null
++++ b/headless/game_content_paths.h
+@@ -0,0 +1,23 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <filesystem>
++#include <string>
++#include <vector>
++namespace Eden {
++// Every feature uses the directory directly beside the selected ROM, including nested imports.
++inline std::string GameFolderPath(const std::string& rom, const std::string& roms) {
++    const auto own = std::filesystem::path(rom).parent_path().lexically_normal();
++    const auto relative = own.lexically_relative(std::filesystem::path(roms).lexically_normal());
++    if (own.empty() || relative.empty() || relative == "." || relative.is_absolute() ||
++        *relative.begin() == "..") return {};
++    return own.string();
++}
++// Keep UltraCam's effective-version gate and the running engine's provider in sync.
++inline std::vector<std::string> GameContentPaths(const std::string& rom,
++                                                const std::string& roms,
++                                                const std::string& updates) {
++    std::vector<std::string> paths{updates};
++    if (const auto own = GameFolderPath(rom, roms); !own.empty()) paths.push_back(own);
++    return paths;
++}
++}
 diff --git a/headless/main.cpp b/headless/main.cpp
-index fe4f8f2..8504e77 100644
+index 5b654e2..a9990cc 100644
 --- a/headless/main.cpp
 +++ b/headless/main.cpp
-@@ -8,6 +8,8 @@
+@@ -1,3 +1,4 @@
++#include "game_content_paths.h"
+ #ifdef EDEN_DEV_ROM_ID
+ #include "development_input.h"
+ #endif
+@@ -8,6 +9,8 @@
  #include <exception>
  #include "assets_dir.h"
  #include "forwarded_launch.h"
@@ -820,7 +864,7 @@ index fe4f8f2..8504e77 100644
  #include "gpu_failure.h"
  #include "guest_fault.h"
  #include "jit_list.h"
-@@ -101,6 +103,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
+@@ -101,6 +104,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
  #include "core/hle/kernel/k_process.h"  // every build: the game's code address (jit_list.h)
  #ifdef PS5_NATIVE
  #include "core/hle/kernel/k_thread.h"
@@ -828,7 +872,7 @@ index fe4f8f2..8504e77 100644
  #endif
  #pragma clang diagnostic pop
  #ifdef EDEN_DEV_PROFILE
-@@ -147,7 +150,7 @@ public:
+@@ -154,7 +158,7 @@ public:
  
  #ifdef PS5_NATIVE
  // First start with filesystem access: copy what the sandbox kept (settings, covers, Eden's saves
@@ -837,7 +881,7 @@ index fe4f8f2..8504e77 100644
  // sandbox copy stays, so an older ProsperoEden still finds its data.
  // dev-settings jit_table_check=on: the JIT's direct page table (headless/jit-page-table.cmake) must
  // hold, for every page, the pointer of Eden's entry, or 0 where the entry is marked or empty. A
-@@ -178,7 +181,7 @@ public:
+@@ -185,7 +189,7 @@ public:
  }
  
  static void MigrateSandboxData() {
@@ -846,7 +890,7 @@ index fe4f8f2..8504e77 100644
      const std::pair<std::filesystem::path, std::string> moves[] = {
          {sandbox / "eden-headless-g7/user", Eden::UserDir()},
          {sandbox / "prosperoeden/covers", Eden::CoversDir()},
-@@ -206,10 +209,10 @@ static void MigrateSandboxData() {
+@@ -213,10 +217,10 @@ static void MigrateSandboxData() {
  
  #ifdef PS5_NATIVE
  // Game files an early version kept inside the app's folder (assets/ with keys, firmware and
@@ -859,7 +903,7 @@ index fe4f8f2..8504e77 100644
  static void MoveGameFilesOutOfTheApp() {
      const std::string from = std::string{Eden::kInstallDir} + "/assets", to = Eden::kDefaultAssetsDir;
      const std::string saved = Eden::LoadSavedAssetsDir();
-@@ -280,6 +283,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
+@@ -287,6 +291,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
  
  int main(int argc, char** argv) {
      try {
@@ -870,7 +914,7 @@ index fe4f8f2..8504e77 100644
          std::FILE* report = stdout;
          SCOPE_EXIT { if (report != stdout) std::fclose(report); };
          std::setvbuf(report, nullptr, _IONBF, 0);
-@@ -347,7 +354,7 @@ int main(int argc, char** argv) {
+@@ -354,7 +362,7 @@ int main(int argc, char** argv) {
          Eden::Crash::Install(Eden::LogsDir(), Eden::kAppVersion, last_crash.restarted);
          Eden::BootTrace::Ready(Eden::LogsDir(), Eden::FilesystemAccess());
          Eden::BootTrace::Line("logs and crash handler ready (%s)", Eden::LogsDir().c_str());
@@ -879,7 +923,7 @@ index fe4f8f2..8504e77 100644
              Eden::BootTrace::Line("app folder candidate %s: eboot %s, font %s", folder,
                                    Eden::FileExists(std::string{folder} + "/eboot.bin") ? "yes" : "no",
                                    Eden::FileExists(std::string{folder} + "/ui/fonts/montserrat-medium.pefont") ? "yes" : "no");
-@@ -483,10 +490,18 @@ int main(int argc, char** argv) {
+@@ -490,10 +498,18 @@ int main(int argc, char** argv) {
          std::string launch_error;
          // The previous run crashed: the launcher says where its report is.
          if (!last_crash.report.empty()) launch_error = std::string{Eden::Crash::kNotice} + last_crash.report;
@@ -900,7 +944,7 @@ index fe4f8f2..8504e77 100644
              const std::string path = Eden::ResolveForwardedRom(forwarded.rom, Eden::AssetsPath("roms"));
              if (!path.empty() && Eden::FileExists(path)) forwarded_game = path;
              else launch_error = "Forwarded game not found: " + (path.empty() ? forwarded.rom : path);
-@@ -567,10 +582,16 @@ int main(int argc, char** argv) {
+@@ -574,10 +590,16 @@ int main(int argc, char** argv) {
          } else if (!forwarded_game.empty()) {
              guest_fault_retries = 0;
              forwarded_session = true;
@@ -921,22 +965,57 @@ index fe4f8f2..8504e77 100644
              return 0;
          } else {
          guest_fault_retries = 0;
-@@ -1289,6 +1310,14 @@ int main(int argc, char** argv) {
-             const u64 title = eden_game_title_id(guest);
-             const auto all_mods = Eden::Mods::List(Eden::AssetsPath("mods"), title);
-             auto mods_off = Eden::LoadDisabledMods(title);
-+            if (title==Eden::UltraCam::kTitle && std::filesystem::exists(Eden::UltraCam::Root())) {
-+                eden_scan_addons(Eden::AssetsPath("updates").c_str(),Eden::AssetsPath("keys").c_str());
-+                char version[64]{};eden_game_effective_version(guest,Eden::AssetsPath("keys").c_str(),title,version,sizeof(version));
-+                const bool compatible=Eden::UltraCam::Compatible(title,version);
-+                if(!compatible&&std::find(mods_off.begin(),mods_off.end(),Eden::UltraCam::kName)==mods_off.end())mods_off.push_back(Eden::UltraCam::kName);
-+                const auto config=Eden::UltraCam::Load();
-+                Eden::Report("ultracam",("BOTW version="+std::string(version)+" compatible="+(compatible?"yes":"no")+" enabled="+(config[0]?"yes":"no")+" target="+std::string(Eden::UltraCam::Value(config,Eden::UltraCam::TargetFps))).c_str());
+@@ -1144,14 +1166,8 @@ int main(int argc, char** argv) {
+             // A game in its own folder in roms/ (issue 168) brings its update, DLC, mods, cheats
+             // and its own post-processing (reshade_folder.h): its presets and effects are read
+             // again when the folder is another than the last game's.
+-            Eden::Mods::SessionGameFolder().clear();
+-            if (guest) {
+-                const std::string roms = Eden::AssetsPath("roms/");
+-                const std::string_view path{guest};
+-                if (path.starts_with(roms))
+-                    if (const auto slash = path.find('/', roms.size()); slash != std::string_view::npos)
+-                        Eden::Mods::SessionGameFolder() = std::string{path.substr(0, slash)};
+-            }
++            Eden::Mods::SessionGameFolder() = guest
++                ? Eden::GameFolderPath(guest, Eden::AssetsPath("roms")) : std::string{};
+             if (Eden::Reshade::SetGameFolder(Eden::Mods::SessionGameFolder())) {
+                 VideoCore::ReloadFxPresetCatalog();
+                 VideoCore::ReloadFxCatalog();
+@@ -1333,10 +1349,19 @@ int main(int argc, char** argv) {
+             // The game's own folder (Mods::SessionGameFolder) was found with its post-processing.
+             const auto all_mods = Eden::Mods::List(
+                 {Eden::AssetsPath("mods"), Eden::AssetsPath("cheats"), Eden::Mods::SessionGameFolder()}, title);
++            auto disabled_mods = Eden::LoadDisabledMods(title);
++            if (title == Eden::UltraCam::kTitle && std::filesystem::exists(Eden::UltraCam::Root())) {
++                char version[64]{};
++                eden_game_effective_version(guest, Eden::AssetsPath("keys").c_str(), title, version, sizeof(version));
++                if (!Eden::UltraCam::Compatible(title, version) &&
++                    std::find(disabled_mods.begin(), disabled_mods.end(), Eden::UltraCam::kName) == disabled_mods.end())
++                    disabled_mods.push_back(Eden::UltraCam::kName);
++                Eden::Report("ultracam", ("Effective BOTW version: " + std::string(version)).c_str());
 +            }
-             if (!Eden::LoadModsEnabled(title)) {
-                 for (const auto& mod : all_mods)
-                     if (std::find(mods_off.begin(), mods_off.end(), mod.name) == mods_off.end())
-@@ -1567,7 +1596,7 @@ int main(int argc, char** argv) {
+             // Of a mod that lists several cheats, only the ones chosen there run (cheats.h).
+             const bool cheats_enabled = Eden::LoadCheatsEnabled(title);
+             const auto cheats_on = cheats_enabled ? Eden::LoadChosenCheats(title) : std::vector<std::string>{};
+-            auto switched = Eden::Mods::Switches(all_mods, Eden::LoadDisabledMods(title), cheats_on,
++            auto switched = Eden::Mods::Switches(all_mods, disabled_mods, cheats_on,
+                                                  Eden::LoadCheatsOff(title), Eden::LoadModsEnabled(title),
+                                                  cheats_enabled);
+             Eden::Cheats::Off() = std::move(switched.cheats_off);
+@@ -1538,9 +1563,8 @@ int main(int argc, char** argv) {
+                 // Update and DLC files (NSP or XCI) in the game files' updates folder apply to their
+                 // base game: Eden's ExternalContentProvider, which the patch manager checks first.
+                 // So do those in the game's own folder, when it has one (roms/<folder>/, issue 168).
+-                Settings::values.external_content_dirs = {Eden::AssetsPath("updates")};
+-                if (const std::string& folder = Eden::Mods::SessionGameFolder(); !folder.empty())
+-                    Settings::values.external_content_dirs.push_back(folder);
++                Settings::values.external_content_dirs = Eden::GameContentPaths(
++                    guest, Eden::AssetsPath("roms"), Eden::AssetsPath("updates"));
+                 system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+                 // The game's own contents, registered as Eden's desktop frontends do before booting a
+                 // game (ConfigureFilesystemProvider). An update's data is a patch on the base game's:
+@@ -1614,7 +1638,7 @@ int main(int argc, char** argv) {
                  }
  #ifdef PS5_NATIVE
                  if (game) {
@@ -945,7 +1024,7 @@ index fe4f8f2..8504e77 100644
                      const bool saved_last = Eden::SaveLastGame(filename);
                      const bool saved_recent = Eden::SaveRecentGame(filename);
                      if (!saved_last || !saved_recent)
-@@ -1972,6 +2001,9 @@ int main(int argc, char** argv) {
+@@ -2019,6 +2043,9 @@ int main(int argc, char** argv) {
                      completion->wake.wait_for(lock, std::chrono::milliseconds(wait_ms), completed);
                      const bool guest_exited = completion->exited;
                      return_to_menu = completion->return_to_menu;
@@ -956,10 +1035,15 @@ index fe4f8f2..8504e77 100644
                      if (completion->room_lost)
                          launch_error = "The room connection was lost. Rejoin from Multiplayer before launching again.";
 diff --git a/headless/metadata_bridge.cpp b/headless/metadata_bridge.cpp
-index f3274b3..7d8fda1 100644
+index 5dfcd6d..258850e 100644
 --- a/headless/metadata_bridge.cpp
 +++ b/headless/metadata_bridge.cpp
-@@ -123,6 +123,16 @@ uint32_t ReadLanguages(const FileSys::VirtualDir& romfs) {
+@@ -1,3 +1,4 @@
++#include "game_content_paths.h"
+ #include "game_name.h"
+ #include "metadata_bridge.h"
+ #include "assets_dir.h"
+@@ -123,6 +124,16 @@ uint32_t ReadLanguages(const FileSys::VirtualDir& romfs) {
      return static_cast<uint32_t>(raw.supported_languages);
  }
  
@@ -976,7 +1060,7 @@ index f3274b3..7d8fda1 100644
  // The game's language flags: a packed update's when it has them (a game can gain languages in an
  // update), else the game's own.
  uint32_t ReadLanguages(const FileSys::VirtualDir& game, const FileSys::VirtualDir& packed_update) {
-@@ -312,16 +322,26 @@ void eden_scan_addons(const char* updates_dir, const char* keys_dir) {
+@@ -359,16 +370,26 @@ void eden_scan_addons(const char* updates_dir, const char* roms_dir, const char*
              auto& addons = scanned[FileSys::GetBaseTitleID(entry.title_id)];
              if (!addons.update.empty()) continue;
              // Newest first; the display version comes from the update's own control data.
@@ -1008,7 +1092,7 @@ index f3274b3..7d8fda1 100644
          }
          std::set<uint64_t> dlc;
          for (const auto& entry : provider.ListEntriesFilter(FileSys::TitleType::AOC, std::nullopt, std::nullopt))
-@@ -424,6 +444,64 @@ int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, u
+@@ -473,6 +494,68 @@ int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, u
      return !found->second.update.empty() || found->second.dlc != 0;
  }
  
@@ -1051,7 +1135,11 @@ index f3274b3..7d8fda1 100644
 +        if(!base||base->GetStatus()!=Loader::ResultStatus::Success||base->GetTitleId()!=title_id)return 0;
 +        FileSys::VirtualFile selected=packed_raw;
 +        FileSys::VirtualDir selected_control=packed_raw?packed_control:base_control;
-+        const FileSys::ExternalContentProvider provider({vfs.OpenDirectory(Eden::AssetsPath("updates"),FileSys::OpenMode::Read)});
++        std::vector<FileSys::VirtualDir> directories;
++        for (const auto& path : Eden::GameContentPaths(rom_path, Eden::AssetsPath("roms"), Eden::AssetsPath("updates")))
++            if (auto directory = vfs.OpenDirectory(path, FileSys::OpenMode::Read))
++                directories.push_back(std::move(directory));
++        const FileSys::ExternalContentProvider provider(std::move(directories));
 +        const auto update_id=FileSys::GetUpdateTitleID(title_id);
 +        const auto versions=provider.ListUpdateVersions(update_id);
 +        if(!versions.empty()){
@@ -1074,10 +1162,10 @@ index f3274b3..7d8fda1 100644
  // The save folder name of the profile games use (profiles.h), as Eden's save paths spell it.
  // Without a profile file (no game has run yet) the one existing user save folder is used.
 diff --git a/headless/metadata_bridge.h b/headless/metadata_bridge.h
-index 112bac8..d4488cf 100644
+index 6b8fcfb..2258277 100644
 --- a/headless/metadata_bridge.h
 +++ b/headless/metadata_bridge.h
-@@ -46,6 +46,10 @@ int eden_game_addon_files(uint64_t title_id, const char* updates_dir, const char
+@@ -58,6 +58,10 @@ int eden_game_addon_files(uint64_t title_id, const char* updates_dir, const char
  // Returns nonzero when either exists.
  int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, unsigned* dlc_count);
  
@@ -1088,7 +1176,7 @@ index 112bac8..d4488cf 100644
  // Save transfer for one game (ryujinx_saves.h). Sources, in the game files folder next to roms/:
  // save-import/<title ID>/ (a save folder copied by hand) or ryujinx/ (a Ryujinx data folder).
  enum {
-@@ -61,7 +65,7 @@ enum {
+@@ -73,7 +77,7 @@ enum {
      EDEN_SAVE_FAILED = 3,    // the copy failed; the current save is unchanged
  };
  // Copies the game's saves from the source into ProsperoEden's, after moving the current ones to
@@ -1098,10 +1186,10 @@ index 112bac8..d4488cf 100644
  int eden_save_import(uint64_t title_id, char* path, size_t capacity);
  // Copies the game's saves to save-export/<title ID>-<date>-<time>/ (account/ and device/) in the
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
-index 0e5ac8b..b52ba97 100644
+index 1d5a8a3..1ff0571 100644
 --- a/headless/prosperoeden/eden_services.cpp
 +++ b/headless/prosperoeden/eden_services.cpp
-@@ -7,7 +7,9 @@
+@@ -7,10 +7,13 @@
  #include "multiplayer_logging.h"
  #include "network/room.h"
  #include "metadata_bridge.h"
@@ -1111,39 +1199,45 @@ index 0e5ac8b..b52ba97 100644
  #include "profiles.h"
  #include "update_notice.h"
  #include "game_name.h"
-@@ -683,6 +685,14 @@ std::vector<pe::ui::Game> EdenServices::games() {
-     auto entries = Eden::ReadNativeDirectory(Eden::AssetsPath("roms"), directory_error);
++#include "game_content_paths.h"
+ #include "native_directory.h"
+ #include "reshade_folder.h"
+ #include "pe/core/strings.hpp"
+@@ -310,8 +313,7 @@ std::vector<std::string> GameFiles() {
+ 
+ // The game folder of a game in one (the path of its folder in roms/), else empty.
+ std::string GameFolderOf(const std::string& file) {
+-    const auto slash = file.find('/');
+-    return slash == std::string::npos ? std::string{} : Eden::AssetsPath("roms/" + file.substr(0, slash));
++    return Eden::GameFolderPath(Eden::AssetsPath("roms/" + file), Eden::AssetsPath("roms"));
+ }
+ 
+ int CountInstalledGames() { return static_cast<int>(GameFiles().size()); }
+@@ -726,9 +728,14 @@ std::vector<pe::ui::Game> EdenServices::games() {
+     (void)mkdir(Eden::ConfigDir().c_str(), 0777);
+     (void)mkdir(Eden::CoversDir().c_str(), 0777);
      // Without a roms folder there are still the download sources' games.
-     if (directory_error) entries.clear();
-+    if ((Eden::BottyConfig::active || Eden::BottyConfig::launch) && Eden::BottyConfig::game.find('/') != std::string::npos &&
-+        Eden::ValidRomFilename(Eden::BottyConfig::game)) {
-+        entries.emplace_back(std::filesystem::path(Eden::AssetsPath("roms/" + Eden::BottyConfig::game)), directory_error);
-+        if (directory_error) {
-+            const auto status = entries.back().status(directory_error);
-+            if (directory_error || !std::filesystem::is_regular_file(status)) entries.pop_back();
-+        }
-+    }
-     eden_scan_addons(Eden::AssetsPath("updates").c_str(), Eden::AssetsPath("keys").c_str());
+-    const std::vector<std::string> files = GameFiles();
++    std::vector<std::string> files = GameFiles();
++    if ((Eden::BottyConfig::active || Eden::BottyConfig::launch) &&
++        Eden::ValidRomPath(Eden::BottyConfig::game) &&
++        std::find(files.begin(), files.end(), Eden::BottyConfig::game) == files.end())
++        files.push_back(Eden::BottyConfig::game);
+     eden_scan_addons(Eden::AssetsPath("updates").c_str(), Eden::AssetsPath("roms").c_str(),
+                      Eden::AssetsPath("keys").c_str());
++    local_roms_.clear();
      // The download sources' games, each title once: one that is on the console can be downloaded
      // again, and is deleted from the console in its settings.
-@@ -696,7 +706,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
-         return sources;
-     };
-     for (const auto& entry : entries) {
--        const std::string file = entry.path().filename().string();
-+        const std::string file = entry.path().lexically_relative(Eden::AssetsPath("roms")).generic_string();
-         const std::size_t dot = file.find_last_of('.');
-         if (file == "." || file == ".." || dot == std::string::npos) continue;
-         std::string format = file.substr(dot + 1);
-@@ -728,6 +738,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
+     const std::vector<Eden::Remote::Title> titles = Titles();
+@@ -769,6 +776,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
              else
                  (void)std::remove(staged.c_str());
              game.title_id = eden_game_title_id(path.c_str());
 +            if(game.title_id)local_roms_[game.title_id]=path;
-             // The game's own language (Library > Game settings > Language) or Settings > Language.
-             const GameLanguage language = LanguageFor(path, game.title_id, Eden::PreferencesFor(game.title_id).language);
-             game.addons = AddOnSummary(game.title_id);
-@@ -904,6 +915,16 @@ static_assert(std::tuple_size_v<decltype(pe::ui::GameSettings::performance)> ==
+             if (const std::string folder = GameFolderOf(file); game.title_id && !folder.empty()) {
+                 const std::lock_guard folders(game_folders_lock_);
+                 game_folders_[game.title_id] = folder;
+@@ -956,6 +964,16 @@ static_assert(std::size(pe::ui::kSpeedLimitPercents) == std::size(Eden::kSpeedLi
  pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      const Eden::GameSettings saved = Eden::LoadGameSettings(title_id);
      pe::ui::GameSettings result;
@@ -1160,7 +1254,7 @@ index 0e5ac8b..b52ba97 100644
      result.renderer = saved.renderer;
      result.resolution = saved.resolution;
      result.filter = saved.upscaling_filter;
-@@ -929,6 +950,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
+@@ -983,6 +1001,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      return result;
  }
  
@@ -1175,7 +1269,7 @@ index 0e5ac8b..b52ba97 100644
      Eden::GameSettings value;
      value.renderer = settings.renderer;
 diff --git a/headless/prosperoeden/eden_services.h b/headless/prosperoeden/eden_services.h
-index b4ed9bd..9e59e35 100644
+index a225640..9bc7c4c 100644
 --- a/headless/prosperoeden/eden_services.h
 +++ b/headless/prosperoeden/eden_services.h
 @@ -2,6 +2,7 @@
@@ -1184,9 +1278,9 @@ index b4ed9bd..9e59e35 100644
  #pragma once
 +#include <map>
  
+ #include "mods.h"
  #include "pe/ui/services.hpp"
- #include "remote/remote.h"
-@@ -39,6 +40,7 @@ public:
+@@ -42,6 +43,7 @@ public:
      void finish_update() override;
      bool docked(std::uint64_t title_id) override;
      bool set_docked(std::uint64_t title_id, bool docked) override;
@@ -1194,14 +1288,14 @@ index b4ed9bd..9e59e35 100644
      pe::ui::GameSettings game_settings(std::uint64_t title_id) override;
      bool set_game_settings(std::uint64_t title_id, const pe::ui::GameSettings& settings) override;
  
-@@ -131,6 +133,7 @@ private:
+@@ -144,6 +146,7 @@ private:
      int user_ = -1; // the PS5 user in front when the menu opened (negative: unknown)
      std::string launch_error_;
      std::string setup_; // what is missing from keys and firmware; empty when ready
 +    std::map<std::uint64_t,std::string> local_roms_;
      std::mutex bridge_; // Eden's metadata reader keeps state between calls: one caller at a time
-     // The download sources' games as titles (Remote::Titles), read again when their lists changed:
-     // the menu asks for its downloads four times a second.
+     // Each game's own folder in roms/ by its title ID, as the Library last found it (issue 168).
+     Eden::Mods::Places ModPlaces(std::uint64_t title_id);
 diff --git a/headless/prosperoeden/frontend.cpp b/headless/prosperoeden/frontend.cpp
 index 5e6ee7c..a7c7534 100644
 --- a/headless/prosperoeden/frontend.cpp
@@ -1225,10 +1319,10 @@ index 5e6ee7c..a7c7534 100644
          mixer->set_bus_gain(pe::audio::Bus::ui, MenuGain(menu_volume));
          std::fprintf(stderr, "EDEN_LAUNCHER display=%dx%d sounds=%d audio=%d ready_ms=%lld\n", display.width(),
 diff --git a/headless/prosperoeden/host/fake_services.cpp b/headless/prosperoeden/host/fake_services.cpp
-index 362fd11..f9c3807 100644
+index f887500..90d6deb 100644
 --- a/headless/prosperoeden/host/fake_services.cpp
 +++ b/headless/prosperoeden/host/fake_services.cpp
-@@ -220,8 +220,8 @@ ui::Home FakeServices::home()
+@@ -226,8 +226,8 @@ ui::Home FakeServices::home()
          home.status = fill(tr("Setup required: {0} Open Settings, Game files to choose the folder that "
                                "holds your keys, firmware and roms folders (or add the files to {1}), "
                                "then reopen ProsperoEden."),
@@ -1239,7 +1333,7 @@ index 362fd11..f9c3807 100644
      else if (!crash_report.empty())
      {
          home.status = fill(tr("ProsperoEden stopped because of an error. A report was saved to {0}."), {crash_report});
-@@ -230,7 +230,7 @@ ui::Home FakeServices::home()
+@@ -236,7 +236,7 @@ ui::Home FakeServices::home()
      else if (!launch_error.empty())
      {
          home.status = fill(tr("Game could not start: {0} Details: {1}"),
@@ -1248,7 +1342,7 @@ index 362fd11..f9c3807 100644
          home.launch_failed = true;
      }
      if (has_history && setup_ready)
-@@ -332,7 +332,7 @@ std::string FakeServices::setup_details()
+@@ -338,7 +338,7 @@ std::string FakeServices::setup_details()
      return setup_ready ?
                 tr("Keys and firmware: startup checks passed. Game-specific compatibility is checked at "
                    "launch.") :
@@ -1257,7 +1351,7 @@ index 362fd11..f9c3807 100644
  }
  
  std::vector<std::string> FakeServices::wallpapers()
-@@ -368,7 +368,7 @@ bool FakeServices::folders(const std::string &directory, std::vector<std::string
+@@ -374,7 +374,7 @@ bool FakeServices::folders(const std::string &directory, std::vector<std::string
          *names = {"data", "mnt", "user"};
      else if (directory == "/data")
          *names = {"homebrew", "prosperoeden"};
@@ -1266,7 +1360,7 @@ index 362fd11..f9c3807 100644
          *names = {"config", "covers", "logs"};
      return true;
  }
-@@ -452,7 +452,7 @@ namespace pe::host
+@@ -483,7 +483,7 @@ namespace pe::host
  ui::Sources FakeServices::sources()
  {
      ui::Sources sources;
@@ -1275,7 +1369,7 @@ index 362fd11..f9c3807 100644
      sources.generation = generation_;
      if (!has_server)
          return sources;
-@@ -649,7 +649,7 @@ void FakeServices::played(const std::string &name)
+@@ -680,7 +680,7 @@ void FakeServices::played(const std::string &name)
  ui::SaveSyncSetup FakeServices::save_sync_setup()
  {
      ui::SaveSyncSetup setup;
@@ -1285,7 +1379,7 @@ index 362fd11..f9c3807 100644
      for (int i = 0; i < 2; ++i)
      {
 diff --git a/headless/prosperoeden/host/fake_services.hpp b/headless/prosperoeden/host/fake_services.hpp
-index 7c1c2d5..7636743 100644
+index e87a686..61717f4 100644
 --- a/headless/prosperoeden/host/fake_services.hpp
 +++ b/headless/prosperoeden/host/fake_services.hpp
 @@ -139,7 +139,7 @@ class FakeServices : public ui::Services
@@ -1315,7 +1409,7 @@ index 7c1c2d5..7636743 100644
      }
      bool set_files_folder(const std::string &directory) override
      {
-@@ -373,6 +373,8 @@ class FakeServices : public ui::Services
+@@ -390,6 +390,8 @@ class FakeServices : public ui::Services
      // The profile syncs its save data (save_sync_on); a sync takes a few looks of the launcher.
      // save_sync_conflict: both sides changed; save_sync_fails: the server cannot be reached.
      // played(): a game just ended, its save data goes up once the menu is back.
@@ -1325,10 +1419,10 @@ index 7c1c2d5..7636743 100644
      bool save_sync_conflict = false;
      bool save_sync_fails = false;
 diff --git a/headless/prosperoeden/host/preview_main.cpp b/headless/prosperoeden/host/preview_main.cpp
-index 9e7899a..e32e3f1 100644
+index 2816b4e..b40b8ed 100644
 --- a/headless/prosperoeden/host/preview_main.cpp
 +++ b/headless/prosperoeden/host/preview_main.cpp
-@@ -782,7 +782,7 @@ void pictures(Stage &s)
+@@ -862,7 +862,7 @@ void pictures(Stage &s)
      s.wait(2.0f);
      s.shoot("25-home-launch-failed");
      s.services.launch_error.clear();
@@ -1380,7 +1474,7 @@ index 6dd9f86..b176c4d 100644
              else if(command=="tick"){tick(arg.empty()?60:std::stoi(arg));}
              else if(command=="capture"){capture(arg);}
 diff --git a/headless/prosperoeden/pe/ui/game_options.cpp b/headless/prosperoeden/pe/ui/game_options.cpp
-index 593a23e..963216e 100644
+index a5f8184..84b64a7 100644
 --- a/headless/prosperoeden/pe/ui/game_options.cpp
 +++ b/headless/prosperoeden/pe/ui/game_options.cpp
 @@ -29,15 +29,6 @@ constexpr int kRowsShown = 5;
@@ -1399,7 +1493,7 @@ index 593a23e..963216e 100644
  // The Video category's rows that say something of their own once chosen.
  constexpr int kAstcRow = 3;
  constexpr int kRefreshRow = 4;
-@@ -85,6 +76,20 @@ std::string pick(const std::vector<std::string> &values, int index)
+@@ -97,6 +88,20 @@ std::vector<std::string> speed_limit_names()
  
  // One setting of a game: its choices, the one the game has (-1: it follows Settings), and what
  // Settings has.
@@ -1420,7 +1514,7 @@ index 593a23e..963216e 100644
  struct Option
  {
      std::string name;
-@@ -192,6 +197,15 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences
+@@ -210,6 +215,15 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences
                           tr("Right Joy-Con")},
                          game.controller, tr("Automatic")});
          break;
@@ -1436,7 +1530,7 @@ index 593a23e..963216e 100644
      case category_system:
          // The seed is a number: the row's one choice is the game's (0 until one is typed, with
          // Cross). Without a seed the game is loaded at a new random address at every start.
-@@ -241,6 +255,9 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
+@@ -262,6 +276,9 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
              game.own_mapping = value >= 0;
          }
          break;
@@ -1446,7 +1540,7 @@ index 593a23e..963216e 100644
      case category_system:
          game.rng_seed = value < 0 ? -1 : std::max<std::int64_t>(game.rng_seed, 0);
          break;
-@@ -392,20 +409,22 @@ void Launcher::press_game_options(Key key)
+@@ -414,20 +431,22 @@ void Launcher::press_game_options(Key key)
          edit_seed();
          return;
      }
@@ -1474,7 +1568,7 @@ index 593a23e..963216e 100644
      // 120 Hz is a request: the display has the last word.
      const bool fast = saved && game_options_ == category_video && row == kRefreshRow &&
                        (game_settings_.refresh >= 0 ? game_settings_.refresh : prefs_.refresh) == 1;
-@@ -415,7 +434,7 @@ void Launcher::press_game_options(Key key)
+@@ -437,7 +456,7 @@ void Launcher::press_game_options(Key key)
      say(fast ? tr("Saved. A display that cannot show 120 Hz stays at 60 Hz.") :
          full ? tr("Saved. Full quality uses four times the graphics memory for these textures and can run out "
                    "above 1x.") :
@@ -1483,10 +1577,11 @@ index 593a23e..963216e 100644
          !saved);
      cue(saved ? Cue::toggle : Cue::error);
  }
-@@ -431,6 +450,14 @@ int Launcher::option_action() const
+@@ -453,7 +472,15 @@ int Launcher::option_action() const
  
  std::string Launcher::option_about(int category, int row) const
  {
+-    // The Performance switches and the speed limit each say what they do (settings.cpp).
 +    if (category == category_ultracam) {
 +        if (row == 0) return game_settings_.ultracam_note;
 +        if (row == 1) return "FPS target with dynamic game speed. The PS5 may not sustain it. This is separate from TV refresh rate and frame generation.";
@@ -1495,10 +1590,11 @@ index 593a23e..963216e 100644
 +        if (row == 4) return "A shorter distance may improve performance but makes distant scenery disappear earlier.";
 +        return "UltraCam by MaxLastBreath. Saved for this game; other games keep their settings.";
 +    }
-     // The Performance switches each say what they do (settings.cpp).
++    // The Performance switches and speed limit each say what they do (settings.cpp).
      if (category == category_performance)
          return tr(performance_about(row));
-@@ -469,7 +496,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+     return {};
+@@ -491,7 +518,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
          // The game's own choice, or "Default (what Settings has)".
          const std::string value = option.locked ? std::string{tr("Unavailable")} :
              option.value >= 0 ? pick(option.values, option.value) : fill(tr("Default ({0})"), {option.usual});
@@ -1507,7 +1603,7 @@ index 593a23e..963216e 100644
              list.push_opacity(0.38f);
          const float taken = chooser(c, value, pane.x + pane.w - 24.0f, baseline(top, height, t.size_text),
                                      focused ? 1.0f : 0.0f, option.value >= 0 ? t.accent : t.meta);
-@@ -479,7 +506,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+@@ -501,7 +528,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
              list.circle(pane.x + 34.0f, top + height * 0.5f, 4.0f, t.accent);
          text_shrink(c, option.name, pane.x + 28.0f + lead, baseline(top, height, t.size_text), t.size_text,
                      focused ? t.title : t.value, pane.w - 28.0f - lead - 24.0f - taken - 28.0f);
@@ -1516,30 +1612,8 @@ index 593a23e..963216e 100644
              list.pop_opacity();
          list.pop_opacity();
      }
-diff --git a/headless/prosperoeden/pe/ui/home.cpp b/headless/prosperoeden/pe/ui/home.cpp
-index 16693af..04813d7 100644
---- a/headless/prosperoeden/pe/ui/home.cpp
-+++ b/headless/prosperoeden/pe/ui/home.cpp
-@@ -30,7 +30,7 @@ constexpr int kViewAll = kFirstRecent + kRecents;
- 
- // The library grid on the home screen shares these with library.cpp.
- constexpr int kGridColumns = 4;
--constexpr float kGameKindPitch = 80.0f;
-+constexpr float kGameKindPitch = 72.0f;
- 
- // The words at the left, the cover at the right.
- constexpr float kWords = 1120.0f;
-@@ -156,7 +156,7 @@ void Launcher::press_home(Key key)
-             read_mods(games_[static_cast<std::size_t>(library_.selected)]);
-             open_modal(Modal::game);
-             pane_.snap(0.0f);
--            game_rows_.visible = 10;
-+            game_rows_.visible = 11;
-             game_rows_.pitch = kGameKindPitch;
-             game_rows_.reset(dialog_rows(Modal::game), 0);
-             return;
 diff --git a/headless/prosperoeden/pe/ui/launcher.cpp b/headless/prosperoeden/pe/ui/launcher.cpp
-index 2198972..6077fb2 100644
+index 76d3ae8..40410d3 100644
 --- a/headless/prosperoeden/pe/ui/launcher.cpp
 +++ b/headless/prosperoeden/pe/ui/launcher.cpp
 @@ -58,6 +58,38 @@ Launcher::Launcher(Services &services, Textures &textures, const Fonts &fonts, b
@@ -1605,7 +1679,7 @@ index 2198972..6077fb2 100644
      if (modal_ == Modal::game)
          return press_game(key);
      if (modal_ == Modal::mods)
-@@ -331,6 +373,15 @@ void Launcher::update(float dt)
+@@ -333,6 +375,15 @@ void Launcher::update(float dt)
      finish_scan(false);
      poll_sources(dt);
      poll_save_sync(dt);
@@ -1622,7 +1696,7 @@ index 2198972..6077fb2 100644
      refresh_sync_setup(dt);
      update_multiplayer();
 diff --git a/headless/prosperoeden/pe/ui/launcher.hpp b/headless/prosperoeden/pe/ui/launcher.hpp
-index fed5e78..099dd9f 100644
+index 0704378..dd8e445 100644
 --- a/headless/prosperoeden/pe/ui/launcher.hpp
 +++ b/headless/prosperoeden/pe/ui/launcher.hpp
 @@ -16,6 +16,9 @@
@@ -1642,10 +1716,10 @@ index fed5e78..099dd9f 100644
 +    // Opens the embedded engine's own complete settings UI, with Circle returning to Botty.
 +    void open_configuration(const std::string& game = {});
 +    void open_forwarded_game(const std::string& game, bool returning = false);
-     void accept_update_offer(const UpdateOffer& offer) { update_=offer; update_version_=offer.version; notes_laid_out_=false; update_waiting_=offer.installable; }
-     bool take_launcher_picker() { return std::exchange(launcher_picker_, false); }
-     void press(Key key);
-@@ -64,6 +70,9 @@ class Launcher
+     // An offer a launcher pack took before this launcher replaced it; with Update notices off it
+     // is only named in About.
+     void accept_update_offer(const UpdateOffer& offer) { update_=offer; update_version_=offer.version; notes_laid_out_=false; update_waiting_=offer.installable && prefs_.update_notices; }
+@@ -66,6 +72,9 @@ class Launcher
  
    private:
      bool launcher_picker_ = false;
@@ -1655,7 +1729,7 @@ index fed5e78..099dd9f 100644
      enum class Screen : std::uint8_t
      {
          home,
-@@ -230,7 +239,7 @@ class Launcher
+@@ -240,7 +249,7 @@ class Launcher
      // ---- a game's own settings by category, and the button mapping (game_options.cpp) ----
      // Categories, in the order of the game settings' rows: video, performance, audio, controls,
      // system, language.
@@ -1665,7 +1739,7 @@ index fed5e78..099dd9f 100644
      void press_game_options(Key key);
      // The RNG seed is typed on the system keyboard: opens it, and takes its answer when it closes.
 diff --git a/headless/prosperoeden/pe/ui/library.cpp b/headless/prosperoeden/pe/ui/library.cpp
-index 669180b..83a9281 100644
+index d315f68..edf3e7d 100644
 --- a/headless/prosperoeden/pe/ui/library.cpp
 +++ b/headless/prosperoeden/pe/ui/library.cpp
 @@ -34,8 +34,8 @@ constexpr Rect kDetail{1304.0f, 136.0f, 520.0f, 836.0f};
@@ -1679,21 +1753,24 @@ index 669180b..83a9281 100644
  constexpr Rect kMiddle{624.0f, 160.0f, 760.0f, 792.0f};
  constexpr Rect kExplain{1424.0f, 160.0f, 400.0f, 792.0f};
  
-@@ -50,19 +50,20 @@ enum GameRow : int
+@@ -50,6 +50,7 @@ enum GameRow : int
      row_controls,
      row_system,
      row_language,
 +    row_ultracam,
      row_mods,
+     row_cheats,
      row_save,   // in builds that move saves
-     row_delete, // a game a download source has: deleted from the console
+@@ -57,7 +58,7 @@ enum GameRow : int
  };
  constexpr const char *kKindNames[] = {TR("Console mode"), TR("Video"),    TR("Performance"),
                                        TR("Audio"),        TR("Controls"), TR("System"),
--                                      TR("Language"),     TR("Mods"),     TR("Save data"),
-+                                      TR("Language"),     TR("UltraCam"), TR("Mods"),     TR("Save data"),
-                                       TR("Delete from console")};
+-                                      TR("Language"),     TR("Mods"),     TR("Cheats"),
++                                      TR("Language"),     TR("UltraCam"), TR("Mods"),     TR("Cheats"),
+                                       TR("Save data"),    TR("Delete from console")};
  
+ // The mod Eden makes of a game's cheats folder (headless/mods.h), named in the player's language.
+@@ -66,7 +67,7 @@ constexpr const char *kCheatsFolder = TR("Cheats folder");
  // How many settings a game has of its own.
  int changes_of(const GameSettings &game)
  {
@@ -1702,16 +1779,7 @@ index 669180b..83a9281 100644
             (game.refresh >= 0) + (game.hud >= 0) + (game.hud_size >= 0) + (game.hud_corner >= 0) +
             (game.post_processing >= 0) + (game.frame_gen >= 0) + (game.frame_gen_target >= 0) +
             (game.frame_gen_multiplier >= 0) +
-@@ -453,7 +454,7 @@ void Launcher::press_library(Key key)
-         read_mods(games_[static_cast<std::size_t>(library_.selected)]);
-         open_modal(Modal::game);
-         pane_.snap(0.0f);
--        game_rows_.visible = 10;
-+        game_rows_.visible = 11;
-         game_rows_.pitch = kKindPitch;
-         game_rows_.reset(dialog_rows(Modal::game), 0);
-         return;
-@@ -857,6 +858,10 @@ void Launcher::press_game(Key key)
+@@ -873,6 +874,10 @@ void Launcher::press_game(Key key)
              open_game_options(kind - row_video);
          return;
      }
@@ -1722,7 +1790,7 @@ index 669180b..83a9281 100644
      if (kind == row_mods)
      {
          // The game's mods have their own list. It is read again: mods may have been copied in
-@@ -1002,6 +1007,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
+@@ -1032,6 +1037,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
          {
          case row_mode:
              return game_docked_ ? tr("Docked") : tr("Handheld");
@@ -1731,15 +1799,15 @@ index 669180b..83a9281 100644
          case row_mods:
              // With the game's Mods switch off (the Library's), none of them is on.
              return mods_.empty() ? std::string{tr("No mods")} :
-@@ -1022,6 +1029,7 @@ void Launcher::draw_game_page(Canvas &c, float open)
+@@ -1060,6 +1067,7 @@ void Launcher::draw_game_page(Canvas &c, float open)
      const auto there = [&](int which)
      {
          return which == row_mode ? true :
 +               which == row_ultracam ? game_settings_.ultracam[0]!=0 :
                 which == row_mods ? !mods_.empty() && game.mods_enabled :
+                which == row_cheats ? !cheats_.empty() && cheats_enabled_ :
                 which == row_save ? import_source_ != SaveSource::none :
-                which == row_delete ? false : game_overrides(which - row_video) > 0;
-@@ -1046,6 +1054,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
+@@ -1088,6 +1096,8 @@ void Launcher::draw_game_page(Canvas &c, float open)
      const bool active = modal_shown_ != Modal::game;
      if (kind == row_mode)
          draw_mode_pane(c, middle);
@@ -1747,8 +1815,8 @@ index 669180b..83a9281 100644
 +        draw_option_pane(c, middle, 6, active);
      else if (kind == row_mods)
          draw_mods_pane(c, middle, active);
-     else if (kind == row_save || kind == row_delete)
-@@ -1290,6 +1300,9 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+     else if (kind == row_cheats)
+@@ -1394,6 +1404,9 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
      case row_controls:
          about = tr("Controller shortcuts and supported features.");
          break;
@@ -1758,7 +1826,7 @@ index 669180b..83a9281 100644
      case row_language:
          about = tr("The language games use when they offer it.");
          break;
-@@ -1297,7 +1310,7 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+@@ -1401,7 +1414,7 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
          break;
      }
      // What the focused switch does says more than what its kind is about.
@@ -1768,7 +1836,7 @@ index 669180b..83a9281 100644
      if (!words.empty())
      {
 diff --git a/headless/prosperoeden/pe/ui/runtime_launcher.cpp b/headless/prosperoeden/pe/ui/runtime_launcher.cpp
-index 329141a..ac30529 100644
+index 0225871..6009d70 100644
 --- a/headless/prosperoeden/pe/ui/runtime_launcher.cpp
 +++ b/headless/prosperoeden/pe/ui/runtime_launcher.cpp
 @@ -1,4 +1,5 @@
@@ -1777,7 +1845,7 @@ index 329141a..ac30529 100644
  // SPDX-License-Identifier: GPL-3.0-or-later
  #include "pe/ui/runtime_launcher.hpp"
  #include "pe/ui/runtime_models.hpp"
-@@ -694,12 +695,23 @@ struct RuntimeLauncher::Impl {
+@@ -697,12 +698,23 @@ struct RuntimeLauncher::Impl {
  RuntimeLauncher::RuntimeLauncher(Services& s, Textures& t, const Fonts& f, gfx::GlBatch& b, bool first, std::string root, audio::Mixer* m, std::function<void(gfx::Font&)> configure)
      : impl_(std::make_unique<Impl>(s,t,f,b,first,std::move(root),m,std::move(configure))) {
      auto& h=*impl_; h.discover(); h.refresh(); std::string selected="builtin";
@@ -1816,20 +1884,22 @@ index b2c1866..98f27d2 100644
      void update(float);
      void draw(gfx::DrawList&);
 diff --git a/headless/prosperoeden/pe/ui/runtime_models.hpp b/headless/prosperoeden/pe/ui/runtime_models.hpp
-index 3b6ab5b..f8064ba 100644
+index 036995a..354b45c 100644
 --- a/headless/prosperoeden/pe/ui/runtime_models.hpp
 +++ b/headless/prosperoeden/pe/ui/runtime_models.hpp
-@@ -17,7 +17,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Recent, file, title, cover)
+@@ -16,8 +16,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Download, key, file, name, sourc
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Recent, file, title, cover)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Home, setup_ready, status, launch_failed, last_file, last_exists, last_title, last_caption, last_caption_warning, last_cover, last_title_id, last_addons, last_language, last_mods, last_mods_on, recents, system_status)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Profile, name, playing)
- NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper)
--NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed)
-+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed)
+-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper, update_notices, speed_limit)
+-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper, update_notices, speed_limit)
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cheat, name, enabled)
- NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats)
- NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FolderInfo, keys, firmware, games)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats, cheats_only)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameCheat, mod, name, enabled)
 diff --git a/headless/prosperoeden/pe/ui/services.hpp b/headless/prosperoeden/pe/ui/services.hpp
-index 19ac605..993045a 100644
+index 47e8859..e4796ec 100644
 --- a/headless/prosperoeden/pe/ui/services.hpp
 +++ b/headless/prosperoeden/pe/ui/services.hpp
 @@ -13,6 +13,7 @@
@@ -1840,7 +1910,7 @@ index 19ac605..993045a 100644
  #include "../../../multiplayer_directory.h"
  
  namespace pe::ui
-@@ -379,6 +380,9 @@ struct Preferences
+@@ -389,6 +390,9 @@ struct Preferences
  // the game follows Settings; switches are 0 off, 1 on.
  struct GameSettings
  {
@@ -1850,26 +1920,26 @@ index 19ac605..993045a 100644
      int renderer = -1;   // 0 OpenGL, 1 Vulkan
      int resolution = -1; // index into Services::resolution_labels
      int filter = -1;     // index into Services::filter_labels
-@@ -599,6 +603,9 @@ class Services
+@@ -633,6 +637,9 @@ class Services
          return false;
      }
  
 +    virtual bool set_ultracam(std::uint64_t, const std::array<int,14>&, std::string& error)
 +    { error = "UltraCam is unavailable in this build."; return false; }
 +
-     // ---- mods: patches, replacement files and cheats the player added for a game ----
+     // ---- mods and cheats: patches, replacement files and cheats the player added for a game ----
      virtual std::vector<Mod> mods(std::uint64_t)
      {
 diff --git a/headless/prosperoeden/pe/ui/settings.cpp b/headless/prosperoeden/pe/ui/settings.cpp
-index 9026565..f1b1224 100644
+index b17cbbd..eba8eec 100644
 --- a/headless/prosperoeden/pe/ui/settings.cpp
 +++ b/headless/prosperoeden/pe/ui/settings.cpp
-@@ -552,7 +552,7 @@ int Launcher::dialog_rows(Modal modal) const
-         // Console mode, video, performance, audio, controls, system, language, mods; save data in
-         // builds that move saves.
+@@ -570,7 +570,7 @@ int Launcher::dialog_rows(Modal modal) const
+         // Console mode, video, performance, audio, controls, system, language, mods, cheats; save
+         // data in builds that move saves.
          // A game a download source has can be deleted from the console (and downloaded again).
--        return (services_.save_transfer_available() ? 9 : 8) +
-+        return (services_.save_transfer_available() ? 10 : 9) +
+-        return (services_.save_transfer_available() ? 10 : 9) +
++        return (services_.save_transfer_available() ? 11 : 10) +
                 (library_.selected < static_cast<int>(games_.size()) &&
                          !games_[static_cast<std::size_t>(library_.selected)].sources.empty() &&
                          !games_[static_cast<std::size_t>(library_.selected)].remote ? 1 : 0);
@@ -1902,16 +1972,25 @@ index a702d3a..e440e2b 100644
      { (void)klog_puts(("[self-update] " + line).c_str()); };
      const self_update::Io io{[](void *data, std::size_t size)
 diff --git a/headless/settings_store.h b/headless/settings_store.h
-index 8d5bbea..ea0dddc 100644
+index f5f0033..fce88c4 100644
 --- a/headless/settings_store.h
 +++ b/headless/settings_store.h
-@@ -175,9 +175,24 @@ inline int KeyIndex(const std::string& value, const char* const* keys, int count
+@@ -185,18 +185,24 @@ inline int KeyIndex(const std::string& value, const char* const* keys, int count
+     return fallback;
  }
  
- inline bool ValidRomFilename(std::string_view name) {
--    if (name.size() < 5 || name.size() > 255) return false;
+-// A game's file as the Library names it: its path in the game files folder's roms/, either its
+-// name ("Game.nsp") or a game folder and its name ("Game/Game.nsp", the game's update and DLC
+-// beside it). Readable characters, one folder at most, never a hidden folder, "." or "..".
+ inline bool ValidRomPath(std::string_view name) {
+-    if (name.size() < 5 || name.size() > 511) return false;
 -    for (unsigned char c : name)
--        if (c < 32 || c == 127 || c == '/' || c == '\\') return false;
+-        if (c < 32 || c == 127 || c == '\\') return false;
+-    if (const auto slash = name.find('/'); slash != std::string_view::npos) {
+-        if (slash == 0 || name[0] == '.' || name.find('/', slash + 1) != std::string_view::npos) return false;
+-        if (slash > 255 || name.size() - slash - 1 < 5 || name.size() - slash - 1 > 255) return false;
+-    } else if (name.size() > 255) {
+-        return false;
 +    // Botty publishes complete games atomically under one owned batch directory.
 +    if (name.starts_with(".botty-batch-")) {
 +        const auto slash = name.find('/');
@@ -1929,10 +2008,18 @@ index 8d5bbea..ea0dddc 100644
 +        for (unsigned char c : part) if (c < 32 || c == 127 || c == '\\') return false;
 +        if (slash == std::string_view::npos) break;
 +        rest.remove_prefix(slash + 1);
-+    }
+     }
      std::string extension(name.substr(name.size() - 4));
      for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-     return extension == ".nsp" || extension == ".xci";
+@@ -213,6 +219,8 @@ inline bool ValidWallpaperName(std::string_view name) {
+     return true;
+ }
+ 
++inline bool ValidRomFilename(std::string_view name) { return ValidRomPath(name); }
++
+ inline std::string SettingsFile() { return ConfigFile("prosperoeden.json"); }
+ 
+ namespace Settings {
 diff --git a/headless/storage_paths.h b/headless/storage_paths.h
 index 67fb986..69079d1 100644
 --- a/headless/storage_paths.h
@@ -2232,10 +2319,10 @@ index 2a0a127..5779459 100644
      // A newer release is listed: its name is what the notification shows.
      update_check_result result = Decide(Answer("available", "01.000.050", "v1.000.050"), "01.000.040");
 diff --git a/headless/update_notice.cpp b/headless/update_notice.cpp
-index c2e91d9..782d370 100644
+index ef27b7b..782d370 100644
 --- a/headless/update_notice.cpp
 +++ b/headless/update_notice.cpp
-@@ -1,187 +1,8 @@
+@@ -1,199 +1,8 @@
  // SPDX-License-Identifier: GPL-3.0-or-later
 +// Botty owns atomic installation updates for both executables.
  #include "update_notice.h"
@@ -2248,6 +2335,7 @@ index c2e91d9..782d370 100644
 -#include <string>
 -
 -#include "diagnostics.h"
+-#include "prosperoeden/version.h"
 -#include "storage_paths.h"
 -#include "update_check/self_update.h"
 -#include "update_check/update_check.h"
@@ -2321,6 +2409,17 @@ index c2e91d9..782d370 100644
 -        state = SELF_UPDATE_AVAILABLE;
 -    }
 -#endif
+-    // The program's own version counts too (issue 230): an install that replaced the program but
+-    // kept an older sce_sys/param.json read as that older version, and the version the console
+-    // already ran was offered at every start.
+-    int comparable = 0;
+-    if ((state == SELF_UPDATE_AVAILABLE || state == SELF_UPDATE_NOT_INSTALLABLE) &&
+-        update_check_version_compare(result.available, kAppVersion, &comparable) <= 0 && comparable) {
+-        Report("update check", (std::string{"sce_sys/param.json names "} + (result.installed[0] ? result.installed : "-") +
+-                                ", the program is " + kAppVersion + ": nothing newer to offer")
+-                                   .c_str());
+-        state = SELF_UPDATE_UP_TO_DATE;
+-    }
 -    char line[300];
 -    std::snprintf(line, sizeof(line), "result=%s installed=%s available=%s version=%s size=%llu",
 -                  ResultName(state), result.installed[0] ? result.installed : "-",
@@ -2428,7 +2527,7 @@ index c2e91d9..782d370 100644
  }
 -} // namespace Eden::UpdateNotice
 diff --git a/sce_sys/param.json b/sce_sys/param.json
-index f391b29..92f0ffb 100644
+index 3a2c173..7bb3755 100644
 --- a/sce_sys/param.json
 +++ b/sce_sys/param.json
 @@ -7,9 +7,9 @@
@@ -2440,7 +2539,7 @@ index f391b29..92f0ffb 100644
    "contentBadgeType": 1,
 -  "contentId": "UP9000-PPSA99008_00-PROSPEROEDEN0001",
 +  "contentId": "UP9000-PPSA99071_00-BOTTYNATIVE00001",
-   "contentVersion": "01.004.000",
+   "contentVersion": "01.005.000",
    "downloadDataSize": 256,
    "gameIntent": {
 @@ -25,7 +25,7 @@
@@ -2575,6 +2674,63 @@ index e2f800c..bccaeb4 100644
  files += [(root / name, name) for name in ('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md') if (root / name).exists()]
  with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zip_file:
      for path, name in files:
+diff --git a/tools/deps.json b/tools/deps.json
+index 49a94e9..1c32f3f 100644
+--- a/tools/deps.json
++++ b/tools/deps.json
+@@ -59,7 +59,7 @@
+       "name": "opengl-sdk",
+       "about": "PS5 OpenGL 4.6 SDK 1.0.2 (launcher UI and the OpenGL renderer)",
+       "kind": "archive",
+-      "url": "https://github.com/blackbearreloaded/ps5-opengl/releases/download/v1.0.2/ps5-opengl-sdk-1.0.2.tar.gz",
++      "url": "https://github.com/KernelForgeLabs/ps5-opengl-sdk-mirror/releases/download/sdk-v1.0.2/ps5-opengl-sdk-1.0.2.tar.gz",
+       "sha256": "30d8e51dd062739b629346102be5932728ba714bc50b1bdcdf08306c8843d9a4",
+       "extract": ".deps",
+       "creates": ".deps/ps5-opengl-sdk-1.0.2/sdk/lib/libps5_opengl_core33.a"
+@@ -82,23 +82,23 @@
+       "dest": ".deps/ps5-homebrew-ui-aed286b8",
+       "creates": ".deps/ps5-homebrew-ui-aed286b8/src/ui/theme.cpp",
+       "files": [
+-        {"name": "src/ui/theme.cpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/ui/theme.cpp", "sha256": "15ca512c61df48864ee787fa93b91d4f67d5103819e4a596eb4fa9bc38db42b6"},
+-        {"name": "src/ui/theme.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/ui/theme.hpp", "sha256": "9726e50acbf33a89494c1763f0fa4ba6464b152800bed6b8b8053aa41cc4a709"},
+-        {"name": "src/gfx/draw_list.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/draw_list.hpp", "sha256": "8c19ec93966fe03f61f7ffdb701a39a1fb011436742949453a4801173478ee9f"},
+-        {"name": "src/gfx/font.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/font.hpp", "sha256": "c6fd392e18d6dc6c7dbaf104078f10f57af963fd116fb201c4c55de54d3c4ade"},
+-        {"name": "src/gfx/font_format.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/font_format.hpp", "sha256": "d8beee75b7c823bbe16a93258e65a67cb565d178c2b4dd9f241bea731d277484"},
+-        {"name": "src/gfx/backdrop_spec.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/backdrop_spec.hpp", "sha256": "0e03db2915bc0a7b65b280d0b9c817264289a69a6f86493e3c3bba4cbcf73852"},
+-        {"name": "src/audio/cues.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/cues.hpp", "sha256": "ca3c3961ae2086abe429d76e8d7c30dea3b669c5a0a4553f3eaaad6932a0db2c"},
+-        {"name": "src/audio/mixer.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/mixer.hpp", "sha256": "7d438dcaa70fea00fb9121e74b644162f836adb353e47a0b104270c64405752c"},
+-        {"name": "src/audio/stream_ring.hpp", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/stream_ring.hpp", "sha256": "ffb6427b2a32662609cb1156971d748277573a2da0e2ed99bc6488c5da87be3b"},
+-        {"name": "LICENSE", "url": "https://raw.githubusercontent.com/blackbearreloaded/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/LICENSE", "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"}
++        {"name": "src/ui/theme.cpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/ui/theme.cpp", "sha256": "15ca512c61df48864ee787fa93b91d4f67d5103819e4a596eb4fa9bc38db42b6"},
++        {"name": "src/ui/theme.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/ui/theme.hpp", "sha256": "9726e50acbf33a89494c1763f0fa4ba6464b152800bed6b8b8053aa41cc4a709"},
++        {"name": "src/gfx/draw_list.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/draw_list.hpp", "sha256": "8c19ec93966fe03f61f7ffdb701a39a1fb011436742949453a4801173478ee9f"},
++        {"name": "src/gfx/font.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/font.hpp", "sha256": "c6fd392e18d6dc6c7dbaf104078f10f57af963fd116fb201c4c55de54d3c4ade"},
++        {"name": "src/gfx/font_format.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/font_format.hpp", "sha256": "d8beee75b7c823bbe16a93258e65a67cb565d178c2b4dd9f241bea731d277484"},
++        {"name": "src/gfx/backdrop_spec.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/gfx/backdrop_spec.hpp", "sha256": "0e03db2915bc0a7b65b280d0b9c817264289a69a6f86493e3c3bba4cbcf73852"},
++        {"name": "src/audio/cues.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/cues.hpp", "sha256": "ca3c3961ae2086abe429d76e8d7c30dea3b669c5a0a4553f3eaaad6932a0db2c"},
++        {"name": "src/audio/mixer.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/mixer.hpp", "sha256": "7d438dcaa70fea00fb9121e74b644162f836adb353e47a0b104270c64405752c"},
++        {"name": "src/audio/stream_ring.hpp", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/src/audio/stream_ring.hpp", "sha256": "ffb6427b2a32662609cb1156971d748277573a2da0e2ed99bc6488c5da87be3b"},
++        {"name": "LICENSE", "url": "https://raw.githubusercontent.com/Phononenom/ps5-homebrew-ui/aed286b81cdf70a814d3059f54633ba34844e46e/LICENSE", "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"}
+       ]
+     },
+     {
+       "name": "boilerplate",
+       "about": "PS5 Native App Boilerplate: Payload SDK v0.42, runtime libc.prx and the native packaging tool",
+       "kind": "git",
+-      "url": "https://github.com/blackbearreloaded/ps5-native-app-boilerplate.git",
++      "url": "https://github.com/Phononenom/ps5-native-app-boilerplate.git",
+       "commit": "dd44bbdc75437332ed22e3ba95126733419ef25a",
+       "path": "../ps5-native-app-boilerplate",
+       "setup": ["bash", "tools/setup-native-dependencies.sh"],
+@@ -108,7 +108,7 @@
+       "name": "lapy-owned-helper",
+       "about": "Lapy one-shot elfldr owned-root helper with guarded target lifetime and balanced vnode ownership",
+       "kind": "git",
+-      "url": "https://github.com/blackbearreloaded/PS5-Lapy-JB-Daemon.git",
++      "url": "https://github.com/Phononenom/PS5-Lapy-JB-Daemon-bbr.git",
+       "commit": "57fcc19b7f57e46c823d6f2a6c6233ebf3288079",
+       "path": ".deps/PS5-Lapy-JB-Daemon-57fcc19"
+     },
 diff --git a/tools/install-ftp.py b/tools/install-ftp.py
 index 4754373..b1f7242 100644
 --- a/tools/install-ftp.py
@@ -2625,7 +2781,7 @@ index b8c935d..a2310c5 100644
          capture = Path(sys.argv[2]).resolve()
          commands.insert(commands.index('appearance') + 1, 'capture '+str(capture.with_name('accents.png')))
 diff --git a/tools/package-headless-native.sh b/tools/package-headless-native.sh
-index b918e4d..044d934 100644
+index 194ebd8..1c4e823 100644
 --- a/tools/package-headless-native.sh
 +++ b/tools/package-headless-native.sh
 @@ -9,11 +9,11 @@ scratch=$(cat "$root/.local/headless-cache")
@@ -2642,7 +2798,7 @@ index b918e4d..044d934 100644
      [[ ${1:-} != --game ]] || exit 2
  fi
  test -x "$builder"
-@@ -76,9 +76,9 @@ if game:
+@@ -82,9 +82,9 @@ if game:
      assert (app / 'game-assets.json').is_file()
      assert (app / 'assets/keys/prod.keys').is_file()
  value = json.loads((app / 'sce_sys/param.json').read_text())
@@ -2655,3 +2811,9 @@ index b918e4d..044d934 100644
  assert value['pubtools']['loudnessSnd0'] == '-28.00'
  # The app version has one home, sce_sys/param.json: the program was built with the same value.
  assert re.fullmatch(r'\d{2}\.\d{3}\.\d{3}', value['contentVersion']), value['contentVersion']
+@@ -129,3 +129,5 @@ llvm-readobj-18 --dyn-symbols --needed-libs "$out/llvm-pie.elf" > "$out/imports.
+ sha256sum "$app/eboot.bin" "$app/core-homebrew.nro" "$app/sce_module/libc.prx" \
+     "$app/sce_sys/param.json" "$app/sce_sys/icon0.png" "$app/sce_sys/pic0.dds" "$app/sce_sys/pic1.dds" \
+     "$app/sce_sys/snd0.at9"
++
++python3 "$root/tools/botty-provenance.py" "$root" "$app"

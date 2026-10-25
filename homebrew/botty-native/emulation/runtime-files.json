@@ -1,6 +1,7 @@
 {
-  "commit": "8f392248f7d49fc2be47f60ad7764ac5a392b1fe",
+  "commit": "a26ba788222465ec7fb94dc813958fc749734e07",
   "files": [
+    "botty-engine.json",
     "core-homebrew.nro",
     "eboot.bin",
     "lapy-manifest.json",
@@ -8,6 +9,7 @@
     "launcher-runtime.json",
     "licenses/Lapy-MIT.txt",
     "licenses/Montserrat-OFL.txt",
+    "mihawkgen/network.fgw",
     "sce_module/libc.prx",
     "sce_sys/icon0.png",
     "sce_sys/param.json",

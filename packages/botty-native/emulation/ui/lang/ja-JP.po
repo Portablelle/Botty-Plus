@@ -66,6 +66,10 @@ msgstr "残り約{0}分"
 msgid "About {0} s left"
 msgstr "残り約{0}秒"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "100% を超えると、30 FPS に固定されたゲームが 60 に届くことがあり、フレーム数で時間を数えるゲームは進行も速くなります。"
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "ダウンロードに追加しました。待機列は設定の「ダウ
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "追加しました。バツでこのプロフィールでプレイ、左右で名前を変更。"
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "すべてのチート"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "変更あり"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "チート"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "チートフォルダー"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "ニックネーム"
 msgid "Nickname: {0}"
 msgstr "ニックネーム: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "チートなし"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "このゲームのチートはまだありません。チートファイル (<build ID>.txt) を {0} にコピーしてください。"
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "ダウンロード元が設定されていません。この例（RomMサーバー）のようにダウンロード元を記載した{0}という名前のファイルを保存し、このメニューを開き直してください。ダウンロードには、本体のポート{1}でFTPサーバーが動作している必要があります。"
@@ -1118,10 +1140,9 @@ msgstr "ここにフォルダーはありません。"
 msgid "No mods"
 msgstr "MODなし"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "このゲームのMODはまだありません。各MODのフォルダーを roms/ の隣の {0} にコピーしてください。"
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "このゲームのMODはまだありません。各MODのフォルダーを {0} にコピーしてください。"
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "保存日時：{0}。この本体のデータを置き換えます。"
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "保存しました。120 Hzに対応していないディスプレイでは60 Hzのままです。"
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "保存しました。次に ProsperoEden を開いたときから反映されます。"
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "保存しました。ゲームの起動時に適用されます。"
@@ -1638,6 +1663,11 @@ msgstr "保存しました。ポストプロセスには Vulkan レンダラー�
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "保存しました。ProsperoEdenを開き直すと、このフォルダーが使われます。"
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "homebrew.page に新しいバージョンがあるとお知らせします。オフにすると「このアプリについて」にだけ表示されます。"
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "スペイン語（ラテンアメリカ）"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "速度"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "速度制限"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "利用不可"
 msgid "Understood"
 msgstr "了解"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "無制限"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "ペアリング解除"
@@ -2031,6 +2071,11 @@ msgstr "上へ"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "アップデートがあります"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "アップデートのお知らせ"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "バージョン{0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "バージョン{0}が homebrew.page にあります"
 

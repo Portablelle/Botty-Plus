@@ -395,3 +395,47 @@ missing games, authorization, malformed input, application/metadata collisions,
 idempotency, source preservation and modal input. The real renderer's menu
 preview is in `docs/images/switch-home-menu.png`; it is a host preview, not a
 console screenshot. Both PS5 binaries cross-compiled on the dedicated host.
+
+## ProsperoEden 1.005 integration (2026-10-25)
+
+The embedded engine is pinned to `a26ba788222465ec7fb94dc813958fc749734e07`
+(v1.005.000), with Botty's title, data isolation, UltraCam and launch/return
+lifecycle retained. Native 2.0.1 requires manager 1.10.5 for game-local mod
+inventory and separate cheat-file reporting. Builds use an isolated directory
+on `dedie`; no Mac compilation was performed.
+
+The final patch applies to a clean upstream checkout. Dedicated-host native
+model/package tests and the manager's emulation unit/API/import/metadata tests
+passed, including local-mod precedence, empty local folders, cheat-only mods,
+shared cheat-file deduplication, independent switches and symlink exclusion.
+Engine checks passed for configuration persistence (MihawkGen method and speed
+limit included), shared/game-local addon roots, UltraCam dependency gates and
+preservation, lifecycle return and source/package provenance rejection cases.
+
+The actual runtime renderer passed configuration navigation, a persisted 150%
+speed limit, independent output/render scales, per-game overrides, UltraCam,
+pre-launch save conflicts and post-game return/failure scenarios. The synthetic
+host previews are `docs/images/switch-eden-1005-game-settings.png` and
+`docs/images/switch-eden-1005-performance.png` in the repository root.
+
+The engine's build-time graphics/memory/JIT checks also passed. These checks
+and images do not establish PS5 game compatibility, frame-generation quality,
+performance or launch/return acceptance for this new engine. Its hardware
+validation flags remain false. Existing 2.0.0 console acceptance above applies
+to that earlier build only.
+
+
+An earlier 2.0.1 candidate completed the owner-authorized console installation: NativeTransaction
+verified and published all 93 native files, retained the complete previous title
+and metadata rollback, and the new manager verified its seven package files.
+Manager health reports 1.10.5, and its installed-version marker was updated only
+after successful startup. The compression worker and rTorrent kept their PIDs.
+All 14 torrents were visible after the asynchronous remote inventory refreshed.
+This validates installation and service continuity; PS5 launch/return and gameplay
+acceptance for engine 1.005 remain pending.
+
+Local PR review subsequently aligned nested game-folder mods/cheats/presets with
+the selected ROM's parent directory and made preparation install the canonical
+provenance module. The final package containing those review fixes has not yet
+been installed or accepted on PS5; the installation evidence above describes
+the preceding candidate.

@@ -66,6 +66,10 @@ msgstr "Faltan unos {0} min"
 msgid "About {0} s left"
 msgstr "Faltan unos {0} s"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "Por encima de 100%, un juego limitado a 30 FPS puede llegar a 60, y un juego que cuenta sus fotogramas también va más rápido."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "Agregado a las descargas. La cola está en Configuración, Descargas."
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Agregado. Cruz juega con este perfil; izquierda y derecha cambian su nombre."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Todos los trucos"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Cambiada"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Trucos"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Carpeta de trucos"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Apodo"
 msgid "Nickname: {0}"
 msgstr "Apodo: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Sin trucos"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Este juego aún no tiene trucos. Copia sus archivos de trucos (<build ID>.txt) en {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "No hay ninguna fuente de descarga configurada. Guarda un archivo llamado {0} con la lista de tus fuentes, como hace este con un servidor RomM, y vuelve a abrir este menú. Las descargas necesitan un servidor FTP en ejecución en la consola, en el puerto {1}."
@@ -1118,10 +1140,9 @@ msgstr "Aquí no hay carpetas."
 msgid "No mods"
 msgstr "Sin mods"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Este juego aún no tiene mods. Copia la carpeta de cada mod en {0}, junto a roms/."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Este juego aún no tiene mods. Copia la carpeta de cada mod en {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Guardado: {0}. Reemplazan a los de esta consola."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Guardado. Una pantalla que no admite 120 Hz se queda en 60 Hz."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Guardado. Se aplica la próxima vez que abras ProsperoEden."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Guardado. Se aplica al iniciar un juego."
@@ -1638,6 +1663,11 @@ msgstr "Guardado. El posprocesado necesita el renderizador Vulkan."
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Guardado. Vuelve a abrir ProsperoEden para usar esta carpeta."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "Avisa cuando homebrew.page tiene una versión más reciente. Desactivado, solo Acerca de la muestra."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "Español (Latinoamérica)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Velocidad"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Límite de velocidad"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "No disponible"
 msgid "Understood"
 msgstr "Entendido"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Sin límite"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Desvincular"
@@ -2031,6 +2071,11 @@ msgstr "SUBIR"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Actualización disponible"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Avisos de actualización"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "Versión {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "La versión {0} está en homebrew.page"
 

@@ -22,10 +22,10 @@
   Source and license are in `manrope/`; the license is also included in the title.
   Native alpha masks are baked using Pillow 12.0.0 by `tools/build-font.py`.
 
-Embedded Switch engine: ProsperoEden (GPL-3.0-or-later), commit 8f392248f7d49fc2be47f60ad7764ac5a392b1fe.
+Embedded Switch engine: ProsperoEden (GPL-3.0-or-later), commit a26ba788222465ec7fb94dc813958fc749734e07.
 Complete corresponding sources are distributed as checked parts in source/.
 botty-native-source.tar.gz contains their index and restore.py; run it against this package folder to reconstruct the complete archive, including build/emulation-source.tar.gz.
-https://github.com/blackbearreloaded/ProsperoEden
+https://github.com/Swordpdf/ProsperoEden
 
 Optional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.
 See emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.

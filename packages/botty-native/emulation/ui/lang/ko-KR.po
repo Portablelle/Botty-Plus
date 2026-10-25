@@ -66,6 +66,10 @@ msgstr "약 {0}분 남음"
 msgid "About {0} s left"
 msgstr "약 {0}초 남음"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "100%를 넘으면 30 FPS로 고정된 게임이 60에 이를 수 있고, 프레임 수로 시간을 세는 게임은 진행도 빨라집니다."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "다운로드에 추가했습니다. 설정, 다운로드에서 대기열
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "추가했습니다. 엑스로 이 프로필로 플레이하고, 좌우로 이름을 바꿉니다."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "모든 치트"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "변경됨"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "치트"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "치트 폴더"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "닉네임"
 msgid "Nickname: {0}"
 msgstr "닉네임: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "치트 없음"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "이 게임에는 아직 치트가 없습니다. 치트 파일(<build ID>.txt)을 {0}에 복사하세요."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "다운로드 소스가 설정되지 않았습니다. 이 예시의 RomM 서버처럼 소스를 나열한 {0} 파일을 저장한 다음 이 메뉴를 다시 여세요. 다운로드하려면 본체의 포트 {1}에서 FTP 서버가 실행 중이어야 합니다."
@@ -1118,10 +1140,9 @@ msgstr "여기에는 폴더가 없습니다."
 msgid "No mods"
 msgstr "모드 없음"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "이 게임에는 아직 모드가 없습니다. 각 모드의 폴더를 roms/ 옆의 {0}에 복사하세요."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "이 게임에는 아직 모드가 없습니다. 각 모드의 폴더를 {0}에 복사하세요."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "저장 시각: {0}. 이 본체의 데이터를 대체합니다."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "저장했습니다. 120Hz를 지원하지 않는 디스플레이는 60Hz로 유지됩니다."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "저장했습니다. 다음에 ProsperoEden을 열 때 적용됩니다."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "저장했습니다. 게임을 시작할 때 적용됩니다."
@@ -1638,6 +1663,11 @@ msgstr "저장했습니다. 후처리에는 Vulkan 렌더러가 필요합니다.
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "저장했습니다. ProsperoEden을 다시 열면 이 폴더를 사용합니다."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "homebrew.page에 새 버전이 있으면 알려 줍니다. 끄면 정보에만 표시됩니다."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "스페인어(중남미)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "속도"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "속도 제한"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "사용할 수 없음"
 msgid "Understood"
 msgstr "확인"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "제한 없음"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "연결 해제"
@@ -2031,6 +2071,11 @@ msgstr "위로"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "업데이트가 있습니다"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "업데이트 알림"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "버전 {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "버전 {0}이(가) homebrew.page에 있습니다"
 

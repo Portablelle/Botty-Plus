@@ -66,6 +66,10 @@ msgstr "Sekitar {0} mnt lagi"
 msgid "About {0} s left"
 msgstr "Sekitar {0} dtk lagi"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "Di atas 100%, game yang dikunci di 30 FPS bisa mencapai 60, dan game yang menghitung frame-nya juga berjalan lebih cepat."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "Ditambahkan ke unduhan. Pengaturan, Unduhan menampilkan antrean."
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Ditambahkan. Silang bermain dengan profil ini; kiri dan kanan mengubah namanya."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Semua cheat"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Diubah"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Cheat"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Folder cheat"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Nama panggilan"
 msgid "Nickname: {0}"
 msgstr "Nama panggilan: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Tidak ada cheat"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Belum ada cheat untuk game ini. Salin file cheat-nya (<build ID>.txt) ke {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "Belum ada sumber unduhan yang disiapkan. Simpan file bernama {0} yang berisi daftar sumber Anda, seperti contoh ini dengan server RomM, lalu buka menu ini lagi. Unduhan memerlukan server FTP yang berjalan di konsol, pada port {1}."
@@ -1118,10 +1140,9 @@ msgstr "Tidak ada folder di sini."
 msgid "No mods"
 msgstr "Tidak ada mod"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Belum ada mod untuk game ini. Salin folder tiap mod ke {0}, di samping roms/."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Belum ada mod untuk game ini. Salin folder tiap mod ke {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Disimpan {0}. Menggantikan milik konsol ini."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Tersimpan. Layar yang tidak mendukung 120 Hz tetap di 60 Hz."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Disimpan. Berlaku saat ProsperoEden dibuka lagi."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Disimpan. Berlaku saat game dijalankan."
@@ -1638,6 +1663,11 @@ msgstr "Tersimpan. Pascaproses memerlukan perender Vulkan."
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Disimpan. Buka ulang ProsperoEden untuk menggunakan folder ini."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "Memberi tahu saat homebrew.page punya versi lebih baru. Jika mati, hanya Tentang yang menyebutnya."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "Spanyol (Amerika Latin)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Kecepatan"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Batas kecepatan"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "Tidak tersedia"
 msgid "Understood"
 msgstr "Mengerti"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Tanpa batas"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Putuskan tautan"
@@ -2031,6 +2071,11 @@ msgstr "NAIK"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Pembaruan tersedia"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Pemberitahuan pembaruan"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "Versi {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "Versi {0} ada di homebrew.page"
 

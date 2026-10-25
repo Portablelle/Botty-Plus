@@ -98,6 +98,27 @@ with tempfile.TemporaryDirectory(prefix='botty-library-') as folder:
         settings.write_text(json.dumps({'games':{TITLE:{'mods':False}}}))
         selected=next(r for r in entries() if r['kind']=='roms')
         assert not any(m['enabled'] for m in selected['mods'])
+        # A game's own mods take precedence; cheat-only collections are separate.
+        folder=game.parent/'Per-game';folder.mkdir();game.rename(folder/game.name);game=folder/game.name
+        for name,kind in [('Example mod','cheats'),('Local patch','romfs'),('Cheats only','cheats')]:
+            mod=folder/'mods'/name/kind;mod.mkdir(parents=True)
+            (mod/('1234567890abcdef.txt' if kind=='cheats' else 'fixture.bin')).write_text('[Fixture]\n04000000 00000000 00000001\n')
+        (folder/'mods/Disabled mod/cheats').mkdir(parents=True) # an empty local mod does not shadow a real shared one
+        own_cheats=folder/'cheats';own_cheats.mkdir()
+        (own_cheats/'abcdef0123456789.txt').write_text('[Fixture]\n04000000 00000000 00000001\n')
+        shared_cheats=root/'eden/cheats'/TITLE;shared_cheats.mkdir(parents=True)
+        (shared_cheats/'abcdef0123456789.txt').write_text('[Duplicate build]\n')
+        outside=root/'outside';outside.mkdir();(outside/'escape.txt').write_text('private fixture')
+        (own_cheats/'link.txt').symlink_to(outside/'escape.txt')
+        settings.write_text(json.dumps({'games':{TITLE:{'mods':False,'cheats':True}}}))
+        selected=next(r for r in entries() if r['library'].get('type')=='game')
+        assert {m['name'] for m in selected['mods']}=={'Disabled mod','Local patch'},selected
+        assert selected['cheatFileCount']==3 and selected['cheatsEnabled'],selected
+        assert not any(m['enabled'] for m in selected['mods'])
+        settings.write_text(json.dumps({'games':{TITLE:{'mods':True,'cheats':False}}}))
+        selected=next(r for r in entries() if r['library'].get('type')=='game')
+        assert selected['modsOn']==2 and not selected['cheatsEnabled'],selected
+        assert 'Cheat files: 3' in selected['details']
         # Replacing a same-path update invalidates its cached display version.
         update.write_bytes(package('update',1441792,base=BASE,display=('Mario Kart 8 Deluxe','4.0.0')))
         assert 'v4.0.0' in next(r for r in entries() if r['kind']=='roms')['phase']

@@ -91,12 +91,17 @@ def publish(archive, base):
     """Replace a large archive with an index bundle; retain every byte in parts."""
     archive, base = Path(archive), Path(base)
     if entry_index(archive) is not None:
-        source_names(base)
+        names = source_names(base)
+        (base / 'source').chmod(0o755)
+        for name in names:
+            (base / name).chmod(0o644)
+        archive.chmod(0o644)
         return
     if archive.stat().st_size <= PART_SIZE:
         if (base / 'source').exists():
             source_names(base)
             shutil.rmtree(base / 'source')
+        archive.chmod(0o644)
         return
     with tempfile.TemporaryDirectory(prefix='.source-parts-', dir=base) as temporary:
         stage = Path(temporary)
@@ -106,11 +111,14 @@ def publish(archive, base):
             while block := source.read(PART_SIZE):
                 name = f'native-source.part{len(parts)+1:03d}'
                 (stage / name).write_bytes(block)
+                (stage / name).chmod(0o644)
                 combined.update(block)
                 parts.append(dict(path='source/' + name, size=len(block), sha256=hashlib.sha256(block).hexdigest()))
         doc = dict(schema=1, archive='botty-native-source.tar.gz', size=sum(p['size'] for p in parts),
                    sha256=combined.hexdigest(), parts=parts)
         (stage / 'manifest.json').write_text(json.dumps(doc, indent=2) + '\n')
+        (stage / 'manifest.json').chmod(0o644)
+        stage.chmod(0o755)
         target = base / 'source'
         if target.is_symlink():
             raise ValueError('Symbolic source output')
@@ -134,7 +142,7 @@ def publish(archive, base):
                         for name, data in files.items():
                             info = tarfile.TarInfo(name); info.size = len(data); info.mode = 0o644
                             tar.addfile(info, io.BytesIO(data))
-                raw.flush(); os.fsync(raw.fileno())
+                raw.flush(); os.fchmod(raw.fileno(), 0o644); os.fsync(raw.fileno())
             os.replace(temporary_entry, archive)
             fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
             try: os.fsync(fd)
