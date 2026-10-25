@@ -150,7 +150,7 @@ constexpr Script scripts[]={
     {"slow-password",{D,D,D,X,R,R,X,SQ}},{"buffered-password",{D,D,D,X,R,R,X,SQ}},
     {"confirm",{OPT,D,D,D,X}},{"delete-torrent",{OPT,D,D,D,X}},{"deleting",{OPT,D,D,D,X,R,X}},{"checking-deletion",{OPT,D,D,D,X,R,X}},
     {"job-actions",{D,OPT}},{"move-confirm",{D,D,D,D,OPT,X,X}},
-    {"quick-actions",{R,OPT}},{"delete-game",{R,OPT,X}},{"checking-game-deletion",{R,OPT,X,R,X}},
+    {"emulation-actions",{OPT,D}},{"quick-actions",{R,OPT}},{"delete-game",{R,OPT,X}},{"checking-game-deletion",{R,OPT,X,R,X}},
     {"reconnecting",{TR}},{"quit",{D,D}},{"exit",{D,D,X}},
     {"update-confirm",{0,0,X}},{"update-exit",{0,0,X,R,X}},{"update-uncertain",{0,0,X,R,X}},
 };

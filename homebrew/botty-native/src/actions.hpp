@@ -4,7 +4,7 @@
 namespace botty {
 bool packageHint(std::string_view name) noexcept;
 void formatDeletionEstimate(double bytes,char* out,unsigned size) noexcept;
-enum class Operation { none, emulationConfigure, emulationLaunch, emulationGame, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
+enum class Operation { none, emulationHome, emulationConfigure, emulationLaunch, emulationGame, pause, resume, verify, add, extract, move, remove, cancel, dismiss, search, grab, explore, exploreGrab, removeTorrent, removeLibrary, compress, cancelCompression, removeOriginal, restoreOriginal, transfer, nativeUpdate, checkNativeUpdate, importRemote };
 struct Command {
     Operation operation=Operation::none;
     bool refresh=false,automatic=true,torrent=false,useRemote=false,switchContent=false;

@@ -14,6 +14,7 @@
 #include "native-update.hpp"
 #include "native-process.hpp"
 #include "emulation.hpp"
+#include "switch-home.hpp"
 #include "switch-preparation.hpp"
 #include "switch-source-settlement.hpp"
 #include "installation-update.hpp"
@@ -49,6 +50,7 @@ __attribute__((constructor(101))) static void startupLog() {
 namespace {
 Search search,explore;
 Emulation emulation;
+SwitchHome switchHome;
 Emulation legacyEmulation("/data/prosperoeden","/data/homebrew/PPSA99008");
 Compressor compressor;
 std::unique_ptr<NativeTransaction> nativeTransaction;
@@ -455,6 +457,7 @@ json SwitchPreparationCoordinator::start(const json& request,bool automatic){
 // Only completed, verified download members may be copied into Eden.
 json emulationState(const json& downloads) {
   auto state=emulation.state();
+  switchHome.enrich(state);
   const auto legacy=legacyEmulation.state();
   for(auto item:legacy.at("entries")){
     if(state["entries"].size()>=256)break;
@@ -728,6 +731,7 @@ int main(int argc,char** argv) {
     }
     if(paths.root=="/data/botty")throw std::runtime_error("Native testing requires --root");
     emulation=Emulation(paths.root/"eden",paths.root/"eden-app");
+    switchHome=SwitchHome(paths.root/"homebrew",paths.root/"eden-app",paths.root/"appmeta");
     legacyEmulation=Emulation(paths.root/"legacy-eden",paths.root/"legacy-eden-app");
 #endif
     if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw std::runtime_error("HTTPS initialization failed");
@@ -915,6 +919,13 @@ int main(int argc,char** argv) {
     server.Post("/api/explore",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto sort=json::parse(req.body).at("sort").template get<std::string>();if(sort.empty())throw std::runtime_error("Choose an Explore sort");explore.start(paths,"PS5",sort,json::parse(req.body).value("refresh",false));reply(res,{{"ok",true}},202);});
     server.Post("/api/explore/add",[](const auto& req,auto& res){std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();const auto body=json::parse(req.body);const auto selected=body.value("storage","internal");storage.get(selected);const bool automatic=body.value("automatic",true);const auto engine=selectedDownloadEngine(body);const auto platform=body.value("platform",std::string("ps5"));explore.add(paths,body.at("id").template get<std::string>(),[selected,automatic,engine,platform](const std::string& method,const json& args){return queueDownload(method,args,selected,automatic,engine,platform);});reply(res,{{"ok",true}},202);});
     server.Post("/api/emulation/import",[](const auto& req,auto& res){reply(res,importEmulation(json::parse(req.body)),202);});
+    server.Post("/api/emulation/home",[](const auto& req,auto& res){
+      std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
+      if(transferring||extracting||retiring||compressor.busy())throw std::runtime_error("Wait for the current file operation");
+      const auto body=json::parse(req.body);
+      if(!body.is_object()||body.size()!=1||!body.contains("id")||!body.at("id").is_string())throw std::runtime_error("Choose a Switch library game");
+      reply(res,switchHome.add(emulation,body.at("id").template get<std::string>()));
+    });
     server.Post("/api/emulation/launch",[](const auto& req,auto& res){
       std::lock_guard<std::mutex> guard(lock);nativeUpdater->requireAdmission();
       if(transferring||extracting||retiring)throw std::runtime_error("Wait for the current file operation");

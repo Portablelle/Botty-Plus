@@ -130,6 +130,43 @@ with tempfile.TemporaryDirectory(prefix='botty-emulation-') as folder:
         launch = request('/api/emulation/launch', {'id': game_entry['id']})
         assert launch['engine'] == 'embedded-eden'
         assert launch['launchPath'] == game_entry['path']
+        # Real authenticated shortcut publication, collision handling and idempotency.
+        import hashlib, struct, zlib
+        (root/'homebrew').mkdir()
+        (root/'homebrew/PPSA99270').mkdir() # unrelated homebrew must stay intact
+        (root/'homebrew/PPSA99270/keep').write_text('unrelated')
+        (root/'appmeta/PPSA99271').mkdir(parents=True) # stale registration still reserves its ID
+        (root/'eden-app/sce_sys').mkdir()
+        # Complete minimal PNG used when the synthetic game has no Control icon.
+        def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data))
+        picture=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',512,512,8,2,0,0,0))+chunk(b'IDAT',zlib.compress((b'\0'+bytes([20,40,60])*512)*512))+chunk(b'IEND',b'')
+        (root/'eden-app/sce_sys/icon0.png').write_bytes(picture)
+        request('/api/emulation/home',{'id':game_entry['id']},403,False)
+        request('/api/emulation/home',{'id':update_entry['id']},400)
+        request('/api/emulation/home',{'id':'../escape'},400)
+        request('/api/emulation/home',{'id':game_entry['id'],'path':'/tmp/game.xci'},400)
+        tile=request('/api/emulation/home',{'id':game_entry['id']})
+        assert tile['titleId']=='PPSA99272' and not tile['existing'],tile
+        folder=root/'homebrew'/tile['titleId']
+        forward=json.loads((folder/'forwarder.json').read_text())
+        assert forward['target']=='PPSA99071' and forward['args']==['--botty-home-game',game_entry['id']]
+        assert (folder/'eboot.bin').read_bytes()[:4]==bytes.fromhex('4f153d1d')
+        assert (folder/'sce_module/libc.prx').read_bytes()[:4]==bytes.fromhex('5414f5ee')
+        assert (folder/'eboot.bin').stat().st_mode&0o777==0o755
+        assert (folder/'sce_sys/icon0.png').read_bytes()==picture
+        param=json.loads((folder/'sce_sys/param.json').read_text())
+        assert param['titleId']==tile['titleId'] and param['downloadDataSize']==256
+        before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.rglob('*') if p.is_file()}
+        assert request('/api/emulation/home',{'id':game_entry['id']})['existing']
+        assert before=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.rglob('*') if p.is_file()}
+        assert not list((root/'homebrew').glob('.botty-home-*'))
+        assert (root/'homebrew/PPSA99270/keep').read_text()=='unrelated'
+        state=request('/api/state')['emulation']
+        assert state['homeScreenSupported'] and next(e for e in state['entries'] if e['id']==game_entry['id'])['homeTitleId']==tile['titleId']
+        # Missing game/disconnected disk refuses launch instead of opening another game.
+        saved=Path(game_entry['path']);saved.rename(saved.with_suffix('.held'))
+        request('/api/emulation/launch',{'id':game_entry['id']},400)
+        saved.with_suffix('.held').rename(saved)
         legacy = root/'legacy-eden/roms/Existing.xci'
         legacy.parent.mkdir(parents=True)
         legacy.write_bytes(game)

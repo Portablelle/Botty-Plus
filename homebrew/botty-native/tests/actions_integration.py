@@ -66,6 +66,24 @@ with tempfile.TemporaryDirectory(prefix='botty-native-actions-') as directory:
   assert (complete/'sample.rar').is_file() and (complete/'broken.rar').is_file()
   assert not any(j['id']==ready['id'] for j in get('/api/state')['jobs'])
   assert sum(c['method']=='load.start' for c in calls)==1
+  # A native shortcut launches through the same authenticated, resolving API.
+  from switch_fixtures import xci
+  (root/'eden/roms').mkdir(parents=True);(root/'eden/roms/Game.xci').write_bytes(xci())
+  (root/'eden/keys').mkdir();(root/'eden/keys/prod.keys').write_text('synthetic')
+  (root/'eden/firmware').mkdir();(root/'eden/firmware/test.nca').write_text('synthetic')
+  (root/'eden/private-runtime.json').write_text('{}')
+  (root/'eden-app/emulation').mkdir(parents=True);(root/'eden-app/emulation/eboot.bin').write_bytes(b'fixture')
+  (root/'eden-app/emulation-runtime.json').write_text('{}')
+  (root/'eden-app/sce_sys').mkdir();shutil.copy(ROOT/'sce_sys/icon0.png',root/'eden-app/sce_sys/icon0.png')
+  (root/'homebrew').mkdir()
+  game=next(e for e in get('/api/state')['emulation']['entries'] if e['kind']=='roms')
+  assert 'Shortcut prepared' in action('home',game['id'])
+  tile=next((root/'homebrew').iterdir());forwarder=json.loads((tile/'forwarder.json').read_text())
+  forwarded=subprocess.run([str(ROOT/'build/action-client'),str(port),'--from-home',*forwarder['args']],capture_output=True,text=True,timeout=20)
+  assert forwarded.returncode==0,(forwarded.stdout,forwarded.stderr)
+  (root/'eden/roms/Game.xci').unlink()
+  refused=subprocess.run([str(ROOT/'build/action-client'),str(port),'--from-home',*forwarder['args']],capture_output=True,text=True,timeout=20)
+  assert refused.returncode!=0,refused.stdout
   rpc.assert_clean()
   print('Native actions passed: pause/resume/verify/add, extraction, library move, protected deletion, failed-output deletion and source preservation.')
  finally:

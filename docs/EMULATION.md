@@ -36,6 +36,33 @@ automatically.
 Inventory is bounded to 256 files, 4096 entries and eight nested levels; symlinks
 are rejected. NSP/XCI structure, archive CRC, encrypted CNMT metadata and required content hashes are checked. NSZ/XCZ remain unsupported. This is not Nintendo signature verification.
 
+## PS5 home-screen shortcuts
+
+![Switch game quick actions in the host renderer](images/switch-home-menu.png)
+
+In Emulation → Games, Options opens **Quick actions** with **Game configuration**
+and **Add to PS5 Home**. Adding a game stages a complete, separate homebrew title
+with its game name and cover (Botty's icon if no cover is readable). Close Botty+
+so ShadowMountPlus can register the tile. Repeating a request keeps the same tile.
+Existing application folders and registered identities are never reused. Games,
+updates, private keys and saves stay in the existing embedded engine's folders.
+
+Tiles use the shared [PS5 Forwarder Format](https://github.com/heydemoura/ps5-forwarder-format),
+pinned at `22e8762ad7dbd01e18bd8c0e95f86461fdf8aaf4`. The manager embeds the unchanged
+upstream template; its GPL source, license and rebuild instructions are bundled
+under `homebrew/botty/vendor/ps5-forwarder-format`. No forwarder files extend the
+native installation manifest. Each tile targets `PPSA99071` with
+`--botty-home-game <library entry ID>`. Botty resolves the ID through the existing
+launch API before loading `/app0/emulation/eboot.bin`; missing games or provisioning
+open Botty with an error instead. Arguments are consumed once and are not replayed
+when the game returns to Botty. The engine and normal save-sync lifecycle are shared.
+
+The jailbreak, ShadowMountPlus and the local ELF loader must be available. On first
+use, the upstream tile starts its bundled loopback-only launcher if none is running.
+Close an already running Botty+ session before launching a tile: arguments apply to
+a newly started process. Host tests and rendered previews are separate from PS5
+registration and launch acceptance, which must be recorded before publishing.
+
 ## Private provisioning
 
 The owner's existing `keys/` and `firmware/` are provisioned separately from the
@@ -86,6 +113,10 @@ and canonical path and are resolved again on action.
   `engine: "embedded-eden"`. The UI validates the response, stops its workers,
   releases video/pad resources and invokes the packaged executable with `--rom`
   and `--exit-after-game`. No client-supplied executable path is accepted.
+- `POST /api/emulation/home` accepts only a library entry `id`, validates the
+  game and private provisioning, and publishes an idempotent shortcut. State
+  advertises `homeScreenSupported` and each game's `homeTitleId`. The response
+  includes `ok`, `titleId` and `existing`; creation does not claim registration.
 - `POST /api/emulation/import` accepts a completed download entry ID and optional kind `auto`. Legacy forced types are refused with a refresh hint. Background copying excludes installation updates and other
   file operations. Activity reports progress.
 

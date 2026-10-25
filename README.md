@@ -53,6 +53,7 @@ native foundations, emulator, download engine and libraries that make it possibl
 | [PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | **ArkSama / Team PHU**; cooperative helper work by **mpereiraesaa** and **BlackBearReloaded**. |
 | [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) | **rakshasa** and contributors — torrent downloads. |
 | [PS5-Game-Compressor](https://github.com/gcoding97/PS5-Game-Compressor) | **gcoding97** and upstream contributors — Library compression. |
+| [PS5 Forwarder Format](https://github.com/heydemoura/ps5-forwarder-format) | **heydemoura** and contributors — the shared home-screen shortcut template and launcher. |
 | [UnRAR](https://www.rarlab.com/rar_add.htm) / [unrar-ps5](https://github.com/bizkut/unrar-ps5) | **Alexander Roshal** — UnRAR; **bizkut** — the PS5 port. |
 | [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk), [PacBrew](https://github.com/ps5-payload-dev/pacbrew-repo) and [PS5 SDL headers](https://github.com/ps5-payload-dev/SDL) | **John Törnblom**, the **ps5-payload-dev** contributors and **SDL** contributors. |
 | [cpp-httplib](https://github.com/yhirose/cpp-httplib) | **yhirose** and contributors — HTTP server and client. |

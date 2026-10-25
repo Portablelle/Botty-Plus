@@ -377,3 +377,21 @@ the full-screen hero scrim and cover blits, focus visibility at a distance, R3 a
 the saved-results refresh, and the complete Discover → Get game → Activity →
 Library flow. The title was cross-built with the pinned SDK and its package
 verified on the host; it has not been installed on a console.
+
+## Switch home-screen shortcuts — 2026-10-25
+
+The user confirmed that **Mario Kart 8 Deluxe** appears as a separate PS5 home
+tile after adding it through Emulation → Options → Add to PS5 Home, and starts
+the game directly from that tile. The test used the embedded Botty engine, a
+native test build at `02.000.000` and manager `1.10.4`. This validates that game's
+registration and launch; other games and already-running target sessions remain
+separate acceptance cases. The existing engine, shared libc, saves, worker and
+rTorrent were retained. Publication used the full native transaction with a
+complete rollback and verified staged file hashes.
+
+Dedicated-host checks passed for the native model/menu and launch arguments,
+real native HTTP client → manager → shortcut publication and game resolution,
+missing games, authorization, malformed input, application/metadata collisions,
+idempotency, source preservation and modal input. The real renderer's menu
+preview is in `docs/images/switch-home-menu.png`; it is a host preview, not a
+console screenshot. Both PS5 binaries cross-compiled on the dedicated host.
