@@ -12,6 +12,7 @@
   <a href="#get-started">Get started</a> ·
   <a href="#using-botty">How to use it</a> ·
   <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="#credits">Credits</a> ·
   <a href="https://github.com/Portablelle/Botty-Plus/releases/latest">What's new</a>
 </p>
 
@@ -37,6 +38,41 @@ operations keep running in the background after you close the app.
   games between them.
 - **Phone or computer access:** add downloads and follow them from a browser on
   the same network.
+
+## Credits
+
+Botty+ builds on the work of these authors and contributors. Thank you for the
+native foundations, emulator, download engine and libraries that make it possible.
+
+| Component | Authors and contributors |
+| --- | --- |
+| [PS5 native app boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | **BlackBearReloaded** and contributors — native runtime, VideoOut renderer and build tooling. |
+| [ProsperoEden](https://github.com/blackbearreloaded/ProsperoEden) | **BlackBearReloaded** and contributors — the embedded Switch engine's PS5 port and frontend. |
+| [Eden emulator](https://github.com/eden-emulator/mirror) | The **Eden project** and its upstream contributors — the Switch emulator core. |
+| [PS5 Mesa](https://github.com/mihawk-99/PS5_Mesa) and [PS5 Vulkan](https://github.com/mihawk-99/PS5_Vulkan) | **Mihawk** and upstream contributors — graphics drivers used by the embedded engine. |
+| [PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | **ArkSama / Team PHU**; cooperative helper work by **mpereiraesaa** and **BlackBearReloaded**. |
+| [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) | **rakshasa** and contributors — torrent downloads. |
+| [PS5-Game-Compressor](https://github.com/gcoding97/PS5-Game-Compressor) | **gcoding97** and upstream contributors — Library compression. |
+| [UnRAR](https://www.rarlab.com/rar_add.htm) / [unrar-ps5](https://github.com/bizkut/unrar-ps5) | **Alexander Roshal** — UnRAR; **bizkut** — the PS5 port. |
+| [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk), [PacBrew](https://github.com/ps5-payload-dev/pacbrew-repo) and [PS5 SDL headers](https://github.com/ps5-payload-dev/SDL) | **John Törnblom**, the **ps5-payload-dev** contributors and **SDL** contributors. |
+| [cpp-httplib](https://github.com/yhirose/cpp-httplib) | **yhirose** and contributors — HTTP server and client. |
+| [JSON for Modern C++](https://github.com/nlohmann/json) | **Niels Lohmann** and contributors — JSON support. |
+| [stb_image](https://github.com/nothings/stb) | **Sean Barrett** and contributors — local image decoding. |
+| [Manrope](https://github.com/googlefonts/manrope) and [Montserrat](https://github.com/JulietaUla/Montserrat) | The **Manrope Project Authors** and **Montserrat Project Authors** — interface fonts. |
+| [UltraCam / NX Optimizer](https://github.com/MaxLastBreath/nx-optimizer) (optional mod) | **MaxLastBreath**. |
+| [Prowlarr](https://github.com/Prowlarr/Prowlarr) (optional search service) | The **Prowlarr team** and contributors. |
+
+The PS5 session supplied by [Portal+](https://github.com/Portablelle/Portal-Plus)
+also relies on **Drakmor**'s [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus),
+**EchoStretch**'s [Kstuff Lite](https://github.com/EchoStretch/kstuff-lite), based
+on **sleirsgoevy**'s work, and the **Relapse exploit authors**. See
+[Portal+ Credits](https://github.com/Portablelle/Portal-Plus#credits) for those
+components and the other optional apps.
+
+See [third-party credits and licenses](THIRD_PARTY.md), the
+[native dependency notices](homebrew/botty-native/vendor/NOTICE.md), and the
+[embedded engine and mod notices](packages/botty-native/NOTICE.md) for detailed
+provenance and redistribution terms. Components retain their own licenses.
 
 ## Get started
 
@@ -213,12 +249,6 @@ For portal hosts and developers:
 - [External storage](homebrew/botty/README.md#external-storage-13)
 - [Building and contributing](docs/DEVELOPMENT.md)
 - [Versioning policy](docs/VERSIONING.md)
-
-## Credits and licenses
-
-Botty+ builds on Relapse and the open-source PS5 homebrew community.
-See [credits and third-party licenses](THIRD_PARTY.md) for contributors,
-dependencies and redistribution requirements.
 
 Botty+ is an independent homebrew project, not affiliated with Sony Interactive
 Entertainment.
