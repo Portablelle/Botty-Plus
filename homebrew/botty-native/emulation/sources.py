@@ -49,7 +49,7 @@ def collect(root, output):
     if (scratch/'owner').read_text().strip() != str(root):
         raise RuntimeError('Unexpected engine build cache')
     sources = [('prosperoeden', root), ('eden-core', scratch/'source')]
-    for name in ('ps5-native-app-boilerplate', 'mihawk-vulkan-review', 'mihawk-mesa-review', 'mihawk-sdk-review'):
+    for name in ('ps5-native-app-boilerplate', 'mihawk-vulkan-review', 'mihawk-mesa-review', 'mihawk-sdk-review', 'mihawk-framegen-review'):
         sources.append((name, root.parent/name))
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0, compresslevel=1) as zipped:

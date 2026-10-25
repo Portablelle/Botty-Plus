@@ -47,7 +47,7 @@ native foundations, emulator, download engine and libraries that make it possibl
 | Component | Authors and contributors |
 | --- | --- |
 | [PS5 native app boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | **BlackBearReloaded** and contributors — native runtime, VideoOut renderer and build tooling. |
-| [ProsperoEden](https://github.com/blackbearreloaded/ProsperoEden) | **BlackBearReloaded** and contributors — the embedded Switch engine's PS5 port and frontend. |
+| [ProsperoEden](https://github.com/Swordpdf/ProsperoEden) | **BlackBearReloaded** and contributors — the embedded Switch engine's PS5 port and frontend. |
 | [Eden emulator](https://github.com/eden-emulator/mirror) | The **Eden project** and its upstream contributors — the Switch emulator core. |
 | [PS5 Mesa](https://github.com/mihawk-99/PS5_Mesa) and [PS5 Vulkan](https://github.com/mihawk-99/PS5_Vulkan) | **Mihawk** and upstream contributors — graphics drivers used by the embedded engine. |
 | [PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | **ArkSama / Team PHU**; cooperative helper work by **mpereiraesaa** and **BlackBearReloaded**. |

@@ -3,6 +3,7 @@
 namespace botty {
 inline constexpr const char* embeddedRuntimeFiles[] = {
   "emulation-runtime.json",
+  "emulation/botty-engine.json",
   "emulation/core-homebrew.nro",
   "emulation/eboot.bin",
   "emulation/lapy-manifest.json",
@@ -10,6 +11,7 @@ inline constexpr const char* embeddedRuntimeFiles[] = {
   "emulation/launcher-runtime.json",
   "emulation/licenses/Lapy-MIT.txt",
   "emulation/licenses/Montserrat-OFL.txt",
+  "emulation/mihawkgen/network.fgw",
   "emulation/sce_module/libc.prx",
   "emulation/sce_sys/icon0.png",
   "emulation/sce_sys/param.json",

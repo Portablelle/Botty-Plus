@@ -8,11 +8,37 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import tarfile
+from provenance import COMMIT, RECEIPT, digest, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def validate_sources(path, provenance):
+    # The archiver puts sanitized Git metadata and this source receipt first.
+    scanned = 0
+    with tarfile.open(path, 'r|gz') as archive:
+        for member in archive:
+            scanned += member.size
+            if scanned > 64 * 1024 * 1024:
+                break
+            if member.name != 'prosperoeden/BOTTY-ENGINE.json':
+                continue
+            if not member.isfile() or member.size > 128 * 1024:
+                break
+            source = json.load(archive.extractfile(member))
+            fields = ('commit', 'upstream', 'patchSha256', 'sourceFiles', 'titleId', 'dataRoot')
+            if all(source.get(field) == provenance.get(field) for field in fields):
+                return
+            break
+    raise ValueError('Corresponding-source archive does not match the built engine')
+
+
 def assemble(engine):
+    provenance = validate(engine, digest(ROOT / 'emulation/patches/standalone.diff'))
+    validate_sources(ROOT / 'build/emulation-source.tar.gz', provenance)
+    with (ROOT / 'build/emulation-source.tar.gz').open('rb') as stream:
+        sources_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
     app = ROOT / 'dist/PPSA99071'
     if not (app / 'eboot.bin').is_file():
         raise RuntimeError('Build Botty native UI first, on the dedicated host')
@@ -34,7 +60,9 @@ def assemble(engine):
     shutil.copytree(ROOT/"emulation/ultracam", target/"ultracam")
     # Both processes use the engine's pinned clean-room libc from /app0/sce_module.
     shutil.copy2(engine / 'sce_module/libc.prx', app / 'sce_module/libc.prx')
-    runtime = dict(schema=1, engine='ProsperoEden', commit='8f392248f7d49fc2be47f60ad7764ac5a392b1fe',
+    runtime = dict(schema=1, engine='ProsperoEden', commit=COMMIT,
+        patchSha256=provenance['patchSha256'], provenanceSha256=digest(target / RECEIPT),
+        sourcesSha256=sources_sha,
         executable='emulation/eboot.bin', dataRoot='/data/botty/emulation/switch', standalone=True,
         hardwareValidated=False, privateProvisioning=True, configuration=True, configurationProtocol=1,
         engineSha256=hashlib.sha256((target/'eboot.bin').read_bytes()).hexdigest())

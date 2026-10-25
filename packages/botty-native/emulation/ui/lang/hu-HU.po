@@ -66,6 +66,10 @@ msgstr "Kb. {0} perc van hátra"
 msgid "About {0} s left"
 msgstr "Kb. {0} mp van hátra"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "100% felett egy 30 FPS-re korlátozott játék elérheti a 60-at, és a képkockáit számoló játék is gyorsabban fut."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "Hozzáadva a letöltésekhez. A sor a Beállítások, Letöltések alatt
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Hozzáadva. A Kereszt ezzel a profillal játszik; a bal és a jobb a nevét váltja."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Összes csalás"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Módosítva"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Csalások"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Csalások mappája"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Becenév"
 msgid "Nickname: {0}"
 msgstr "Becenév: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Nincs csalás"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Ehhez a játékhoz még nincs csalás. Másold a csalásfájljait (<build ID>.txt) ide: {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "Nincs beállítva letöltési forrás. Ments el egy {0} nevű fájlt, amely felsorolja a forrásaidat, ahogy ez teszi egy RomM-szerverrel, majd nyisd meg újra ezt a menüt. A letöltésekhez FTP-szervernek kell futnia a konzolon, ezen a porton: {1}."
@@ -1118,10 +1140,9 @@ msgstr "Itt nincsenek mappák."
 msgid "No mods"
 msgstr "Nincs mod"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Ehhez a játékhoz még nincs mod. Másold az egyes modok mappáját ide: {0}, a roms/ mellé."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Ehhez a játékhoz még nincs mod. Másold az egyes modok mappáját ide: {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Mentve: {0}. Lecseréli a konzolét."
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Mentve. A 120 Hz-re nem képes kijelző 60 Hz-en marad."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Mentve. A ProsperoEden következő megnyitásakor lép életbe."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Mentve. A következő játékindítástól érvényes."
@@ -1638,6 +1663,11 @@ msgstr "Mentve. Az utófeldolgozáshoz a Vulkan megjelenítő kell."
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Mentve. A ProsperoEden újraindítása után lép életbe."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "Szól, ha a homebrew.page oldalon újabb verzió van. Kikapcsolva csak a Névjegy említi."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "Spanyol (Latin-Amerika)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Sebesség"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Sebességkorlát"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "Nem érhető el"
 msgid "Understood"
 msgstr "Értem"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Korlátlan"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Leválasztás"
@@ -2031,6 +2071,11 @@ msgstr "FEL"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Frissítés érhető el"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Frissítési értesítések"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "{0} verzió"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "A(z) {0} verzió elérhető: homebrew.page"
 

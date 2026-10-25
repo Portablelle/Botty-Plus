@@ -1,17 +1,46 @@
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
 import tempfile
 import tarfile
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
-contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
+contract=importlib.util.module_from_spec(spec)
+with patch.object(sys, 'path', sys.path.copy()):
+    spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
+    def test_shipped_engine_provenance_matches_committed_sources(self):
+        engine=ROOT/'homebrew/botty-native/emulation'
+        policy=engine/'provenance.py'
+        spec=importlib.util.spec_from_file_location('engine_provenance_contract',policy)
+        provenance=importlib.util.module_from_spec(spec);spec.loader.exec_module(provenance)
+        base=ROOT/'packages/botty-native'
+        runtime=json.loads((base/'emulation-runtime.json').read_text())
+        receipt_path=base/'emulation/botty-engine.json'
+        receipt=json.loads(receipt_path.read_text())
+        patch_sha=hashlib.sha256((engine/'patches/standalone.diff').read_bytes()).hexdigest()
+        for name, record in [('runtime',runtime), ('receipt',receipt)]:
+            with self.subTest(record=name):
+                self.assertEqual(record['commit'],provenance.COMMIT)
+                self.assertEqual(record['patchSha256'],patch_sha)
+        self.assertEqual(receipt['upstream'],provenance.REPOSITORY)
+        self.assertEqual(receipt['sourceFiles']['tools/botty-provenance.py'],
+                         hashlib.sha256(policy.read_bytes()).hexdigest())
+        self.assertEqual(runtime['provenanceSha256'],
+                         hashlib.sha256(receipt_path.read_bytes()).hexdigest())
+
+    def test_service_engine_inventory_matches_the_pinned_native_package(self):
+        engine=json.loads((ROOT/'homebrew/botty-native/emulation/runtime-files.json').read_text())
+        header=(ROOT/'homebrew/botty/src/emulation-runtime-files.hpp').read_text()
+        actual=re.findall(r'^  "([^"]+)",$',header,re.MULTILINE)
+        self.assertEqual(actual,['emulation-runtime.json']+['emulation/'+name for name in engine['files']])
     def test_current_delivery_is_complete_and_verified(self):
         contract.verify(ROOT/'packages')
     def test_service_source_archive_bundles_remote_test_dependencies(self):
@@ -59,6 +88,9 @@ class PackageTests(unittest.TestCase):
         self.assertIsNotNone(match, 'BOTTY_UI define not found in server.cpp')
         self.assertEqual(match.group(1), expected)
         self.assertIn(expected.encode()+b'\0', (ROOT/'packages/botty/botty-manager.elf').read_bytes())
+        updater=re.search(r'updaterConfig\.managerVersion="([^"\n]+)"',source)
+        self.assertIsNotNone(updater, 'Updater manager version not found')
+        self.assertEqual(updater.group(1), version)
         source_ui=ROOT/'homebrew/botty/ui'
         shipped_ui=ROOT/'packages/botty/ui'
         names={p.relative_to(source_ui) for p in source_ui.rglob('*') if p.is_file()}

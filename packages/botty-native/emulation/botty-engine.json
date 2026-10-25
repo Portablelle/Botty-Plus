@@ -1,0 +1,365 @@
+{
+  "schema": 1,
+  "upstream": "https://github.com/Swordpdf/ProsperoEden.git",
+  "commit": "a26ba788222465ec7fb94dc813958fc749734e07",
+  "titleId": "PPSA99071",
+  "executable": "emulation/eboot.bin",
+  "dataRoot": "/data/botty/emulation/switch",
+  "selfUpdate": false,
+  "hardwareValidated": false,
+  "patchSha256": "4bdedeb01a64e9dbf3af9bc6f2d73a93b4a6b8651b1ac25ea1dcdbb5ccd182aa",
+  "sourceFiles": {
+    ".github/ISSUE_TEMPLATE/bug_report.yml": "59c6171201a3dc825021721058dfffeb171cd17ccedbf0b960419636d9c43502",
+    ".github/ISSUE_TEMPLATE/game_report.yml": "240e22e070c89fb790740df56ea976a3cb7b0a518d09c39ecaa8fbb7a26e129d",
+    ".github/workflows/release.yml": "0ce0750c35ac2c2cad1986a1f6f045f015404d12d0d7a84916069d6575ee6325",
+    "Makefile": "e81968ff833ea4ba2071376e62b4d80fd8c7fa525a05c576b2dc97ae44a78acc",
+    "README.md": "d6a925046092912bca21948086a3930d53c13a1b466e5da155f598e85bda15b4",
+    "docs/BUILDING.md": "2e7da4c05a72c764be9fcda517d45b559a5c835a8dc98448391f21c008585bc0",
+    "docs/CHANGELOG.md": "46778ec68a009ed0706a6d0a393f19ca29b380492628d4b188cff53b25a90711",
+    "docs/DOWNLOADS.md": "bb96c512e427e9757e011bf0dee8f7b86d642d29fa11e94e3044a15eb083837d",
+    "docs/FORWARDER.md": "05712e8b2adcecaad46be1bb49ec3c4eeedcd7916f949b8783164da8fbdabaa9",
+    "docs/FW740.md": "0c48d54988303a94b544f77bcec74d7bbc7b0e500d760d390f06841d40d71807",
+    "docs/INSTALL.md": "cb9d84d1119fe8e53dc2da05e16ee91e3b18f3bc28a5a1172cc82d9c3297dfd1",
+    "docs/LAUNCHER_UPDATES.md": "286dd988f55a3d6126bea7cc735e5ab131f1c52c49a6725d7dc4328ed1761453",
+    "docs/MULTIPLAYER.md": "959070dd92aaf941aca98f997ad84406635baf6b5f04c584d6d520da22d47664",
+    "docs/PUBLIC_ROOMS_LOCAL.md": "c6adfb299c63e8052049052c2f54da4529ce1b1e1bed8aa4c8cf7d83917ff5a3",
+    "docs/RUNTIME_LAUNCHERS.md": "2ee49b4508c078297c6b925f2118b4a7de8d93a3a1f4a79220f37d0c16443fa3",
+    "docs/SAVES.md": "c3fed1e3a9ed3fb5dc56b3b028ae6cf82ae53b85f23b65c66dbe8cda01c47239",
+    "docs/SETTINGS.md": "9685d675db27d2c8c830ea1cd2094edbfc0115774e884803b632ee616c7cc0b2",
+    "docs/WALLPAPERS.md": "6fd8f228a18b8f06e51972ae45c91c8ba61825a436eb8458dcc310effc27fe97",
+    "headless/CMakeLists.txt": "c3883de2989f7f8f2d4980ee7130313ea902ada63d0d6434f0c70d29e432eacb",
+    "headless/assets_dir.h": "605888f3f7cbea4bdb4116ed068a057d6ed14aaf39011f236b21f9e2331cb8be",
+    "headless/boot_trace.h": "b42b544ae906dd893ce00fc633f56544eede4b51028531eeeb550c4b488e327b",
+    "headless/botty_configuration.h": "18c57fa385f08a652bad28467199b0107a741e9b9fc6c7bf2c657dcfe0bb8630",
+    "headless/check_package.py": "51621d1edfa800b19be05ccf89019676835ce20f1f297d8d2c875edfad723bfe",
+    "headless/elevation/README.md": "a396b559d54d63c195ccb825a9a795b590602332de7cb066fe5513b691ce4455",
+    "headless/elevation/elevation.cpp": "25764e2f57d042bb761cc181164a9c366e483e9a345e5a24e904aa49c0240a09",
+    "headless/elevation/elevation.hpp": "f9d1799dd8bf19be9790239050f28680dfa165236c68487e1fc6300872f3b0d9",
+    "headless/elevation/test_elevation.cpp": "7d685c86fc1e9caf0aa25023b5cfc7e5eb7737331a3f2129c00dc818b70c2435",
+    "headless/forwarded_launch.h": "10e2bfaa768d8706ac02739d10db34838c827a283b42793f08e2a131efb2fc22",
+    "headless/game_content_paths.h": "a9bcacb9595f009ae1e5d8274f0901147fc5654b1d90732a23ce5d3d7e770ab1",
+    "headless/main.cpp": "33ffb2a2c7c937badc44a86c893d7dbb9dd96f28021af8f3b9da936a2150da45",
+    "headless/metadata_bridge.cpp": "4872500e61e480616656ec7969030a4466d82b744ba66971f80e9a260e10e1b8",
+    "headless/metadata_bridge.h": "694dccabbce3dc7287f663941a5c2131d28fe667dae9d64dd57bff5b9f544bfc",
+    "headless/prosperoeden/eden_services.cpp": "bd21a8c8b422ae04a14e610df6af012b1fe23a0573d9cc95aaa89debddf242c2",
+    "headless/prosperoeden/eden_services.h": "d95f253afc2dd1da25fc3025adca45f97478170cd577d1858fc2ef1cf656339c",
+    "headless/prosperoeden/frontend.cpp": "a83d641260c81e0a5248b815493e91f07fe0f70231d6a503d8cbd4f87b3989fd",
+    "headless/prosperoeden/host/fake_services.cpp": "31bd27b921db92e5d1811cba9701b1a5da3fdd360e19ab38106da4539b510c34",
+    "headless/prosperoeden/host/fake_services.hpp": "4b193c704859d874afa6c656346a6e6c200ce74b288e5134e618ac1fe0d69d1a",
+    "headless/prosperoeden/host/preview_main.cpp": "797fa953471c022c1cb744ff8d9e49cfc19871c4b6f2f770b42188aa54ce28d2",
+    "headless/prosperoeden/host/runtime_preview.cpp": "c65418d03b3a757324023e379141a2ec73db92cb715b2ce6dce3f85ff85d696d",
+    "headless/prosperoeden/pe/ui/game_options.cpp": "0926cbcb68e2ad932f6840ee1695b64c3826de7a85792b6012bf646a2e5cbb73",
+    "headless/prosperoeden/pe/ui/launcher.cpp": "c6d2ac211aee8762cbafe072bef4ddfce2daebebf014be902ccb2be77494f6d8",
+    "headless/prosperoeden/pe/ui/launcher.hpp": "3d25c7b0f7cd2aa42d5abd79e615d1bb8e21bb62b921023278a5e299a4196855",
+    "headless/prosperoeden/pe/ui/library.cpp": "2a68c0d41345fbde00e9394237ede94d6ee712de6107177a8f2c0f3e1c425e2a",
+    "headless/prosperoeden/pe/ui/runtime_launcher.cpp": "5ca652335fa7f74497b25c8a8cfd694221450914baeb40792fb6f01d76531f77",
+    "headless/prosperoeden/pe/ui/runtime_launcher.hpp": "baadb7228dde30fd682c8469ee08ff79b32494929774bd8c6069d7fe5938a9ec",
+    "headless/prosperoeden/pe/ui/runtime_models.hpp": "ab32a55c89f0c970b26baff86c93438ed52b3f56dcac834bb845d45d95fc3f22",
+    "headless/prosperoeden/pe/ui/services.hpp": "79c23ff370708edf8880d17fbeb73b8e351ab7615f19b4b1227e0ed385c6855f",
+    "headless/prosperoeden/pe/ui/settings.cpp": "b86224a4366bf8874c7a2f940b451e8d1a384cf2c2c4f72ddc60b7de9783f8bd",
+    "headless/prosperoeden/pe/ui/shell.cpp": "26e228515c5d0b3bfde7c87c88fe8272287b949d9383bc5c03318b37d1617873",
+    "headless/self_update_helper/main.cpp": "c4b1d76a88c2c0cc6e6db3de430ee7c9454a7e568b5837117f6e59d438892a0b",
+    "headless/settings_store.h": "99f0779f2f58eb1054648875075b1525a7d90a5400f63d04725804ac8c81c577",
+    "headless/storage_paths.h": "fe5951daacdde4026034f403d90a4d02cd915f0442862bd8e5529ef277b2bbde",
+    "headless/ultracam.h": "95f1d5d2b11ef549b881780b2ebd4f3fa502877b62d6ced633d9d14f2a11d891",
+    "headless/ultracam_options.h": "2da7f43e272587dbd4938d928e854e2d8d688fda6d1c0d03bb3b45c32408f61a",
+    "headless/update_check_check.cpp": "f7ea4ca0ed46572580b5319cf873dc14bf9a35bd6f94fcbfb6471dbc8d189a5b",
+    "headless/update_notice.cpp": "ee2fb250d6f8bef98e5975a27a5b67149af373d2044528048a4c81b06d44430b",
+    "sce_sys/param.json": "9a74127c720906010cd9a759560d3000da5bde4e2caf39306ba5626fb28a0e5e",
+    "src/lifecycle.c": "cbf04c37ba6660ce4daa0347ce80d9d1f2baab06ae9ba672427421df7dcd0f8d",
+    "tools/build-lapy-helper.py": "73d71f89af174962d936a91e1388e988d007ca5107bb2d873dec09582472bc6f",
+    "tools/build-package.sh": "631f75fad3f512a28bd1fbfb5037a2ee0e47b244e0bac4eeb5e69a2de2f81d2f",
+    "tools/ci/make-dist.py": "4bd3aaeee6c920426b68a7fb6f6738fe29cf0caea94c581bcd6688f68b237fbd",
+    "tools/deps.json": "ed26d8283ef7d8f1d0e7233b56d5cb8d296b640541a04177946154f0f2709839",
+    "tools/install-ftp.py": "75e3099845bd05be0d08e498c0b680d46f14b9e51aeb5d6a0227954243236ce2",
+    "tools/launcher/test-appearance.py": "b668d7106f9ae3692a2b2c7d4d9b4b62fd10f6dddb1417d6f41d91bc5c2acc60",
+    "tools/package-headless-native.sh": "2977de554364c8d9713c7b602715bd8c5077ad250daff43f2d4b4a5040e36e2e",
+    "tools/botty-provenance.py": "2574f9a9b96cec2e2b169ed574f88a60fb965ac4bb3629993d6484c972377b1a"
+  },
+  "files": {
+    "core-homebrew.nro": {
+      "size": 16384,
+      "sha256": "b3c95e1c0dba8080fd172d1554af33506126ed0f74c18fb42b4ed3b9ea9032c2"
+    },
+    "eboot.bin": {
+      "size": 75704270,
+      "sha256": "aeb30bd2fe7bfc59d83ad1ad067701dddc4388eb1c49cd4765946a9ec600b735"
+    },
+    "lapy-manifest.json": {
+      "size": 608,
+      "sha256": "093709406dce58246659593bf5f23d561bf69ba024ffa0248bb1beacec430469"
+    },
+    "lapy.elf": {
+      "size": 155224,
+      "sha256": "553f1e1c06fe3b3f173affa7099955eb1d57254fa259b3eec224034c245dceb2"
+    },
+    "launcher-runtime.json": {
+      "size": 331,
+      "sha256": "6ede90dba3820f44a3f2ceb048595d344f5885b5a009fc02472980b5735ff807"
+    },
+    "licenses/Lapy-MIT.txt": {
+      "size": 1741,
+      "sha256": "5ef18e95f617c9d3a2674cc3256f5c0d6ec2f794a57e9e40f2185dd454c9f8da"
+    },
+    "mihawkgen/network.fgw": {
+      "size": 1757240,
+      "sha256": "31ecc7d69af1e9defd62b9abad71bc3430cd8a0a4d2f4eafcabaafa48c34bf6b"
+    },
+    "sce_module/libc.prx": {
+      "size": 1284674,
+      "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
+    },
+    "sce_sys/icon0.png": {
+      "size": 246629,
+      "sha256": "08e2da9843e11fb17c3ac4c14bc753d0fd37cb8bd5157b2fa9e474d99d8d48b7"
+    },
+    "sce_sys/param.json": {
+      "size": 903,
+      "sha256": "9a74127c720906010cd9a759560d3000da5bde4e2caf39306ba5626fb28a0e5e"
+    },
+    "sce_sys/pic0.dds": {
+      "size": 8294548,
+      "sha256": "29184533d01cb87db54fcf987643b4de2559a44ed262330460d41f985453b0ba"
+    },
+    "sce_sys/pic1.dds": {
+      "size": 8294548,
+      "sha256": "00ec19095b42549a1a01d25283820f516ef30ac6aef86465183250edb0b4dc7d"
+    },
+    "sce_sys/snd0.at9": {
+      "size": 1281704,
+      "sha256": "47cbad547b1f705094af1eefbf303db477cf489d2fd3e499f8171f691a7d72c7"
+    },
+    "self-updater.elf": {
+      "size": 823504,
+      "sha256": "8f50e9ce4f859150de9aab95c434ca5c507c893b8b8329b3fd847ba406d0c946"
+    },
+    "ui/art/backdrop-blur.tga": {
+      "size": 589868,
+      "sha256": "64b9065790056770c26375090457eba1c40ca24e4215f720880ad82e57477ec2"
+    },
+    "ui/art/backdrop.tga": {
+      "size": 9437228,
+      "sha256": "74dda8d41607d33499d37316ddd76f61c71d263149431b12f7689776ad978099"
+    },
+    "ui/art/brand.tga": {
+      "size": 589868,
+      "sha256": "4737013c924d997ec2c820c616d2dbe9986a7768ccd65d796d99f26d8493cfae"
+    },
+    "ui/art/controller.tga": {
+      "size": 57644,
+      "sha256": "5d5e3c8edf7be13a110071bcfc3bfce57587847affd6e700cae14e10777273e4"
+    },
+    "ui/art/slate-backdrop-blur.tga": {
+      "size": 589868,
+      "sha256": "e465092401ccf31f9c55e8820f704be02a244c392309f0d266505e9f76e1f99f"
+    },
+    "ui/art/slate-backdrop.tga": {
+      "size": 9437228,
+      "sha256": "7cf136694b4a10937d7acef47774ed29d665eca7b84fe8b384e478122356a61a"
+    },
+    "ui/fonts/montserrat-medium.pefont": {
+      "size": 2500152,
+      "sha256": "38653ae96a2903a16ae2fe3e30154f70055847db8939e8ebc182ce48eb96dd9a"
+    },
+    "ui/lang/ar.po": {
+      "size": 75809,
+      "sha256": "580ff8b0c8e15a9444a910b894daaf44bb651226446aa1989e2143e09e539fd0"
+    },
+    "ui/lang/cs-CZ.po": {
+      "size": 68280,
+      "sha256": "cf6e38140240f98de203488289b2b79b74a771f3901d7720ef47aa8b5cf51b1e"
+    },
+    "ui/lang/da-DK.po": {
+      "size": 67070,
+      "sha256": "b861cb0504fd14f57c1a157bbad0be0f44863b45fad998f59140df2502405ea5"
+    },
+    "ui/lang/de-DE.po": {
+      "size": 68897,
+      "sha256": "5304fac6266578bbf4e0c4ab4c6f18d76d9243ccdfda1981ec34044b8b448ee2"
+    },
+    "ui/lang/el-GR.po": {
+      "size": 84147,
+      "sha256": "20dc82fad3f3df42b526b335e71d2e1528a6f498b8dda20ad8dda2067e23a2da"
+    },
+    "ui/lang/es-419.po": {
+      "size": 68857,
+      "sha256": "24f0b72ec7d33b1384557d44d59b0c87064205250f92246ba46052e85a8ceb34"
+    },
+    "ui/lang/es-ES.po": {
+      "size": 68943,
+      "sha256": "bca2ba01ac22e410a1d2657b16854a9110b4c70c4c4c5ad5b7d63ef4e467c84b"
+    },
+    "ui/lang/fi-FI.po": {
+      "size": 68400,
+      "sha256": "6fe16b6883e5215f41f1721352b1f4a3341f738e5c2b33071e03131802a3bf1c"
+    },
+    "ui/lang/fr-CA.po": {
+      "size": 69868,
+      "sha256": "ae7a524a6ddb8b0ed5a0f32ae3a6944c08817daa43a724ae1c13cf46b6dadb6e"
+    },
+    "ui/lang/fr-FR.po": {
+      "size": 69850,
+      "sha256": "d8499b6366fd70674fb93f6d8bdf22d4d2aac2fe7b2365baa6b4442fa236cc14"
+    },
+    "ui/lang/hu-HU.po": {
+      "size": 69560,
+      "sha256": "b5087b330ffd0b59f11a8481fa00a7b47d4b5229ace24a1ec725762b76ed3e7c"
+    },
+    "ui/lang/id-ID.po": {
+      "size": 67312,
+      "sha256": "d6407f0f3fcece78bd2e4fb10b62031d40bfd215b1084d176cae58c49904b812"
+    },
+    "ui/lang/it-IT.po": {
+      "size": 68641,
+      "sha256": "a4fff91c761b48f3ef622a6adcea3d7cf15a0874eb76229f172824b2fa0f1bbc"
+    },
+    "ui/lang/ja-JP.po": {
+      "size": 75058,
+      "sha256": "ab4e6c4b78c7168dd4ca2d9c24bf48a2488c718738f87629577a2d3e565096d4"
+    },
+    "ui/lang/ko-KR.po": {
+      "size": 70889,
+      "sha256": "107ad61e43aa5c9c934793e2b4bee3acfff8d48d1bdaa608927e2de2eb689db1"
+    },
+    "ui/lang/ms-MY.po": {
+      "size": 67935,
+      "sha256": "2d5ed90e43482dc79c9733239d16176b03095c8236349e68d8cd1e3bd1c07ffb"
+    },
+    "ui/lang/nb-NO.po": {
+      "size": 66950,
+      "sha256": "5cf899a7be8b176c1ca9ada177312be60116f04016f649f8b1cedfb3b9f3d0ca"
+    },
+    "ui/lang/nl-NL.po": {
+      "size": 68212,
+      "sha256": "c7d86a9874065e18b9cbe25ab1575f243cc44309e4c2301be3512ef958dd629e"
+    },
+    "ui/lang/pl-PL.po": {
+      "size": 67931,
+      "sha256": "985515d0653ec5e91a7e6444c3ed350fcdc96afc56e555fd51bc6cce77e434f0"
+    },
+    "ui/lang/pt-BR.po": {
+      "size": 68433,
+      "sha256": "3cba0d5a6122575587c3f011eaa95771dea8f755b7717b58f73eb0545b15454b"
+    },
+    "ui/lang/pt-PT.po": {
+      "size": 69026,
+      "sha256": "d4b8f67705319238b03e882a7e3ac3fde9d022a0ba0bb6542380da841a14d337"
+    },
+    "ui/lang/ro-RO.po": {
+      "size": 68619,
+      "sha256": "1bcff8317940f2ab6b043620f220370d2a4c5de98b10e50f999478122ad4cd6e"
+    },
+    "ui/lang/ru-RU.po": {
+      "size": 79661,
+      "sha256": "d52beb2357a99db35de4faf29f41a3fd64e9eb005ab3f8a05e709d664428745d"
+    },
+    "ui/lang/sv-SE.po": {
+      "size": 67443,
+      "sha256": "1c7eaedb572d138ac04e91190828decf03805e329c46c46d2c6092ecfd3683f2"
+    },
+    "ui/lang/th-TH.po": {
+      "size": 92138,
+      "sha256": "591667747d58b52f6468c8e60f2b34de917d1ed07bf8cd8826009e7a8afeec48"
+    },
+    "ui/lang/tr-TR.po": {
+      "size": 68562,
+      "sha256": "8500f73d2eea55b937310729ffe16b165f00f4518140c177eba28d9aa8a3ee1a"
+    },
+    "ui/lang/uk-UA.po": {
+      "size": 79925,
+      "sha256": "c07518536eb1c7d9eef1af618a2cd1f2f41de783510ea718cbc4aabd9f3bd1e8"
+    },
+    "ui/lang/vi-VN.po": {
+      "size": 71686,
+      "sha256": "7abb038466ff7f2150c48ebf0410a4f28baf995a855e4676d0e6ce41c92a4dd4"
+    },
+    "ui/lang/zh-Hans.po": {
+      "size": 66170,
+      "sha256": "8c6d6a8eb5636a55fe0773290ffd3956d6a5972a76fcc3af99203e0046fc0a06"
+    },
+    "ui/lang/zh-Hant.po": {
+      "size": 66449,
+      "sha256": "0ee1ce8694bd0847aca536f6c066e83e416c53219b0829bcf812d44bc470dde7"
+    },
+    "ui/sounds/back_01.wav": {
+      "size": 19244,
+      "sha256": "132a55c945c7a3f17d52ccd513c8f162508a301cbcdca1c3bea376af7e06d8b9"
+    },
+    "ui/sounds/error_01.wav": {
+      "size": 26924,
+      "sha256": "ab0fe700bb8d245f5e42ea2484045908c39971459aafeb985c7413caa30fcf85"
+    },
+    "ui/sounds/focus_01.wav": {
+      "size": 4844,
+      "sha256": "00a07b88a4a3b9349dd306e6f75e06760f293e2ee89ca437b2513f45cdeb6812"
+    },
+    "ui/sounds/focus_02.wav": {
+      "size": 4844,
+      "sha256": "8675f6e70ed8c0a446f5899da100e0be92aa43fc7ab8d93bfa010716c24445ca"
+    },
+    "ui/sounds/launch_01.wav": {
+      "size": 245804,
+      "sha256": "eae4ba7af91695850c7f031eeed0a01807d9ed1dca063fdca5a7df03e97870cd"
+    },
+    "ui/sounds/modal_close_01.wav": {
+      "size": 29680,
+      "sha256": "001e43366472ebf77f105e1cf7a163f87180f7b1afa288740ab55187467ca436"
+    },
+    "ui/sounds/modal_open_01.wav": {
+      "size": 33644,
+      "sha256": "65335418c229edb7e8e9483a427763d0055152c9b9f0ffbf75a49771592c167d"
+    },
+    "ui/sounds/notify_01.wav": {
+      "size": 145028,
+      "sha256": "e9fd1bd98879ed2eb7746714411a4c499a7e8b8c5eda704e316eca40230e160f"
+    },
+    "ui/sounds/open_01.wav": {
+      "size": 86444,
+      "sha256": "fbbd480d7530d050debe3735ae1ac7a06e75d6b51387c780e2a1649c9c2bba26"
+    },
+    "ui/sounds/page_01.wav": {
+      "size": 21164,
+      "sha256": "78e9228799ea0fa67f1bc921242c635efd524faaf66cb035e0e9211497bbe22c"
+    },
+    "ui/sounds/resume_01.wav": {
+      "size": 192044,
+      "sha256": "193a9d27b322941c578a307a76da7ffdcfeaff31f42aa054a7c52e59eda0e5ee"
+    },
+    "ui/sounds/saved_01.wav": {
+      "size": 153644,
+      "sha256": "273d07c2f504fe74d8d1ef09a0c3c8adaa8fead462ab5541b3db1b5816ec81c5"
+    },
+    "ui/sounds/select_01.wav": {
+      "size": 19244,
+      "sha256": "13ef90300db8b7ced7725c443103e97f8eaf3625903a35a869190c70bd35a6f4"
+    },
+    "ui/sounds/slider_01.wav": {
+      "size": 5804,
+      "sha256": "0337f6f0b9ea012fcf96de9f1d4d0223ccbd677b762c3ab4d686e0433014ba37"
+    },
+    "ui/sounds/slider_02.wav": {
+      "size": 5804,
+      "sha256": "9768ba4e468987e34b26d32557136e34884811745fe9fca0a976bbae102010a4"
+    },
+    "ui/sounds/slider_03.wav": {
+      "size": 5804,
+      "sha256": "bdc28efb13a367231a57f3b306795ddc57f20bd63f21c9afabdda3383c8cd489"
+    },
+    "ui/sounds/toggle_01.wav": {
+      "size": 5324,
+      "sha256": "0be4d732524d0b58840b2912424ead4b3d137134e53f4ef8c2e6da6aa919a93d"
+    },
+    "ui/sounds/toggle_02.wav": {
+      "size": 5324,
+      "sha256": "1647840bf2e0c6b2febeb527c5b8535f3c0d6b5cc9d2745b7433c9f9cc9aa2d9"
+    },
+    "ui/sounds/toggle_03.wav": {
+      "size": 5324,
+      "sha256": "1d544bc5f27b5e86ee7fecbff126c4f9690e69c5f34e306344c7a3ddc2997064"
+    },
+    "ui/sounds/welcome_01.wav": {
+      "size": 258192,
+      "sha256": "d18fb8de1123437622a7c3926ffc42df9385022002b377742fc75b2a88564c59"
+    }
+  }
+}

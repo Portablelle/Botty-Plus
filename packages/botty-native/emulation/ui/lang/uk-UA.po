@@ -66,6 +66,10 @@ msgstr "Лишилося близько {0} хв"
 msgid "About {0} s left"
 msgstr "Лишилося близько {0} с"
 
+#: pe/ui/settings.cpp
+msgid "Above 100%, a game locked to 30 FPS can reach 60, and a game that counts its frames plays faster too."
+msgstr "Понад 100% гра, обмежена 30 FPS, може досягти 60, а гра, що рахує свої кадри, теж іде швидше."
+
 #. Label: which folders the app can read.
 #: pe/ui/browse.cpp
 msgid "ACCESS"
@@ -87,6 +91,10 @@ msgstr "Додано до завантажень. Чергу показано в
 #: pe/ui/profiles.cpp
 msgid "Added. Cross plays as this profile; left and right change its name."
 msgstr "Додано. Хрестик — грати цим профілем; ліворуч і праворуч змінюють назву."
+
+#: pe/ui/library.cpp
+msgid "All cheats"
+msgstr "Усі чити"
 
 #: pe/ui/browse.cpp
 msgid "All credit for the Eden emulator goes to its developers and contributors."
@@ -227,9 +235,14 @@ msgid "Changed"
 msgstr "Змінено"
 
 #. What a mod is made of: cheat codes.
-#: eden_services.cpp, host/fake_services.cpp
+#: eden_services.cpp, host/fake_services.cpp, pe/ui/library.cpp
 msgid "Cheats"
 msgstr "Чити"
+
+#. Shown under a cheat that came from the game's cheats folder (not from a mod).
+#: pe/ui/library.cpp
+msgid "Cheats folder"
+msgstr "Папка читів"
 
 #: pe/ui/pairing.cpp
 msgid "Check that the code there is this one, and approve."
@@ -1093,6 +1106,15 @@ msgstr "Псевдонім"
 msgid "Nickname: {0}"
 msgstr "Псевдонім: {0}"
 
+#: pe/ui/library.cpp
+msgid "No cheats"
+msgstr "Немає читів"
+
+#. <build ID>.txt stays as it is: a cheat file is named after the game version's build ID. {0} is a folder such as roms/Game/cheats/.
+#: pe/ui/library.cpp
+msgid "No cheats for this game yet. Copy its cheat files (<build ID>.txt) to {0}."
+msgstr "Для цієї гри ще немає читів. Скопіюйте її файли читів (<build ID>.txt) до {0}."
+
 #: pe/ui/remote.cpp
 msgid "No download source is set up. Save a file named {0} that lists your sources, as this one does with a RomM server, then open this menu again. Downloads need an FTP server running on the console, on port {1}."
 msgstr "Джерело завантажень не налаштовано. Збережіть файл із назвою {0} з переліком ваших джерел, як у цьому прикладі із сервером RomM, і відкрийте це меню знову. Для завантажень потрібен FTP-сервер, запущений на консолі, на порту {1}."
@@ -1118,10 +1140,9 @@ msgstr "Тут немає папок."
 msgid "No mods"
 msgstr "Немає модів"
 
-#. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
-msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
-msgstr "Для цієї гри ще немає модів. Скопіюйте папку кожного мода до {0}, поруч із roms/."
+msgid "No mods for this game yet. Copy each mod's folder to {0}."
+msgstr "Для цієї гри ще немає модів. Скопіюйте папку кожного мода до {0}."
 
 #: pe/ui/multiplayer.cpp
 msgid "No public rooms are available."
@@ -1622,6 +1643,10 @@ msgstr "Збережено {0}. Вони замінять дані консол�
 msgid "Saved. A display that cannot show 120 Hz stays at 60 Hz."
 msgstr "Збережено. Екран без підтримки 120 Гц залишиться на 60 Гц."
 
+#: pe/ui/settings.cpp
+msgid "Saved. Applies the next time ProsperoEden opens."
+msgstr "Збережено. Почне діяти під час наступного запуску ProsperoEden."
+
 #: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Saved. Applies when a game starts."
 msgstr "Збережено. Застосується під час запуску гри."
@@ -1638,6 +1663,11 @@ msgstr "Збережено. Для постобробки потрібен ре�
 #: pe/ui/browse.cpp
 msgid "Saved. Reopen ProsperoEden to use this folder."
 msgstr "Збережено. Перезапустіть ProsperoEden, щоб використовувати цю папку."
+
+#. About the Update notices switch; homebrew.page is a site's name and stays as it is; About is the menu's last section (use its translation).
+#: pe/ui/settings.cpp
+msgid "Says when homebrew.page has a newer version. Off, only About names it."
+msgstr "Повідомляє, коли на homebrew.page є новіша версія. Якщо вимкнено, її називає лише розділ «Про програму»."
 
 #: pe/ui/pairing.cpp
 msgid "Scan the code with your phone, or open the address below."
@@ -1757,6 +1787,11 @@ msgstr "Іспанська (Латинська Америка)"
 #: pe/ui/settings.cpp
 msgid "Speed"
 msgstr "Швидкість"
+
+#. Settings > Performance: how fast a game may run, as a percentage of the console it was made for.
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Speed limit"
+msgstr "Обмеження швидкості"
 
 #. A DualSense button.
 #: pe/ui/game_options.cpp
@@ -2009,6 +2044,11 @@ msgstr "Недоступно"
 msgid "Understood"
 msgstr "Зрозуміло"
 
+#. A Speed limit choice: no limit at all (as fast as the console can).
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Unlimited"
+msgstr "Без обмеження"
+
 #: pe/ui/pairing.cpp
 msgid "Unlink"
 msgstr "Відв'язати"
@@ -2031,6 +2071,11 @@ msgstr "ВГОРУ"
 #: pe/ui/launcher.cpp, pe/ui/update.cpp
 msgid "Update available"
 msgstr "Доступне оновлення"
+
+#. Settings switch: whether the app says at its start that a newer release of this app is listed (not game updates).
+#: pe/ui/settings.cpp
+msgid "Update notices"
+msgstr "Сповіщення про оновлення"
 
 #. Button: download and install the newer release of this app now.
 #: pe/ui/update.cpp
@@ -2076,7 +2121,7 @@ msgid "Version {0}"
 msgstr "Версія {0}"
 
 #. {0}: the newer release's number, for example 1.000.050; homebrew.page is a site's name and stays as it is.
-#: pe/ui/launcher.cpp
+#: pe/ui/browse.cpp, pe/ui/launcher.cpp
 msgid "Version {0} is on homebrew.page"
 msgstr "Версія {0} є на homebrew.page"
 

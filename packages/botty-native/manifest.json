@@ -2,15 +2,15 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "02.000.000",
-  "releaseVersion": "2.0.0",
+  "version": "02.000.001",
+  "releaseVersion": "2.0.1",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
   "identityStatus": "provisional-until-console-inventory",
   "readOnly": false,
   "requires": {
-    "manager": "1.10.4",
+    "manager": "1.10.5",
     "worker": "1.3.1",
     "rtorrent": "0.16.24-botty5",
     "apiVersion": 1
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "605228b545e8800b5f2660b41ccd8b50f01e296e7e28ef017f6973a981a664d5"
+      "sha256": "923e4923bd2ba8cc96cb32139f4881f22cc9ec91aa9b1a62b7acd12d15953339"
     },
     {
       "path": "assets/courier.rgba",
@@ -54,7 +54,12 @@
     {
       "path": "eboot.bin",
       "size": 33262524,
-      "sha256": "45aa4aa8bf6e5bcac8db733160bce3a2d5cf5715fbdc4ad56957af13c82cc8d9"
+      "sha256": "c28d0155bd7edb018c46f7d8da27a835f469fb07be9b4b0977fd1b0ed5d613b1"
+    },
+    {
+      "path": "emulation/botty-engine.json",
+      "size": 17247,
+      "sha256": "1340a5f5aabd1d84a2dd4f7523c007251922687b7aac20d2c01e1564d6bf8d85"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -63,18 +68,18 @@
     },
     {
       "path": "emulation/eboot.bin",
-      "size": 75426782,
-      "sha256": "7d1a01dfa7b1ea8fb49b006ca818c98289592e10ae6f11eb322a72b2b261fbae"
+      "size": 75704270,
+      "sha256": "aeb30bd2fe7bfc59d83ad1ad067701dddc4388eb1c49cd4765946a9ec600b735"
     },
     {
       "path": "emulation/lapy-manifest.json",
       "size": 608,
-      "sha256": "a59cbd8708b1301e5bb03daf426347d020bfe0935c84565041ff925f6a9d3450"
+      "sha256": "093709406dce58246659593bf5f23d561bf69ba024ffa0248bb1beacec430469"
     },
     {
       "path": "emulation/lapy.elf",
       "size": 155224,
-      "sha256": "3a6144710cc54d1577acfcaafb833b916cccadd56615ff02eba19372e849b123"
+      "sha256": "553f1e1c06fe3b3f173affa7099955eb1d57254fa259b3eec224034c245dceb2"
     },
     {
       "path": "emulation/launcher-runtime.json",
@@ -92,6 +97,11 @@
       "sha256": "41f82bb4d24b304f30f7136bc47abdd083782e4265c984160f5649d1e78ea49c"
     },
     {
+      "path": "emulation/mihawkgen/network.fgw",
+      "size": 1757240,
+      "sha256": "31ecc7d69af1e9defd62b9abad71bc3430cd8a0a4d2f4eafcabaafa48c34bf6b"
+    },
+    {
       "path": "emulation/sce_module/libc.prx",
       "size": 1284674,
       "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
@@ -104,7 +114,7 @@
     {
       "path": "emulation/sce_sys/param.json",
       "size": 903,
-      "sha256": "ae1e0cb59ac57afc6d398f47c41bbe9fd23b303af9b0e02f1356ef21dd6b8a26"
+      "sha256": "9a74127c720906010cd9a759560d3000da5bde4e2caf39306ba5626fb28a0e5e"
     },
     {
       "path": "emulation/sce_sys/pic0.dds",
@@ -163,153 +173,153 @@
     },
     {
       "path": "emulation/ui/lang/ar.po",
-      "size": 73700,
-      "sha256": "ef018d7e809d63c74b9577bb45e19dfc2f41ae02c70de61817fce9f4bbb6a23f"
+      "size": 75809,
+      "sha256": "580ff8b0c8e15a9444a910b894daaf44bb651226446aa1989e2143e09e539fd0"
     },
     {
       "path": "emulation/ui/lang/cs-CZ.po",
-      "size": 66399,
-      "sha256": "ba6e70b4100b5b798dad917980ce42b30e0d90681a9c5f1c6dffaf47ae9c751d"
+      "size": 68280,
+      "sha256": "cf6e38140240f98de203488289b2b79b74a771f3901d7720ef47aa8b5cf51b1e"
     },
     {
       "path": "emulation/ui/lang/da-DK.po",
-      "size": 65227,
-      "sha256": "5f98a54b2b8cfff998967fd09a2f2c25dcea9f32a7db4fd0fcf463b955e1d066"
+      "size": 67070,
+      "sha256": "b861cb0504fd14f57c1a157bbad0be0f44863b45fad998f59140df2502405ea5"
     },
     {
       "path": "emulation/ui/lang/de-DE.po",
-      "size": 67046,
-      "sha256": "73fa2d09efa6b0caf24a3e9694f7acebc993a6d8904bcd083d2778d8ad9378c2"
+      "size": 68897,
+      "sha256": "5304fac6266578bbf4e0c4ab4c6f18d76d9243ccdfda1981ec34044b8b448ee2"
     },
     {
       "path": "emulation/ui/lang/el-GR.po",
-      "size": 81879,
-      "sha256": "54bfe7daea0e341e747382c9a40ecde379b847969bbb5a233b5627f761592653"
+      "size": 84147,
+      "sha256": "20dc82fad3f3df42b526b335e71d2e1528a6f498b8dda20ad8dda2067e23a2da"
     },
     {
       "path": "emulation/ui/lang/es-419.po",
-      "size": 66966,
-      "sha256": "7b3abd76f27408ce4ca6fc70b7b159f9f32fdd40d63267acedba02877720dc66"
+      "size": 68857,
+      "sha256": "24f0b72ec7d33b1384557d44d59b0c87064205250f92246ba46052e85a8ceb34"
     },
     {
       "path": "emulation/ui/lang/es-ES.po",
-      "size": 67050,
-      "sha256": "b416de84b16d2796cde3fe308ce11a373c12ca4725bf78ca7178de55c91b11c2"
+      "size": 68943,
+      "sha256": "bca2ba01ac22e410a1d2657b16854a9110b4c70c4c4c5ad5b7d63ef4e467c84b"
     },
     {
       "path": "emulation/ui/lang/fi-FI.po",
-      "size": 66523,
-      "sha256": "2d3603a65fe2739265bb621eec22ffe955f9d93c1da5336fbff7a4e2d26ba8ac"
+      "size": 68400,
+      "sha256": "6fe16b6883e5215f41f1721352b1f4a3341f738e5c2b33071e03131802a3bf1c"
     },
     {
       "path": "emulation/ui/lang/fr-CA.po",
-      "size": 67950,
-      "sha256": "e9b3b7d5dc1b82ed6f132383577233b8d788c41472bb4c6da94fec225d64fbd6"
+      "size": 69868,
+      "sha256": "ae7a524a6ddb8b0ed5a0f32ae3a6944c08817daa43a724ae1c13cf46b6dadb6e"
     },
     {
       "path": "emulation/ui/lang/fr-FR.po",
-      "size": 67932,
-      "sha256": "1cb27a97991745e18e40c513aa3656327c7a82ad441258855d65c34f4d1c7406"
+      "size": 69850,
+      "sha256": "d8499b6366fd70674fb93f6d8bdf22d4d2aac2fe7b2365baa6b4442fa236cc14"
     },
     {
       "path": "emulation/ui/lang/hu-HU.po",
-      "size": 67676,
-      "sha256": "4bd5a7262945756884cd6e5924100361439647749cd10830cc61e9a116ce8609"
+      "size": 69560,
+      "sha256": "b5087b330ffd0b59f11a8481fa00a7b47d4b5229ace24a1ec725762b76ed3e7c"
     },
     {
       "path": "emulation/ui/lang/id-ID.po",
-      "size": 65464,
-      "sha256": "3037cec408391e2d3342c4c3304aea28939ea3a7d8f9b2634b9380b23bdd6192"
+      "size": 67312,
+      "sha256": "d6407f0f3fcece78bd2e4fb10b62031d40bfd215b1084d176cae58c49904b812"
     },
     {
       "path": "emulation/ui/lang/it-IT.po",
-      "size": 66755,
-      "sha256": "4922b75153aeafff62a7f8ad2b2e2e5c80bf253c5ff85f8a6f32bbfe26e43373"
+      "size": 68641,
+      "sha256": "a4fff91c761b48f3ef622a6adcea3d7cf15a0874eb76229f172824b2fa0f1bbc"
     },
     {
       "path": "emulation/ui/lang/ja-JP.po",
-      "size": 72978,
-      "sha256": "80e4cf292f81709649870db99c7166f74e7c14393ac65418c64cdce06d14872e"
+      "size": 75058,
+      "sha256": "ab4e6c4b78c7168dd4ca2d9c24bf48a2488c718738f87629577a2d3e565096d4"
     },
     {
       "path": "emulation/ui/lang/ko-KR.po",
-      "size": 68971,
-      "sha256": "d7b34825a18cf27121ac083cade39b4bcc394c3cad2caf1e3d88c2af232690bc"
+      "size": 70889,
+      "sha256": "107ad61e43aa5c9c934793e2b4bee3acfff8d48d1bdaa608927e2de2eb689db1"
     },
     {
       "path": "emulation/ui/lang/ms-MY.po",
-      "size": 66079,
-      "sha256": "17f5c20b519207014207718fc3d76372bc27a732bac52f3b4a163d00a1f8c4e6"
+      "size": 67935,
+      "sha256": "2d5ed90e43482dc79c9733239d16176b03095c8236349e68d8cd1e3bd1c07ffb"
     },
     {
       "path": "emulation/ui/lang/nb-NO.po",
-      "size": 65126,
-      "sha256": "70fb259ae42859fed8a2ce77945cc2c1c202962b4648a1f3d444a9998ffade82"
+      "size": 66950,
+      "sha256": "5cf899a7be8b176c1ca9ada177312be60116f04016f649f8b1cedfb3b9f3d0ca"
     },
     {
       "path": "emulation/ui/lang/nl-NL.po",
-      "size": 66389,
-      "sha256": "5621abb2a06e38edf78e2f45b6f007c79ea8108408433cd68526b3eeb608be3f"
+      "size": 68212,
+      "sha256": "c7d86a9874065e18b9cbe25ab1575f243cc44309e4c2301be3512ef958dd629e"
     },
     {
       "path": "emulation/ui/lang/pl-PL.po",
-      "size": 66049,
-      "sha256": "dcf0534e8638b8d8de879eb72f76df40c4a1b7ee472213ee36f287d711c0c261"
+      "size": 67931,
+      "sha256": "985515d0653ec5e91a7e6444c3ed350fcdc96afc56e555fd51bc6cce77e434f0"
     },
     {
       "path": "emulation/ui/lang/pt-BR.po",
-      "size": 66559,
-      "sha256": "6af5d59d7b459980fb4264313bd70b1ffc6317aae34051593dbdd08e14d20642"
+      "size": 68433,
+      "sha256": "3cba0d5a6122575587c3f011eaa95771dea8f755b7717b58f73eb0545b15454b"
     },
     {
       "path": "emulation/ui/lang/pt-PT.po",
-      "size": 67138,
-      "sha256": "a10e5517ba2177857b435bfe8d131ebff3fc8e67b00f058a740bb7897fb9ca07"
+      "size": 69026,
+      "sha256": "d4b8f67705319238b03e882a7e3ac3fde9d022a0ba0bb6542380da841a14d337"
     },
     {
       "path": "emulation/ui/lang/ro-RO.po",
-      "size": 66738,
-      "sha256": "e41d639cab22c358d2935c5f39b5a8a6d0b77a0bd4985a9d3d10ee6a1cbfe07f"
+      "size": 68619,
+      "sha256": "1bcff8317940f2ab6b043620f220370d2a4c5de98b10e50f999478122ad4cd6e"
     },
     {
       "path": "emulation/ui/lang/ru-RU.po",
-      "size": 77479,
-      "sha256": "727eb3fc44a50083a4f98c79a19dc37145257cc31a6c1bdd980fce237bfab21e"
+      "size": 79661,
+      "sha256": "d52beb2357a99db35de4faf29f41a3fd64e9eb005ab3f8a05e709d664428745d"
     },
     {
       "path": "emulation/ui/lang/sv-SE.po",
-      "size": 65622,
-      "sha256": "add7e8c84d82cbc27aa8d96941071f7834998c3bfe825ea58eaffb559be1bcca"
+      "size": 67443,
+      "sha256": "1c7eaedb572d138ac04e91190828decf03805e329c46c46d2c6092ecfd3683f2"
     },
     {
       "path": "emulation/ui/lang/th-TH.po",
-      "size": 89590,
-      "sha256": "1824a600631def34bf309a6d5b63d7a856500057068dd7e9ef51eeea6a96a59e"
+      "size": 92138,
+      "sha256": "591667747d58b52f6468c8e60f2b34de917d1ed07bf8cd8826009e7a8afeec48"
     },
     {
       "path": "emulation/ui/lang/tr-TR.po",
-      "size": 66694,
-      "sha256": "721362c9a225c9d842c766c8665a0898fdbca97b839e6adfd44a2725be6404c8"
+      "size": 68562,
+      "sha256": "8500f73d2eea55b937310729ffe16b165f00f4518140c177eba28d9aa8a3ee1a"
     },
     {
       "path": "emulation/ui/lang/uk-UA.po",
-      "size": 77791,
-      "sha256": "1f0bf973161f2c87e17174206980e56850e6c1c2b6efbcaefcdc4325df3c7361"
+      "size": 79925,
+      "sha256": "c07518536eb1c7d9eef1af618a2cd1f2f41de783510ea718cbc4aabd9f3bd1e8"
     },
     {
       "path": "emulation/ui/lang/vi-VN.po",
-      "size": 69701,
-      "sha256": "ef5a081ce9a31cbcb02ab9b60ca2a23b1aec93899d67bc40c9bc7a33729e1653"
+      "size": 71686,
+      "sha256": "7abb038466ff7f2150c48ebf0410a4f28baf995a855e4676d0e6ce41c92a4dd4"
     },
     {
       "path": "emulation/ui/lang/zh-Hans.po",
-      "size": 64342,
-      "sha256": "21eb95062a2e72a5177aa030e7d8ea975cc74a18b4261d9464fd4c9e032cccc8"
+      "size": 66170,
+      "sha256": "8c6d6a8eb5636a55fe0773290ffd3956d6a5972a76fcc3af99203e0046fc0a06"
     },
     {
       "path": "emulation/ui/lang/zh-Hant.po",
-      "size": 64621,
-      "sha256": "c533e1f11a3433ff6b2f7ad5ba0a4ec4fef158f6ea7ca683ab799f6eddeb164f"
+      "size": 66449,
+      "sha256": "0ee1ce8694bd0847aca536f6c066e83e416c53219b0829bcf812d44bc470dde7"
     },
     {
       "path": "emulation/ui/sounds/back_01.wav",
@@ -443,8 +453,8 @@
     },
     {
       "path": "emulation-runtime.json",
-      "size": 411,
-      "sha256": "88c2ef2f6edb5de8ff0e9c940ceaddea2ad2f09c502de62b1ddc76dcf488f033"
+      "size": 673,
+      "sha256": "fe41fcc1f34da5ae89038d4e30e80f633a5703c535746772400ff743b89eadbc"
     },
     {
       "path": "sce_module/libc.prx",
@@ -459,7 +469,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 903,
-      "sha256": "e1f57cd04902e9461c92c4d232e4247dbec757762ed993c43ab01cfc2cb428a1"
+      "sha256": "9f85169c7569fd98f87ba49079b671b56e76d5a920c934339cdfe437ebfd887e"
     },
     {
       "path": "sce_sys/pic0.dds",

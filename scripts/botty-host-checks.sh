@@ -74,6 +74,8 @@ run_check "Release packages" python3 scripts/botty-packages.py --check
 run_check "Repository contracts" python3 -m unittest discover -s tests -p 'test_*.py' -v
 run_check "Source archive parts" python3 -m unittest discover -s scripts -p test_source_parts.py -v
 run_check "Engine source provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_sources.py -v
+run_check "Engine package provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_provenance.py -v
+run_check "Engine assembly" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_assembly.py -v
 run_check "Archive fixtures" python3 homebrew/botty/tests/make_fixtures.py
 run_check "Rest companion protocol" make -C homebrew/rest-mode-companion test
 run_check "Service UI" node homebrew/botty/tests/ui-test.js
