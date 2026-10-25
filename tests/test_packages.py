@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -12,6 +13,26 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
 contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
+    def test_shipped_engine_provenance_matches_committed_sources(self):
+        engine=ROOT/'homebrew/botty-native/emulation'
+        policy=engine/'provenance.py'
+        spec=importlib.util.spec_from_file_location('engine_provenance_contract',policy)
+        provenance=importlib.util.module_from_spec(spec);spec.loader.exec_module(provenance)
+        base=ROOT/'packages/botty-native'
+        runtime=json.loads((base/'emulation-runtime.json').read_text())
+        receipt_path=base/'emulation/botty-engine.json'
+        receipt=json.loads(receipt_path.read_text())
+        patch_sha=hashlib.sha256((engine/'patches/standalone.diff').read_bytes()).hexdigest()
+        for name, record in [('runtime',runtime), ('receipt',receipt)]:
+            with self.subTest(record=name):
+                self.assertEqual(record['commit'],provenance.COMMIT)
+                self.assertEqual(record['patchSha256'],patch_sha)
+        self.assertEqual(receipt['upstream'],provenance.REPOSITORY)
+        self.assertEqual(receipt['sourceFiles']['tools/botty-provenance.py'],
+                         hashlib.sha256(policy.read_bytes()).hexdigest())
+        self.assertEqual(runtime['provenanceSha256'],
+                         hashlib.sha256(receipt_path.read_bytes()).hexdigest())
+
     def test_service_engine_inventory_matches_the_pinned_native_package(self):
         engine=json.loads((ROOT/'homebrew/botty-native/emulation/runtime-files.json').read_text())
         header=(ROOT/'homebrew/botty/src/emulation-runtime-files.hpp').read_text()

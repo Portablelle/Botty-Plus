@@ -11,6 +11,20 @@ from release_sources import source_archive
 from source_parts import publish
 
 
+def checked_source_names(source, runtime_root, manifest):
+    if not any(f['path'] == 'emulation-runtime.json' for f in manifest['files']):
+        return []
+    engine_sources = source / 'build/emulation-source.tar.gz'
+    if not engine_sources.is_file():
+        raise RuntimeError('Build emulation-source.tar.gz before distributing the embedded engine')
+    runtime = json.loads((runtime_root / 'emulation-runtime.json').read_text())
+    with engine_sources.open('rb') as stream:
+        sources_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if sources_sha != runtime.get('sourcesSha256'):
+        raise RuntimeError('Corresponding sources do not match the packaged engine; rebuild sources and assemble together')
+    return ['build/emulation-source.tar.gz']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-only', action='store_true')
@@ -28,8 +42,7 @@ def main():
         manifest = dist / 'manifest.json'
         target_manifest = json.loads(manifest.read_text())
         target_names = {item['path'] for item in target_manifest['files']}
-        if 'emulation-runtime.json' in target_names and not (source / 'build/emulation-source.tar.gz').is_file():
-            raise RuntimeError('Build emulation-source.tar.gz before distributing the embedded engine')
+        source_names = checked_source_names(source, dist / expected['titleId'], target_manifest)
         removed = []
         if (out / 'manifest.json').is_file():
             for item in json.loads((out / 'manifest.json').read_text())['files']:
@@ -53,18 +66,9 @@ def main():
         shutil.copyfile(manifest, out / 'manifest.json')
         digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
         print('Native manifest:', digest)
-    source_names = []
-    current_manifest = json.loads((out / 'manifest.json').read_text())
-    if any(f['path'] == 'emulation-runtime.json' for f in current_manifest['files']):
-        engine_sources = source / 'build/emulation-source.tar.gz'
-        if not engine_sources.is_file():
-            raise RuntimeError('Build emulation-source.tar.gz before distributing the embedded engine')
-        runtime = json.loads((out / 'emulation-runtime.json').read_text())
-        with engine_sources.open('rb') as stream:
-            sources_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if sources_sha != runtime.get('sourcesSha256'):
-            raise RuntimeError('Corresponding sources do not match the packaged engine; rebuild sources and assemble together')
-        source_names.append('build/emulation-source.tar.gz')
+    else:
+        current_manifest = json.loads((out / 'manifest.json').read_text())
+        source_names = checked_source_names(source, out, current_manifest)
     source_archive(source, out / 'botty-native-source.tar.gz',
                    ['src', 'assets', 'sce_sys', 'vendor', 'tests', 'tools', 'artwork', 'emulation',
                     'Dockerfile', 'Makefile', 'BUILD-ENVIRONMENT.json', 'README.md',
