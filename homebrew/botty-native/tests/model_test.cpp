@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "model.hpp"
 #include "probe.hpp"
+#include "home_launch.hpp"
 #include "platform.hpp"
 #include <algorithm>
 #include <cassert>
@@ -507,7 +508,7 @@ int main() {
         assert(emulator.press(Buttons::cross)==Model::Action::emulationGame);
         assert(emulator.press(Buttons::options)==Model::Action::none);
         emulator.filter=0;
-        assert(emulator.press(Buttons::options)==Model::Action::emulationGameConfig);
+        assert(emulator.press(Buttons::options)==Model::Action::menu);
         emulator.press(Buttons::r1);assert(emulator.tab==Model::config);
         assert(emulator.press(Buttons::cross)==Model::Action::emulationConfig);
         emulator.press(Buttons::r1);assert(emulator.tab==Model::system);
@@ -516,6 +517,30 @@ int main() {
         assert(encodeCommand(command,payload,sizeof(payload),bytes));
         assert(std::string(payload).find("\"kind\":\"auto\"")!=std::string::npos);
         assert(std::string(actionPath(command.operation))=="/api/emulation/import");
+        assert(emulationHomeResponse(R"({"ok":true,"titleId":"PPSA99270","existing":false})"));
+        assert(!emulationHomeResponse(R"({"ok":true,"titleId":"PPSA99071","existing":false})"));
+        assert(!emulationHomeResponse(R"({"ok":true,"titleId":"PPSA99270"})"));
+        assert(!emulationHomeResponse(R"({"ok":false,"titleId":"PPSA99270","existing":false})"));
+        command.operation=Operation::emulationHome;
+        assert(encodeCommand(command,payload,sizeof(payload),bytes));
+        assert(std::string(payload)=="{\"id\":\""+std::string(64,'a')+"\"}");
+        assert(std::string(actionPath(command.operation))=="/api/emulation/home");
+        assert(std::string(unavailable(command.operation,emulationAt(*edenCatalog,0,0),*edenCatalog)).find("Update Botty")!=std::string::npos);
+        edenCatalog->emulationHomeSupported=true;edenCatalog->valid=true;edenCatalog->stale=false;
+        Workflow menu;menu.open(emulationAt(*edenCatalog,0,0),3,*edenCatalog);
+        assert(menu.optionCount==2&&menu.target(*edenCatalog)==emulationAt(*edenCatalog,0,0));
+        assert(menu.choose(Operation::emulationHome,*edenCatalog,false));
+        assert(menu.command.operation==Operation::emulationHome&&menu.command.id==command.id);
+        auto& game=edenCatalog->emulationEntries[0];std::strcpy(game.homeTitleId.data(),"PPSA99270");
+        assert(*unavailable(Operation::emulationHome,&game,*edenCatalog));
+        char app[]="Botty",flag[]="--botty-home-game",bad[]="../../escape";
+        std::string identity(64,'a');char* args[]={app,flag,identity.data()};Command startup;
+        assert(parseHomeLaunch(3,args,startup)==HomeLaunch::valid&&startup.operation==Operation::emulationLaunch&&startup.id==command.id);
+        assert(parseHomeLaunch(2,args+1,startup)==HomeLaunch::valid);
+        assert(parseHomeLaunch(1,args,startup)==HomeLaunch::none);
+        assert(parseHomeLaunch(1,args+1,startup)==HomeLaunch::invalid);
+        char* invalid[]={flag,bad};assert(parseHomeLaunch(2,invalid,startup)==HomeLaunch::invalid);
+        identity[0]='G';assert(parseHomeLaunch(3,args,startup)==HomeLaunch::invalid);
         command.operation=Operation::emulationConfigure;
         assert(encodeCommand(command,payload,sizeof(payload),bytes));
         assert(std::string(payload)=="{\"id\":\""+std::string(64,'a')+"\"}");

@@ -1,10 +1,10 @@
-#include <cstring>
 // Botty+. SPDX-License-Identifier: GPL-3.0-or-later
 #include "renderer.hpp"
 #include "model.hpp"
 #include "probe.hpp"
 #include "platform.hpp"
 #include "keyboard.hpp"
+#include "home_launch.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -395,6 +395,8 @@ void pipeline(Canvas& c,int x,int box,unsigned size,unsigned lineHeight,unsigned
 
 const char* explain(Op op,const botty::Entry* e) noexcept {
     switch(op){
+    case Op::emulationHome:return "Creates a home-screen tile for this game. Close Botty+ to let ShadowMount register it. The game and saves stay in Emulation.";
+    case Op::emulationConfigure:return "Opens this game's emulator settings.";
     case Op::pause:return "Pauses this download. Resume it at any time.";
     case Op::resume:return "Resumes this download where it stopped.";
     case Op::verify:return "rTorrent rechecks downloaded pieces. Extraction waits until verification finishes.";
@@ -454,6 +456,11 @@ void resultToast(const botty::ActionResult& result) noexcept {
 bool quietRequest=false,updateSubmitting=false,exitRequested=false;
 std::array<char,4096> emulationLaunchPath{};
 bool emulationConfiguration=false;
+int launchEmulation(const char* path,bool configuration) noexcept {
+    const char* gameArgs[]={"--rom",path,configuration?"--botty-config":"--exit-after-game",nullptr};
+    const char* configArgs[]={"--botty-config",nullptr};
+    return sceSystemServiceLoadExec("/app0/emulation/eboot.bin",path&&*path?gameArgs:configArgs);
+}
 void consume(const botty::ActionResult& received) noexcept {
     actionResult=received;++displayRevision;
     const bool success=received.status==botty::ActionResult::Status::success;
@@ -1064,7 +1071,7 @@ void drawSheet(Canvas& c) noexcept {
         botty::formatBytes(workflow.sources[0].size,size,sizeof(size));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 search result",size);
     }else if(op==Op::add){name="Magnet link";std::snprintf(line1,sizeof(line1),"Added from a link you entered");}
     else if(target){
-        cover=artworkId(*target,workflow.targetTab==0?'t':'j');botty::formatBytes(target->total,size,sizeof(size));
+        cover=artworkId(*target,workflow.targetTab==3?'m':workflow.targetTab==0?'t':'j');botty::formatBytes(target->total,size,sizeof(size));
         if(op==Op::extract)std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 %u file%s",size,target->fileCount,target->fileCount==1?"":"s");
         else {char where[96];storageName(target->storage.data(),where,sizeof(where));std::snprintf(line1,sizeof(line1),"%s \xc2\xb7 now on %s",size,where);}
     }
@@ -1178,9 +1185,10 @@ void drawMenu(Canvas& c) noexcept {
     const auto* target=workflow.target(catalog);
     std::array<char,96> cover{};char line1[192]{},line2[192]{};
     if(target){
-        cover=artworkId(*target,workflow.targetTab==0?'t':'j');
+        cover=artworkId(*target,workflow.targetTab==3?'m':workflow.targetTab==0?'t':'j');
         char size[48];botty::formatBytes(target->total,size,sizeof(size));
-        if(workflow.targetTab==2){
+        if(workflow.targetTab==3){std::snprintf(line1,sizeof(line1),"Nintendo Switch");std::snprintf(line2,sizeof(line2),"%s",target->homeTitleId[0]?"Added to PS5 Home":size);}
+        else if(workflow.targetTab==2){
             std::array<botty::LibraryCopy,2> copies{};const unsigned n=botty::libraryCopies(*target,copies);
             for(unsigned i=0;i<n;++i){char where[96];storageName(copies[i].storage,where,sizeof(where));const bool sized=!i&&target->total>0;std::snprintf(i?line2:line1,sizeof(line1),"%s \xc2\xb7 %s%s%s",copies[i].format,where,sized?" \xc2\xb7 ":"",sized?size:"");}
         }else {char where[96];storageName(target->storage.data(),where,sizeof(where));describe(*target,workflow.targetTab==0,line1,sizeof(line1));if(target->total>0)std::snprintf(line2,sizeof(line2),"%s \xc2\xb7 %s",size,where);else std::snprintf(line2,sizeof(line2),"%s",where);}
@@ -1285,13 +1293,13 @@ void drawEmulation(Canvas& c) noexcept {
             else std::snprintf(mods,sizeof(mods),"%u of %u switched on",info.modsOn,info.modCount);
             fit(c,1216,680,dlc,23,28,252,ink,bold);fit(c,1512,680,mods,23,28,272,ink,bold);
             if(info.mods[0])wrap(c,1200,740,info.mods.data(),20,26,600,3,muted);
-            else wrap(c,1200,740,"Triangle opens the update and DLC files. Options opens this game's settings.",20,26,600,3,muted);
+            else wrap(c,1200,740,"Triangle opens the update and DLC files. Options opens settings and home-screen shortcuts.",20,26,600,3,muted);
             const std::string_view path=selected->destination.data();const auto slash=path.find_last_of('/');
             fit(c,1200,850,slash==std::string_view::npos?path:botty::slice(path,slash+1,path.size()-slash-1),17,22,600,faint);
         }else wrap(c,1200,566,selected->files[0]?selected->files.data():selected->phase.data(),20,27,600,10,ink);
     }
     unsigned hx=96;
-    if(model.filter==0){hx=hint(c,hx,Glyph::cross,"Play",true);hx=hint(c,hx,Glyph::menu,"Game configuration");}
+    if(model.filter==0){hx=hint(c,hx,Glyph::cross,"Play",true);hx=hint(c,hx,Glyph::menu,"Quick actions");}
     if(model.filter==2){hx=hint(c,hx,Glyph::cross,"Analyze and import",true);}
     hx=hint(c,hx,Glyph::triangle,"Change view");hint(c,hx,Glyph::square,"Search Switch");
 }
@@ -1333,7 +1341,7 @@ void submitWorkflow() noexcept {
 
     std::array<char,96> cover{};std::string_view name=workflow.targetName.data();
     if(op==Op::exploreGrab||op==Op::grab){cover=sheetCover();name=workflow.gameName.data();}
-    else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==0?'t':'j');
+    else if(const auto* target=workflow.target(catalog))cover=artworkId(*target,workflow.targetTab==3?'m':workflow.targetTab==0?'t':'j');
     if(op==Op::add)name="Magnet link";
     if(send(workflow.command,name,cover,op==Op::search)){
         if(op==Op::search){pendingEmulationSearch=editingEmulationSearch;std::snprintf(pendingSearchQuery.data(),pendingSearchQuery.size(),"%s",workflow.command.text.data());rememberSearch(workflow.command.text.data());model.tab=Model::discover;model.searchResults=true;model.selected=0;}
@@ -1430,6 +1438,9 @@ bool draw(Canvas& c) noexcept {
             else if(send(command,"Botty+",{}))updateSubmitting=true;
         }
         if(action==Action::quit){if(!network.busy())return false;notify(Toast::Kind::error,"Close Botty+ later","Wait for the pending request before closing.");}
+        if(action==Action::menu&&model.tab==Model::emulation){
+            workflow.open(botty::emulationAt(catalog,model.filter,model.selected),3,catalog);
+        }
         if(action==Action::emulationConfig){
             if(!catalog.valid||catalog.stale||!catalog.emulationInstalled||catalog.transferring||catalog.extracting||network.busy())
                 notify(Toast::Kind::error,"Configuration unavailable","Wait for the embedded engine, local service and current file operations.");
@@ -1461,7 +1472,7 @@ bool draw(Canvas& c) noexcept {
         }
         if(action==Action::explore)explore.request();
         if(model.tab==Model::discover&&!model.searchResults&&(edge&r3Button))explore.request(true);
-        if(action==Action::menu){
+        if(action==Action::menu&&model.tab!=Model::emulation){
             const auto f=focused();
             if(f.entry){workflow.open(f.entry,workflowTab(f),catalog);if(workflow.panel==Panel::closed)notify(Toast::Kind::notice,"No quick actions",f.entry->task?"This task is followed in Activity until it finishes.":"Nothing can be changed here right now.");}
         }
@@ -1643,14 +1654,14 @@ bool draw(Canvas& c) noexcept {
     return true;
 }
 }
-int main() {
+int main(int argc,char** argv) {
 #ifdef BOTTY_HOST_PREVIEW
     const char* previewMode=std::getenv("BOTTY_PREVIEW_MODE");
     const std::string_view mode=previewMode?previewMode:"";
     if(mode=="discover"||mode=="explore"||mode=="sources"||mode=="storage"||mode=="download-mode"||mode=="get-game"||mode=="compare")model.tab=Model::discover;
     else if(mode=="search"||mode=="search-typing"){model.tab=Model::discover;model.searchResults=true;}
     else if(mode=="library"||mode=="delete-game"||mode=="checking-game-deletion"||mode=="quick-actions"||mode=="library-details")model.tab=Model::library;
-    else if(mode=="emulation")model.tab=Model::emulation;
+    else if(mode=="emulation"||mode=="emulation-actions")model.tab=Model::emulation;
     else if(mode=="config")model.tab=Model::config;
     else if(mode=="connections"||mode=="system"||mode=="quit"||mode=="exit"||mode.starts_with("update-"))model.tab=Model::system;
     else model.tab=Model::activity;
@@ -1660,6 +1671,18 @@ int main() {
     if(fd>=0)(void)sceKernelClose(fd);
     char startup[96];std::snprintf(startup,sizeof(startup),"Botty+ %s (PS5 %s) - main entered",botty::nativeDisplayVersion,botty::nativeVersion);
     botty::platform::log(startup);
+    botty::Command homeCommand;
+    const auto homeRequest=botty::parseHomeLaunch(argc,argv,homeCommand);
+    if(homeRequest==botty::HomeLaunch::valid){
+        const auto result=botty::performCommand(homeCommand);
+        if(result.status==botty::ActionResult::Status::success&&result.launchPath[0]){
+            (void)launchEmulation(result.launchPath.data(),false);
+            notify(Toast::Kind::error,"Game could not start","The embedded engine refused to start. Open Emulation to try again.");
+        }else notify(Toast::Kind::error,"Game could not start",result.message.data());
+        model.tab=Model::emulation;
+    }else if(homeRequest==botty::HomeLaunch::invalid){
+        notify(Toast::Kind::error,"Invalid home-screen shortcut","Choose a game in Emulation and add it to PS5 Home again.");model.tab=Model::emulation;
+    }
     const int user=sceUserServiceInitialize(nullptr);
     botty::platform::log(user==0?"User service initialized":"User service initialization returned nonzero");
     const int padResult=scePadInit();
@@ -1677,10 +1700,7 @@ int main() {
     if(pad>=0)(void)scePadClose(pad);
     botty::platform::log("Resources released - requesting application exit");
     if(emulationLaunchPath[0]||emulationConfiguration){
-        const char* gameArgs[]={"--rom",emulationLaunchPath.data(),emulationConfiguration?"--botty-config":"--exit-after-game",nullptr};
-        const char* configArgs[]={"--botty-config",nullptr};
-        const char** args=emulationLaunchPath[0]?gameArgs:configArgs;
-        const int result=sceSystemServiceLoadExec("/app0/emulation/eboot.bin",args);
+        const int result=launchEmulation(emulationLaunchPath.data(),emulationConfiguration);
         char failure[128];std::snprintf(failure,sizeof(failure),"Embedded emulator launch refused: %x; reopening Botty+",static_cast<unsigned>(result));
         botty::platform::log(failure);
         (void)sceSystemServiceLoadExec("/app0/eboot.bin",nullptr);

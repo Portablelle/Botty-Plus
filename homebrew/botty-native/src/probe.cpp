@@ -190,8 +190,12 @@ ActionResult performCommand(const Command& command) noexcept {
     if((command.operation==Operation::emulationLaunch||command.operation==Operation::emulationConfigure)&&!emulationLaunchResponse(response.view(),result.launchPath)){
         message("Invalid emulator launch confirmation. Refresh and try again.");return result;
     }
+    if(command.operation==Operation::emulationHome&&!emulationHomeResponse(response.view())){
+        result.status=ActionResult::Status::uncertain;message("Invalid shortcut confirmation. Refresh Emulation before trying again.");return result;
+    }
     result.status=ActionResult::Status::success;
     switch(command.operation){
+    case Operation::emulationHome:message("Shortcut prepared. Close Botty+ so ShadowMount can add it to PS5 Home.");break;
     case Operation::explore:message("Explore updated.");break;
     case Operation::importRemote:message("Import requested. Follow the server download and PS5 transfer in Activity.");break;
     case Operation::nativeUpdate:message("Installation update queued. Botty+ will close; reopen after the completion notification. File operations finish first.");break;

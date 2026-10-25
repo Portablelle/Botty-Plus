@@ -96,6 +96,15 @@ const char* nativeUpdateLabel(const NativeUpdate& update,bool stale) noexcept {
 bool responseObject(std::string_view body,std::array<char,512>& error) noexcept {
  JSON j{body};j.ws();if(j.p==body.size()||body[j.p]!='{'||!j.value())return false;j.ws();if(j.p!=body.size())return false;decode(field(body,"error"),error);return true;
 }
+bool emulationHomeResponse(std::string_view body) noexcept {
+ std::array<char,512> error{};std::array<char,10> title{};
+ if(!responseObject(body,error)||error[0]||field(body,"ok")!="true"||
+    (field(body,"existing")!="true"&&field(body,"existing")!="false")||!decode(field(body,"titleId"),title,true))return false;
+ const std::string_view id(title.data());
+ if(id.size()!=9||!id.starts_with("PPSA99")||id[6]<'2'||id[6]>'8')return false;
+ for(char c:slice(id,4,5))if(c<'0'||c>'9')return false;
+ return true;
+}
 bool emulationLaunchResponse(std::string_view body,std::array<char,4096>& path) noexcept {
  std::array<char,512> error{};
  if(!responseObject(body,error)||error[0]||field(body,"ok")!="true"||field(body,"engine")!="\"embedded-eden\""||!decode(field(body,"launchPath"),path,true))return false;
@@ -118,8 +127,9 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
     auto torrents=field(body,"torrents"),jobs=field(body,"jobs"),ready=field(body,"transmissionReady");
     if(torrents.empty()||torrents.front()!='['||jobs.empty()||jobs.front()!='['||(ready!="true"&&ready!="false")||field(body,"freeBytes").empty())return false;
     out.torrentCount=out.jobCount=out.archiveCount=0;out.remoteEnabled=field(field(body,"remoteDownloads"),"enabled")=="true";out.extracting=field(body,"extracting")=="true";out.extractionControls=field(body,"extractionControls")=="true";out.truncated=false;out.transmissionReady=ready=="true";
-    out.emulationCount=0;
+    out.emulationCount=0;out.emulationHomeSupported=false;
     const auto emulator=field(body,"emulation");out.emulationSupported=field(emulator,"supported")=="true";out.emulationInstalled=field(emulator,"installed")=="true";
+    out.emulationHomeSupported=field(emulator,"homeScreenSupported")=="true";
     decode(field(emulator,"root"),out.emulationRoot);decode(field(emulator,"error"),out.emulationError);
     const auto emulatorEntries=field(emulator,"entries");
     if(!emulatorEntries.empty()){
@@ -134,6 +144,7 @@ bool parseCatalog(std::string_view body,Catalog& out) noexcept {
             decode(field(row,"titleId"),e.titleId);decode(field(row,"details"),e.files,false,true);decode(field(row,"metadataStatus"),e.error);
             decode(field(row,"baseVersion"),e.emulation.baseVersion);decode(field(row,"updateVersion"),e.emulation.updateVersion);
             decode(field(row,"artworkId"),e.emulation.artwork);
+            decode(field(row,"homeTitleId"),e.homeTitleId);
             decode(field(row,"modSummary"),e.emulation.mods,false,true);
             e.emulation.dlcCount=static_cast<unsigned>(std::clamp(number(field(row,"dlcCount")),0.0,4096.0));
             e.emulation.modCount=static_cast<unsigned>(std::clamp(number(field(row,"modCount")),0.0,4096.0));

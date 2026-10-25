@@ -12,6 +12,7 @@ struct EmulationDetails {
 };
 struct Entry {
     EmulationDetails emulation;
+    std::array<char,10> homeTitleId{};
     std::array<char,96> id{};
     std::array<char,64> hash{};int torrentId=-1;
     std::array<char,64> storage{},sourceStorage{},compressedStorage{};
@@ -60,7 +61,7 @@ const char* nativeUpdateLabel(const NativeUpdate&,bool stale) noexcept;
 bool nativeUpdateAvailable(const NativeUpdate&,bool stale) noexcept;
 bool parseProcessing(std::string_view,Processing&) noexcept;
 struct Catalog {
-    bool emulationSupported=false,emulationInstalled=false;
+    bool emulationSupported=false,emulationInstalled=false,emulationHomeSupported=false;
     std::array<char,512> emulationRoot{},emulationError{};
     std::array<Entry,256> emulationEntries{};
     unsigned emulationCount=0;
@@ -95,6 +96,7 @@ struct Catalog {
     double freeBytes=0;
     std::array<char,512> library{},error{};
 };
+bool emulationHomeResponse(std::string_view) noexcept;
 bool emulationLaunchResponse(std::string_view,std::array<char,4096>&) noexcept;
 bool responseObject(std::string_view,std::array<char,512>& error) noexcept;
 bool firstArchive(std::string_view) noexcept;

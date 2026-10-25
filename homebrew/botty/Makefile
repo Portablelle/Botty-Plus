@@ -17,6 +17,9 @@ build/native/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	$(NATIVE_CXX) $(FLAGS) $(RAR_FLAGS) -MMD -MP -c $< -o $@
 # Share host production objects across service and component test executables.
 # Generated dependencies include every transitive header (also for unrar).
+build/host/server.o: build/forwarder-embedded.hpp
+build/forwarder-embedded.hpp: vendor/ps5-forwarder-format/source.tar.gz tools/embed-forwarder.py
+	python3 tools/embed-forwarder.py $< $@
 build/host/%.o: src/%.cpp
 	@mkdir -p build/host
 	$(NATIVE_CXX) $(APP_FLAGS) -MMD -MP -c $< -o $@
@@ -35,7 +38,7 @@ build/ps5/%.o: $(UNRAR)/%.cpp $(UNRAR)/global.hpp $(UNRAR)/unpack30.cpp
 	$(PS5_CXX) $(FLAGS) $(RAR_FLAGS) -DPS5_PAYLOAD -c $< -o $@
 build/botty-native: build/host/server.o build/host/core.o build/host/storage.o build/host/rar.o build/host/switch-artwork.o $(NATIVE_OBJ) $(UPDATER_HEADERS)
 	$(NATIVE_CXX) $(APP_FLAGS) $(filter %.cpp %.o,$^) -o $@ -lcurl -lcrypto -lz
-build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp src/switch-artwork.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp
+build/botty-manager.elf: src/server.cpp src/core.cpp src/storage.cpp src/rar.cpp src/switch-artwork.cpp $(PS5_OBJ) $(UPDATER_HEADERS) build/service-updater-embedded.hpp build/forwarder-embedded.hpp
 	$(PS5_CXX) $(APP_FLAGS) -Os -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz
 build/service-updater.elf: src/service-updater.cpp $(UPDATER_HEADERS) build/ps5/sha256.o
 	$(PS5_CXX) $(APP_FLAGS) -D__PS5__ $(filter %.cpp %.o,$^) -o $@ -lkernel_sys -lcurl -lpsl -lssl -lcrypto -lzstd -lz

@@ -34,3 +34,12 @@ Entertainment; this project is not affiliated with or endorsed by Sony.
 Botty+ 1.2 includes PS5-Game-Compressor by gcoding97 and upstream contributors.
 See [permission and dependency notices](homebrew/game-compressor/NOTICE.md) and
 the supplied corresponding-source archive.
+
+## PS5 Forwarder Format
+
+Home-screen shortcuts use the unchanged template from
+[heydemoura/ps5-forwarder-format](https://github.com/heydemoura/ps5-forwarder-format),
+revision `22e8762ad7dbd01e18bd8c0e95f86461fdf8aaf4`, GPL-3.0-or-later. The complete
+pinned repository, license, launcher, forwarder sources and build instructions are
+in `homebrew/botty/vendor/ps5-forwarder-format/source.tar.gz` and are included in
+Botty's corresponding-source archives. See its adjacent NOTICE.md.

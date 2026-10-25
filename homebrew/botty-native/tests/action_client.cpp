@@ -1,5 +1,6 @@
 // Host-only integration adapter. Executes the real native request implementation.
 #include "probe.hpp"
+#include "home_launch.hpp"
 #include "platform.hpp"
 #include <chrono>
 #include <cstdio>
@@ -44,6 +45,7 @@ int main(int argc,char** argv){
  // Stable host adapter names do not depend on the production enum's ordering.
  struct NamedOperation {std::string_view name;botty::Operation operation;};
  const NamedOperation operations[]={
+  {"home",botty::Operation::emulationHome},{"launch",botty::Operation::emulationLaunch},
   {"pause",botty::Operation::pause},{"resume",botty::Operation::resume},
   {"verify",botty::Operation::verify},{"add",botty::Operation::add},
   {"extract",botty::Operation::extract},{"move",botty::Operation::move},
@@ -51,8 +53,9 @@ int main(int argc,char** argv){
   {"compress",botty::Operation::compress},{"cancel-compression",botty::Operation::cancelCompression}
  };
  for(const auto& operation:operations)if(operation.name==argv[2])cmd.operation=operation.operation;
+ if(std::string_view(argv[2])=="--from-home"&&botty::parseHomeLaunch(argc-3,argv+3,cmd)!=botty::HomeLaunch::valid)return 2;
  if(cmd.operation==botty::Operation::none){std::puts("Unknown integration action. Nothing was sent.");return 2;}
- if(argc>3)std::snprintf(cmd.id.data(),cmd.id.size(),"%s",argv[3]);
+ if(argc>3&&std::string_view(argv[2])!="--from-home")std::snprintf(cmd.id.data(),cmd.id.size(),"%s",argv[3]);
  if(argc>4)std::snprintf(cmd.archive.data(),cmd.archive.size(),"%s",argv[4]);
  if(argc>5)std::snprintf(cmd.text.data(),cmd.text.size(),"%s",argv[5]);
  const auto result=botty::performCommand(cmd);std::puts(result.message.data());return result.status==botty::ActionResult::Status::success?0:1;

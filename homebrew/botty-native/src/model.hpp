@@ -127,7 +127,7 @@ struct Model {
             if((edge&Buttons::down)&&selected+1<count)++selected;
             if((edge&Buttons::up)&&selected)--selected;
             if((edge&Buttons::cross)&&count)return filter==0?Action::emulationPlay:filter==2?Action::emulationGame:Action::none;
-            if((edge&Buttons::options)&&count&&filter==0)return Action::emulationGameConfig;
+            if((edge&Buttons::options)&&count&&filter==0)return Action::menu;
             return Action::none;
         }
         if(tab==system){
