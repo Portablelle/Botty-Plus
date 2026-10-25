@@ -10,10 +10,10 @@ import unittest
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location('native_packaging', SCRIPTS / 'package-native.py')
 packaging = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(packaging)
+with patch.object(sys, 'path', [str(SCRIPTS), *sys.path]):
+    spec.loader.exec_module(packaging)
 
 
 class NativePackagingTests(unittest.TestCase):

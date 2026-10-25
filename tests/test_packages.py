@@ -5,13 +5,16 @@ import io
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
 import tempfile
 import tarfile
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('contract',ROOT/'scripts/botty-packages.py')
-contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
+contract=importlib.util.module_from_spec(spec)
+with patch.object(sys, 'path', sys.path.copy()):
+    spec.loader.exec_module(contract)
 class PackageTests(unittest.TestCase):
     def test_shipped_engine_provenance_matches_committed_sources(self):
         engine=ROOT/'homebrew/botty-native/emulation'
