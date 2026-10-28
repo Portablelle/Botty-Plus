@@ -111,9 +111,10 @@ def build(version):
 
 def verify_uploaded(tag, assets, draft):
     published = json.loads(run(['gh', 'release', 'view', tag, '--repo', REPOSITORY, '--json', 'assets,isDraft']))
-    sizes = {asset['name']: asset['size'] for asset in published['assets']}
+    # GitHub's own SHA-256 of each stored asset, so contents are checked without downloading them.
+    digests = {asset['name']: (asset['size'], asset.get('digest')) for asset in published['assets']}
     for asset in assets:
-        if sizes.get(asset.name) != asset.stat().st_size:
+        if digests.get(asset.name) != (asset.stat().st_size, 'sha256:' + sha256(asset)):
             raise SystemExit(f'Uploaded {asset.name} does not match the local asset; the {tag} draft stays unpublished')
     if published['isDraft'] != draft:
         raise SystemExit(f'{tag} is {"a draft" if published["isDraft"] else "already published"}')

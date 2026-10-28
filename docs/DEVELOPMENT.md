@@ -83,7 +83,8 @@ python3 scripts/publish-release.py
 It refuses a dirty checkout, a commit other than `origin/main` and an existing
 tag or release. It builds the archive, the `PPSA99071` folder ZIP and their
 checksum files in `dist/`, and uploads them as a draft. The release is published
-as latest only after every uploaded asset matches. The notes are
+as latest only after every uploaded asset matches its local size and SHA-256
+(GitHub's stored digest). The notes are
 `docs/releases/<version>.md`, titled by their first heading; `--notes` and
 `--title` override them.
 
