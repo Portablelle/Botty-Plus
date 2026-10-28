@@ -2,9 +2,9 @@
   "schema": 1,
   "engine": "ProsperoEden",
   "commit": "a26ba788222465ec7fb94dc813958fc749734e07",
-  "patchSha256": "4bdedeb01a64e9dbf3af9bc6f2d73a93b4a6b8651b1ac25ea1dcdbb5ccd182aa",
-  "provenanceSha256": "1340a5f5aabd1d84a2dd4f7523c007251922687b7aac20d2c01e1564d6bf8d85",
-  "sourcesSha256": "49a0949d5bf5775cf11155affc6fc442d172bc99f7d2e1bcce9d8ed45bef5ef2",
+  "patchSha256": "4f25a3eb6b5ebb22fc4314e274cf7b5f8831fc20dc6bd9cf9b480cb1336b1ed7",
+  "provenanceSha256": "8997752db9861c63b36910ad7078bd96715ed2bab94c5402815adacc953973a3",
+  "sourcesSha256": "9650bd50f063fb7ac3f72ee0eb0300c5e8559b521aecf7348a0618f19ee2e1e6",
   "executable": "emulation/eboot.bin",
   "dataRoot": "/data/botty/emulation/switch",
   "standalone": true,
@@ -12,5 +12,5 @@
   "privateProvisioning": true,
   "configuration": true,
   "configurationProtocol": 1,
-  "engineSha256": "aeb30bd2fe7bfc59d83ad1ad067701dddc4388eb1c49cd4765946a9ec600b735"
+  "engineSha256": "9fc5d0bdd8e6e335475e982f5e53611994595ff1903458eb9893ebe1b37447d1"
 }

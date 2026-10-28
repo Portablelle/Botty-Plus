@@ -203,6 +203,24 @@ are inventory only; the engine's Cheats panel owns individual activation.
 UltraCam's version gate examines the same shared and game-local update roots
 as the running engine.
 
+Engine fixes ported from PS5-ECAM's `patches/eden` (same pinned commit, GPL-3.0-or-later):
+
+- A game folder's `mods/` and `cheats/` apply to the game's own title only, not
+  to its update or DLC. A disabled mod no longer reaches DLC data (ECAM 0011).
+  `tools/check-game-folder-mods.py` runs during the engine build.
+- With several updates present, the version and Control data come from the
+  newest one, like its code (ECAM 0012).
+- A buffer that the full audio PCM ring cannot take is dropped and counted as
+  played, instead of throwing `Audio PCM queue capacity exceeded` and ending the
+  game (after ECAM 0013). Unlike ECAM, the producer never evicts queued audio:
+  the render thread consumes it without the release lock.
+- `ExecuteProgram` restarts the same file at the requested program index, for
+  multi-program games such as Metal Gear Solid: Master Collection (ECAM 0014).
+- A shader whose SPIR-V the RADV driver refuses fails its pipeline with
+  `VK_ERROR_UNKNOWN` and logs the reason, instead of crashing (ECAM 0017).
+
+These are host-checked source changes; console acceptance is pending.
+
 Engine assembly requires `botty-engine.json`, produced after compilation. It
 binds the pinned source commit and Botty patch hash to the packaged files,
 including the exact-title helper and MihawkGen weights. Source changes after

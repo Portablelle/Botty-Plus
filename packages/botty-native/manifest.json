@@ -2,8 +2,8 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "02.000.001",
-  "releaseVersion": "2.0.1",
+  "version": "02.000.002",
+  "releaseVersion": "2.0.2",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "923e4923bd2ba8cc96cb32139f4881f22cc9ec91aa9b1a62b7acd12d15953339"
+      "sha256": "edb7ce3b343b377b4444aea2bc54cb027f5ac32a8cf0f0945771ce7e5b300b74"
     },
     {
       "path": "assets/courier.rgba",
@@ -54,12 +54,12 @@
     {
       "path": "eboot.bin",
       "size": 33262524,
-      "sha256": "c28d0155bd7edb018c46f7d8da27a835f469fb07be9b4b0977fd1b0ed5d613b1"
+      "sha256": "e9288fdd629f5b189c3ea231a8560ddc02e4c9549b1bbd060990daed52bf5aba"
     },
     {
       "path": "emulation/botty-engine.json",
-      "size": 17247,
-      "sha256": "1340a5f5aabd1d84a2dd4f7523c007251922687b7aac20d2c01e1564d6bf8d85"
+      "size": 18174,
+      "sha256": "8997752db9861c63b36910ad7078bd96715ed2bab94c5402815adacc953973a3"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -68,18 +68,18 @@
     },
     {
       "path": "emulation/eboot.bin",
-      "size": 75704270,
-      "sha256": "aeb30bd2fe7bfc59d83ad1ad067701dddc4388eb1c49cd4765946a9ec600b735"
+      "size": 75707950,
+      "sha256": "9fc5d0bdd8e6e335475e982f5e53611994595ff1903458eb9893ebe1b37447d1"
     },
     {
       "path": "emulation/lapy-manifest.json",
       "size": 608,
-      "sha256": "093709406dce58246659593bf5f23d561bf69ba024ffa0248bb1beacec430469"
+      "sha256": "32ce9e5caa1db9556248f78c83044077e9e413ccfe01f68d043d34c02c4e3f13"
     },
     {
       "path": "emulation/lapy.elf",
       "size": 155224,
-      "sha256": "553f1e1c06fe3b3f173affa7099955eb1d57254fa259b3eec224034c245dceb2"
+      "sha256": "e3ff7fa980d7d0f26c91e9c5218c0a07e301119ba84e82d4c74ec2e7813b744f"
     },
     {
       "path": "emulation/launcher-runtime.json",
@@ -454,7 +454,7 @@
     {
       "path": "emulation-runtime.json",
       "size": 673,
-      "sha256": "fe41fcc1f34da5ae89038d4e30e80f633a5703c535746772400ff743b89eadbc"
+      "sha256": "8bc619b9443a632859bb604f44475febcde73d4198a16cdffa8cbd81dc9f4496"
     },
     {
       "path": "sce_module/libc.prx",
@@ -469,7 +469,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 903,
-      "sha256": "9f85169c7569fd98f87ba49079b671b56e76d5a920c934339cdfe437ebfd887e"
+      "sha256": "83b0b20ef84df2e1b498fb1c4f453b41159f961de6ad889b740f5ee5404dedda"
     },
     {
       "path": "sce_sys/pic0.dds",
