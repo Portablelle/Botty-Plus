@@ -44,8 +44,12 @@ def run(command, **options):
 
 
 def sha256(path):
+    # Streamed in blocks: hashlib.file_digest needs Python 3.11, and the documented minimum is 3.10.
+    digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def folder_zip(native, output, title='PPSA99071'):
