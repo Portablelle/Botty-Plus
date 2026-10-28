@@ -127,7 +127,8 @@ def main():
     args = parser.parse_args()
     version = load('release_version', ROOT / 'homebrew/botty-native/tools/release_version.py').release_version()
     tag = 'v' + version
-    notes = args.notes or ROOT / f'docs/releases/{version}.md'
+    # Absolute: gh runs from the repository root, wherever this script was started.
+    notes = (args.notes or ROOT / f'docs/releases/{version}.md').resolve()
     if not notes.is_file():
         raise SystemExit(f'Missing release notes: {notes}')
     title = args.title or notes_title(notes.read_text())
