@@ -7,7 +7,6 @@
   "dataRoot": "/data/botty/emulation/switch",
   "selfUpdate": false,
   "hardwareValidated": false,
-  "patchSha256": "4bdedeb01a64e9dbf3af9bc6f2d73a93b4a6b8651b1ac25ea1dcdbb5ccd182aa",
   "sourceFiles": {
     ".github/ISSUE_TEMPLATE/bug_report.yml": "59c6171201a3dc825021721058dfffeb171cd17ccedbf0b960419636d9c43502",
     ".github/ISSUE_TEMPLATE/game_report.yml": "240e22e070c89fb790740df56ea976a3cb7b0a518d09c39ecaa8fbb7a26e129d",
@@ -27,20 +26,23 @@
     "docs/SAVES.md": "c3fed1e3a9ed3fb5dc56b3b028ae6cf82ae53b85f23b65c66dbe8cda01c47239",
     "docs/SETTINGS.md": "9685d675db27d2c8c830ea1cd2094edbfc0115774e884803b632ee616c7cc0b2",
     "docs/WALLPAPERS.md": "6fd8f228a18b8f06e51972ae45c91c8ba61825a436eb8458dcc310effc27fe97",
-    "headless/CMakeLists.txt": "c3883de2989f7f8f2d4980ee7130313ea902ada63d0d6434f0c70d29e432eacb",
+    "headless/CMakeLists.txt": "3b15d6fd38a02fda1ff9f2159b47c03fc980e7068d6424bdf5b3ced6a9b909ea",
     "headless/assets_dir.h": "605888f3f7cbea4bdb4116ed068a057d6ed14aaf39011f236b21f9e2331cb8be",
     "headless/boot_trace.h": "b42b544ae906dd893ce00fc633f56544eede4b51028531eeeb550c4b488e327b",
     "headless/botty_configuration.h": "18c57fa385f08a652bad28467199b0107a741e9b9fc6c7bf2c657dcfe0bb8630",
     "headless/check_package.py": "51621d1edfa800b19be05ccf89019676835ce20f1f297d8d2c875edfad723bfe",
+    "headless/devices_check.cpp": "49f64173e41360b88a5174f4e6573953a49b5b56f6a5c3da09506564b1d5aab5",
     "headless/elevation/README.md": "a396b559d54d63c195ccb825a9a795b590602332de7cb066fe5513b691ce4455",
     "headless/elevation/elevation.cpp": "25764e2f57d042bb761cc181164a9c366e483e9a345e5a24e904aa49c0240a09",
     "headless/elevation/elevation.hpp": "f9d1799dd8bf19be9790239050f28680dfa165236c68487e1fc6300872f3b0d9",
     "headless/elevation/test_elevation.cpp": "7d685c86fc1e9caf0aa25023b5cfc7e5eb7737331a3f2129c00dc818b70c2435",
     "headless/forwarded_launch.h": "10e2bfaa768d8706ac02739d10db34838c827a283b42793f08e2a131efb2fc22",
     "headless/game_content_paths.h": "a9bcacb9595f009ae1e5d8274f0901147fc5654b1d90732a23ce5d3d7e770ab1",
-    "headless/main.cpp": "33ffb2a2c7c937badc44a86c893d7dbb9dd96f28021af8f3b9da936a2150da45",
+    "headless/game_folder_vfs.h": "417f801e4686dbf4c70e81a9b0826938bfde4e09319c3cb8beb07ac566098e36",
+    "headless/main.cpp": "2f4a798791265cd21120bafbff4283ace77a76eecf2b1f14b23d100becc2a8ea",
     "headless/metadata_bridge.cpp": "4872500e61e480616656ec7969030a4466d82b744ba66971f80e9a260e10e1b8",
     "headless/metadata_bridge.h": "694dccabbce3dc7287f663941a5c2131d28fe667dae9d64dd57bff5b9f544bfc",
+    "headless/mods.h": "251133d9afc697b0b691d664db599cfdb9664a2f9d740ddf7754971a74f18d63",
     "headless/prosperoeden/eden_services.cpp": "bd21a8c8b422ae04a14e610df6af012b1fe23a0573d9cc95aaa89debddf242c2",
     "headless/prosperoeden/eden_services.h": "d95f253afc2dd1da25fc3025adca45f97478170cd577d1858fc2ef1cf656339c",
     "headless/prosperoeden/frontend.cpp": "a83d641260c81e0a5248b815493e91f07fe0f70231d6a503d8cbd4f87b3989fd",
@@ -67,31 +69,38 @@
     "headless/update_notice.cpp": "ee2fb250d6f8bef98e5975a27a5b67149af373d2044528048a4c81b06d44430b",
     "sce_sys/param.json": "9a74127c720906010cd9a759560d3000da5bde4e2caf39306ba5626fb28a0e5e",
     "src/lifecycle.c": "cbf04c37ba6660ce4daa0347ce80d9d1f2baab06ae9ba672427421df7dcd0f8d",
+    "tools/build-headless-native.sh": "4a0d6636bb6868b734437ae78c232cb7d1d1ee2d973317a9b76b2074b2dc7ff0",
     "tools/build-lapy-helper.py": "73d71f89af174962d936a91e1388e988d007ca5107bb2d873dec09582472bc6f",
     "tools/build-package.sh": "631f75fad3f512a28bd1fbfb5037a2ee0e47b244e0bac4eeb5e69a2de2f81d2f",
+    "tools/build-radv-dependencies.sh": "4648b2abdd08fce28a55506d6d864c714bea030b3395479eb48cf995b9a2ce93",
+    "tools/check-game-folder-mods.py": "1fe3884db0d3e8a2e073b1ed0153ead6b6a659a4a5d08c86927bc4c1e3a7dd2d",
+    "tools/check-radv-gs-cache.py": "25f19fe30fc4b5f076c9458f967e1b46bea74c1bf5a0d1e8705d41f333874da7",
     "tools/ci/make-dist.py": "4bd3aaeee6c920426b68a7fb6f6738fe29cf0caea94c581bcd6688f68b237fbd",
     "tools/deps.json": "ed26d8283ef7d8f1d0e7233b56d5cb8d296b640541a04177946154f0f2709839",
     "tools/install-ftp.py": "75e3099845bd05be0d08e498c0b680d46f14b9e51aeb5d6a0227954243236ce2",
     "tools/launcher/test-appearance.py": "b668d7106f9ae3692a2b2c7d4d9b4b62fd10f6dddb1417d6f41d91bc5c2acc60",
     "tools/package-headless-native.sh": "2977de554364c8d9713c7b602715bd8c5077ad250daff43f2d4b4a5040e36e2e",
+    "tools/patch-radv-spirv-failure.py": "926f35abbe9aa99ca09091ceeeeb757147b753c837e5821715196f5c5df18502",
+    "tools/prepare-build.sh": "37e8f3fe0a89e938cb919aad7ec7e3c4c9a2630e729f5ba889f849c06c2720a2",
     "tools/botty-provenance.py": "2574f9a9b96cec2e2b169ed574f88a60fb965ac4bb3629993d6484c972377b1a"
   },
+  "patchSha256": "4f25a3eb6b5ebb22fc4314e274cf7b5f8831fc20dc6bd9cf9b480cb1336b1ed7",
   "files": {
     "core-homebrew.nro": {
       "size": 16384,
       "sha256": "b3c95e1c0dba8080fd172d1554af33506126ed0f74c18fb42b4ed3b9ea9032c2"
     },
     "eboot.bin": {
-      "size": 75704270,
-      "sha256": "aeb30bd2fe7bfc59d83ad1ad067701dddc4388eb1c49cd4765946a9ec600b735"
+      "size": 75707950,
+      "sha256": "9fc5d0bdd8e6e335475e982f5e53611994595ff1903458eb9893ebe1b37447d1"
     },
     "lapy-manifest.json": {
       "size": 608,
-      "sha256": "093709406dce58246659593bf5f23d561bf69ba024ffa0248bb1beacec430469"
+      "sha256": "32ce9e5caa1db9556248f78c83044077e9e413ccfe01f68d043d34c02c4e3f13"
     },
     "lapy.elf": {
       "size": 155224,
-      "sha256": "553f1e1c06fe3b3f173affa7099955eb1d57254fa259b3eec224034c245dceb2"
+      "sha256": "e3ff7fa980d7d0f26c91e9c5218c0a07e301119ba84e82d4c74ec2e7813b744f"
     },
     "launcher-runtime.json": {
       "size": 331,

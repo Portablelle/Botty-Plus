@@ -531,10 +531,78 @@ index 65da70f..c3de3e5 100644
  
  The app creates the folder when it starts. Put images in it over FTP while the app is
 diff --git a/headless/CMakeLists.txt b/headless/CMakeLists.txt
-index 3495139..1837462 100644
+index 3495139..8fee190 100644
 --- a/headless/CMakeLists.txt
 +++ b/headless/CMakeLists.txt
-@@ -2851,7 +2851,7 @@ if(PS5_NATIVE)
+@@ -1521,6 +1521,36 @@ function(eden_patch source old new)
+     set(${source} "${patched}" PARENT_SCOPE)
+ endfunction()
+ 
++# A game with several updates beside it (in updates/ or in its game folder) runs the newest: the
++# patch manager takes its code and data by version (ListUpdateVersions, newest first). Eden kept
++# the rest of the update by the file it scanned last, which the folder's order decides: the game's
++# version and its control data (its save data sizes, its DLC, its version string) could come from
++# an older update than its code. They come from the newest too (issue 281).
++get_target_property(core_sources core SOURCES)
++file(READ "${PROJECT_SOURCE_DIR}/src/core/file_sys/registered_cache.cpp" content_source)
++eden_patch(content_source [=[            entries[{title_id, content_type, title_type}] = file;
++
++            if (title_type == TitleType::Update) {
++                versions[title_id] = version;
++                UpsertExternalVersionEntry(multi_version_entries, title_id, version, version_string,
++                                           content_type, file);
++            }
++]=] [=[            if (title_type == TitleType::Update) {
++                UpsertExternalVersionEntry(multi_version_entries, title_id, version, version_string,
++                                           content_type, file);
++                // An older update than one already found stays listed, but is not the update.
++                if (const auto known = versions.find(title_id); known != versions.end() && known->second > version)
++                    return;
++                versions[title_id] = version;
++            }
++
++            entries[{title_id, content_type, title_type}] = file;
++]=])
++write_derived("${PORT_BUILD_DIR}/registered_cache.cpp" "${content_source}")
++list(REMOVE_ITEM core_sources file_sys/registered_cache.cpp)
++list(APPEND core_sources "${PORT_BUILD_DIR}/registered_cache.cpp")
++set_property(TARGET core PROPERTY SOURCES "${core_sources}")
++
+ # Mods (headless/mods.h). Eden's .pchtxt reader takes every line as a record or a flag: the
+ # credits at the end of a real patch file then wrote over the start of the game's code. Only
+ # records and known flags are read here (headless/mods_check.cpp checks all of it).
+@@ -2293,17 +2323,26 @@ file(READ "${PROJECT_SOURCE_DIR}/src/audio_core/sink/sink_details.cpp" sink_sour
+ string(REPLACE "    return GetOutputSinkDetails(sink_id).factory(device_id);"
+     "    if (device_id == \"ps5\") return std::make_unique<Eden::AudioSink>();\n    return GetOutputSinkDetails(sink_id).factory(device_id);" sink_source "${sink_source}")
+ write_derived("${PORT_BUILD_DIR}/sink_details.cpp" "#include \"devices.h\"\n${sink_source}")
+-# Mirror mono PCM into both hardware channels in the existing upmix path.
+ file(READ "${PROJECT_SOURCE_DIR}/src/audio_core/sink/sink_stream.cpp" stream_source)
+-string(REPLACE "    if (type == StreamType::In)\n        return;"
+-    "    if (type == StreamType::In)\n        return;\n    static_assert(std::is_same_v<decltype(samples_buffer), Common::RingBuffer<s16, 0x10000>>);\n    if (buffer.frames * device_channels > 0x10000 - samples_buffer.Size())\n        throw std::overflow_error(\"Audio PCM queue capacity exceeded\");" stream_source "${stream_source}")
++# A buffer the full PCM ring cannot take is dropped, counted as played, instead of stopping the
++# game (issue 270); upstream's ring would cut it short and leave the queue out of step. Only the
++# new buffer is dropped: the render thread reads playing_buffer and pops the ring without
++# release_mutex, so the producer must not evict audio it may be consuming.
++set(old_stream_append "    if (type == StreamType::In)\n        return;\n\n    constexpr s32 min")
++string(FIND "${stream_source}" "${old_stream_append}" stream_append_offset)
++if(stream_append_offset LESS 0)
++    message(FATAL_ERROR "Pinned SinkStream::AppendBuffer changed; review the full queue handling.")
++endif()
++string(REPLACE "${old_stream_append}"
++    "    if (type == StreamType::In)\n        return;\n    static_assert(std::is_same_v<decltype(samples_buffer), Common::RingBuffer<s16, 0x10000>>);\n    if (buffer.frames * device_channels > 0x10000 - samples_buffer.Size()) {\n        {\n            std::scoped_lock count_lk{sample_count_lock};\n            min_played_sample_count += buffer.frames;\n            max_played_sample_count += buffer.frames;\n        }\n        static std::atomic<u32> full_count{};\n        const u32 times = ++full_count;\n        if (times <= 8 || times % 256 == 0)\n            LOG_WARNING(Audio_Sink, \"EDEN_AUDIO_QUEUE_FULL stream={} dropped_frames={} times={}\", name, buffer.frames, times);\n        return;\n    }\n\n    constexpr s32 min" stream_source "${stream_source}")
++# Mirror mono PCM into both hardware channels in the existing upmix path.
+ string(REPLACE "        samples_buffer.Push(new_samples);"
+     "        if (system_channels == 1 && device_channels == 2) {\n            for (std::size_t i = 0; i < new_samples.size(); i += 2) new_samples[i + 1] = new_samples[i];\n        }\n        samples_buffer.Push(new_samples);" stream_source "${stream_source}")
+ # Refresh the held frame before a partial hardware block underruns.
+ string(REPLACE "    std::memcpy(last_frame.data(), &output_buffer[(frames_written - 1) * frame_size], frame_size_bytes);" "" stream_source "${stream_source}")
+ string(REPLACE "        samples_buffer.Pop(&output_buffer[frames_written * frame_size], frames_available * frame_size);"
+     "        samples_buffer.Pop(&output_buffer[frames_written * frame_size], frames_available * frame_size);\n        if (frames_available) std::memcpy(last_frame.data(), &output_buffer[(frames_written + frames_available - 1) * frame_size], frame_size_bytes);" stream_source "${stream_source}")
+-write_derived("${PORT_BUILD_DIR}/sink_stream.cpp" "#include <stdexcept>\n${stream_source}")
++write_derived("${PORT_BUILD_DIR}/sink_stream.cpp" "#include <atomic>\n#include <stdexcept>\n#include \"common/logging.h\"\n${stream_source}")
+ # A bitfield expression yields 0/1, so explicitly restore the SRC flag's bit position.
+ file(READ "${PROJECT_SOURCE_DIR}/src/audio_core/renderer/voice/voice_info.cpp" voice_source)
+ set(old_voice_flag "flags |= u16(params.flags.IsVoicePitchAndSrcSkippedSupported);")
+@@ -2851,7 +2890,7 @@ if(PS5_NATIVE)
          "#elif defined(PS5_NATIVE)\n        eden_path = Eden::UserDir();\n        eden_path_cache = eden_path / CACHE_DIR;\n        eden_path_config = eden_path / CONFIG_DIR;\n#else\n        eden_path = GetCurrentDir() / PORTABLE_DIR;" paths_source "${paths_source}")
      string(REPLACE "#else\n        // In Ryujinx's infinite wisdom"
          "#elif defined(PS5_NATIVE)\n        GenerateLegacyPath(EmuPath::RyujinxDir, eden_path / RYUJINX_DIR);\n#else\n        // In Ryujinx's infinite wisdom" paths_source "${paths_source}")
@@ -651,6 +719,21 @@ index 5a6aa2b..ab96b92 100644
                       classification='offline-validated', needed_libraries=needed,
                       data_heap_bytes=3072 * 1024**2, guest_backing_bytes=4 * 1024**3,
                       observation_seconds=120 if retail_launch else 60,
+diff --git a/headless/devices_check.cpp b/headless/devices_check.cpp
+index bec372b..fdddeb7 100644
+--- a/headless/devices_check.cpp
++++ b/headless/devices_check.cpp
+@@ -871,8 +871,9 @@ void CheckAudio() {
+         stream->ClearQueue();
+         std::vector<s16> full(65536, 1234); SinkBuffer large{32768, 0, 10, false};
+         stream->AppendBuffer(large, full);
++        // A full ring drops the new buffer instead of stopping the game; the queued one stays.
+         std::array<s16, 2> extra{}; SinkBuffer one{1, 0, 11, false};
+-        Reject([&] { stream->AppendBuffer(one, extra); });
++        stream->AppendBuffer(one, extra);
+         CHECK(stream->GetQueueSize() == 1); stream->ClearQueue();
+         CHECK(stream->GetQueueSize() == 0); sink.CloseStream(stream);
+     }
 diff --git a/headless/elevation/README.md b/headless/elevation/README.md
 index b1e9506..555ea78 100644
 --- a/headless/elevation/README.md
@@ -846,8 +929,22 @@ index 0000000..4ee5d64
 +    return paths;
 +}
 +}
+diff --git a/headless/game_folder_vfs.h b/headless/game_folder_vfs.h
+index 1eec8bf..62c64ea 100755
+--- a/headless/game_folder_vfs.h
++++ b/headless/game_folder_vfs.h
+@@ -18,7 +18,8 @@ namespace Eden::GameFolderMods {
+ 
+ // shared: the game's folder in mods/, or null.
+ inline FileSys::VirtualDir Root(FileSys::VirtualDir shared, std::uint64_t title_id, std::string name) {
+-    const Mods::Places places{Eden::AssetsPath("mods"), Eden::AssetsPath("cheats"), Mods::SessionGameFolder()};
++    // The game folder's mods and cheats for the game's own title only (Mods::GameFolderFor).
++    const Mods::Places places{Eden::AssetsPath("mods"), Eden::AssetsPath("cheats"), Mods::GameFolderFor(title_id)};
+     // Its files keep a reference to the filesystem they came from: one for the whole run.
+     static FileSys::RealVfsFilesystem vfs;
+     std::vector<FileSys::VirtualDir> layers;
 diff --git a/headless/main.cpp b/headless/main.cpp
-index 5b654e2..a9990cc 100644
+index 5b654e2..35c37b8 100644
 --- a/headless/main.cpp
 +++ b/headless/main.cpp
 @@ -1,3 +1,4 @@
@@ -864,7 +961,15 @@ index 5b654e2..a9990cc 100644
  #include "gpu_failure.h"
  #include "guest_fault.h"
  #include "jit_list.h"
-@@ -101,6 +104,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
+@@ -80,6 +83,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
+ #include "core/frontend/graphics_context.h"
+ #include "core/hle/service/am/applet_manager.h"
+ #include "core/hle/service/am/frontend/applets.h"
++#include "core/file_sys/common_funcs.h"
+ #include "core/file_sys/registered_cache.h"
+ #include "core/hle/service/filesystem/filesystem.h"
+ #include "core/hle/service/set/settings_types.h"
+@@ -101,6 +105,7 @@ extern "C" std::int32_t sceKernelAvailableFlexibleMemorySize(std::size_t*);
  #include "core/hle/kernel/k_process.h"  // every build: the game's code address (jit_list.h)
  #ifdef PS5_NATIVE
  #include "core/hle/kernel/k_thread.h"
@@ -872,7 +977,7 @@ index 5b654e2..a9990cc 100644
  #endif
  #pragma clang diagnostic pop
  #ifdef EDEN_DEV_PROFILE
-@@ -154,7 +158,7 @@ public:
+@@ -154,7 +159,7 @@ public:
  
  #ifdef PS5_NATIVE
  // First start with filesystem access: copy what the sandbox kept (settings, covers, Eden's saves
@@ -881,7 +986,7 @@ index 5b654e2..a9990cc 100644
  // sandbox copy stays, so an older ProsperoEden still finds its data.
  // dev-settings jit_table_check=on: the JIT's direct page table (headless/jit-page-table.cmake) must
  // hold, for every page, the pointer of Eden's entry, or 0 where the entry is marked or empty. A
-@@ -185,7 +189,7 @@ public:
+@@ -185,7 +190,7 @@ public:
  }
  
  static void MigrateSandboxData() {
@@ -890,7 +995,7 @@ index 5b654e2..a9990cc 100644
      const std::pair<std::filesystem::path, std::string> moves[] = {
          {sandbox / "eden-headless-g7/user", Eden::UserDir()},
          {sandbox / "prosperoeden/covers", Eden::CoversDir()},
-@@ -213,10 +217,10 @@ static void MigrateSandboxData() {
+@@ -213,10 +218,10 @@ static void MigrateSandboxData() {
  
  #ifdef PS5_NATIVE
  // Game files an early version kept inside the app's folder (assets/ with keys, firmware and
@@ -903,7 +1008,7 @@ index 5b654e2..a9990cc 100644
  static void MoveGameFilesOutOfTheApp() {
      const std::string from = std::string{Eden::kInstallDir} + "/assets", to = Eden::kDefaultAssetsDir;
      const std::string saved = Eden::LoadSavedAssetsDir();
-@@ -287,6 +291,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
+@@ -287,6 +292,10 @@ static void UpdateGrips(Core::System& system, Eden::Pad& pad) {
  
  int main(int argc, char** argv) {
      try {
@@ -914,7 +1019,7 @@ index 5b654e2..a9990cc 100644
          std::FILE* report = stdout;
          SCOPE_EXIT { if (report != stdout) std::fclose(report); };
          std::setvbuf(report, nullptr, _IONBF, 0);
-@@ -354,7 +362,7 @@ int main(int argc, char** argv) {
+@@ -354,7 +363,7 @@ int main(int argc, char** argv) {
          Eden::Crash::Install(Eden::LogsDir(), Eden::kAppVersion, last_crash.restarted);
          Eden::BootTrace::Ready(Eden::LogsDir(), Eden::FilesystemAccess());
          Eden::BootTrace::Line("logs and crash handler ready (%s)", Eden::LogsDir().c_str());
@@ -923,7 +1028,7 @@ index 5b654e2..a9990cc 100644
              Eden::BootTrace::Line("app folder candidate %s: eboot %s, font %s", folder,
                                    Eden::FileExists(std::string{folder} + "/eboot.bin") ? "yes" : "no",
                                    Eden::FileExists(std::string{folder} + "/ui/fonts/montserrat-medium.pefont") ? "yes" : "no");
-@@ -490,10 +498,18 @@ int main(int argc, char** argv) {
+@@ -490,10 +499,18 @@ int main(int argc, char** argv) {
          std::string launch_error;
          // The previous run crashed: the launcher says where its report is.
          if (!last_crash.report.empty()) launch_error = std::string{Eden::Crash::kNotice} + last_crash.report;
@@ -944,7 +1049,7 @@ index 5b654e2..a9990cc 100644
              const std::string path = Eden::ResolveForwardedRom(forwarded.rom, Eden::AssetsPath("roms"));
              if (!path.empty() && Eden::FileExists(path)) forwarded_game = path;
              else launch_error = "Forwarded game not found: " + (path.empty() ? forwarded.rom : path);
-@@ -574,10 +590,16 @@ int main(int argc, char** argv) {
+@@ -574,10 +591,16 @@ int main(int argc, char** argv) {
          } else if (!forwarded_game.empty()) {
              guest_fault_retries = 0;
              forwarded_session = true;
@@ -965,7 +1070,7 @@ index 5b654e2..a9990cc 100644
              return 0;
          } else {
          guest_fault_retries = 0;
-@@ -1144,14 +1166,8 @@ int main(int argc, char** argv) {
+@@ -1144,14 +1167,11 @@ int main(int argc, char** argv) {
              // A game in its own folder in roms/ (issue 168) brings its update, DLC, mods, cheats
              // and its own post-processing (reshade_folder.h): its presets and effects are read
              // again when the folder is another than the last game's.
@@ -977,12 +1082,15 @@ index 5b654e2..a9990cc 100644
 -                    if (const auto slash = path.find('/', roms.size()); slash != std::string_view::npos)
 -                        Eden::Mods::SessionGameFolder() = std::string{path.substr(0, slash)};
 -            }
++            Eden::Mods::SessionTitle() = 0;
 +            Eden::Mods::SessionGameFolder() = guest
 +                ? Eden::GameFolderPath(guest, Eden::AssetsPath("roms")) : std::string{};
++            // Its mods and cheats are this title's alone (Mods::GameFolderFor).
++            if (!Eden::Mods::SessionGameFolder().empty()) Eden::Mods::SessionTitle() = game_title;
              if (Eden::Reshade::SetGameFolder(Eden::Mods::SessionGameFolder())) {
                  VideoCore::ReloadFxPresetCatalog();
                  VideoCore::ReloadFxCatalog();
-@@ -1333,10 +1349,19 @@ int main(int argc, char** argv) {
+@@ -1333,10 +1353,19 @@ int main(int argc, char** argv) {
              // The game's own folder (Mods::SessionGameFolder) was found with its post-processing.
              const auto all_mods = Eden::Mods::List(
                  {Eden::AssetsPath("mods"), Eden::AssetsPath("cheats"), Eden::Mods::SessionGameFolder()}, title);
@@ -1003,7 +1111,46 @@ index 5b654e2..a9990cc 100644
                                                   Eden::LoadCheatsOff(title), Eden::LoadModsEnabled(title),
                                                   cheats_enabled);
              Eden::Cheats::Off() = std::move(switched.cheats_off);
-@@ -1538,9 +1563,8 @@ int main(int argc, char** argv) {
+@@ -1511,6 +1540,12 @@ int main(int argc, char** argv) {
+             system.Initialize();
+             if (system.IsPoweredOn()) return 1;
+             passed("core_initialized");
++            // A program the game asked to start in its place (nn::oe ExecuteProgram): games
++            // made of several programs, such as the Metal Gear Solid Master Collection, boot a
++            // launcher program that hands over to the game in another program of the same file.
++            // Like Eden's desktop frontend (MainWindow::OnExecuteProgram), the current program
++            // is stopped and the same file loaded again at the program index asked for.
++            std::optional<Service::AM::FrontendAppletParameters> next_program;
+             for (unsigned cycle = 0; guest && cycle < cycles; ++cycle) {
+                 if (game) LOG_INFO(Frontend, "EDEN_GAME_SESSION_BEGIN {}", cycle + 1);
+                 struct Completion {
+@@ -1522,6 +1557,7 @@ int main(int argc, char** argv) {
+                     bool room_lost = false;
+                     std::exception_ptr failure;
+                     std::string guest_fault;
++                    std::optional<std::size_t> execute_program;
+                 };
+                 auto completion = std::make_shared<Completion>();
+                 system.RegisterExitCallback([completion] {
+@@ -1529,18 +1565,26 @@ int main(int argc, char** argv) {
+                     completion->exited = true;
+                     completion->wake.notify_one();
+                 });
++                // Called on a guest thread: only noted here, the program is changed below once
++                // this session has been stopped.
++                system.RegisterExecuteProgramCallback([completion](std::size_t program_index) {
++                    std::lock_guard lock(completion->mutex);
++                    if (!completion->execute_program) completion->execute_program = program_index;
++                    completion->exited = true;
++                    completion->wake.notify_one();
++                });
+                 SCOPE_EXIT {
+                     if (system.IsPoweredOn()) system.ShutdownMainProcess();
+                     system.RegisterExitCallback({});
++                    system.RegisterExecuteProgramCallback({});
+                 };
+                 // Like Eden's Qt/Android frontends, reset shutdown state for each load.
+                 system.SetShuttingDown(false);
                  // Update and DLC files (NSP or XCI) in the game files' updates folder apply to their
                  // base game: Eden's ExternalContentProvider, which the patch manager checks first.
                  // So do those in the game's own folder, when it has one (roms/<folder>/, issue 168).
@@ -1015,7 +1162,20 @@ index 5b654e2..a9990cc 100644
                  system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
                  // The game's own contents, registered as Eden's desktop frontends do before booting a
                  // game (ConfigureFilesystemProvider). An update's data is a patch on the base game's:
-@@ -1614,7 +1638,7 @@ int main(int argc, char** argv) {
+@@ -1564,6 +1608,12 @@ int main(int argc, char** argv) {
+                 Service::AM::FrontendAppletParameters params{
+                     .applet_id = Service::AM::AppletId::Application,
+                 };
++                if (next_program) {
++                    params = *next_program;
++                    next_program.reset();
++                    Eden::Report("launch", ("Starting program " + std::to_string(params.program_index) +
++                                            " of this game").c_str());
++                }
+ #ifdef PS5_NATIVE
+                 // While a game loads nothing else reads the controller, so Touchpad + L1 did nothing
+                 // until the game ran: a load that hung could only be left by closing ProsperoEden.
+@@ -1614,7 +1664,7 @@ int main(int argc, char** argv) {
                  }
  #ifdef PS5_NATIVE
                  if (game) {
@@ -1024,16 +1184,58 @@ index 5b654e2..a9990cc 100644
                      const bool saved_last = Eden::SaveLastGame(filename);
                      const bool saved_recent = Eden::SaveRecentGame(filename);
                      if (!saved_last || !saved_recent)
-@@ -2019,6 +2043,9 @@ int main(int argc, char** argv) {
+@@ -2019,6 +2069,11 @@ int main(int argc, char** argv) {
                      completion->wake.wait_for(lock, std::chrono::milliseconds(wait_ms), completed);
                      const bool guest_exited = completion->exited;
                      return_to_menu = completion->return_to_menu;
 +#ifdef PS5_NATIVE
-+                    if (guest_exited && forwarded_session && forwarded.exit_after_game) return_to_menu = true;
++                    // A program change (ExecuteProgram) is not the game ending: the session goes on.
++                    if (guest_exited && !completion->execute_program && forwarded_session && forwarded.exit_after_game)
++                        return_to_menu = true;
 +#endif
  #ifdef PS5_NATIVE
                      if (completion->room_lost)
                          launch_error = "The room connection was lost. Rejoin from Multiplayer before launching again.";
+@@ -2051,6 +2106,14 @@ int main(int argc, char** argv) {
+                     for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
+                 }
+ #endif
++                // A program change asked for by the game: read before the process is gone.
++                std::optional<std::size_t> program_asked;
++                u64 previous_program_id = 0;
++                {
++                    std::lock_guard lock(completion->mutex);
++                    if (!completion->return_to_menu) program_asked = completion->execute_program;
++                }
++                if (program_asked) previous_program_id = system.GetApplicationProcessProgramID();
+                 system.ShutdownMainProcess();
+                 Eden::Report("shutdown", "Game stopped; releasing renderer");
+ #ifndef PS5_NATIVE
+@@ -2113,6 +2176,24 @@ int main(int argc, char** argv) {
+ #endif
+ #endif
+                 if (game) LOG_INFO(Frontend, "EDEN_GAME_SESSION_END {}", cycle + 1);
++                if (program_asked && !return_to_menu) {
++                    Service::AM::FrontendAppletParameters next{
++                        .applet_id = Service::AM::AppletId::Application,
++                        .launch_type = Service::AM::LaunchType::ApplicationInitiated,
++                        .program_index = static_cast<s32>(*program_asked),
++                    };
++                    if (previous_program_id > static_cast<u64>(Service::AM::AppletProgramId::MaxProgramId)) {
++                        next.program_id = previous_program_id;
++                        next.previous_program_index =
++                            static_cast<s32>(previous_program_id - FileSys::GetBaseTitleID(previous_program_id));
++                    }
++                    LOG_INFO(Frontend, "ExecuteProgram: program_index={} previous_program_id={:016X}",
++                             *program_asked, previous_program_id);
++                    next_program = next;
++                    // The old program has stopped: its stop limit must not end the next one.
++                    Eden::StopLimit::End();
++                    --cycle;  // the same session goes on in the new program (unsigned wrap is defined)
++                }
+             }
+         }
+         passed("core_destroyed");
 diff --git a/headless/metadata_bridge.cpp b/headless/metadata_bridge.cpp
 index 5dfcd6d..258850e 100644
 --- a/headless/metadata_bridge.cpp
@@ -1185,6 +1387,32 @@ index 6b8fcfb..2258277 100644
  // had no save).
  int eden_save_import(uint64_t title_id, char* path, size_t capacity);
  // Copies the game's saves to save-export/<title ID>-<date>-<time>/ (account/ and device/) in the
+diff --git a/headless/mods.h b/headless/mods.h
+index d25b29f..6c7457f 100644
+--- a/headless/mods.h
++++ b/headless/mods.h
+@@ -69,6 +69,21 @@ inline std::string& SessionGameFolder() {
+     return folder;
+ }
+ 
++// That game's title ID; main.cpp sets it with the folder.
++inline std::uint64_t& SessionTitle() {
++    static std::uint64_t title = 0;
++    return title;
++}
++
++// The game folder whose mods and cheats apply to `title_id`: the session's, for its own title
++// alone. Eden asks for the mods of every title it patches, the game's DLC and update among them,
++// and a game folder's mods are the game's: given for its DLC too, a mod switched off for the game
++// (its title's disabled list) still applied to the DLC's data, and the game did not start
++// (issue 281). Mods for one of those titles go in mods/<its title ID>/.
++inline std::string GameFolderFor(std::uint64_t title_id) {
++    return title_id != 0 && title_id == SessionTitle() ? SessionGameFolder() : std::string{};
++}
++
+ enum : unsigned {
+     kCode = 1,    // exefs: patches or replacement code
+     kFiles = 2,   // romfs: replacement game files
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
 index 1d5a8a3..1ff0571 100644
 --- a/headless/prosperoeden/eden_services.cpp
@@ -2606,6 +2834,18 @@ index 3002c52..be84383 100644
      snprintf(marker, sizeof(marker), "EDEN_PPSA99121_EXIT_REFUSED rc=%x\n", (unsigned)refused);
      sceKernelDebugOutText(0, marker);
      return refused;
+diff --git a/tools/build-headless-native.sh b/tools/build-headless-native.sh
+index 92250f7..42d3d76 100644
+--- a/tools/build-headless-native.sh
++++ b/tools/build-headless-native.sh
+@@ -74,6 +74,7 @@ python3 -B "$root/tools/check-multiplayer-headers.py" "$scratch/native-local"
+ [[ ${EDEN_SKIP_SOURCE_CHECKS:-0} == 1 ]] && exit 0
+ python3 -B "$root/headless/check_audio_shutdown.py" "$scratch/native-local/headless/core.cpp" "$scratch/source/src/core/core.cpp"
+ python3 -B "$root/tools/check-load-failure.py"
++python3 -B "$root/tools/check-game-folder-mods.py"
+ python3 -B "$root/tools/check-nso-memory.py"
+ python3 -B "$root/tools/check-performance.py"
+ python3 -B "$root/tools/check-performance-settings.py"
 diff --git a/tools/build-lapy-helper.py b/tools/build-lapy-helper.py
 index ec01783..830bd70 100644
 --- a/tools/build-lapy-helper.py
@@ -2653,6 +2893,117 @@ index 47e98bf..c41035c 100644
      ;;
  *)
      echo "usage: tools/build-package.sh release|dev TITLE_ID" >&2
+diff --git a/tools/build-radv-dependencies.sh b/tools/build-radv-dependencies.sh
+index 92762ae..e409e1b 100644
+--- a/tools/build-radv-dependencies.sh
++++ b/tools/build-radv-dependencies.sh
+@@ -45,8 +45,10 @@ python3 "$root/tools/patch-radv-wsi.py"
+ python3 "$root/tools/patch-radv-gs-compute.py"
+ python3 "$root/tools/patch-radv-disk-cache.py"
+ python3 "$root/tools/patch-radv-transfer-split.py"
++python3 "$root/tools/patch-radv-spirv-failure.py"
+ bash "$vulkan/tools/build-radv.sh" release
+ python3 -B "$root/tools/patch-radv-wsi.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_WSI_SHA256"
+ python3 -B "$root/tools/patch-radv-gs-compute.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_GS_SHA256"
+ python3 -B "$root/tools/patch-radv-disk-cache.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_DISK_CACHE_SHA256"
+ python3 -B "$root/tools/patch-radv-transfer-split.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_TRANSFER_SPLIT_SHA256"
++python3 -B "$root/tools/patch-radv-spirv-failure.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_SPIRV_FAILURE_SHA256"
+diff --git a/tools/check-game-folder-mods.py b/tools/check-game-folder-mods.py
+new file mode 100644
+index 0000000..af5174e
+--- /dev/null
++++ b/tools/check-game-folder-mods.py
+@@ -0,0 +1,67 @@
++#!/usr/bin/env python3
++# SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
++# SPDX-License-Identifier: GPL-3.0-or-later
++"""Check that a game folder's mods and cheats apply to the game's own title alone (issue 281).
++
++Eden asks for the mods of every title it patches, the game's DLC and update among them. A game
++folder's mods were given for all of them, and the game's disabled list (its title's) does not
++cover its DLC: a mod switched off for the game still applied to its DLC's data. This compiles
++headless/mods.h, makes a game folder with a mod and a cheat file, and checks which titles get
++them; and that the patch manager's mod folder (game_folder_vfs.h) and the frontend (main.cpp)
++go by it.
++"""
++from pathlib import Path
++import os, subprocess, tempfile
++
++root = Path(__file__).resolve().parents[1]
++vfs = (root / 'headless/game_folder_vfs.h').read_text()
++assert 'Mods::GameFolderFor(title_id)}' in vfs and 'Mods::SessionGameFolder()}' not in vfs, \
++    'game_folder_vfs.h must take the game folder for the asked title only'
++main = (root / 'headless/main.cpp').read_text()
++assert main.count('Eden::Mods::SessionTitle() = 0;') == 1 and main.count('Eden::Mods::SessionTitle() = game_title;') == 1
++
++code = r'''
++#include "mods.h"
++#include <cassert>
++#include <cstdio>
++#include <fstream>
++namespace fs = std::filesystem;
++using namespace Eden::Mods;
++int main(int, char** argv) {
++    const fs::path game = fs::path(argv[1]) / "roms" / "Mario Kart 8 Deluxe";
++    fs::create_directories(game / "mods" / "Some Mod" / "romfs" / "Data");
++    std::ofstream(game / "mods" / "Some Mod" / "romfs" / "Data" / "file.bin") << "x";
++    fs::create_directories(game / "cheats");
++    std::ofstream(game / "cheats" / "6A85262F21B90364.txt") << "[Cheat]\n04000000 00000000 00000000\n";
++    constexpr std::uint64_t base = 0x0100152000022000, update = 0x0100152000022800, dlc = 0x0100152000023001;
++    SessionGameFolder() = game.string();
++    SessionTitle() = base;
++    // The game's own title: its folder, and its mod.
++    assert(GameFolderFor(base) == game.string());
++    const Places own{"", "", GameFolderFor(base)};
++    const auto mods = List(own, base);
++    const bool has_mod = std::any_of(mods.begin(), mods.end(), [](const Mod& m) { return m.name == "Some Mod"; });
++    assert(has_mod);
++    assert(!CheatFolderFiles(own, base).empty());
++    // Its DLC and its update: no game folder, so neither its mods nor its cheats.
++    for (const auto title : {dlc, update, std::uint64_t{0x0100000000010000}}) {
++        assert(GameFolderFor(title).empty());
++        const Places other{"", "", GameFolderFor(title)};
++        assert(List(other, title).empty());
++        assert(CheatFolderFiles(other, title).empty());
++    }
++    // No game being started (or a game directly in roms/): nothing, also for title 0.
++    SessionTitle() = 0;
++    assert(GameFolderFor(0).empty() && GameFolderFor(base).empty());
++    SessionGameFolder().clear();
++    SessionTitle() = base;
++    assert(GameFolderFor(base).empty());
++    std::puts("game folder mods: PASS");
++}
++'''
++with tempfile.TemporaryDirectory() as tmp:
++    exe = Path(tmp) / 'game-folder-mods'
++    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror',
++                    '-I' + str(root / 'headless'), '-x', 'c++', '-', '-o', str(exe)], input=code, text=True, check=True)
++    subprocess.run([str(exe), tmp], check=True)
++print("Game folder mods: PASS a game folder's mods and cheats apply to its own title, not its DLC or update")
+diff --git a/tools/check-radv-gs-cache.py b/tools/check-radv-gs-cache.py
+index 91d9d3a..8baba3a 100644
+--- a/tools/check-radv-gs-cache.py
++++ b/tools/check-radv-gs-cache.py
+@@ -26,6 +26,8 @@ assert 'patch-radv-disk-cache.py --check "$radv_release/EDEN_DISK_CACHE_SHA256"'
+ assert 'patch-radv-disk-cache.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_DISK_CACHE_SHA256"' in build
+ assert 'patch-radv-transfer-split.py --check "$radv_release/EDEN_TRANSFER_SPLIT_SHA256"' in prepare
+ assert 'patch-radv-transfer-split.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_TRANSFER_SPLIT_SHA256"' in build
++assert 'patch-radv-spirv-failure.py --check "$radv_release/EDEN_SPIRV_FAILURE_SHA256"' in prepare
++assert 'patch-radv-spirv-failure.py" --digest > "$vulkan/.deps/native/radv-release/EDEN_SPIRV_FAILURE_SHA256"' in build
+ # Execute the actual prepare-build conditional with a cached driver and a stub builder.
+ start=prepare.index('if [[ -f $radv_release/lib/libvulkan_radeon.ps5.a ]]')
+ end=prepare.index('\nif [[ ! -f build/radv-isolated/',start)
+@@ -41,6 +43,9 @@ with tempfile.TemporaryDirectory() as folder:
+     split=root/'tools/patch-radv-transfer-split.py'
+     shutil.copyfile(split,work/'tools/patch-radv-transfer-split.py')
+     (work/'release/EDEN_TRANSFER_SPLIT_SHA256').write_bytes(subprocess.check_output([sys.executable,str(split),'--digest']))
++    spirv=root/'tools/patch-radv-spirv-failure.py'
++    shutil.copyfile(spirv,work/'tools/patch-radv-spirv-failure.py')
++    (work/'release/EDEN_SPIRV_FAILURE_SHA256').write_bytes(subprocess.check_output([sys.executable,str(spirv),'--digest']))
+     (work/'tools/build-radv-dependencies.sh').write_text('echo rebuilt >> calls\n')
+     body='set -euo pipefail\nradv_release=release\nmesa_pin=pinned\nstep() { :; }\n'+prepare[start:end]
+     def rebuilt():
 diff --git a/tools/ci/make-dist.py b/tools/ci/make-dist.py
 index e2f800c..bccaeb4 100644
 --- a/tools/ci/make-dist.py
@@ -2817,3 +3168,174 @@ index 194ebd8..1c4e823 100644
      "$app/sce_sys/snd0.at9"
 +
 +python3 "$root/tools/botty-provenance.py" "$root" "$app"
+diff --git a/tools/patch-radv-spirv-failure.py b/tools/patch-radv-spirv-failure.py
+new file mode 100755
+index 0000000..5727625
+--- /dev/null
++++ b/tools/patch-radv-spirv-failure.py
+@@ -0,0 +1,151 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: GPL-3.0-or-later
++"""A shader whose SPIR-V the driver cannot read builds no pipeline, rather than crashing it.
++
++Mesa's spirv_to_nir gives back nothing for SPIR-V it refuses, and RADV went on with that nothing:
++This War of Mine crashed on a VkPipelineBuilder thread (radv_shader_spirv_to_nir reading address
++0x40) as one of its shaders, as Eden translated it, was refused. Why it was refused went to the
++VK_EXT_debug_report callback Eden does not install. Now the reason is written to stderr (Eden's
++stderr.log) with the stage, and a graphics or compute pipeline with such a shader fails to be
++created (VK_ERROR_UNKNOWN). Eden already catches that: it logs the pipeline, and the draws and
++dispatches that use it are skipped. Applied to the driver checkout after
++patch-radv-transfer-split.py; running it again changes nothing.
++"""
++from pathlib import Path
++import sys
++import hashlib
++
++fingerprint = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
++if sys.argv[1:2] == ['--digest']:
++    print(fingerprint)
++    raise SystemExit(0)
++if sys.argv[1:2] == ['--check']:
++    stamp = Path(sys.argv[2])
++    raise SystemExit(0 if stamp.is_file() and stamp.read_text().strip() == fingerprint else 1)
++
++root = Path(__file__).resolve().parents[1]
++src = Path(sys.argv[1]) if len(sys.argv) > 1 else root.parent / 'mihawk-vulkan-review/.deps/work/radv-src'
++vulkan = src / 'src/amd/vulkan'
++mark = 'tools/patch-radv-spirv-failure.py'
++
++
++def edit(path, changes):
++    """Each (before, after) once; a file that has every after already is left as it is."""
++    text = path.read_text()
++    changed = False
++    for before, after in changes:
++        if after in text:
++            continue
++        assert text.count(before) == 1, f'{path.name} changed: {before.splitlines()[0].strip()}'
++        text = text.replace(before, after)
++        changed = True
++    if changed:
++        path.write_text(text)
++    return changed
++
++
++changed = edit(vulkan / 'radv_shader.c', [
++    ('''   snprintf(buffer, sizeof(buffer), "SPIR-V offset %lu: %s", (unsigned long)spirv_offset, message);
++''', '''   snprintf(buffer, sizeof(buffer), "SPIR-V offset %lu: %s", (unsigned long)spirv_offset, message);
++
++   /* ProsperoEden: why a shader's SPIR-V was refused, in the log (tools/patch-radv-spirv-failure.py) */
++   if (level == NIR_SPIRV_DEBUG_LEVEL_ERROR)
++      fprintf(stderr, "[ProsperoEden] radv: %s\\n", buffer);
++'''),
++    ('''                         &compiler_info->nir_options[stage->stage]);
++      nir->info.internal |= is_internal;
++''', '''                         &compiler_info->nir_options[stage->stage]);
++      if (!nir) {
++         /* ProsperoEden: SPIR-V the reader refused (why: the line before) builds no pipeline
++          * (tools/patch-radv-spirv-failure.py). */
++         fprintf(stderr, "[ProsperoEden] radv: a %s shader's SPIR-V (%u bytes) was refused: its pipeline is not built\\n",
++                 _mesa_shader_stage_to_string(stage->stage), (unsigned)stage->spirv.size);
++         vtn_free_specialization(spec);
++         return NULL;
++      }
++      nir->info.internal |= is_internal;
++'''),
++])
++
++changed |= edit(vulkan / 'radv_pipeline_graphics.h', [
++    ('void radv_graphics_shaders_compile(', 'bool radv_graphics_shaders_compile('),
++])
++
++graphics = vulkan / 'radv_pipeline_graphics.c'
++changed |= edit(graphics, [
++    ('''void
++radv_graphics_shaders_compile(''', '''bool
++radv_graphics_shaders_compile('''),
++    ('''            stages[s].nir = radv_shader_spirv_to_nir(compiler_info, &stages[s], &options, is_internal);
++            if (nir_cache)
++               radv_pipeline_cache_insert_nir(compiler_info, cache, key, stages[s].nir);
++         }
++      }
++
++      stages[s].feedback.duration += os_time_get_nano() - stage_start;
++   }
++''', '''            stages[s].nir = radv_shader_spirv_to_nir(compiler_info, &stages[s], &options, is_internal);
++            if (nir_cache && stages[s].nir)
++               radv_pipeline_cache_insert_nir(compiler_info, cache, key, stages[s].nir);
++         }
++      }
++
++      stages[s].feedback.duration += os_time_get_nano() - stage_start;
++   }
++
++   /* ProsperoEden: a stage whose SPIR-V was refused has no NIR, and nothing is compiled
++    * (tools/patch-radv-spirv-failure.py). */
++   for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
++      if (stages[s].stage != MESA_SHADER_NONE && !stages[s].nir)
++         return false;
++   }
++'''),
++    ('''      gs_compute->tess = gs_compute_nir.tess;
++      gs_compute->used = true;
++   }
++}
++''', '''      gs_compute->tess = gs_compute_nir.tess;
++      gs_compute->used = true;
++   }
++   return true;
++}
++'''),
++    ('''   radv_graphics_shaders_compile(compiler_info, cache, stages, &gfx_state->key.gfx_state, pipeline->base.is_internal,
++                                 retained_shaders, noop_fs, debug, binaries, &gs_copy_debug, &gs_copy_binary,
++                                 &gs_compute);
++''', '''   if (!radv_graphics_shaders_compile(compiler_info, cache, stages, &gfx_state->key.gfx_state,
++                                      pipeline->base.is_internal, retained_shaders, noop_fs, debug, binaries,
++                                      &gs_copy_debug, &gs_copy_binary, &gs_compute)) {
++      /* ProsperoEden: no pipeline from SPIR-V the reader refused (tools/patch-radv-spirv-failure.py) */
++      result = VK_ERROR_UNKNOWN;
++      goto done;
++   }
++'''),
++])
++
++changed |= edit(vulkan / 'radv_pipeline_compute.c', [
++    ('''   cs_stage->nir = radv_shader_spirv_to_nir(compiler_info, cs_stage, NULL, is_internal);
++''', '''   cs_stage->nir = radv_shader_spirv_to_nir(compiler_info, cs_stage, NULL, is_internal);
++   if (!cs_stage->nir)
++      return NULL; /* ProsperoEden: SPIR-V the reader refused (tools/patch-radv-spirv-failure.py) */
++'''),
++    ('''      radv_compile_cs(compiler_info, &cs_stage, pipeline->base.is_internal, &cs_dbg);
++''', '''      radv_compile_cs(compiler_info, &cs_stage, pipeline->base.is_internal, &cs_dbg);
++   if (!cs_binary) {
++      /* ProsperoEden: no pipeline from SPIR-V the reader refused (tools/patch-radv-spirv-failure.py) */
++      radv_pipeline_stage_finish(&cs_stage);
++      result = VK_ERROR_UNKNOWN;
++      goto done;
++   }
++'''),
++])
++
++if changed:
++    # Upstream skips the whole build while its receipt names the pinned revision: set the receipt
++    # aside so the next build compiles the changed files (Ninja keeps every other object).
++    provenance = root.parent / 'mihawk-vulkan-review/.deps/native/radv-release/PROVENANCE.txt'
++    if provenance.exists():
++        provenance.replace(provenance.with_suffix('.base.txt'))
++for path in ('radv_shader.c', 'radv_pipeline_graphics.c', 'radv_pipeline_compute.c'):
++    assert mark in (vulkan / path).read_text(), f'{path} is not patched'
++print('RADV: refused SPIR-V logged, its pipeline not built')
+diff --git a/tools/prepare-build.sh b/tools/prepare-build.sh
+index 6fc17c5..87df74e 100644
+--- a/tools/prepare-build.sh
++++ b/tools/prepare-build.sh
+@@ -98,7 +98,8 @@ if [[ -f $radv_release/lib/libvulkan_radeon.ps5.a ]]; then
+     elif ! python3 -B tools/patch-radv-wsi.py --check "$radv_release/EDEN_WSI_SHA256" ||
+          ! python3 -B tools/patch-radv-gs-compute.py --check "$radv_release/EDEN_GS_SHA256" ||
+          ! python3 -B tools/patch-radv-disk-cache.py --check "$radv_release/EDEN_DISK_CACHE_SHA256" ||
+-         ! python3 -B tools/patch-radv-transfer-split.py --check "$radv_release/EDEN_TRANSFER_SPLIT_SHA256"; then
++         ! python3 -B tools/patch-radv-transfer-split.py --check "$radv_release/EDEN_TRANSFER_SPLIT_SHA256" ||
++         ! python3 -B tools/patch-radv-spirv-failure.py --check "$radv_release/EDEN_SPIRV_FAILURE_SHA256"; then
+         step "RADV: this repository's adaptation of the driver changed"
+         bash tools/build-radv-dependencies.sh
+         rm -f build/radv-isolated/libvulkan_radeon.ps5.a
