@@ -5,7 +5,9 @@ Assets, in dist/: botty-plus-<version>.tar.gz (every package, as package-release
 botty-plus-<version>-Folder.zip (the native title as PPSA99071/), SHA256SUMS for the archive and
 Botty-Catalog-SHA256SUMS.txt for the folder. The release notes are docs/releases/<version>.md
 unless --notes names another file; the title is their first heading unless --title is given.
---dry-run builds and checks everything without creating the tag or the release.
+--dry-run builds and checks everything without creating the tag or the release. The release is
+uploaded as a draft and published, as latest, only once every asset is checked; a failed run leaves
+the draft to inspect or delete.
 """
 import argparse
 import hashlib
@@ -107,14 +109,14 @@ def build(version):
     return assets
 
 
-def verify_published(tag, assets):
+def verify_uploaded(tag, assets, draft):
     published = json.loads(run(['gh', 'release', 'view', tag, '--repo', REPOSITORY, '--json', 'assets,isDraft']))
     sizes = {asset['name']: asset['size'] for asset in published['assets']}
     for asset in assets:
         if sizes.get(asset.name) != asset.stat().st_size:
-            raise SystemExit(f'Published {asset.name} does not match the local asset')
-    if published['isDraft']:
-        raise SystemExit(f'{tag} is still a draft')
+            raise SystemExit(f'Uploaded {asset.name} does not match the local asset; the {tag} draft stays unpublished')
+    if published['isDraft'] != draft:
+        raise SystemExit(f'{tag} is {"a draft" if published["isDraft"] else "already published"}')
 
 
 def main():
@@ -134,9 +136,12 @@ def main():
     if args.dry_run:
         print(f'Dry run: would publish {tag} "{title}" at {head[:12]} with {", ".join(a.name for a in assets)}')
         return
+    # A draft first: nothing is public, and nothing is latest, until every asset is uploaded and checked.
     subprocess.run(['gh', 'release', 'create', tag, *map(str, assets), '--repo', REPOSITORY, '--target', head,
-                    '--title', title, '--notes-file', str(notes), '--latest'], cwd=ROOT, check=True)
-    verify_published(tag, assets)
+                    '--title', title, '--notes-file', str(notes), '--draft'], cwd=ROOT, check=True)
+    verify_uploaded(tag, assets, draft=True)
+    run(['gh', 'release', 'edit', tag, '--repo', REPOSITORY, '--draft=false', '--latest'])
+    verify_uploaded(tag, assets, draft=False)
     print(f'Published https://github.com/{REPOSITORY}/releases/tag/{tag}')
 
 
