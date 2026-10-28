@@ -37,7 +37,10 @@ def load(name, path):
 
 
 def run(command, **options):
-    return subprocess.run(command, cwd=ROOT, check=True, text=True, capture_output=True, **options).stdout.strip()
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, **options)
+    if result.returncode:
+        raise SystemExit(f'{" ".join(command[:3])} failed: {result.stderr.strip() or result.stdout.strip()}')
+    return result.stdout.strip()
 
 
 def sha256(path):
@@ -113,6 +116,8 @@ def verify_uploaded(tag, assets, draft):
     published = json.loads(run(['gh', 'release', 'view', tag, '--repo', REPOSITORY, '--json', 'assets,isDraft']))
     # GitHub's own SHA-256 of each stored asset, so contents are checked without downloading them.
     digests = {asset['name']: (asset['size'], asset.get('digest')) for asset in published['assets']}
+    if any(asset.get('digest') is None for asset in published['assets']):
+        raise SystemExit(f'gh did not report asset digests: update gh; the {tag} draft stays unpublished')
     for asset in assets:
         if digests.get(asset.name) != (asset.stat().st_size, 'sha256:' + sha256(asset)):
             raise SystemExit(f'Uploaded {asset.name} does not match the local asset; the {tag} draft stays unpublished')
