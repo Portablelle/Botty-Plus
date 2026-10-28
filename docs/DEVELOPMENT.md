@@ -72,6 +72,23 @@ version, generated PS5 identity, exact component inventory and GitHub tag
 checks. Use `python3 scripts/package-release.py` for the complete
 `botty-plus-<version>.tar.gz` release asset.
 
+To publish a GitHub release once the packaged version is merged, check out
+`main` at `origin/main` and run:
+
+```sh
+python3 scripts/publish-release.py --dry-run
+python3 scripts/publish-release.py
+```
+
+It refuses a dirty checkout, a commit other than `origin/main` and an existing
+tag or release. It builds the archive, the `PPSA99071` folder ZIP and their
+checksum files in `dist/`, and uploads them as a draft. The release is published
+as latest only after every uploaded asset matches its local size and SHA-256
+(GitHub's stored digest), which needs a `gh` that reports asset digests
+(2.102.1 does). The notes are
+`docs/releases/<version>.md`, titled by their first heading; `--notes` and
+`--title` override them.
+
 For documentation-only changes inside packaged components, use
 `package-botty.py --source-only` and `package-native.py --source-only`; never use
 source-only packaging to represent changed executables. Credentials, console
