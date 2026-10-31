@@ -21,7 +21,7 @@ python3 scripts/botty-packages.py --check
 ```
 
 `bash scripts/botty-host-checks.sh` runs the full Linux suite used by CI and the
-pre-push loop. It compiles through ccache whenever `ccache` is on `PATH`, so a
+local validation loop. It compiles through ccache whenever `ccache` is on `PATH`, so a
 local cache makes repeated runs much faster:
 
 ```sh
@@ -36,7 +36,8 @@ sets `CCACHE_BASEDIR` to the checkout, so entries are shared between worktrees.
 `BOTTY_CHANGED_FILES` may name a file listing changed paths, one per line, to skip
 the compiled suites those paths cannot affect, as PR checks do.
 `BOTTY_HOST_CHECK_BUILD_ONLY=1` compiles the selected suites without running their
-tests; default-branch checks use it for merges whose tree was already validated.
+tests or pure tree checks; default-branch checks use it for merges whose tree
+was already validated.
 
 macOS renderer preview: `make -C homebrew/botty-native preview` (requires `sips`).
 PS5 builds use the component Dockerfiles and pinned SDKs; host tests do not prove

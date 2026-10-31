@@ -100,7 +100,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          # Compile without re-running tests only when this commit's tree is exactly
+          # Compile without re-running tree checks only when this commit's tree is exactly
           # the head of its merged same-repo PR and that head's isolated host checks
           # passed. Any doubt or API failure keeps the full suite.
           tree=$(git rev-parse "$SHA^{tree}")
@@ -114,7 +114,7 @@ jobs:
              state=$(HEAD=$head bash .github/scripts/claude-status.sh 'Claude host checks' state) &&
              [ "$state" = success ]; then
             echo "BOTTY_HOST_CHECK_BUILD_ONLY=1" >> "$GITHUB_ENV"
-            echo "::notice::$SHA has the tree of validated PR head ${head::7}; compiling without re-running tests."
+            echo "::notice::$SHA has the tree of validated PR head ${head::7}; compiling without re-running tree checks."
           fi
       - name: Run host checks
         run: bash scripts/botty-host-checks.sh

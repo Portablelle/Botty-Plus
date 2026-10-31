@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null) || upstream=origin/main
+base=$(git merge-base HEAD "$upstream")
+changed=$(mktemp)
+trap 'rm -f "$changed"' EXIT
+git diff --name-only --diff-filter=ACMRT --no-renames -z "$base" HEAD > "$changed"
+while IFS= read -r -d '' path; do
+  [ -f "$path" ] || continue
+  case "$path" in
+    *.sh) bash -n -- "$path" ;;
+    *.py) python3 -m py_compile "$path" ;;
+    *.js|*.mjs) node --check -- "$path" ;;
+  esac
+done < "$changed"
