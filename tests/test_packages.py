@@ -45,7 +45,7 @@ class PackageTests(unittest.TestCase):
         contract.verify(ROOT/'packages')
     def test_service_source_archive_bundles_remote_test_dependencies(self):
         with tarfile.open(ROOT/'packages/botty/botty-source.tar.gz', 'r:gz') as archive:
-            for name in ['server.py', 'test_server.py', 'README.md']:
+            for name in ['server.py', 'forge.py', 'apr.py', 'test_server.py', 'test_forge.py', 'test_apr.py', 'README.md']:
                 self.assertEqual(archive.extractfile('botty/deployment/botty-remote/'+name).read(),
                                  (ROOT/'deployment/botty-remote'/name).read_bytes())
     def test_native_source_archive_matches_current_runtime_sources(self):

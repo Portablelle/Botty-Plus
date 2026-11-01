@@ -56,7 +56,7 @@ is left intact rather than adopted after a reconnect.
 
 ## Upgrading to parallel imports
 
-Update `/opt/botty-remote/server.py` and `/opt/botty-remote/forge.py`, then restart the bridge while its transfers are
+Update `/opt/botty-remote/server.py`, `/opt/botty-remote/forge.py` and `/opt/botty-remote/apr.py`, then restart the bridge while its transfers are
 idle **before** updating the PS5 manager to 1.7.0. Keep the private configuration,
 registry and server downloads. The bridge advertises `capabilities.boundedRanges`
 in torrent snapshots. Older managers can still use its open-ended ranges.
@@ -66,7 +66,7 @@ misleading file-range fault. Imports retry after the bridge is updated.
 
 ## Private provisioning
 
-1. Install both `server.py`, `forge.py` and `switch_prepare.py` in `/opt/botty-remote` (the module is required even when conversion is disabled), and the systemd unit in
+1. Install `server.py`, `forge.py`, `apr.py` and `switch_prepare.py` in `/opt/botty-remote` (the modules are required even when conversion is disabled), and the systemd unit in
    `/etc/systemd/system`. The supplied unit runs as the existing `ubuntu` account;
    adapt that account and paths for another installation.
 2. Create private `/etc/botty-remote/config.json` with fields `qbUrl`
@@ -150,7 +150,7 @@ No slot or metadata admission limit is raised by parallel imports.
 
 ## Optional server-only package preparation
 
-Copy `forge.py` alongside `server.py` when upgrading. To prepare PKG/FPKG,
+Copy `forge.py` and `apr.py` alongside `server.py` when upgrading. To prepare PKG/FPKG,
 install [PS5 Dump Forge](https://github.com/quer3q/ps5-dump-forge) on the server
 and set `forgeBinary` in the private bridge configuration to its absolute CLI
 path, for example `/opt/ps5-dump-forge/ps5-dump-forge`. The CLI contract inspected
@@ -176,10 +176,45 @@ The PS5 never receives the package itself. Pausing the torrent or import does
 not suspend an already running conversion. Converted output is kept for retry;
 an incomplete private output is not overwritten automatically.
 
-Run `python3 test_server.py` and `python3 test_forge.py` before deploying. These
+Run `python3 test_server.py`, `python3 test_forge.py` and `python3 test_apr.py` before deploying. These
 changes do not install Forge, change your running service or modify any torrent.
 See [the preparation design](../../docs/game-preparation.md) for storage,
 ShadowMount/home-screen admission and the supported-format boundaries.
+
+### Automatic Unity APR compatibility fixes
+
+New package conversions check the produced exFAT image before publishing it as
+ready. `apr.py` contains independently reviewed, PS5 startup-tested fallbacks for
+Marsupilami Hoobadventure PPSA08242 01.000.006, Biped PPSA24589 01.000.002 and
+Biped 2 PPSA23066 01.012.000. Matching requires the entire **raw SELF** SHA-256,
+title ID, version and original instruction bytes; each build has its own offset.
+The replacement selects Unity's existing ordinary file reader before APR is
+installed. It does not suppress startup validation or modify global payloads.
+
+Only existing executable data in the private output image is changed; there is
+no second expanded game folder. The original executable is flushed as private
+`apr-original-eboot.self`, and `apr-fix.json` records the intent, offsets,
+before/after bytes and original/patched hashes. The executable is read back and
+hashed before `ready` and `outputIdentity` are saved. A failure leaves the
+conversion needing attention, preserving the source package and journal.
+On an explicit retry after inspecting/removing an uncommitted image, a retained
+`apr-original-eboot.self` is reused only if it is a regular, non-symlink file
+whose size and SHA-256 match the original executable. A mismatched or incomplete
+backup is preserved and named in the error for operator inspection.
+
+Unknown executables are **not patched**. The journal records `unrecognized` and
+whether the executable contains an APR diagnostic marker (`candidate`); that
+marker is not sufficient proof for an automatic modification. Review the exact
+reader control flow and test a new build on a console before adding its hashes.
+Already-patched known executables are recognized without applying the patch twice.
+Startup validation does not establish extended gameplay or save compatibility.
+
+Existing ready conversions are reused unchanged and are not silently migrated.
+To upgrade a cached image, stop new imports and wait for conversions and file
+transfers to finish; take its worker lock, validate its saved identity, apply the
+same repair and update `aprFix` and `outputIdentity` in its state journal. Never
+rewrite an output being transferred to a console. The retained executable and
+unchanged input package allow a rollback or fresh conversion after inspection.
 
 ### Switch preparation
 

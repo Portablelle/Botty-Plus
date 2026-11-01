@@ -57,6 +57,7 @@ test-remote: build/botty-native build/remote-buffer-test
 	./build/remote-buffer-test
 	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 $(REMOTE_BRIDGE)/test_forge.py
+	python3 $(REMOTE_BRIDGE)/test_apr.py
 	python3 tests/remote_integration.py
 
 test-progress: build/progress-test
@@ -79,6 +80,7 @@ $(INTEGRATION_RUNS): integration-%:
 integration-remote-bridge:
 	python3 $(REMOTE_BRIDGE)/test_server.py
 	python3 $(REMOTE_BRIDGE)/test_forge.py
+	python3 $(REMOTE_BRIDGE)/test_apr.py
 	python3 $(REMOTE_BRIDGE)/test_switch_prepare.py
 	python3 -m unittest discover -s $(REMOTE_BRIDGE) -p test_switch_preparer_state.py -v
 TEST_JOBS ?= 1
