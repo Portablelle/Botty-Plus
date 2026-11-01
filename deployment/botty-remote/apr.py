@@ -29,6 +29,34 @@ class ScanLimitError(ValueError):
     """Valid executable outside the optional compatibility scanner's budget."""
 
 
+def retain_original(backup, original, digest):
+    """Create a durable backup, or validate one retained by an interrupted run."""
+    try:
+        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        fd = os.open(backup, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size != len(original):
+                raise ValueError('APR: retained backup must be a matching regular file: ' + backup.name)
+            actual = hashlib.sha256()
+            left = len(original)
+            while left:
+                chunk = os.read(fd, min(left, 256 * 1024))
+                if not chunk: break
+                actual.update(chunk)
+                left -= len(chunk)
+            if left or actual.hexdigest() != digest or os.read(fd, 1):
+                raise ValueError('APR: retained backup hash mismatch: ' + backup.name)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    else:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(original)
+            stream.flush(); os.fsync(stream.fileno())
+
+
 class ExfatExecutable:
     """Bounded exFAT reader; writes only existing eboot data, without allocation."""
     def __init__(self, image):
@@ -200,10 +228,7 @@ def repair_image(path, title, version, directory, save):
                 if len(before) != len(after) or hashlib.sha256(expected).hexdigest() != patch['patched']:
                     raise ValueError('APR: reviewed replacement hash does not match')
                 backup = directory / 'apr-original-eboot.self'
-                backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(backup_fd, 'wb') as stream:
-                    stream.write(original)
-                    stream.flush(); os.fsync(stream.fileno())
+                retain_original(backup, original, digest)
                 report.update(status='prepared', backup=backup.name, selfOffset=at,
                               before=before.hex(), after=after.hex(), patchedSha256=patch['patched'])
                 save(directory, report, 'apr-fix')

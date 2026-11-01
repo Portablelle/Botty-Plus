@@ -125,6 +125,9 @@ class AprTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'verification failed'): self.repair()
         self.assertEqual(self.image.read_bytes(), before)
         self.assertEqual(json.loads((self.root / 'apr-fix.json').read_text())['status'], 'prepared')
+        with patch.object(apr, 'PATCHES', [self.rule]):
+            self.assertEqual(self.repair()['status'], 'applied')
+        self.assertEqual((self.root / 'apr-original-eboot.self').read_bytes(), self.original)
 
     def test_truncated_geometry_checksum_and_cycle_are_rejected(self):
         for failure in ('geometry', 'checksum', 'cycle'):
@@ -137,15 +140,40 @@ class AprTests(unittest.TestCase):
             with self.subTest(failure=failure), self.assertRaises(ValueError): self.repair()
             self.assertEqual(self.image.read_bytes(), data)
 
-    def test_symlink_image_or_existing_backup_is_not_overwritten(self):
+    def test_matching_backup_from_interrupted_conversion_is_reused(self):
+        image_fixture(self.image, self.original)
+        backup = self.root / 'apr-original-eboot.self'; backup.write_bytes(self.original)
+        identity = backup.stat()
+        with patch.object(apr, 'PATCHES', [self.rule]):
+            self.assertEqual(self.repair()['status'], 'applied')
+        self.assertEqual(backup.read_bytes(), self.original)
+        self.assertEqual((backup.stat().st_ino, backup.stat().st_mtime_ns),
+                         (identity.st_ino, identity.st_mtime_ns))
+
+    def test_symlink_image_or_mismatched_backup_is_not_overwritten(self):
         image_fixture(self.image, self.original)
         link = self.root / 'link.exfat'; link.symlink_to(self.image)
         with self.assertRaises(OSError):
             apr.repair_image(link, 'PPSA12345', '01.000.001', self.root, self.save)
-        backup = self.root / 'apr-original-eboot.self'; backup.write_bytes(b'keep')
-        with patch.object(apr, 'PATCHES', [self.rule]), self.assertRaises(FileExistsError):
-            self.repair()
-        self.assertEqual(backup.read_bytes(), b'keep')
+        backup = self.root / 'apr-original-eboot.self'
+        for original in [b'keep', b'z' * len(self.original)]:
+            backup.write_bytes(original)
+            before = self.image.read_bytes()
+            with patch.object(apr, 'PATCHES', [self.rule]), \
+                    self.assertRaisesRegex(ValueError, 'apr-original-eboot.self'):
+                self.repair()
+            self.assertEqual(backup.read_bytes(), original)
+            self.assertEqual(self.image.read_bytes(), before)
+
+    def test_existing_backup_must_be_regular_and_not_a_symlink(self):
+        image_fixture(self.image, self.original)
+        backup = self.root / 'apr-original-eboot.self'
+        original = self.root / 'original.self'; original.write_bytes(self.original)
+        backup.symlink_to(original)
+        with patch.object(apr, 'PATCHES', [self.rule]), self.assertRaises(OSError): self.repair()
+        self.assertEqual(original.read_bytes(), self.original)
+        backup.unlink(); backup.mkdir()
+        with patch.object(apr, 'PATCHES', [self.rule]), self.assertRaises(ValueError): self.repair()
 
 
 if __name__ == '__main__': unittest.main()

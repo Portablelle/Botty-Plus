@@ -197,6 +197,10 @@ no second expanded game folder. The original executable is flushed as private
 before/after bytes and original/patched hashes. The executable is read back and
 hashed before `ready` and `outputIdentity` are saved. A failure leaves the
 conversion needing attention, preserving the source package and journal.
+On an explicit retry after inspecting/removing an uncommitted image, a retained
+`apr-original-eboot.self` is reused only if it is a regular, non-symlink file
+whose size and SHA-256 match the original executable. A mismatched or incomplete
+backup is preserved and named in the error for operator inspection.
 
 Unknown executables are **not patched**. The journal records `unrecognized` and
 whether the executable contains an APR diagnostic marker (`candidate`); that
