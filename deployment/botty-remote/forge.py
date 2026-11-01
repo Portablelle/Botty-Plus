@@ -10,6 +10,11 @@ import selectors
 import time
 import threading
 import tempfile
+import importlib.util
+
+_apr_spec = importlib.util.spec_from_file_location('botty_apr', Path(__file__).with_name('apr.py'))
+_apr_module = importlib.util.module_from_spec(_apr_spec)
+_apr_spec.loader.exec_module(_apr_module)
 
 
 class Forge:
@@ -185,6 +190,10 @@ class Forge:
             converted = self.inspect(output, fd, directory)
             if converted['kind'] != 'exfat' or converted['title_id'] != info['title_id']:
                 raise ValueError('Converted image metadata does not match the source')
+            state.update(phase='Checking reviewed Unity APR compatibility fixes')
+            with self.lock: self.save(directory, state)
+            state['aprFix'] = _apr_module.repair_image(
+                output, converted['title_id'], converted.get('version', ''), directory, self.save)
             with output.open('rb') as image:
                 os.fsync(image.fileno())
             state.update(status='ready', phase='Converted image ready', outputIdentity=self.identity(output))

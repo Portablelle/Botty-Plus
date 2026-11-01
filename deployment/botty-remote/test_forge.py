@@ -4,7 +4,10 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+import hashlib
 from forge import Forge
+from test_apr import image_fixture
 
 
 class ForgeTests(unittest.TestCase):
@@ -12,6 +15,8 @@ class ForgeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.image_template = self.root / 'template.exfat'
+        image_fixture(self.image_template)
         self.binary = self.root / 'fake-forge'
         self.binary.write_text('''#!/usr/bin/env python3
 import json, pathlib, sys
@@ -21,7 +26,8 @@ if sys.argv[1]=='inspect':
  print(json.dumps({'kind':'exfat' if source.suffix=='.exfat' else 'pkg', 'title_id':'PPSA12345', 'total_bytes':4096, 'files':[{'path':'eboot.bin','size':4096}]}))
 else:
  pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_bytes(b'converted image')
-''')
+'''.replace("write_bytes(b'converted image')",
+             'write_bytes(pathlib.Path(' + repr(str(self.image_template)) + ').read_bytes())'))
         self.binary.chmod(0o700)
         self.source = self.root / 'game.pkg'
         self.source.write_bytes(b'original package')
@@ -41,6 +47,7 @@ else:
         original = Forge.identity(self.source)
         state = self.completed()
         self.assertEqual(state['status'], 'ready', state)
+        self.assertEqual(state['aprFix']['status'], 'unrecognized')
         output = Forge.identity(self.forge.output(self.hash))
         reopened = Forge(str(self.binary), self.root / 'outputs')
         self.assertEqual(reopened.poll(self.hash, self.source)['outputIdentity'], output)
@@ -94,7 +101,8 @@ else:
         outside = self.root / 'outside.pkg'; outside.write_bytes(b'outside data')
         script = self.binary.read_text().replace('import json, pathlib, sys', 'import json, pathlib, sys, os')
         script = script.replace("if sys.argv[1]=='inspect':", "if sys.argv[1]=='inspect' and source.suffix=='.pkg':\n original=pathlib.Path(" + repr(str(self.source)) + ")\n original.rename(original.with_suffix('.kept'))\n original.symlink_to(" + repr(str(outside)) + ")\nif sys.argv[1]=='inspect':")
-        script = script.replace("write_bytes(b'converted image')", 'write_bytes(source.read_bytes())')
+        script = script.replace('write_bytes(pathlib.Path(' + repr(str(self.image_template)) + ').read_bytes())',
+                                'write_bytes(source.read_bytes())')
         self.binary.write_text(script)
         self.forge.poll(self.hash, self.source)
         deadline = time.monotonic() + 5
@@ -158,6 +166,31 @@ else:
     def test_failed_converter_does_not_delete_original(self):
         self.binary.write_text('#!/usr/bin/env python3\nraise SystemExit(2)\n')
         self.assertEqual(self.completed()['status'], 'failed')
+        self.assertEqual(self.source.read_bytes(), b'original package')
+
+    def test_reviewed_fix_is_applied_before_output_identity_is_published(self):
+        import forge
+        original = b'unrelated executable'
+        replacement = b'APRfix' + original[6:]
+        rule = dict(title='PPSA12345', version='', offset=0,
+                    original=hashlib.sha256(original).hexdigest(),
+                    patched=hashlib.sha256(replacement).hexdigest(),
+                    before=original[:6].hex(), after=replacement[:6].hex())
+        with patch.object(forge._apr_module, 'PATCHES', [rule]):
+            state = self.completed()
+        self.assertEqual(state['status'], 'ready', state)
+        self.assertEqual(state['aprFix']['status'], 'applied')
+        self.assertEqual(state['outputIdentity'], Forge.identity(self.forge.output(self.hash)))
+        self.assertEqual((self.forge.root / self.hash / 'apr-original-eboot.self').read_bytes(), original)
+        self.assertEqual(self.source.read_bytes(), b'original package')
+
+    def test_apr_failure_cannot_publish_ready(self):
+        import forge
+        with patch.object(forge._apr_module, 'repair_image', side_effect=ValueError('APR: failed')):
+            state = self.completed()
+        self.assertEqual(state['status'], 'failed')
+        self.assertIn('APR: failed', state['error'])
+        self.assertNotIn('outputIdentity', state)
         self.assertEqual(self.source.read_bytes(), b'original package')
 
 if __name__ == '__main__': unittest.main()
