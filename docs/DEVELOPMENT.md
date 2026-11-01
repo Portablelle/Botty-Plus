@@ -39,6 +39,11 @@ the compiled suites those paths cannot affect, as PR checks do.
 tests or pure tree checks; default-branch checks use it for merges whose tree
 was already validated.
 
+Enable the opt-in `.githooks/pre-push` hook with `git config core.hooksPath .githooks`.
+It runs `bash -n`, `python3 -m py_compile` and `node --check` on changed Shell,
+Python and JavaScript files against the upstream merge-base, falling back to
+`origin/main`. Bypass it with `git push --no-verify`.
+
 macOS renderer preview: `make -C homebrew/botty-native preview` (requires `sips`).
 PS5 builds use the component Dockerfiles and pinned SDKs; host tests do not prove
 hardware compatibility. See the component READMEs and native VALIDATION.md.

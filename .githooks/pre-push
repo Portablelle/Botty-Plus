@@ -3,7 +3,10 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null) || upstream=origin/main
-base=$(git merge-base HEAD "$upstream")
+if ! base=$(git merge-base HEAD "$upstream" 2>/dev/null); then
+  echo "Warning: no merge-base with $upstream; skipping pre-push checks." >&2
+  exit 0
+fi
 changed=$(mktemp)
 trap 'rm -f "$changed"' EXIT
 git diff --name-only --diff-filter=ACMRT --no-renames -z "$base" HEAD > "$changed"
