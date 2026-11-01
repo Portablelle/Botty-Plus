@@ -252,5 +252,10 @@ For portal hosts and developers:
 - [Building and contributing](docs/DEVELOPMENT.md)
 - [Versioning policy](docs/VERSIONING.md)
 
+Enable the optional fast pre-push hook with `git config core.hooksPath .githooks`.
+It syntax-checks changed Shell, Python and JavaScript files against the upstream
+merge-base (falling back to `origin/main`); package validation stays in CI because
+it takes over five seconds locally. Bypass it with `git push --no-verify`.
+
 Botty+ is an independent homebrew project, not affiliated with Sony Interactive
 Entertainment.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Host validation matching .github/workflows/botty-checks.yml; no console access.
 # BOTTY_CHANGED_FILES may name a file listing the PR's changed paths, one per line.
-# Fast checks always run; the compiled suites run only when a changed path can
+# Tree checks run unless build-only is set; compiled suites run when a changed path can
 # affect them. Without a readable list, every suite runs. `--print-scope` prints
 # the selected compiled suites and exits. BOTTY_HOST_CHECK_BUILD_ONLY=1 compiles
-# the selected suites without running their tests: used on the default branch
+# the selected suites without re-validating the tree: used on the default branch
 # when the merged tree was already validated, so the shared ccache stays warm.
 set -euo pipefail
 cd "${BOTTY_HOST_CHECK_ROOT:-$(dirname "$0")/..}"
@@ -69,16 +69,53 @@ skip_check() {
   echo "Host check: $1 (skipped: ${2:-no relevant changes})"
 }
 
-run_check "Runner infrastructure" python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
-run_check "Release packages" python3 scripts/botty-packages.py --check
-run_check "Repository contracts" python3 -m unittest discover -s tests -p 'test_*.py' -v
-run_check "Source archive parts" python3 -m unittest discover -s scripts -p test_source_parts.py -v
-run_check "Engine source provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_sources.py -v
-run_check "Engine package provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_provenance.py -v
-run_check "Engine assembly" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_assembly.py -v
+run_tree_check() {
+  if [ "$build_only" = true ]; then
+    skip_check "$1" "build only"
+  else
+    run_check "$@"
+  fi
+}
+
+# These suites read committed inputs and use isolated temporary directories,
+# not host build outputs, fixed /tmp paths or listening ports.
+python_checks() {
+  run_tree_check "Runner infrastructure" python3 -m unittest discover -s infra/ci-runner -p 'test_*.py' -v
+  run_tree_check "Release packages" python3 scripts/botty-packages.py --check
+  run_tree_check "Repository contracts" python3 -m unittest discover -s tests -p 'test_*.py' -v
+  run_tree_check "Source archive parts" python3 -m unittest discover -s scripts -p test_source_parts.py -v
+  run_tree_check "Engine source provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_sources.py -v
+  run_tree_check "Engine package provenance" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_provenance.py -v
+  run_tree_check "Engine assembly" python3 -m unittest discover -s homebrew/botty-native/emulation/tests -p test_assembly.py -v
+}
+
+wait_python_checks() {
+  local result=0
+  [ -n "${python_pid:-}" ] || return 0
+  wait "$python_pid" || result=$?
+  python_pid=
+  cat "$python_log"
+  rm -f "$python_log"
+  return "$result"
+}
+
+# Drain the log and reap the worker even if a foreground build fails.
+finish_checks() {
+  local result=$? python_result=0
+  wait_python_checks || python_result=$?
+  [ "$result" -ne 0 ] || result=$python_result
+  exit "$result"
+}
+
+python_log=$(mktemp)
+trap finish_checks EXIT
+# At most one Python worker overlaps make's bounded parallelism below.
+python_checks >"$python_log" 2>&1 &
+python_pid=$!
+
 run_check "Archive fixtures" python3 homebrew/botty/tests/make_fixtures.py
 run_check "Rest companion protocol" make -C homebrew/rest-mode-companion test
-run_check "Service UI" node homebrew/botty/tests/ui-test.js
+run_tree_check "Service UI" node homebrew/botty/tests/ui-test.js
 # Bound compilation rather than using the host CPU count from nproc.
 # Build prerequisites and independent service tests run at the configured parallelism (two by default).
 if [ "$service" = true ] && [ "$build_only" = true ]; then
@@ -103,7 +140,8 @@ else
   skip_check "Native build"
   skip_check "Native tests"
 fi
-run_check "Compression worker" python3 -m unittest discover -s homebrew/game-compressor/tests -p 'test_*.py' -v
+wait_python_checks
+run_tree_check "Compression worker" python3 -m unittest discover -s homebrew/game-compressor/tests -p 'test_*.py' -v
 if [ "$rtorrent" = true ]; then
   $cxx -std=c++20 -Wall -Wextra -Werror homebrew/rtorrent/tests/runtime-identity-harness.cc -o /tmp/rtorrent-runtime-identity-test
   $cxx -std=c++20 -Wall -Wextra -Werror homebrew/rtorrent/tests/runtime-at-host-test.cc -o /tmp/rtorrent-runtime-at-host-test
@@ -116,7 +154,7 @@ if [ "$rtorrent" = true ]; then
 else
   skip_check "rTorrent"
 fi
-run_check "Artwork service" python3 deployment/botty-artwork/test_server.py
+run_tree_check "Artwork service" python3 deployment/botty-artwork/test_server.py
 if [ "$cxx" != clang++ ]; then
   ccache --show-stats
 fi

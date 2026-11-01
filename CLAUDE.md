@@ -75,13 +75,13 @@ PRs changing `scripts/botty-host-checks.sh` or `.github/workflows/botty-checks.y
 also keep standalone `verify`, so the head's entry point runs before merge.
 The trusted job lists the PR's changed files (`git diff` from base to head) and
 the host-check script skips compiled suites (service, native, rTorrent) that no
-changed path can affect; fast checks always run, and unknown paths or a failed
+changed path can affect; tree checks run unless build-only mode is set, and unknown paths or a failed
 diff keep the full suite. Compilation goes through ccache when the image has it.
 Only default-branch pushes of `Botty+ checks` save the `ccache-host-` Actions
 cache; PR jobs restore it but never save, so PR code cannot poison it.
 When a default-branch commit has exactly the tree of its merged same-repo PR head and
 that head's `Claude host checks` status from `github-actions[bot]` succeeded, the push
-compiles every suite (keeping the cache warm) without re-running tests
+compiles every suite (keeping the cache warm) without re-running tests or tree checks
 (`BOTTY_HOST_CHECK_BUILD_ONLY=1`); any mismatch or API failure runs the full suite.
 The routing job compares file hashes at the exact base and head SHAs; deleted,
 unreadable or malformed content responses fall back to standalone verification.
