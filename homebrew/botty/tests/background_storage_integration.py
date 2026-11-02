@@ -3,14 +3,15 @@ import json, pathlib, socket, subprocess, tempfile, time, urllib.request
 from rtorrent_fixture import RtorrentFixture
 from shadow_fixture import ShadowFixture
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-for scenario in ('success', 'failed', 'lost', 'rejected'):
+for scenario in ('success', 'failed', 'lost', 'rejected', 'scanner_busy'):
  with tempfile.TemporaryDirectory(prefix='botty-background-') as tmp:
   root=pathlib.Path(tmp);game=root/'test-library/PPSA12345-app';game.mkdir(parents=True)
   (game/'fixture').write_text('preserve until accepted');(root/'jobs').mkdir()
   job_id='a'*32
   (root/'jobs'/f'{job_id}.json').write_text(json.dumps(dict(id=job_id,name='Isolated game',status='moved',destination=str(game),content=dict(kind='folder',titleId='PPSA12345',destination=game.name))))
   rpc=RtorrentFixture([]);shadow=ShadowFixture({'PPSA12345':str(game)})
-  shadow.delay=.8;shadow.fail=scenario in ('failed','lost');shadow.lose_status=scenario=='lost'
+  shadow.delay=.8;shadow.fail=scenario in ('failed','lost','scanner_busy');shadow.lose_status=scenario=='lost'
+  if scenario=='scanner_busy':shadow.fail_reason='scanner_busy'
   if scenario=='rejected':shadow.paths['PPSA12345']=str(root/'different-game')
   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
   command=[str(ROOT/'build/botty-native'),'--root',str(root),'--port',str(port),'--rpc-port',str(rpc.server_port),'--shadow-port',str(shadow.port)]
@@ -45,4 +46,4 @@ for scenario in ('success', 'failed', 'lost', 'rejected'):
    assert bool(state['extracting'])==(scenario in ('lost','failed')),state['transfer']
   finally:
    process.terminate();process.wait(timeout=5);shadow.close();rpc.shutdown()
-print('Background deletion: live UI, success, rejection, worker failure, lost status and no replay across restart passed')
+print('Background deletion: live UI, success, rejection, worker failure, scanner admission refusal, lost status and no replay across restart passed')

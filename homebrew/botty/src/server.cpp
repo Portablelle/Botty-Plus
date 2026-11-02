@@ -10,6 +10,7 @@
 #include "rest-network.hpp"
 #define CPPHTTPLIB_THREAD_POOL_COUNT 3
 #include "httplib.h"
+#include "library-transfer.hpp"
 #include "compressor.hpp"
 #include "native-update.hpp"
 #include "native-process.hpp"
@@ -498,7 +499,7 @@ void startTrackedTransfer(json initial,const std::string& name,Work work,bool no
     }catch(const std::exception& error){
       std::lock_guard<std::mutex> guard(lock);transferState["status"]=uncertain?"uncertain":"failed";
       if(!uncertain)transferring=false;
-      transferState["error"]=error.what();transferState["phase"]="Transfer stopped; retained copies need inspection";
+      transferState["error"]=error.what();transferState["phase"]=!uncertain&&dynamic_cast<const BackgroundRejected*>(&error)?"Move not started; source kept":"Transfer stopped; retained copies need inspection";
       try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}
       transfers.finish(false,error.what());
     }
@@ -507,6 +508,26 @@ void startTrackedTransfer(json initial,const std::string& name,Work work,bool no
     try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}
     transfers.finish(false,"Cannot start transfer worker");throw;
   }
+}
+// Recovery owns no file worker and never replays the move POST.
+void reconcileLibraryTransfer() {
+  json pending,job;
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    if(retiring||extracting||registeringLibrary||!transferring||transferState.value("status","")!="uncertain"||transferState.value("kind","")!="job")return;
+    pending=transferState;job=findJob(pending.at("id").get<std::string>());
+  }
+  if(!compressor.game(job.at("id").get<std::string>()).empty())return;
+  const auto result=LibraryTransfer::reconcile(pending,job,storage,shadowPort);
+  if(!result)return;
+  std::lock_guard<std::mutex> guard(lock);
+  if(retiring||transferState!=pending)return;
+  // Checkpoint the Library entry first; recovery accepts either tracked location
+  // if a crash interrupts the two durable writes.
+  if(!result->rejected)writeJson(paths.jobs/(job.at("id").get<std::string>()+".json"),result->job);
+  writeJson(paths.root/"transfer.json",result->transfer);
+  if(!result->rejected)for(auto& old:jobs)if(old.at("id")==job.at("id")){old=result->job;break;}
+  transferState=result->transfer;transfers.progress(transferState);transfers.finish(!result->rejected,transferState.at("error"));transferring=false;
 }
 json importEmulation(const json& body) {
  const auto kind=body.value("kind",std::string("auto"));if(kind!="auto")throw std::runtime_error("Switch content type is detected automatically; refresh the client and choose Analyze and import");
@@ -529,8 +550,13 @@ json queueDownload(const std::string& method,const json& arguments,const std::st
   return result;
 }
 void automaticDownloads(){
+  auto nextRecovery=std::chrono::steady_clock::now();
   while(!retiring){
     std::this_thread::sleep_for(backgroundPollInterval());
+    if(std::chrono::steady_clock::now()>=nextRecovery){
+      nextRecovery=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+      try{reconcileLibraryTransfer();}catch(...){/* Missing disks/API or ambiguous outcomes retain admission. */}
+    }
     try{
       auto entries=torrents();
       try{localBackend().enforcePackagePolicy(entries);}catch(...){}
@@ -666,10 +692,8 @@ json startTransfer(const json& body) {
         changed=true;compressor.relocate(job.at("id").get<std::string>(),selected,check,remoteReport);
       }else{
         const auto id=job.at("id").get<std::string>();const bool moved=job.value("status","")=="moved";
-        const auto name=moved?safeRelative(job.at("content").at("destination").get<std::string>()):fs::path(id);
-        if(name.has_parent_path())throw std::runtime_error("Invalid tracked transfer path");
-        const auto from=(moved?source.library:source.extracted)/name,to=(moved?destination.library:destination.extracted)/name;
-        if(moved&&job.value("destination","")!=from.string())throw std::runtime_error("Tracked library location changed");
+        const auto location=moved?LibraryTransfer::locations(job,source,destination,sourceId,selected):LibraryTransfer::Locations{source.extracted/id,destination.extracted/id};
+        const auto from=location.source,to=location.destination;
         containedExisting(moved?source.library:source.extracted,from);
         if(moved){
           CompressionLibrary library(source,shadowPort);
@@ -681,13 +705,14 @@ json startTransfer(const json& body) {
               if(title.empty())std::this_thread::sleep_for(std::chrono::seconds(1));
             }
           }
-          if(!std::regex_match(title,std::regex("(PPSA|CUSA)[0-9]{5}"))||title=="PPSA99071")throw std::runtime_error("ShadowMount must identify this game before transfer");
-          job["content"]["titleId"]=title;
+          job["content"]["titleId"]=title;title=LibraryTransfer::title(job);
           BackgroundStorage background(shadowPort);
           if(background.supported()) {
+            // Persist a newly discovered title before a response can be lost.
+            publishJob(job);
             changed=true;
             try{background.run("move",title,from,to,remoteReport,check);}catch(const BackgroundRejected&){changed=false;throw;}
-            check();job["storage"]=selected;job["destination"]=to.string();publishJob(job);
+            check();publishJob(LibraryTransfer::completeJob(job,selected,to));
             return std::string("Move completed. Ready in Library.");
           }
           waitForGame(title);
@@ -704,7 +729,7 @@ json startTransfer(const json& body) {
           bool found=false;for(int n=0;n<60;++n){check();try{if(library.api("games/info",{{"title_id",job.at("content").value("titleId","")}}).value("path","")==to.string()){found=true;break;}}catch(...){}std::this_thread::sleep_for(std::chrono::seconds(1));}
           if(!found)throw std::runtime_error("New Library source not confirmed; copy and backup kept");
         }
-        check();job["storage"]=selected;if(moved)job["destination"]=to.string();publishJob(job);removeTransferred(cleanup);
+        check();if(moved)job=LibraryTransfer::completeJob(job,selected,to);else job["storage"]=selected;publishJob(job);removeTransferred(cleanup);
       }
       return std::string("Transfer complete; sizes checked");
   },true);return transferState;

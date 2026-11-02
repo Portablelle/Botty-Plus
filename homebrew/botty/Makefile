@@ -69,7 +69,7 @@ test-build: $(TEST_BINARIES)
 # Each `test` command is its own target so TEST_JOBS can run them concurrently
 # (tests use temporary directories and ephemeral ports). Longest runs start first.
 SERVICE_UNIT_TESTS := switch-settlement-test emulation-test remote-buffer-test progress-test core-test rest-mode-test rest-companion-test rest-network-test rest-http-test native-transaction-test native-update-test native-idle-test installation-update-test installation-runtime-test search-idle-test storage-test
-SERVICE_INTEGRATION_TESTS := switch_pipeline emulation_integration emulation_library remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration
+SERVICE_INTEGRATION_TESTS := switch_pipeline emulation_integration emulation_library remote_integration search_integration storage_integration integration rtorrent_resume background_storage_integration transfer_recovery_integration
 UNIT_RUNS := $(addprefix unit-,$(SERVICE_UNIT_TESTS))
 INTEGRATION_RUNS := $(addprefix integration-,$(SERVICE_INTEGRATION_TESTS))
 .PHONY: $(UNIT_RUNS) $(INTEGRATION_RUNS) integration-remote-bridge
@@ -154,6 +154,7 @@ test-storage: build/storage-test build/botty-native
 	./build/storage-test
 	python3 tests/storage_integration.py
 	python3 tests/background_storage_integration.py
+	python3 tests/transfer_recovery_integration.py
 
 .PHONY: test-rest-mode
 build/rest-mode-test: build/tests/rest-mode-test.o src/rest-mode.hpp

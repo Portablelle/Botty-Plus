@@ -24,6 +24,14 @@ public:
     for(const auto& value:version.value("capabilities",json::array()))if(value=="botty_background_storage_v1")return true;
     return false;
   }
+  static bool rejectedBeforeWork(const json& task,const fs::path& source,const fs::path& destination) {
+    const auto reason=task.value("result_error_reason","");
+    return task.value("state","")=="failed" && !task.value("active",true) &&
+      (reason=="scanner_busy"||reason=="runtime_busy") &&
+      task.value("processed_bytes",uint64_t(1))==0 && task.value("processed_files",uint64_t(1))==0 &&
+      fs::exists(fs::symlink_status(source)) &&
+      (destination.empty()||!fs::exists(fs::symlink_status(destination)));
+  }
   json run(const std::string& operation,const std::string& title,const fs::path& source,const fs::path& destination,const Report& report,const std::function<void()>& check={}) const {
     if(title=="PPSA99071"||!std::regex_match(title,std::regex("(PPSA|CUSA)[0-9]{5}"))||(operation!="move"&&operation!="delete"))throw std::runtime_error("Invalid background Library operation");
     if(check)check();
@@ -41,6 +49,9 @@ public:
           throw std::runtime_error("ShadowMount completion does not match the files on disk; inspect retained copies before retrying");
         return task;
       }
+      // Admission can fail asynchronously after the POST was accepted. Only
+      // explicit no-work refusals release the caller's uncertain-operation guard.
+      if(rejectedBeforeWork(task,source,destination))throw BackgroundRejected("Library operation stopped: "+task.value("result_error",std::string("ShadowMount is busy; retry when it finishes")));
       if(state=="failed"||state=="cancelled")throw std::runtime_error("Library operation stopped: "+task.value("result_error",std::string("inspect retained files before retrying")));
       if(state!="preparing"&&state!="measuring"&&state!="transferring"&&state!="deleting"&&state!="finalizing")throw std::runtime_error("Unknown Library operation state; check ShadowMount before retrying");
       if(check)try{check();}catch(...){
