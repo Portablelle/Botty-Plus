@@ -499,7 +499,7 @@ void startTrackedTransfer(json initial,const std::string& name,Work work,bool no
     }catch(const std::exception& error){
       std::lock_guard<std::mutex> guard(lock);transferState["status"]=uncertain?"uncertain":"failed";
       if(!uncertain)transferring=false;
-      transferState["error"]=error.what();transferState["phase"]=dynamic_cast<const BackgroundRejected*>(&error)?"Move not started; source kept":"Transfer stopped; retained copies need inspection";
+      transferState["error"]=error.what();transferState["phase"]=!uncertain&&dynamic_cast<const BackgroundRejected*>(&error)?"Move not started; source kept":"Transfer stopped; retained copies need inspection";
       try{writeJson(paths.root/"transfer.json",transferState);}catch(...){}
       transfers.finish(false,error.what());
     }

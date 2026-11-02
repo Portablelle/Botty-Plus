@@ -10,7 +10,7 @@ TITLE = 'PPSA12345'
 CASES = ('legacy-complete', 'checkpointed-job', 'running-journal', 'scanner-refused',
          'both-copies', 'active-worker', 'queued-worker', 'offline', 'disconnected',
          'wrong-catalog', 'symlink', 'partial-refusal', 'compressed-record',
-         'live-complete', 'live-scanner-refused')
+         'live-complete', 'live-scanner-refused', 'live-compressed-refused')
 
 for case in CASES:
  with tempfile.TemporaryDirectory(prefix='botty-transfer-recovery-') as tmp:
@@ -37,14 +37,19 @@ for case in CASES:
   if case == 'symlink':
    (dest/'fixture').unlink(); dest.rmdir(); (usb/'other-game').mkdir()
    dest.symlink_to(usb/'other-game', target_is_directory=True)
-  if case == 'compressed-record':
+  if case in ('compressed-record', 'live-compressed-refused'):
    (root/'compressor').mkdir()
    (root/'compressor/enabled.json').write_text('{"mode":"library-1.2"}')
    (root/'compressor/games.json').write_text(json.dumps({JOB:dict(status='ready', jobId=JOB, output=str(root/'compressor/output'/f'{TITLE}.ffpfsc'), titleId=TITLE)}))
-  rpc = RtorrentFixture([]); shadow = ShadowFixture({TITLE:str(dest)})
+  if case == 'live-compressed-refused':
+   image = root/'compressor/output'/f'{TITLE}.ffpfsc'; image.parent.mkdir()
+   image.write_bytes(b'compressed game'); hashes = pathlib.Path(str(image)+'.vhash'); hashes.write_bytes(b'original hashes')
+   rec = dict(status='ready', jobId=JOB, titleId=TITLE, output=str(image), source=str(source), storage='internal', verified=False, originalKept=False)
+   (root/'compressor/games.json').write_text(json.dumps({JOB:rec}))
+  rpc = RtorrentFixture([]); shadow = ShadowFixture({TITLE:str(image if case == 'live-compressed-refused' else dest)})
   if case == 'wrong-catalog': shadow.paths[TITLE] = str(usb/'different-game')
   if case in ('offline', 'live-complete'): shadow.lose_status = True
-  if case == 'live-scanner-refused': shadow.fail = True; shadow.fail_reason = 'scanner_busy'
+  if case in ('live-scanner-refused', 'live-compressed-refused'): shadow.fail = True; shadow.fail_reason = 'scanner_busy'
   if case in ('active-worker', 'queued-worker', 'scanner-refused', 'partial-refusal'):
    shadow.task = dict(job_id=7, title_id=TITLE, operation='move', source=str(source),
                       destination=str(dest), state='failed', active=False,
@@ -91,6 +96,13 @@ for case in CASES:
     assert json.loads((root/'transfer.json').read_text())['status'] == state['transfer']['status']
    else:
     assert json.loads((root/'transfer.json').read_text())['status'] in ('uncertain', 'running')
+   if case == 'live-compressed-refused':
+    assert state['transfer']['status'] == 'uncertain', state['transfer']
+    assert state['transfer']['phase'] == 'Transfer stopped; retained copies need inspection', state['transfer']
+    assert state['compression']['status'] == 'uncertain', state['compression']
+    assert image.read_bytes() == b'compressed game' and hashes.read_bytes() == b'original hashes'
+    copied_hashes = usb/'botty/compressor/output'/hashes.name
+    assert copied_hashes.read_bytes() == b'original hashes' and not copied_hashes.with_suffix('').exists()
    if case.startswith('live-'):
     assert sum(route.endswith('/games/move') for route,_ in shadow.calls) == 1, shadow.calls
     assert not any(route.endswith('/games/delete') for route,_ in shadow.calls)
