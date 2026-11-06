@@ -240,3 +240,63 @@ and provenance. The actual Linux renderer is exercised by `config_ui.py`,
 These images use the host renderer and synthetic preview data.
 The runtime receipt also binds the corresponding-source archive by SHA-256;
 source-only repackaging refuses a stale archive from an earlier engine build.
+
+## Switch 1 performance candidate (2026-11-06)
+
+The standalone patch adapts shared EdGlantine optimizations to Botty's pinned
+ProsperoEden 1.005, retaining the existing title, data paths, settings and engine
+fixes. It does not enable Switch 2 memory layouts or change emulation accuracy.
+The candidate changes source; the published `packages/` engine is not implicitly
+replaced or deployed by editing this patch.
+
+| Area | Behavior |
+| --- | --- |
+| Buffer synchronization | CPU-write epochs per 4 MiB region avoid repeated page walks for unchanged vertex, index, uniform and storage buffers. New/deleted backing buffers invalidate the remembered answers. |
+| Storage binding resolution | A bounded four-way cache reuses address/layout resolution, keyed by both descriptor words, address-space identity, page-table serial, alignment and write mode. Descriptor memory is still read on every binding. Same-kind GPU remaps advance the serial. |
+| Gathered storage copies | Read-only gathered buffers survive clean bindings. Uploads, copies, clears and writes invalidate their source owners, including multiple writes in one scheduler tick. Shader-written sources retain conservative gathering. |
+| Draw commands | Repeated index-buffer binds are skipped only within the same command-buffer recording epoch. Repeated usage-page fills reuse a known full run; byte accounting also covers unaligned and empty ranges without undefined shifts. |
+| Cache invalidation | Monotonic device-page filters avoid texture/query/shader cache work on pages they never registered. Unknown or overflowing ranges take the conservative path. |
+| Staging transfers | Completed fence-download buffers return before the next frame. Large mapped allocations round to 16 MiB rather than the next power of two, with capacity checks on reuse. Allocation refusal releases only completed, non-deferred buffers before one retry. Every sixteen frames, idle staging memory is trimmed toward 256 MiB, largest buffers first. |
+| Texture uploads | Dirty-page notifications coalesce contiguous runs while preserving page reference counts. ASTC recompression decodes a single layer/depth slice at a time in the actual compiled Vulkan unit. |
+| Shader work | Large shader-removal batches use sorted membership. Integer multiplication by zero/one and recombination of extracted high/low halves fold away during recompilation. |
+| Thread placement | Auxiliary workers exclude the GPU's physical core, including its SMT sibling. Applied affinity is checked and restored on mismatch; the existing topology fallback and guest CPU count remain. |
+
+Core ports are consolidated in `tools/eden-patches/05-botty-performance.diff`
+inside the standalone patch. Origins include EdGlantine commits `ea21037`
+(viejunerd fence recycling and unchanged-buffer shortcuts), `70b27b1`
+(Lichii #184/#250), `ba51fa5` (Lichii #175, reimplemented for Switch 1),
+`2c9ef10` (bitmap traversal), `9437c65` (bounded descriptor clearing),
+`0b7f29d` (shader removal), `99e5976` (per-layer ASTC), and `e481eb4`
+(Lichii #150 integer folding). Botty's earlier local performance candidate
+supplies source-owner invalidation, staging sizing, page batching and affinity
+adaptations. Normal gathered-buffer bindings add no periodic diagnostic logging.
+
+Switch 2 native uniform banks, native tiling readbacks, larger guest layouts,
+game-specific patches and the earlier sampled-descriptor memoization experiment
+are not enabled. In particular, Switch 1 keeps its existing fence-download
+policy; pruning it as if it used the native Switch 2 memory tracker would not
+preserve the same coherence guarantees. `EDEN_BOTTY_DRAW_TUNING=0` disables the
+epoch, repeated-range and storage-resolution shortcuts for developer comparisons.
+
+Preparation hashes the entire ordered core patch series. If it changes, the core
+is reconstructed from the pinned archive and all patches are applied in order
+without fuzzy matching. This prevents refreshing a later patch from discarding
+earlier fixes to the same files.
+
+Run `bash emulation/tests/run.sh CHECKOUT OUTPUT` on `dedie`. The performance
+checks exercise production binding/synchronization methods with ASan/UBSan,
+compare usage accounting with an independent randomized oracle, cover descriptor
+limit changes and staging capacity/release rules, compare bitmap/scheduler order,
+and compare real ASTC/BC encoders byte for byte against whole-level conversion.
+The 1434×1434×46 ASTC case requires 8,225,424 bytes of decoded scratch rather
+than 378,369,504. This is a memory result, not a measured FPS improvement.
+
+Dedicated-host validation passed: full native PS5 compilation, RADV linkage,
+native package inventory/import checks, engine configuration/lifecycle/provenance
+checks, the production performance/coherence checks and worker-affinity tests.
+
+Console acceptance: the candidate was installed through a verified full-tree
+transaction with a complete rollback, retaining the existing Botty interface and
+shared runtime. The user launched it on PS5 and confirmed it works. No quantified
+FPS or frame-time improvement has been established; compare the same Switch 1
+game/scene/settings before publishing a performance claim.
