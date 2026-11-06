@@ -2,8 +2,8 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "02.000.002",
-  "releaseVersion": "2.0.2",
+  "version": "02.000.003",
+  "releaseVersion": "2.0.3",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "edb7ce3b343b377b4444aea2bc54cb027f5ac32a8cf0f0945771ce7e5b300b74"
+      "sha256": "79f852afb6b5961b524029f5b657219dc3cccefe66555fd8aaaf2205c474c0e7"
     },
     {
       "path": "assets/courier.rgba",
@@ -54,12 +54,12 @@
     {
       "path": "eboot.bin",
       "size": 33262524,
-      "sha256": "e9288fdd629f5b189c3ea231a8560ddc02e4c9549b1bbd060990daed52bf5aba"
+      "sha256": "c3b6b48f61d581d4662d9eb64fee208722f1790fd2c8fe18c34bbdcf620e64f1"
     },
     {
       "path": "emulation/botty-engine.json",
-      "size": 18808,
-      "sha256": "4b86045db038ad5485b7a477b4becfe0d97996781d75b768da86b7028028afbb"
+      "size": 18907,
+      "sha256": "390dc7bb778f8b8b334ead59a9d3b0b2bf04859df9da482f28ae7a1e6dc277b2"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -68,18 +68,18 @@
     },
     {
       "path": "emulation/eboot.bin",
-      "size": 77245726,
-      "sha256": "59b006795e2f08e6b88e33c34a4c335ecf95c209c4a3d30970f647d8b964b984"
+      "size": 77284142,
+      "sha256": "cc7124f8e841c425926f688fb95b9b5a7417320f8aebea7fe44b6094eac27482"
     },
     {
       "path": "emulation/lapy-manifest.json",
       "size": 608,
-      "sha256": "5e641fd73fbb886c1644648a5ca663652204bc5d5f8c00ec04e177e38a563a7a"
+      "sha256": "aee2b4f921199266077e964a124de6df48c27a862f7f202fee0b239776d3dcd9"
     },
     {
       "path": "emulation/lapy.elf",
       "size": 155224,
-      "sha256": "7d23db6193f232e4e6f49e1c294b45235db19e044b8dc6e5a798a50b8d51c064"
+      "sha256": "752ca9b267ce2d4cb9ed6a5f7325812a489d4aa20eb61a73150138ca9c68677a"
     },
     {
       "path": "emulation/launcher-runtime.json",
@@ -447,6 +447,21 @@
       "sha256": "8ff291f955068298d1210212ace9787f9701f3cf7a8f704f7531b59b0f37f80a"
     },
     {
+      "path": "emulation/ultracam/botw190/LICENSE.md",
+      "size": 262,
+      "sha256": "e8ac2e104a8bbabd4a56c67d9eaac923a1531c64adeee79763ba468d1012161e"
+    },
+    {
+      "path": "emulation/ultracam/botw190/NOTICE.md",
+      "size": 471,
+      "sha256": "c15631db86e38a039c41319e9b0ca440894d653e5fe32f555e1f96684ad4f195"
+    },
+    {
+      "path": "emulation/ultracam/botw190/patches.json",
+      "size": 3950,
+      "sha256": "54b0ebb2945bba7aebce09ac9a886fc8586b73eedbed36d505621b8456f51626"
+    },
+    {
       "path": "emulation/ultracam/manifest.json",
       "size": 757,
       "sha256": "44f8aaf6be386becc77138a7ef8385cf7b999bd4185c29346d83fe1afa01f7c9"
@@ -454,7 +469,7 @@
     {
       "path": "emulation-runtime.json",
       "size": 673,
-      "sha256": "f9d79c9c0d65f4e6c9a03a42851e72b033880d0abe126e23506af82cb008678a"
+      "sha256": "8a798bfc98d1ddbdf5dcbe3b2be30ed34026e966cbc0dfd050600f2ff5a14864"
     },
     {
       "path": "sce_module/libc.prx",
@@ -469,7 +484,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 903,
-      "sha256": "83b0b20ef84df2e1b498fb1c4f453b41159f961de6ad889b740f5ee5404dedda"
+      "sha256": "08d666bb8b7999195030b96ef3324e8dfc0409797db10410d296b73e297cc6b9"
     },
     {
       "path": "sce_sys/pic0.dds",

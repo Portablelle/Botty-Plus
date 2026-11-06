@@ -133,6 +133,17 @@ Enabling checks the effective Control/NACP display version, confirms that the se
 
 Validation: `emulation/tests/ultracam_check.cpp` exercises version gates, integrity, per-game INI settings and preservation; `emulation/tests/ultracam_ui.py` uses the real settings renderer.
 
+#### BOTW 1.9.0 experimental FPS profile
+
+The same per-game page selects the profile using the effective game update. BOTW 1.6.0 retains the original UltraCam 1.0.1 payload and all existing options, including native resolution up to 1152p and free camera. BOTW 1.9.0 uses a separate **FPS + Graphics (experimental)** profile adapted from [nx-optimizer PR #331](https://github.com/MaxLastBreath/nx-optimizer/pull/331), pinned at `e74292271ca97da61617d1f49d7ded44b3d46ca0`. Its supported controls are FPS target, world-camera FOV and far clipping. Native framebuffer resolution, quality switches and free camera are unavailable in 1.9.0; the emulator's per-game render scale remains unchanged.
+
+Both profiles start disabled, retain separate settings and occupy separate managed directories (`Botty UltraCam` and `Botty BOTW 1.9.0`). At launch, the incompatible profile is excluded without erasing its saved state, including when no supported version is detected. Enabling the managed 1.9 profile also excludes the known standalone 1.9 FPS mod names for that launch. Other mods retain their state. An existing manually installed profile is preserved; disable it in Mods when using the managed profile, which takes priority while enabled.
+
+The 1.9 profile writes two Build-ID-scoped IPSwitch patches, for main and SDK; it never replaces a Nintendo executable or NPDM. Its separately licensed runtime template is hash-verified before installation. The installer refuses unmanaged/modified folders and restores the previous folder/settings if activation fails. Original 1.6 payload files and its INI format are unchanged. `generate_botw190.py --check` reproduces the runtime template from the unmodified, attributed CC-BY-NC-2.0 source in `emulation/vendor/botw190`.
+
+Validation: dedicated-host C++ regressions cover version changes, independent settings, manual-mod conflicts, rollback, owner edits and symlink refusal. All 160 combinations of supported settings are compared to the pinned upstream generator. The standalone 1.9 default main/SDK pair was tested on PS5: the user reported gameplay above 30 FPS (about 40–50 FPS at 2x) and confirmed that there was no observed game-speed acceleration. This is limited acceptance of the patch, not validation of every setting, cutscene or the new configuration UI on console.
+
+
 ### Switch archive preparation
 
 `platform: "switch"` is persisted from search/download/import through the

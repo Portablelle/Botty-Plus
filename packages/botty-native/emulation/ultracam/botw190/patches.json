@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "main": "CD57B23FA4BBAD65803D9788C01821EE00000000000000000000000000000000",
+  "sdk": "574284B40C06CF1821A44857939083BEE5716820000000000000000000000000",
+  "main_sha256": "f6f0b20bb1f2b67d164c24871cd473147eef1d285f12e7bd492e3126c6022e27",
+  "sdk_sha256": "1d187f29784cd0af46e9e123fc2a62c77b3b07c5a39c8633d90d6c80de64e4ad",
+  "patches": [
+    {
+      "offset": "0x011269CC",
+      "expected": "F303012A",
+      "replacement": "21008052",
+      "description": "Framework setInterval: pass interval 1 to native frame timer (mov w1, #1)."
+    },
+    {
+      "offset": "0x011269D8",
+      "expected": "E103132A",
+      "replacement": "01008052",
+      "description": "Uncapped presentation; custom clock-based limiter controls frame pacing."
+    },
+    {
+      "offset": "0x011269FC",
+      "expected": "F303012A",
+      "replacement": "21008052",
+      "description": "Secondary interface: pass interval 1 to native frame timer (mov w1, #1)."
+    },
+    {
+      "offset": "0x01126A08",
+      "expected": "E103132A",
+      "replacement": "01008052",
+      "description": "Uncapped presentation; custom clock-based limiter controls frame pacing."
+    },
+    {
+      "offset": "0x0112699C",
+      "expected": "59E51194",
+      "replacement": "B9EC1194",
+      "description": "Run the limiter once at the end of each framework frame."
+    },
+    {
+      "offset": "0x0151D484",
+      "expected": "2020201E",
+      "replacement": "5F120294",
+      "description": "Use measured elapsed time in the native VFR update before category multipliers."
+    },
+    {
+      "offset": "0x015A1FC0",
+      "expected": "0000000000000000000000000000000000000000",
+      "replacement": "3C0000009A99993F00409C45C2B8B23D920A0640",
+      "description": "FPS, FOV gain, far clip and FOV clamp parameters in unused text padding."
+    },
+    {
+      "offset": "0x015A1C80",
+      "expected": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "replacement": "FD7BBDA9FD030091F35301A9F55B02A9934000B073820791E2FBFF97F40300AA08190018950AC89A96F8FF97760240F9360100B4090016CB3F0115EBE2000054A00209CB53FBFF974EFBFF978DF8FF97F9FFFF17E90315AA600200F92001239E8102239E0018211E01D0271E0008211E0110211E0058211E600A00BDF55B42A9F35341A9FD7BC3A8C0035FD6",
+      "description": "Native payload: limiter"
+    },
+    {
+      "offset": "0x015A1E80",
+      "expected": "0000000000000000000000000000000000000000000000000000000000000000",
+      "replacement": "300A001C0008301E500A001C0058301EF009001C0048301E007500BDC0035FD6",
+      "description": "Native payload: fov"
+    },
+    {
+      "offset": "0x015A1EC0",
+      "expected": "000000000000000000000000",
+      "replacement": "4008001C007100BDC0035FD6",
+      "description": "Native payload: far_clip"
+    },
+    {
+      "offset": "0x015A1E00",
+      "expected": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "replacement": "904000B001EA41BD2820201EAC000054900D00180102231E10D0271E011A211E613200BD2020201EC0035FD6",
+      "description": "Native payload: delta"
+    },
+    {
+      "offset": "0x00C2DBD0",
+      "expected": "007100BD",
+      "replacement": "BCD02594",
+      "description": "Override the active world camera's far clip, not shared constants or LOD distances."
+    },
+    {
+      "offset": "0x00C2DBBC",
+      "expected": "007500BD",
+      "replacement": "B1D02594",
+      "description": "Scale the active world camera's FOV while retaining its relative zoom."
+    }
+  ],
+  "sdk_patches": [
+    {
+      "offset": "0x0019CC64",
+      "expected": "08240FB9",
+      "replacement": "01240FB9",
+      "description": "Honor the requested native-window interval, including zero, instead of clamping to minimum vsync."
+    }
+  ]
+}

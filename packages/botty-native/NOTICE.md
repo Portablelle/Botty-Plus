@@ -29,3 +29,6 @@ https://github.com/Swordpdf/ProsperoEden
 
 Optional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.
 See emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.
+
+Experimental BOTW 1.9.0 FPS + Graphics profile by mkaflowski, CC-BY-NC-2.0, adapted from nx-optimizer PR #331.
+See emulation/ultracam/botw190/NOTICE.md and LICENSE.md for the pinned source and terms.

@@ -714,6 +714,159 @@ index 0000000..f99563e
 +inline bool returning = false;
 +inline std::string game;
 +}
+diff --git a/headless/botw_profile.h b/headless/botw_profile.h
+new file mode 100644
+index 0000000..89475c2
+--- /dev/null
++++ b/headless/botw_profile.h
+@@ -0,0 +1,147 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++// Version selection and managed installation. The separately licensed patch
++// payload is loaded from the app assets, never compiled into the engine.
++#include "ultracam.h"
++#include <cstring>
++#include <map>
++
++namespace Eden::BotwProfile {
++using namespace UltraCam;
++inline constexpr const char* kName190 = "Botty BOTW 1.9.0";
++inline constexpr const char* kManual190 = "!!!BOTW 1.9.0 Optimizer";
++inline constexpr const char* kMain190 = "CD57B23FA4BBAD65803D9788C01821EE00000000000000000000000000000000";
++inline constexpr const char* kSdk190 = "574284B40C06CF1821A44857939083BEE5716820000000000000000000000000";
++inline constexpr Payload kTemplate190{"patches.json",3950,"54b0ebb2945bba7aebce09ac9a886fc8586b73eedbed36d505621b8456f51626"};
++inline bool Is190(std::string_view version) { return version=="1.9.0"; }
++inline bool Compatible(uint64_t title,std::string_view version) {
++ return title==kTitle && (version=="1.6.0" || Is190(version));
++}
++inline bool Supported190(std::size_t field) {
++ return field==Enabled || field==TargetFps || field==Distance || field==Fov;
++}
++inline bool Valid190(const Options& values) {
++ if(!Valid(values))return false;
++ for(std::size_t i=0;i<Count;++i)if(!Supported190(i)&&values[i]!=kDefaults[i])return false;
++ return true;
++}
++inline fs::path Root190() { return UltraCam::Root().parent_path()/kName190; }
++inline Options Load190(const fs::path& root=Root190(),const std::string& settings=SettingsFile()) {
++ auto values=kDefaults;std::string text;bool managed=false;
++ try {if(Read(root/".botty-botw190.json",8192,text)){
++  const auto j=Settings::Json::parse(text);const auto saved=j.at("options").get<Options>();
++  if(j.at("schema")==1&&j.at("profile")=="botw-1.9.0-v1"&&Valid190(saved)){values=saved;managed=true;}
++ }}catch(const std::exception&){}
++ const auto off=LoadDisabledMods(kTitle,settings);
++ values[Enabled]=managed&&std::find(off.begin(),off.end(),kName190)==off.end();
++ return values;
++}
++inline Options Load(std::string_view version) { return Is190(version)?Load190():UltraCam::Load(); }
++inline void Gate(uint64_t title,std::string_view version,std::vector<std::string>& off,
++                 bool managed190=fs::exists(Root190())) {
++ if(title!=kTitle)return;
++ const auto add=[&](const char* name){if(std::find(off.begin(),off.end(),name)==off.end())off.emplace_back(name);};
++ if(version!="1.6.0")add(UltraCam::kName);
++ if(!Is190(version)){add(kName190);add(kManual190);add("!!!BOTW 1.9.0 60 FPS");}
++ else if(managed190&&std::find(off.begin(),off.end(),kName190)==off.end()){
++  add(kManual190);add("!!!BOTW 1.9.0 60 FPS");
++ }
++}
++inline std::string HexWord(uint32_t word) {
++ constexpr char hex[]="0123456789ABCDEF";std::string out;
++ for(unsigned i=0;i<4;++i){const auto b=(word>>(8*i))&255;out+=hex[b>>4];out+=hex[b&15];}return out;
++}
++inline std::string HexFloat(float value) {
++ static_assert(sizeof(float)==sizeof(uint32_t));uint32_t bits;std::memcpy(&bits,&value,sizeof(bits));return HexWord(bits);
++}
++using Files=std::map<std::string,std::string>;
++inline Files PatchFiles(const fs::path& source,const Options& values) {
++ if(!Valid190(values)||!Verified(source/kTemplate190.path,kTemplate190))throw std::runtime_error("BOTW 1.9.0 patch verification failed; reinstall Botty");
++ std::string text;Read(source/kTemplate190.path,kTemplate190.size,text);const auto data=Settings::Json::parse(text);
++ if(data.at("schema")!=1||data.at("main")!=kMain190||data.at("sdk")!=kSdk190)throw std::runtime_error("Unknown BOTW patch template");
++ Files files;
++ for(const bool sdk:{false,true}){
++  const auto id=sdk?kSdk190:kMain190;std::ostringstream out;
++  out<<"@nsobid-"<<id<<"\n\n@flag offset_shift 0x100\n\n@enabled\n";
++  for(const auto& patch:data.at(sdk?"sdk_patches":"patches")){
++   const auto address=patch.at("offset").get<std::string>();const auto offset=std::stoul(address,nullptr,0);
++   if(offset==0xc2dbbc&&values[Fov]==kDefaults[Fov])continue;
++   if(offset==0xc2dbd0&&values[Distance]==kDefaults[Distance])continue;
++   auto bytes=patch.at("replacement").get<std::string>();
++   if(!sdk&&offset==0x15a1fc0)bytes=HexWord(std::stoi(Value(values,TargetFps)))+
++    HexFloat(std::stof(Value(values,Fov))/50.f)+HexFloat(std::stof(Value(values,Distance)))+
++    HexFloat(0.08726646259971647f)+HexFloat(2.0943951023931953f);
++   out<<address.substr(2)<<" "<<bytes<<"\n";
++  }
++  out<<"@stop\n";files[std::string("exefs/")+id+".pchtxt"]=out.str();
++ }
++ return files;
++}
++inline void VerifyManaged190(const fs::path& root,const Files& expected) {
++ // Bound both the names and depth. Refuse owner edits, extra files and links.
++ std::function<void(const fs::path&,bool)> inspect=[&](const fs::path& path,bool top){
++  std::error_code ec;
++#if defined(__PROSPERO__)
++  const auto entries=Eden::ReadNativeDirectory(path,ec);
++#else
++  std::vector<fs::directory_entry> entries;for(fs::directory_iterator it(path,ec),end;!ec&&it!=end;it.increment(ec))entries.push_back(*it);
++#endif
++  if(ec||entries.size()>3)throw std::runtime_error("Extra files in BOTW profile; existing files were kept");
++  for(const auto& entry:entries){const auto st=entry.symlink_status();const auto rel=entry.path().lexically_relative(root).generic_string();
++   if(top&&rel=="exefs"&&fs::is_directory(st))inspect(entry.path(),false);
++   else if(fs::is_regular_file(st)&&rel==".botty-botw190.json"){}
++   else if(fs::is_regular_file(st)&&expected.count(rel)){
++    std::string bytes;if(!Read(entry.path(),16384,bytes)||bytes!=expected.at(rel))throw std::runtime_error("BOTW patch was modified; existing files were kept");
++   }else throw std::runtime_error("Unmanaged BOTW profile entry; existing files were kept");
++  }
++ };
++ inspect(root,true);
++ for(const auto& [name,expectedBytes]:expected){std::string bytes;if(!Read(root/name,16384,bytes)||bytes!=expectedBytes)throw std::runtime_error("BOTW patch is missing or modified; existing files were kept");}
++}
++inline bool Save190(uint64_t title,std::string_view version,const Options& values,std::string& error,
++ const fs::path& source=AppFile("ultracam/botw190"),const fs::path& target=Root190(),
++ const std::string& settings=SettingsFile(),const std::function<void(std::string_view)>& checkpoint={}) {
++ try {
++  if(title!=kTitle||!Valid190(values))throw std::runtime_error("Invalid BOTW 1.9.0 profile option");
++  if(values[Enabled]&&!Is190(version))throw std::runtime_error("This profile requires BOTW 1.9.0");
++  auto disabled=Load190(target,settings);disabled[Enabled]=0;
++  if(!values[Enabled]&&(values==disabled||!Is190(version))){
++   if(!SaveModEnabled(title,kName190,false,settings))throw std::runtime_error("Could not disable BOTW profile");
++   error.clear();return true;
++  }
++  if(values[Enabled]&&!LoadModsEnabled(title,settings))throw std::runtime_error("Turn on this game's Mods switch first");
++  const auto files=PatchFiles(source,values);const bool exists=fs::exists(fs::symlink_status(target));
++  if(exists){
++   std::string marker;if(!fs::is_directory(fs::symlink_status(target))||!Read(target/".botty-botw190.json",8192,marker))throw std::runtime_error("Unmanaged BOTW profile; existing files were kept");
++   const auto old=Settings::Json::parse(marker);const auto saved=old.at("options").get<Options>();
++   if(old.at("schema")!=1||old.at("profile")!="botw-1.9.0-v1"||!Valid190(saved))throw std::runtime_error("Unknown BOTW profile; existing files were kept");
++   VerifyManaged190(target,PatchFiles(source,saved));
++  }
++  Stage stage{TemporaryDirectory(target.parent_path().parent_path())};const auto next=stage.path/"next";
++  for(const auto& [name,bytes]:files)Write(next/name,bytes);
++  Write(next/".botty-botw190.json",Settings::Json{{"schema",1},{"profile","botw-1.9.0-v1"},{"options",values}}.dump()+"\n");
++  Stage snapshot{TemporaryDirectory(fs::path(settings).parent_path())};const bool hadSettings=fs::exists(fs::symlink_status(settings));
++  if(hadSettings){std::string bytes;if(!Read(settings,1024*1024,bytes))throw std::runtime_error("Cannot preserve game settings");Write(snapshot.path/"settings.json",bytes);}
++  if(checkpoint)checkpoint("staged");
++  bool moved=false,published=false,touched=false;
++  try {
++   if(exists){fs::rename(target,stage.path/"previous");moved=true;}
++   Directory(target.parent_path());fs::rename(next,target);published=true;
++   if(checkpoint)checkpoint("published");
++   touched=true;
++   if(!SaveModEnabled(title,kName190,values[Enabled]!=0,settings))throw std::runtime_error("Could not save BOTW profile activation");
++  }catch(...){
++   try {
++    if(published)fs::rename(target,stage.path/"uncommitted");
++    if(moved)fs::rename(stage.path/"previous",target);
++    if(touched){if(hadSettings)fs::rename(snapshot.path/"settings.json",settings);else fs::remove(settings);}
++   }catch(...){stage.preserve=true;snapshot.preserve=true;throw std::runtime_error("BOTW rollback failed; recovery retained at "+stage.path.string()+" and "+snapshot.path.string());}
++   throw;
++  }
++  error.clear();return true;
++ }catch(const std::exception& e){error=e.what();return false;}
++}
++inline bool Save(uint64_t title,std::string_view version,const Options& values,std::string& error) {
++ return Is190(version)?Save190(title,version,values,error):UltraCam::Save(title,version,values,error);
++}
++} // namespace Eden::BotwProfile
 diff --git a/headless/check_package.py b/headless/check_package.py
 index 5a6aa2b..ab96b92 100644
 --- a/headless/check_package.py
@@ -993,7 +1146,7 @@ index 1eec8bf..62c64ea 100755
      static FileSys::RealVfsFilesystem vfs;
      std::vector<FileSys::VirtualDir> layers;
 diff --git a/headless/main.cpp b/headless/main.cpp
-index 5b654e2..35c37b8 100644
+index 5b654e2..83b4501 100644
 --- a/headless/main.cpp
 +++ b/headless/main.cpp
 @@ -1,3 +1,4 @@
@@ -1006,7 +1159,7 @@ index 5b654e2..35c37b8 100644
  #include "assets_dir.h"
  #include "forwarded_launch.h"
 +#include "botty_configuration.h"
-+#include "ultracam.h"
++#include "botw_profile.h"
  #include "gpu_failure.h"
  #include "guest_fault.h"
  #include "jit_list.h"
@@ -1139,17 +1292,15 @@ index 5b654e2..35c37b8 100644
              if (Eden::Reshade::SetGameFolder(Eden::Mods::SessionGameFolder())) {
                  VideoCore::ReloadFxPresetCatalog();
                  VideoCore::ReloadFxCatalog();
-@@ -1333,10 +1353,19 @@ int main(int argc, char** argv) {
+@@ -1333,10 +1353,17 @@ int main(int argc, char** argv) {
              // The game's own folder (Mods::SessionGameFolder) was found with its post-processing.
              const auto all_mods = Eden::Mods::List(
                  {Eden::AssetsPath("mods"), Eden::AssetsPath("cheats"), Eden::Mods::SessionGameFolder()}, title);
 +            auto disabled_mods = Eden::LoadDisabledMods(title);
-+            if (title == Eden::UltraCam::kTitle && std::filesystem::exists(Eden::UltraCam::Root())) {
++            if (title == Eden::UltraCam::kTitle) {
 +                char version[64]{};
 +                eden_game_effective_version(guest, Eden::AssetsPath("keys").c_str(), title, version, sizeof(version));
-+                if (!Eden::UltraCam::Compatible(title, version) &&
-+                    std::find(disabled_mods.begin(), disabled_mods.end(), Eden::UltraCam::kName) == disabled_mods.end())
-+                    disabled_mods.push_back(Eden::UltraCam::kName);
++                Eden::BotwProfile::Gate(title, version, disabled_mods);
 +                Eden::Report("ultracam", ("Effective BOTW version: " + std::string(version)).c_str());
 +            }
              // Of a mod that lists several cheats, only the ones chosen there run (cheats.h).
@@ -1160,7 +1311,7 @@ index 5b654e2..35c37b8 100644
                                                   Eden::LoadCheatsOff(title), Eden::LoadModsEnabled(title),
                                                   cheats_enabled);
              Eden::Cheats::Off() = std::move(switched.cheats_off);
-@@ -1511,6 +1540,12 @@ int main(int argc, char** argv) {
+@@ -1511,6 +1538,12 @@ int main(int argc, char** argv) {
              system.Initialize();
              if (system.IsPoweredOn()) return 1;
              passed("core_initialized");
@@ -1173,7 +1324,7 @@ index 5b654e2..35c37b8 100644
              for (unsigned cycle = 0; guest && cycle < cycles; ++cycle) {
                  if (game) LOG_INFO(Frontend, "EDEN_GAME_SESSION_BEGIN {}", cycle + 1);
                  struct Completion {
-@@ -1522,6 +1557,7 @@ int main(int argc, char** argv) {
+@@ -1522,6 +1555,7 @@ int main(int argc, char** argv) {
                      bool room_lost = false;
                      std::exception_ptr failure;
                      std::string guest_fault;
@@ -1181,7 +1332,7 @@ index 5b654e2..35c37b8 100644
                  };
                  auto completion = std::make_shared<Completion>();
                  system.RegisterExitCallback([completion] {
-@@ -1529,18 +1565,26 @@ int main(int argc, char** argv) {
+@@ -1529,18 +1563,26 @@ int main(int argc, char** argv) {
                      completion->exited = true;
                      completion->wake.notify_one();
                  });
@@ -1211,7 +1362,7 @@ index 5b654e2..35c37b8 100644
                  system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
                  // The game's own contents, registered as Eden's desktop frontends do before booting a
                  // game (ConfigureFilesystemProvider). An update's data is a patch on the base game's:
-@@ -1564,6 +1608,12 @@ int main(int argc, char** argv) {
+@@ -1564,6 +1606,12 @@ int main(int argc, char** argv) {
                  Service::AM::FrontendAppletParameters params{
                      .applet_id = Service::AM::AppletId::Application,
                  };
@@ -1224,7 +1375,7 @@ index 5b654e2..35c37b8 100644
  #ifdef PS5_NATIVE
                  // While a game loads nothing else reads the controller, so Touchpad + L1 did nothing
                  // until the game ran: a load that hung could only be left by closing ProsperoEden.
-@@ -1614,7 +1664,7 @@ int main(int argc, char** argv) {
+@@ -1614,7 +1662,7 @@ int main(int argc, char** argv) {
                  }
  #ifdef PS5_NATIVE
                  if (game) {
@@ -1233,7 +1384,7 @@ index 5b654e2..35c37b8 100644
                      const bool saved_last = Eden::SaveLastGame(filename);
                      const bool saved_recent = Eden::SaveRecentGame(filename);
                      if (!saved_last || !saved_recent)
-@@ -2019,6 +2069,11 @@ int main(int argc, char** argv) {
+@@ -2019,6 +2067,11 @@ int main(int argc, char** argv) {
                      completion->wake.wait_for(lock, std::chrono::milliseconds(wait_ms), completed);
                      const bool guest_exited = completion->exited;
                      return_to_menu = completion->return_to_menu;
@@ -1245,7 +1396,7 @@ index 5b654e2..35c37b8 100644
  #ifdef PS5_NATIVE
                      if (completion->room_lost)
                          launch_error = "The room connection was lost. Rejoin from Multiplayer before launching again.";
-@@ -2051,6 +2106,14 @@ int main(int argc, char** argv) {
+@@ -2051,6 +2104,14 @@ int main(int argc, char** argv) {
                      for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
                  }
  #endif
@@ -1260,7 +1411,7 @@ index 5b654e2..35c37b8 100644
                  system.ShutdownMainProcess();
                  Eden::Report("shutdown", "Game stopped; releasing renderer");
  #ifndef PS5_NATIVE
-@@ -2113,6 +2176,24 @@ int main(int argc, char** argv) {
+@@ -2113,6 +2174,24 @@ int main(int argc, char** argv) {
  #endif
  #endif
                  if (game) LOG_INFO(Frontend, "EDEN_GAME_SESSION_END {}", cycle + 1);
@@ -1498,7 +1649,7 @@ index 689aead..422e852 100644
  void PinWorker(unsigned index, cpuset_t& affinity) {
      if (!worker_topology_ready || index >= worker_cpus.size() ||
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
-index 1d5a8a3..1ff0571 100644
+index 1d5a8a3..069e30e 100644
 --- a/headless/prosperoeden/eden_services.cpp
 +++ b/headless/prosperoeden/eden_services.cpp
 @@ -7,10 +7,13 @@
@@ -1507,7 +1658,7 @@ index 1d5a8a3..1ff0571 100644
  #include "metadata_bridge.h"
 +#include "botty_configuration.h"
  #include "mods.h"
-+#include "ultracam.h"
++#include "botw_profile.h"
  #include "profiles.h"
  #include "update_notice.h"
  #include "game_name.h"
@@ -1549,7 +1700,7 @@ index 1d5a8a3..1ff0571 100644
              if (const std::string folder = GameFolderOf(file); game.title_id && !folder.empty()) {
                  const std::lock_guard folders(game_folders_lock_);
                  game_folders_[game.title_id] = folder;
-@@ -956,6 +964,16 @@ static_assert(std::size(pe::ui::kSpeedLimitPercents) == std::size(Eden::kSpeedLi
+@@ -956,6 +964,18 @@ static_assert(std::size(pe::ui::kSpeedLimitPercents) == std::size(Eden::kSpeedLi
  pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      const Eden::GameSettings saved = Eden::LoadGameSettings(title_id);
      pe::ui::GameSettings result;
@@ -1559,14 +1710,16 @@ index 1d5a8a3..1ff0571 100644
 +        const auto rom=local_roms_.find(title_id);
 +        if(rom!=local_roms_.end())eden_game_effective_version(rom->second.c_str(),Eden::AssetsPath("keys").c_str(),title_id,version,sizeof(version));
 +        Eden::Report("ultracam",("Config detected effective BOTW version: "+std::string(version)).c_str());
-+        result.ultracam_available=Eden::UltraCam::Compatible(title_id,version);
-+        result.ultracam_note=result.ultracam_available ? "UltraCam 1.0.1 | BOTW 1.6.0. FPS is a target, not a guarantee." : ("Requires BOTW 1.6.0. Detected update: "+std::string(version[0]?version:"none")+".");
-+        result.ultracam=Eden::UltraCam::Load();
++        result.ultracam_available=Eden::BotwProfile::Compatible(title_id,version);
++        result.ultracam_190=Eden::BotwProfile::Is190(version);
++        result.ultracam_note=result.ultracam_190 ? "BOTW 1.9.0 FPS + Graphics (experimental). FPS target, FOV and camera far clip only. Native resolution and freecam are unavailable." :
++            result.ultracam_available ? "UltraCam 1.0.1 | BOTW 1.6.0. FPS is a target, not a guarantee." : ("Requires BOTW 1.6.0 or 1.9.0. Detected update: "+std::string(version[0]?version:"none")+".");
++        result.ultracam=Eden::BotwProfile::Load(version);
 +    }
      result.renderer = saved.renderer;
      result.resolution = saved.resolution;
      result.filter = saved.upscaling_filter;
-@@ -983,6 +1001,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
+@@ -983,6 +1003,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      return result;
  }
  
@@ -1574,7 +1727,7 @@ index 1d5a8a3..1ff0571 100644
 +    const std::lock_guard lock(bridge_);
 +    char version[64]{};const auto rom=local_roms_.find(title_id);
 +    if(rom!=local_roms_.end())eden_game_effective_version(rom->second.c_str(),Eden::AssetsPath("keys").c_str(),title_id,version,sizeof(version));
-+    return Eden::UltraCam::Save(title_id,version,values,error);
++    return Eden::BotwProfile::Save(title_id,version,values,error);
 +}
 +
  bool EdenServices::set_game_settings(std::uint64_t title_id, const pe::ui::GameSettings& settings) {
@@ -1744,16 +1897,25 @@ index 2816b4e..b40b8ed 100644
      s.wait(2.0f);
      s.shoot("25b-home-crash-report");
 diff --git a/headless/prosperoeden/host/runtime_preview.cpp b/headless/prosperoeden/host/runtime_preview.cpp
-index 6dd9f86..b176c4d 100644
+index 6dd9f86..1289864 100644
 --- a/headless/prosperoeden/host/runtime_preview.cpp
 +++ b/headless/prosperoeden/host/runtime_preview.cpp
-@@ -22,8 +22,16 @@
+@@ -10,6 +10,7 @@
+ #include <EGL/egl.h>
+ #include <EGL/eglext.h>
+ #include <GL/glcorearb.h>
++#include <cstdlib>
+ #include <filesystem>
+ #include <fstream>
+ #include <iostream>
+@@ -22,8 +23,17 @@
  class RuntimePreviewServices : public pe::host::FakeServices {
  public:
      using FakeServices::FakeServices;
 +    pe::ui::GameSettings game_settings(std::uint64_t id) override {
 +        auto value=FakeServices::game_settings(id);value.ultracam_available=true;
-+        value.ultracam_note="UltraCam 1.0.1 | BOTW 1.6.0 (preview fixture)";return value;
++        value.ultracam_190=std::getenv("BOTTY_PREVIEW_BOTW190")!=nullptr;
++        value.ultracam_note=value.ultracam_190 ? "BOTW 1.9.0 FPS + Graphics (experimental preview fixture)" : "UltraCam 1.0.1 | BOTW 1.6.0 (preview fixture)";return value;
 +    }
 +    bool set_ultracam(std::uint64_t id,const std::array<int,14>& values,std::string& error) override {
 +        auto value=FakeServices::game_settings(id);value.ultracam=values;error.clear();return FakeServices::set_game_settings(id,value);
@@ -1764,7 +1926,7 @@ index 6dd9f86..b176c4d 100644
          int profile=-1;
          for(int i=0;i<static_cast<int>(people.size());++i) if(people[i].playing) profile=i;
          launches.push_back({{"file",file},{"profile",profile}});
-@@ -83,7 +91,19 @@ int main(int argc,char**argv) {
+@@ -83,7 +93,19 @@ int main(int argc,char**argv) {
          while(std::getline(std::cin,input)){
              std::istringstream parser(input);std::string command,arg;int frames=2;parser>>command>>arg>>frames;
              if(command=="exit")break;
@@ -1786,7 +1948,7 @@ index 6dd9f86..b176c4d 100644
              else if(command=="tick"){tick(arg.empty()?60:std::stoi(arg));}
              else if(command=="capture"){capture(arg);}
 diff --git a/headless/prosperoeden/pe/ui/game_options.cpp b/headless/prosperoeden/pe/ui/game_options.cpp
-index a5f8184..84b64a7 100644
+index a5f8184..369d8af 100644
 --- a/headless/prosperoeden/pe/ui/game_options.cpp
 +++ b/headless/prosperoeden/pe/ui/game_options.cpp
 @@ -29,15 +29,6 @@ constexpr int kRowsShown = 5;
@@ -1826,7 +1988,7 @@ index a5f8184..84b64a7 100644
  struct Option
  {
      std::string name;
-@@ -210,6 +215,15 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences
+@@ -210,6 +215,18 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences
                           tr("Right Joy-Con")},
                          game.controller, tr("Automatic")});
          break;
@@ -1835,14 +1997,17 @@ index a5f8184..84b64a7 100644
 +            const auto& definition=Eden::UltraCam::kDefinitions[i];
 +            std::vector<std::string> choices;
 +            for(int choice=0;choice<definition.count;++choice)choices.emplace_back(definition.choices[choice].label);
-+            rows.push_back({definition.label,choices,game.ultracam[i],"",
-+                !game.ultracam_available && (i!=Eden::UltraCam::Enabled || game.ultracam[i]==0)});
++            const bool supported=!game.ultracam_190 || i==Eden::UltraCam::Enabled || i==Eden::UltraCam::TargetFps || i==Eden::UltraCam::Distance || i==Eden::UltraCam::Fov;
++            const std::string label=game.ultracam_190 && i==Eden::UltraCam::Enabled ? "BOTW 1.9.0 FPS (experimental)" :
++                game.ultracam_190 && i==Eden::UltraCam::Distance ? "Camera far clip" : definition.label;
++            rows.push_back({label,choices,game.ultracam[i],supported?"":"Not available in 1.9.0",
++                !supported || (!game.ultracam_available && (i!=Eden::UltraCam::Enabled || game.ultracam[i]==0))});
 +        }
 +        break;
      case category_system:
          // The seed is a number: the row's one choice is the game's (0 until one is typed, with
          // Cross). Without a seed the game is loaded at a new random address at every start.
-@@ -262,6 +276,9 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
+@@ -262,6 +279,9 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
              game.own_mapping = value >= 0;
          }
          break;
@@ -1852,7 +2017,7 @@ index a5f8184..84b64a7 100644
      case category_system:
          game.rng_seed = value < 0 ? -1 : std::max<std::int64_t>(game.rng_seed, 0);
          break;
-@@ -414,20 +431,22 @@ void Launcher::press_game_options(Key key)
+@@ -414,20 +434,22 @@ void Launcher::press_game_options(Key key)
          edit_seed();
          return;
      }
@@ -1880,7 +2045,7 @@ index a5f8184..84b64a7 100644
      // 120 Hz is a request: the display has the last word.
      const bool fast = saved && game_options_ == category_video && row == kRefreshRow &&
                        (game_settings_.refresh >= 0 ? game_settings_.refresh : prefs_.refresh) == 1;
-@@ -437,7 +456,7 @@ void Launcher::press_game_options(Key key)
+@@ -437,7 +459,7 @@ void Launcher::press_game_options(Key key)
      say(fast ? tr("Saved. A display that cannot show 120 Hz stays at 60 Hz.") :
          full ? tr("Saved. Full quality uses four times the graphics memory for these textures and can run out "
                    "above 1x.") :
@@ -1889,13 +2054,18 @@ index a5f8184..84b64a7 100644
          !saved);
      cue(saved ? Cue::toggle : Cue::error);
  }
-@@ -453,7 +472,15 @@ int Launcher::option_action() const
+@@ -453,7 +475,20 @@ int Launcher::option_action() const
  
  std::string Launcher::option_about(int category, int row) const
  {
 -    // The Performance switches and the speed limit each say what they do (settings.cpp).
 +    if (category == category_ultracam) {
 +        if (row == 0) return game_settings_.ultracam_note;
++        if (game_settings_.ultracam_190) {
++            if (row == 2 || row == 3 || row >= 6) return "This UltraCam feature has not been ported to BOTW 1.9.0. The game and emulator graphics settings are preserved.";
++            if (row == 4) return "Camera far clipping only; this does not change object streaming or LOD distance.";
++            if (row == 5) return "Scales world-camera FOV while preserving relative zoom.";
++        }
 +        if (row == 1) return "FPS target with dynamic game speed. The PS5 may not sustain it. This is separate from TV refresh rate and frame generation.";
 +        if (row == 2) return "Game resolution before the emulator render scale. Lower this and use 1x when testing the 60 FPS target.";
 +        if (row == 3) return "Disables the game's FXAA, FSR and dynamic resolution. May change sharpness and performance.";
@@ -1906,7 +2076,7 @@ index a5f8184..84b64a7 100644
      if (category == category_performance)
          return tr(performance_about(row));
      return {};
-@@ -491,7 +518,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+@@ -491,7 +526,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
          // The game's own choice, or "Default (what Settings has)".
          const std::string value = option.locked ? std::string{tr("Unavailable")} :
              option.value >= 0 ? pick(option.values, option.value) : fill(tr("Default ({0})"), {option.usual});
@@ -1915,7 +2085,7 @@ index a5f8184..84b64a7 100644
              list.push_opacity(0.38f);
          const float taken = chooser(c, value, pane.x + pane.w - 24.0f, baseline(top, height, t.size_text),
                                      focused ? 1.0f : 0.0f, option.value >= 0 ? t.accent : t.meta);
-@@ -501,7 +528,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
+@@ -501,7 +536,7 @@ void Launcher::draw_option_pane(Canvas &c, const Rect &pane, int category, bool
              list.circle(pane.x + 34.0f, top + height * 0.5f, 4.0f, t.accent);
          text_shrink(c, option.name, pane.x + 28.0f + lead, baseline(top, height, t.size_text), t.size_text,
                      focused ? t.title : t.value, pane.w - 28.0f - lead - 24.0f - taken - 28.0f);
@@ -2051,7 +2221,7 @@ index 0704378..dd8e445 100644
      void press_game_options(Key key);
      // The RNG seed is typed on the system keyboard: opens it, and takes its answer when it closes.
 diff --git a/headless/prosperoeden/pe/ui/library.cpp b/headless/prosperoeden/pe/ui/library.cpp
-index d315f68..edf3e7d 100644
+index d315f68..b763d82 100644
 --- a/headless/prosperoeden/pe/ui/library.cpp
 +++ b/headless/prosperoeden/pe/ui/library.cpp
 @@ -34,8 +34,8 @@ constexpr Rect kDetail{1304.0f, 136.0f, 520.0f, 836.0f};
@@ -2107,7 +2277,7 @@ index d315f68..edf3e7d 100644
          case row_mode:
              return game_docked_ ? tr("Docked") : tr("Handheld");
 +        case row_ultracam:
-+            return !game_settings_.ultracam_available ? "BOTW 1.6.0 only" : game_settings_.ultracam[0] ? "On" : "Off";
++            return !game_settings_.ultracam_available ? "BOTW 1.6.0 / 1.9.0 only" : game_settings_.ultracam[0] ? "On" : "Off";
          case row_mods:
              // With the game's Mods switch off (the Library's), none of them is on.
              return mods_.empty() ? std::string{tr("No mods")} :
@@ -2196,7 +2366,7 @@ index b2c1866..98f27d2 100644
      void update(float);
      void draw(gfx::DrawList&);
 diff --git a/headless/prosperoeden/pe/ui/runtime_models.hpp b/headless/prosperoeden/pe/ui/runtime_models.hpp
-index 036995a..354b45c 100644
+index 036995a..2a0f88d 100644
 --- a/headless/prosperoeden/pe/ui/runtime_models.hpp
 +++ b/headless/prosperoeden/pe/ui/runtime_models.hpp
 @@ -16,8 +16,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Download, key, file, name, sourc
@@ -2206,12 +2376,12 @@ index 036995a..354b45c 100644
 -NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper, update_notices, speed_limit)
 -NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
 +NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper, update_notices, speed_limit)
-+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_190, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cheat, name, enabled)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats, cheats_only)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameCheat, mod, name, enabled)
 diff --git a/headless/prosperoeden/pe/ui/services.hpp b/headless/prosperoeden/pe/ui/services.hpp
-index 47e8859..e4796ec 100644
+index 47e8859..2b63df5 100644
 --- a/headless/prosperoeden/pe/ui/services.hpp
 +++ b/headless/prosperoeden/pe/ui/services.hpp
 @@ -13,6 +13,7 @@
@@ -2222,17 +2392,18 @@ index 47e8859..e4796ec 100644
  #include "../../../multiplayer_directory.h"
  
  namespace pe::ui
-@@ -389,6 +390,9 @@ struct Preferences
+@@ -389,6 +390,10 @@ struct Preferences
  // the game follows Settings; switches are 0 off, 1 on.
  struct GameSettings
  {
 +    bool ultracam_available = false;
-+    std::string ultracam_note = "UltraCam supports BOTW 1.6.0 only.";
++    bool ultracam_190 = false;
++    std::string ultracam_note = "Supports UltraCam for BOTW 1.6.0 and experimental FPS for 1.9.0.";
 +    Eden::UltraCam::Options ultracam=Eden::UltraCam::kDefaults;
      int renderer = -1;   // 0 OpenGL, 1 Vulkan
      int resolution = -1; // index into Services::resolution_labels
      int filter = -1;     // index into Services::filter_labels
-@@ -633,6 +637,9 @@ class Services
+@@ -633,6 +638,9 @@ class Services
          return false;
      }
  

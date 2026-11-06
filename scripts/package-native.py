@@ -86,6 +86,7 @@ def main():
                          'https://github.com/Swordpdf/ProsperoEden\n')
     with (out / 'NOTICE.md').open('a') as notice:
         notice.write('\nOptional UltraCam BOTW 1.0.1 by MaxLastBreath, CC-BY-NC-2.0.\nSee emulation/ultracam/NOTICE.md and LICENSE.md in the runtime package for attribution and terms.\n')
+        notice.write('\nExperimental BOTW 1.9.0 FPS + Graphics profile by mkaflowski, CC-BY-NC-2.0, adapted from nx-optimizer PR #331.\nSee emulation/ultracam/botw190/NOTICE.md and LICENSE.md for the pinned source and terms.\n')
     print('Native source and notices refreshed')
     import subprocess
     subprocess.run([sys.executable, str(project / 'scripts/botty-packages.py')], check=True)

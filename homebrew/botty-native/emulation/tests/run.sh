@@ -21,6 +21,10 @@ flags=(-std=c++20 -I"$engine/headless" -I"$json")
 fixture=$(mktemp -d "$output/ultracam.XXXXXX")
 trap 'rm -rf -- "$fixture"' EXIT
 "$output/ultracam-check" "$tests/../ultracam/botw" "$fixture"
+"$cxx" "${flags[@]}" "$tests/botw_profile_check.cpp" "$output/sha256.o" -o "$output/botw-profile-check"
+"$output/botw-profile-check" "$tests/../ultracam/botw" "$tests/../ultracam/botw190" "$fixture/profiles"
+python3 "$tests/check_botw190_export.py" "$fixture/profiles/patch-cases.json"
+python3 "$tests/../generate_botw190.py" --check
 "$cc" "$tests/lifecycle_check.c" "$engine/src/lifecycle.c" -o "$output/lifecycle-check"
 "$output/lifecycle-check"
 python3 -m unittest discover -s "$tests" -p 'test_*.py' -v

@@ -81,6 +81,9 @@ inline constexpr const char* embeddedRuntimeFiles[] = {
   "emulation/ultracam/botw/exefs/main.npdm",
   "emulation/ultracam/botw/exefs/subsdk3",
   "emulation/ultracam/botw/romfs/UltraCam/maxlastbreath.ini",
+  "emulation/ultracam/botw190/LICENSE.md",
+  "emulation/ultracam/botw190/NOTICE.md",
+  "emulation/ultracam/botw190/patches.json",
   "emulation/ultracam/manifest.json",
 };
-}
+} // namespace botty
