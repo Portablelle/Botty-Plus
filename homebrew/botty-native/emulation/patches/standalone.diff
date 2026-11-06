@@ -531,7 +531,7 @@ index 65da70f..c3de3e5 100644
  
  The app creates the folder when it starts. Put images in it over FTP while the app is
 diff --git a/headless/CMakeLists.txt b/headless/CMakeLists.txt
-index 3495139..8fee190 100644
+index 3495139..97a5932 100644
 --- a/headless/CMakeLists.txt
 +++ b/headless/CMakeLists.txt
 @@ -1521,6 +1521,36 @@ function(eden_patch source old new)
@@ -602,7 +602,56 @@ index 3495139..8fee190 100644
  # A bitfield expression yields 0/1, so explicitly restore the SRC flag's bit position.
  file(READ "${PROJECT_SOURCE_DIR}/src/audio_core/renderer/voice/voice_info.cpp" voice_source)
  set(old_voice_flag "flags |= u16(params.flags.IsVoicePitchAndSrcSkippedSupported);")
-@@ -2851,7 +2890,7 @@ if(PS5_NATIVE)
+@@ -2797,47 +2836,7 @@ write_derived("${PORT_BUILD_DIR}/shader_environment.cpp"
+     "${shader_environment_head}#include \"${EDEN_PORT_DIR}/shader_cache_reader.inc\"\n\n${shader_environment_tail}")
+ set_property(SOURCE "${PORT_BUILD_DIR}/shader_environment.cpp" APPEND PROPERTY OBJECT_DEPENDS
+     "${EDEN_PORT_DIR}/shader_cache_reader.inc")
+-# Eden recompresses an ASTC texture to BC1 or BC3 a mip level at a time: every layer of the level
+-# is decoded into one buffer, four bytes a pixel, and then compressed. For a texture array of 121
+-# layers that buffer is 484 MiB, asked of the pool the CPU shares with the GPU at the moment a game
+-# loads new textures (a session ended there with the pool at 620 MiB in one piece), and the heap
+-# keeps what it grew by. A layer at a time needs 4 MiB and writes the same bytes: both steps
+-# already work layer by layer, each layer at its own offset.
+-file(READ "${PROJECT_SOURCE_DIR}/src/video_core/texture_cache/util.cpp" texture_util_source)
+-set(recompress_old [=[            decode_scratch.resize_destructive(level_size);
+-
+-            Tegra::Texture::ASTC::Decompress(
+-                input_offset, copy.image_extent.width, copy.image_extent.height,
+-                copy.image_subresource.num_layers * copy.image_extent.depth, tile_size.width,
+-                tile_size.height, decode_scratch);
+-
+-            compress(decode_scratch, copy.image_extent.width, copy.image_extent.height,
+-                     copy.image_subresource.num_layers * copy.image_extent.depth,
+-                     output.subspan(output_offset));
+-]=])
+-string(FIND "${texture_util_source}" "${recompress_old}" recompress_at)
+-if(recompress_at LESS 0)
+-    message(FATAL_ERROR "Pinned ASTC recompression changed (texture_cache/util.cpp, ConvertImage)")
+-endif()
+-string(REPLACE "${recompress_old}" [=[            // A layer at a time (headless/CMakeLists.txt): ASTC blocks are 16 bytes, BC blocks
+-            // cover 4x4 pixels.
+-            const u32 layers = copy.image_subresource.num_layers * copy.image_extent.depth;
+-            const u32 layer_input = Common::DivideUp(copy.image_extent.width, tile_size.width) *
+-                                    Common::DivideUp(copy.image_extent.height, tile_size.height) * 16;
+-            const u32 layer_output = Common::AlignUp(copy.image_extent.width, 4) *
+-                                     Common::AlignUp(copy.image_extent.height, 4) / bpp_div;
+-            decode_scratch.resize_destructive(level_size / (std::max)(layers, 1u));
+-            for (u32 layer = 0; layer < layers; ++layer) {
+-                Tegra::Texture::ASTC::Decompress(
+-                    input_offset.subspan(layer * layer_input), copy.image_extent.width,
+-                    copy.image_extent.height, 1, tile_size.width, tile_size.height, decode_scratch);
+-                compress(decode_scratch, copy.image_extent.width, copy.image_extent.height, 1,
+-                         output.subspan(output_offset + layer * layer_output));
+-            }
+-]=] texture_util_source "${texture_util_source}")
+-write_derived("${PORT_BUILD_DIR}/texture_cache_util.cpp" "${texture_util_source}")
+-list(REMOVE_ITEM video_sources texture_cache/util.cpp)
+-list(APPEND video_sources "${PORT_BUILD_DIR}/texture_cache_util.cpp")
++# ASTC per-layer conversion is patched in the core, including texture_util.cpp.
+ list(REMOVE_ITEM video_sources shader_environment.cpp)
+ list(APPEND video_sources "${PORT_BUILD_DIR}/shader_environment.cpp")
+ set_property(TARGET video_core PROPERTY SOURCES "${video_sources}")
+@@ -2851,7 +2850,7 @@ if(PS5_NATIVE)
          "#elif defined(PS5_NATIVE)\n        eden_path = Eden::UserDir();\n        eden_path_cache = eden_path / CACHE_DIR;\n        eden_path_config = eden_path / CONFIG_DIR;\n#else\n        eden_path = GetCurrentDir() / PORTABLE_DIR;" paths_source "${paths_source}")
      string(REPLACE "#else\n        // In Ryujinx's infinite wisdom"
          "#elif defined(PS5_NATIVE)\n        GenerateLegacyPath(EmuPath::RyujinxDir, eden_path / RYUJINX_DIR);\n#else\n        // In Ryujinx's infinite wisdom" paths_source "${paths_source}")
@@ -1413,6 +1462,41 @@ index d25b29f..6c7457f 100644
  enum : unsigned {
      kCode = 1,    // exefs: patches or replacement code
      kFiles = 2,   // romfs: replacement game files
+diff --git a/headless/performance.cpp b/headless/performance.cpp
+index 689aead..422e852 100644
+--- a/headless/performance.cpp
++++ b/headless/performance.cpp
+@@ -281,7 +281,8 @@ void CheckWorkerTopology() {
+             if (!CPU_ISSET(cpu, &original) || cpu_core[cpu] < 0) continue;
+             const bool guest_core = cpu_core[cpu] == static_cast<int>(cores[0]) ||
+                 cpu_core[cpu] == static_cast<int>(cores[1]) || cpu_core[cpu] == static_cast<int>(cores[2]);
+-            if (!guest_core && cpu != worker_cpus[3] && cpu != worker_cpus[4]) secondary_cpus |= 1ULL << cpu;
++            const bool gpu_core = cpu_core[cpu] == static_cast<int>(cores[4]);
++            if (!guest_core && !gpu_core && cpu != worker_cpus[3]) secondary_cpus |= 1ULL << cpu;
+         }
+         std::printf("EDEN_WORKER_SECONDARY mask=%llx\n", secondary_cpus);
+     }
+@@ -294,9 +295,18 @@ void PlaceSecondary(const char* name) {
+     cpuset_t mask{};
+     for (unsigned cpu = 0; cpu < 64; ++cpu)
+         if (secondary_cpus & (1ULL << cpu)) CPU_SET(cpu, &mask);
+-    const int result = cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, 8, &mask);
++    cpuset_t original{}, verified{};
++    if (cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, 8, &original)) return;
++    int result = cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, 8, &mask);
++    const int apply_error = result ? errno : 0;
++    if (!result && (cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, 8, &verified) ||
++                    std::memcmp(&mask, &verified, 8))) {
++        if (cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, 8, &original))
++            throw std::runtime_error("Cannot restore auxiliary affinity");
++        result = -1;
++    }
+     if (secondary_reports.fetch_add(1, std::memory_order_relaxed) < 64)
+-        std::printf("EDEN_WORKER_PLACED name=%s mask=%llx error=%d\n", name, secondary_cpus, result ? errno : 0);
++        std::printf("EDEN_WORKER_PLACED name=%s mask=%llx verified=%d error=%d\n", name, secondary_cpus, !result, apply_error);
+ }
+ void PinWorker(unsigned index, cpuset_t& affinity) {
+     if (!worker_topology_ready || index >= worker_cpus.size() ||
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
 index 1d5a8a3..1ff0571 100644
 --- a/headless/prosperoeden/eden_services.cpp
@@ -2248,6 +2332,110 @@ index f5f0033..fce88c4 100644
  inline std::string SettingsFile() { return ConfigFile("prosperoeden.json"); }
  
  namespace Settings {
+diff --git a/headless/staging_buffers.h b/headless/staging_buffers.h
+new file mode 100644
+index 0000000..1810d8b
+--- /dev/null
++++ b/headless/staging_buffers.h
+@@ -0,0 +1,98 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Staging buffers of Eden's pool on the console (tools/prepare-vulkan-port.py, vulkan_staging_buffer_pool.cpp).
++//
++// Eden makes a staging buffer the next power of two above its transfer: 512 MiB for a transfer of
++// 341 MiB. On the console a buffer that size is one block of the pool the CPU shares with the GPU,
++// so 171 MiB were asked for and never used, and the request fails where the pool's largest free
++// block is smaller (a Switch 2 title was refused 512 MiB with 480 MiB free). Above 16 MiB a buffer
++// the CPU writes or reads is now its transfer rounded up to 16 MiB. Up to 16 MiB, and for buffers
++// only the GPU uses, it stays Eden's power of two.
++//
++// Eden keeps a buffer the GPU is done with for the next transfer of the same power of two. Above
++// 16 MiB it can be smaller than that transfer, so a kept buffer is handed out only when it holds
++// the transfer, and one too small for a new transfer is let go before the new one is made.
++//
++// When the console refuses a buffer, every kept one the GPU is done with is let go and the buffer
++// is asked for once more.
++#pragma once
++#include <algorithm>
++#include <cstddef>
++#include <cstdint>
++
++namespace Eden::StagingBuffers {
++inline constexpr std::uint64_t kExactAbove = std::uint64_t{16} << 20;
++inline constexpr std::uint64_t kStep = std::uint64_t{16} << 20;
++
++// Whether a transfer of `size` bytes gets a buffer of its own size. `mapped`: the CPU writes or
++// reads it (Eden's Upload and Download kinds); the buffers for the GPU alone keep their power of two.
++constexpr bool Exact(std::uint64_t size, bool mapped) noexcept {
++    return mapped && size > kExactAbove;
++}
++
++// The size of the buffer made for `size` bytes; `log2` is Eden's Log2Ceil of it.
++constexpr std::uint64_t Size(std::uint64_t size, unsigned log2, bool exact) noexcept {
++    return exact ? (size + kStep - 1) / kStep * kStep : std::uint64_t{1} << log2;
++}
++
++// What a kept buffer holds: its mapping's size or, when it is not mapped, Eden's power of two.
++constexpr std::uint64_t Holds(std::uint64_t mapped_bytes, unsigned log2) noexcept {
++    return mapped_bytes != 0 ? mapped_bytes : std::uint64_t{1} << log2;
++}
++
++struct Released {
++    std::size_t buffers = 0;
++    std::uint64_t bytes = 0;
++    Released& operator+=(const Released& other) noexcept {
++        buffers += other.buffers;
++        bytes += other.bytes;
++        return *this;
++    }
++};
++
++// Lets go of the kept buffers of one level that `drop` picks. `level` is the pool's
++// StagingBuffers: its entries and the two places in them where its next search and its next
++// release start, which stay inside the list.
++template <class Level, class Drop>
++Released ReleaseFrom(Level& level, Drop&& drop) {
++    Released released;
++    auto& entries = level.entries;
++    const auto kept = std::remove_if(entries.begin(), entries.end(), [&](const auto& entry) {
++        if (!drop(entry)) return false;
++        ++released.buffers;
++        released.bytes += Holds(entry.mapped_span.size(), entry.log2_level);
++        return true;
++    });
++    entries.erase(kept, entries.end());
++    if (level.delete_index >= entries.size()) level.delete_index = 0;
++    if (level.iterate_index > entries.size()) level.iterate_index = 0;
++    return released;
++}
++// Lets go of idle kept buffers (`idle` picks them), largest power of two first, until at most
++// `allowance` bytes of idle ones are kept. `caches`: the pool's caches, each an array of levels
++// indexed by log2.
++template <class Caches, class Idle>
++Released TrimIdle(const Caches& caches, Idle&& idle, std::uint64_t allowance) {
++    std::uint64_t idle_bytes = 0;
++    std::size_t levels = 0;
++    for (const auto* cache : caches) {
++        levels = std::max(levels, cache->size());
++        for (const auto& level : *cache) {
++            for (const auto& entry : level.entries) {
++                if (idle(entry)) idle_bytes += Holds(entry.mapped_span.size(), entry.log2_level);
++            }
++        }
++    }
++    Released released;
++    for (std::size_t log2 = levels; log2-- > 0 && idle_bytes > allowance;) {
++        for (auto* cache : caches) {
++            if (log2 >= cache->size()) continue;
++            released += ReleaseFrom((*cache)[log2], [&](const auto& entry) {
++                if (idle_bytes <= allowance || !idle(entry)) return false;
++                idle_bytes -= std::min(idle_bytes, Holds(entry.mapped_span.size(), entry.log2_level));
++                return true;
++            });
++        }
++    }
++    return released;
++}
++} // namespace Eden::StagingBuffers
 diff --git a/headless/storage_paths.h b/headless/storage_paths.h
 index 67fb986..69079d1 100644
 --- a/headless/storage_paths.h
@@ -2300,6 +2488,44 @@ index 67fb986..69079d1 100644
      }();
      return directory;
  }
+diff --git a/headless/texture_partial.h b/headless/texture_partial.h
+index c9c0b43..45bf53f 100644
+--- a/headless/texture_partial.h
++++ b/headless/texture_partial.h
+@@ -78,12 +78,18 @@ bool Write(DeviceMemory& device_memory, VideoCommon::ImageBase& image, u32 id, u
+     image.flags |= ImageFlagBits::CpuModified;
+     const u64 begin = (std::max)(addr, u64(image.cpu_addr));
+     const u64 end = (std::min)(addr + size, u64(image.cpu_addr) + image.guest_size_bytes);
++    u64 run_begin = 0, run_end = 0;
++    const auto flush = [&] {
++        if (run_end > run_begin) device_memory.UpdatePagesCachedCount(run_begin << 12, (run_end-run_begin) << 12, -1);
++    };
+     for (u64 page = begin >> 12; begin < end && page <= (end - 1) >> 12; ++page) {
+         const auto at = std::lower_bound(state.pages.begin(), state.pages.end(), page);
+         if (at != state.pages.end() && *at == page) continue;
+         state.pages.insert(at, page);
+-        device_memory.UpdatePagesCachedCount(page << 12, 4096, -1);
++        if (run_end != page) { flush(); run_begin = page; }
++        run_end = page + 1;
+     }
++    flush();
+     return true;
+ }
+ 
+@@ -94,7 +100,12 @@ std::vector<u64> End(DeviceMemory& device_memory, u32 id) {
+     if (it == images.end() || it->second.pages.empty()) return {};
+     std::vector<u64> pages = std::move(it->second.pages);
+     it->second.pages.clear();
+-    for (const u64 page : pages) device_memory.UpdatePagesCachedCount(page << 12, 4096, 1);
++    for (size_t first=0; first<pages.size();) {
++        size_t end=first+1;
++        while (end<pages.size() && pages[end]==pages[end-1]+1) ++end;
++        device_memory.UpdatePagesCachedCount(pages[first]<<12, (end-first)<<12, 1);
++        first=end;
++    }
+     return pages;
+ }
+ 
 diff --git a/headless/ultracam.h b/headless/ultracam.h
 new file mode 100644
 index 0000000..3484a88
@@ -3004,6 +3230,21 @@ index 91d9d3a..8baba3a 100644
      (work/'tools/build-radv-dependencies.sh').write_text('echo rebuilt >> calls\n')
      body='set -euo pipefail\nradv_release=release\nmesa_pin=pinned\nstep() { :; }\n'+prepare[start:end]
      def rebuilt():
+diff --git a/tools/check-worker-affinity.py b/tools/check-worker-affinity.py
+index 7e94bdf..8270353 100644
+--- a/tools/check-worker-affinity.py
++++ b/tools/check-worker-affinity.py
+@@ -39,6 +39,10 @@ int main(){
+  for(unsigned i=0;i<64;++i) apics[i]=i;
+  worker_topology_ready=false;CheckWorkerTopology();assert(worker_topology_ready && current==0x1fff);
+  assert((worker_cpus==std::array<unsigned,5>{0,2,4,6,8}));
++ // Auxiliary work must not share the GPU's physical core, including logical CPU 9.
++ assert((secondary_cpus & ((1ULL<<8)|(1ULL<<9)))==0);
++ placement_secondary.store(true);PlaceSecondary("aux-test");assert(current==secondary_cpus);
++ current=0x1fff;
+  cpuset_t allowed=current;PinWorker(4,allowed);assert(current==256 && allowed==256);
+  // The probe's process-wide CPU set decides, not a narrower mask the thread inherited.
+  current=0x1fff;allowed=3;PinWorker(4,allowed);assert(current==256 && allowed==256);
 diff --git a/tools/ci/make-dist.py b/tools/ci/make-dist.py
 index e2f800c..bccaeb4 100644
 --- a/tools/ci/make-dist.py
@@ -3082,6 +3323,1392 @@ index 49a94e9..1c32f3f 100644
        "commit": "57fcc19b7f57e46c823d6f2a6c6233ebf3288079",
        "path": ".deps/PS5-Lapy-JB-Daemon-57fcc19"
      },
+diff --git a/tools/eden-patches/05-botty-performance.diff b/tools/eden-patches/05-botty-performance.diff
+new file mode 100644
+index 0000000..47766d7
+--- /dev/null
++++ b/tools/eden-patches/05-botty-performance.diff
+@@ -0,0 +1,1380 @@
++diff --git a/src/common/range_sets.h b/src/common/range_sets.h
++index f8fcee4..2835d04 100644
++--- a/src/common/range_sets.h
+++++ b/src/common/range_sets.h
++@@ -25,6 +25,8 @@ public:
++     void Subtract(AddressType base_address, size_t size);
++     void Clear();
++     bool Empty() const;
+++    u64 Removals() const { return m_removals; }
+++    bool Contains(AddressType base_address, size_t size) const;
++ 
++     template <typename Func>
++     void ForEach(Func&& func) const;
++@@ -35,6 +37,7 @@ public:
++ private:
++     struct RangeSetImpl;
++     std::unique_ptr<RangeSetImpl> m_impl;
+++    u64 m_removals{};
++ };
++ 
++ template <typename AddressType>
++diff --git a/src/common/range_sets.inc b/src/common/range_sets.inc
++index 3edd8c8..a386419 100644
++--- a/src/common/range_sets.inc
+++++ b/src/common/range_sets.inc
++@@ -196,11 +196,21 @@ template <typename AddressType>
++ RangeSet<AddressType>::RangeSet(RangeSet&& other) {
++     m_impl = std::make_unique<RangeSet<AddressType>::RangeSetImpl>();
++     m_impl->m_ranges_set = std::move(other.m_impl->m_ranges_set);
+++    // A moved-from container is only "valid but unspecified", and callers keep adding to the
+++    // source after handing its ranges over (BufferCache::AccumulateFlushes).
+++    other.m_impl->m_ranges_set.clear();
+++    ++other.m_removals;
++ }
++ 
++ template <typename AddressType>
++ RangeSet<AddressType>& RangeSet<AddressType>::operator=(RangeSet&& other) {
++-    m_impl->m_ranges_set = std::move(other.m_impl->m_ranges_set);
+++    if (this != &other) {
+++        m_impl->m_ranges_set = std::move(other.m_impl->m_ranges_set);
+++        other.m_impl->m_ranges_set.clear();
+++        ++m_removals;
+++        ++other.m_removals;
+++    }
+++    return *this;
++ }
++ 
++ template <typename AddressType>
++@@ -210,11 +220,13 @@ void RangeSet<AddressType>::Add(AddressType base_address, size_t size) {
++ 
++ template <typename AddressType>
++ void RangeSet<AddressType>::Subtract(AddressType base_address, size_t size) {
+++    ++m_removals;
++     m_impl->Subtract(base_address, size);
++ }
++ 
++ template <typename AddressType>
++ void RangeSet<AddressType>::Clear() {
+++    ++m_removals;
++     m_impl->m_ranges_set.clear();
++ }
++ 
++@@ -223,6 +235,14 @@ bool RangeSet<AddressType>::Empty() const {
++     return m_impl->m_ranges_set.empty();
++ }
++ 
+++template <typename AddressType>
+++bool RangeSet<AddressType>::Contains(AddressType base_address, size_t size) const {
+++    if (size == 0 || base_address > std::numeric_limits<AddressType>::max() - size) return false;
+++    const auto& set = m_impl->m_ranges_set;
+++    const auto it = set.find(base_address);
+++    return it != set.end() && it->lower() <= base_address && it->upper() >= base_address + size;
+++}
+++
++ template <typename AddressType>
++ template <typename Func>
++ void RangeSet<AddressType>::ForEach(Func&& func) const {
++diff --git a/src/common/slot_vector.h b/src/common/slot_vector.h
++index f6da7a5..8e1c06e 100644
++--- a/src/common/slot_vector.h
+++++ b/src/common/slot_vector.h
++@@ -52,12 +52,16 @@ public:
++             const u64* const bitset = slot_vector->stored_bitset.data();
++             const u32 size = static_cast<u32>(slot_vector->stored_bitset.size()) * 64;
++             if (id.Value() < size) {
++-                do {
++-                    ++id.index;
++-                } while (id.Value() < size && !IsValid(bitset));
++-                if (id.Value() == size) {
++-                    id = SlotId{};
+++                u32 index = id.Value() + 1;
+++                while (index < size) {
+++                    const u64 word = bitset[index / 64] >> (index % 64);
+++                    if (word != 0) {
+++                        index += static_cast<u32>(std::countr_zero(word));
+++                        break;
+++                    }
+++                    index = (index / 64 + 1) * 64;
++                 }
+++                id = index < size ? SlotId{index} : SlotId{};
++             }
++             return *this;
++         }
++@@ -139,7 +143,7 @@ public:
++         if (it == stored_bitset.end()) {
++             return end();
++         }
++-        const u32 word_index = static_cast<u32>(std::distance(it, stored_bitset.begin()));
+++        const u32 word_index = static_cast<u32>(std::distance(stored_bitset.begin(), it));
++         const SlotId first_id{word_index * 64 + static_cast<u32>(std::countr_zero(*it))};
++         return Iterator(this, first_id);
++     }
++diff --git a/src/core/hle/kernel/k_priority_queue.h b/src/core/hle/kernel/k_priority_queue.h
++index 89a0c5b..5d93455 100644
++--- a/src/core/hle/kernel/k_priority_queue.h
+++++ b/src/core/hle/kernel/k_priority_queue.h
++@@ -11,6 +11,7 @@
++ #include <bitset>
++ #include <concepts>
++ #include <cstddef>
+++#include <type_traits>
++ 
++ #include "common/alignment.h"
++ #include "common/assert.h"
++@@ -196,12 +197,7 @@ public:
++         constexpr Member* GetFront(s32 core) const {
++             ASSERT(IsValidCore(core));
++ 
++-            const s32 priority = s32([](auto const& e) {
++-                for (size_t i = 0; i < e.size(); ++i)
++-                    if (e[i])
++-                        return i;
++-                return e.size();
++-            }(m_available_priorities[core]));
+++            const s32 priority = s32(GetNextSet(m_available_priorities[core], size_t(-1)));
++             if (priority <= LowestPriority) {
++                 return m_queues[priority].GetFront(core);
++             } else {
++@@ -222,7 +218,17 @@ public:
++ 
++         template<size_t N>
++         constexpr size_t GetNextSet(std::bitset<N> const& bit, size_t n) const {
++-            for (size_t i = n + 1; i < bit.size(); i++)
+++            const size_t first = n + 1;
+++            if (first >= bit.size()) {
+++                return bit.size();
+++            }
+++            if constexpr (N <= 64) {
+++                if (!std::is_constant_evaluated()) {
+++                    const u64 remaining = bit.to_ullong() >> first;
+++                    return remaining != 0 ? first + size_t(std::countr_zero(remaining)) : bit.size();
+++                }
+++            }
+++            for (size_t i = first; i < bit.size(); i++)
++                 if (bit[i])
++                     return i;
++             return bit.size();
++diff --git a/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp b/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
++index 57c0858..e817b14 100644
++--- a/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
+++++ b/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
++@@ -337,6 +337,29 @@ bool FoldXmadMultiply(IR::Block& block, IR::Inst& inst) {
++     return true;
++ }
++ 
+++/// Replaces (BitFieldUExtract(a, 16, 16) << 16) + BitFieldUExtract(a, 0, 16) with a: what an XMAD
+++/// multiplication by 1 leaves once its products by 0 and 1 are folded (Lichii #150)
+++bool FoldHalvesRecombine(IR::Inst& inst) {
+++    for (size_t arg = 0; arg < 2; ++arg) {
+++        IR::Inst* const shl{inst.Arg(arg).TryInstRecursive()};
+++        IR::Inst* const low{inst.Arg(1 - arg).TryInstRecursive()};
+++        if (!shl || !low || shl->GetOpcode() != IR::Opcode::ShiftLeftLogical32 ||
+++            shl->Arg(1) != IR::Value{16U} || low->GetOpcode() != IR::Opcode::BitFieldUExtract ||
+++            low->Arg(1) != IR::Value{0U} || low->Arg(2) != IR::Value{16U}) {
+++            continue;
+++        }
+++        IR::Inst* const high{shl->Arg(0).TryInstRecursive()};
+++        if (!high || high->GetOpcode() != IR::Opcode::BitFieldUExtract ||
+++            high->Arg(1) != IR::Value{16U} || high->Arg(2) != IR::Value{16U} ||
+++            high->Arg(0).Resolve() != low->Arg(0).Resolve()) {
+++            continue;
+++        }
+++        inst.ReplaceUsesWith(low->Arg(0));
+++        return true;
+++    }
+++    return false;
+++}
+++
++ template <typename T>
++ void FoldAdd(IR::Block& block, IR::Inst& inst) {
++     if (inst.HasAssociatedPseudoOperation()) {
++@@ -351,6 +374,9 @@ void FoldAdd(IR::Block& block, IR::Inst& inst) {
++         return;
++     }
++     if constexpr (std::is_same_v<T, u32>) {
+++        if (FoldHalvesRecombine(inst)) {
+++            return;
+++        }
++         if (FoldXmadMultiply(block, inst)) {
++             return;
++         }
++@@ -360,6 +386,31 @@ void FoldAdd(IR::Block& block, IR::Inst& inst) {
++     }
++ }
++ 
+++/// Folds products by 0 and 1 (Lichii #150). An XMAD multiplication by a 16-bit immediate leaves
+++/// them behind (the cross term of the high halves), and OoT's IMAD.WIDE pointer + offset then hid
+++/// the pointer from storage buffer tracking, which bound the offset word as the buffer instead.
+++void FoldIMul32(IR::Inst& inst) {
+++    if (inst.HasAssociatedPseudoOperation()) return;
+++    if (FoldWhenAllImmediates(inst, [](u32 a, u32 b) { return a * b; })) {
+++        return;
+++    }
+++    for (size_t arg = 0; arg < 2; ++arg) {
+++        const IR::Value factor{inst.Arg(arg)};
+++        if (!factor.IsImmediate()) {
+++            continue;
+++        }
+++        if (factor.U32() == 0) {
+++            inst.ReplaceUsesWith(IR::Value{0U});
+++            return;
+++        }
+++        if (factor.U32() == 1) {
+++            const IR::Value other{inst.Arg(1 - arg)};
+++            inst.ReplaceUsesWith(other);
+++            return;
+++        }
+++    }
+++}
+++
++ void FoldISub32(IR::Inst& inst) {
++     if (FoldWhenAllImmediates(inst, [](u32 a, u32 b) { return a - b; })) {
++         return;
++@@ -942,8 +993,7 @@ void ConstantPropagation(Environment& env, IR::Block& block, IR::Inst& inst) {
++     case IR::Opcode::ISub32:
++         return FoldISub32(inst);
++     case IR::Opcode::IMul32:
++-        FoldWhenAllImmediates(inst, [](u32 a, u32 b) { return a * b; });
++-        return;
+++        return FoldIMul32(inst);
++     case IR::Opcode::ShiftRightArithmetic32:
++         FoldWhenAllImmediates(inst, [](s32 a, s32 b) { return static_cast<u32>(a >> b); });
++         return;
++diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
++index 64d14ab..03a65b2 100644
++--- a/src/video_core/CMakeLists.txt
+++++ b/src/video_core/CMakeLists.txt
++@@ -99,6 +99,7 @@ add_library(video_core STATIC
++     invalidation_accumulator.h
++     memory_manager.cpp
++     memory_manager.h
+++    page_filter.h
++     present.h
++     pte_kind.h
++     query_cache/bank_base.h
++diff --git a/src/video_core/buffer_cache/buffer_cache.h b/src/video_core/buffer_cache/buffer_cache.h
++index 9a5d6f3..ac5186a 100644
++--- a/src/video_core/buffer_cache/buffer_cache.h
+++++ b/src/video_core/buffer_cache/buffer_cache.h
++@@ -649,6 +649,9 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
++         async_buffers.emplace_back(std::optional<Async_Buffer>{});
++         return;
++     }
+++    // Completed fence downloads can be reused before the next frame (Eglantine/viejunerd 0014).
+++    for (auto& buffer : async_buffers_death_ring) runtime.FreeDeferredStagingBuffer(buffer);
+++    async_buffers_death_ring.clear();
++     auto download_staging = runtime.DownloadStagingBuffer(total_size_bytes, true);
++     boost::container::small_vector<BufferCopy, 4> normalized_copies;
++     runtime.PreCopyBarrier();
++@@ -835,7 +838,17 @@ void BufferCache<P>::BindHostVertexBuffers() {
++             const Binding& binding = VertexBufferSlot(index);
++             Buffer& buffer = slot_buffers[binding.buffer_id];
++             TouchBuffer(buffer, binding.buffer_id);
++-            SynchronizeBuffer(buffer, binding.device_addr, binding.size);
+++            // Checking every page of a large vertex buffer for CPU writes cost 7% of Bananza's
+++            // draw time; none of them became CPU modified since the last check: skip it.
+++            BottySyncedVertexBuffer& synced = botty_synced_vertex_buffers[index];
+++            const u64 epoch = BottyDrawTuning()
+++                                  ? memory_tracker.CpuWriteEpoch(binding.device_addr, binding.size)
+++                                  : ~u64{0};
+++            if (epoch == ~u64{0} || synced.epoch != epoch || synced.buffer_id != binding.buffer_id ||
+++                synced.device_addr != binding.device_addr || synced.size != binding.size) {
+++                SynchronizeBuffer(buffer, binding.device_addr, binding.size);
+++                synced = {binding.buffer_id, binding.device_addr, binding.size, epoch};
+++            }
++             if (!flags[Dirty::VertexBuffer0 + index]) {
++                 flush_bindings();
++                 continue;
++@@ -1060,7 +1073,8 @@ bool BufferCache<P>::BindMultiRangeStorage(const Binding& binding, bool is_writt
++             const MultiRangeSegment& segment = pool[binding.segment_first + index];
++             Buffer& buffer = slot_buffers[segment.buffer_id];
++             TouchBuffer(buffer, segment.buffer_id);
++-            if (SynchronizeBuffer(buffer, segment.device_addr, segment.size)) {
+++            // true means already synchronized; only an upload invalidates the gathered view.
+++            if (!SynchronizeBuffer(buffer, segment.device_addr, segment.size)) {
++                 runtime.InvalidateMultiRange(key);
++             }
++             const u32 offset = buffer.Offset(segment.device_addr);
++@@ -1527,8 +1541,11 @@ void BufferCache<P>::MarkWrittenBuffer(BufferId buffer_id, DAddr device_addr, u3
++             buffer.setWriteTick(runtime.CurrentTick());
++         }
++     }
+++    if constexpr (requires { runtime.MarkStorageSourceGpuWritten(slot_buffers[buffer_id]); }) {
+++        runtime.MarkStorageSourceGpuWritten(slot_buffers[buffer_id]);
+++    }
++     memory_tracker.MarkRegionAsGpuModified(device_addr, size);
++-    gpu_modified_ranges.Add(device_addr, size);
+++    BottyAddRangeOnce(gpu_modified_ranges, device_addr, size);
++     uncommitted_gpu_modified_ranges.Add(device_addr, size);
++ }
++ 
++@@ -1675,6 +1692,9 @@ void BufferCache<P>::JoinOverlap(BufferId new_buffer_id, BufferId overlap_id,
++ template <class P>
++ BufferId BufferCache<P>::CreateBuffer(DAddr device_addr, u32 wanted_size,
++                                       bool sparse_compatible) {
+++    // The synchronized-range tables hold Buffer pointers and ids that this may move or reuse.
+++    botty_synced_ranges.fill({});
+++    botty_synced_vertex_buffers.fill({});
++     DAddr device_addr_end = Common::AlignUp(device_addr + wanted_size, CACHING_PAGESIZE);
++     device_addr = Common::AlignDown(device_addr, CACHING_PAGESIZE);
++     wanted_size = static_cast<u32>(device_addr_end - device_addr);
++@@ -1738,6 +1758,31 @@ void BufferCache<P>::TouchBuffer(Buffer& buffer, BufferId buffer_id) noexcept {
++ 
++ template <class P>
++ bool BufferCache<P>::SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size) {
+++    if (!BottyDrawTuning() || size == 0) {
+++        return SynchronizeBufferPages(buffer, device_addr, size);
+++    }
+++    // No page of the range became CPU modified since this buffer's range was last checked: there
+++    // is nothing to upload (the check walks every page; Bananza binds the same buffers thousands
+++    // of times a frame). The epoch is read before the check, so a write during it is seen next time.
+++    const u64 epoch = memory_tracker.CpuWriteEpoch(device_addr, size);
+++    if (epoch == ~u64{0}) {
+++        return SynchronizeBufferPages(buffer, device_addr, size);
+++    }
+++    const size_t slot_index =
+++        static_cast<size_t>(((device_addr >> 6) ^ (device_addr >> 20) ^ size) %
+++                            botty_synced_ranges.size());
+++    BottySyncedRange& slot = botty_synced_ranges[slot_index];
+++    if (slot.buffer == &buffer && slot.device_addr == device_addr && slot.size == size &&
+++        slot.epoch == epoch) {
+++        return true;
+++    }
+++    const bool synchronized = SynchronizeBufferPages(buffer, device_addr, size);
+++    slot = {&buffer, device_addr, size, epoch};
+++    return synchronized;
+++}
+++
+++template <class P>
+++bool BufferCache<P>::SynchronizeBufferPages(Buffer& buffer, DAddr device_addr, u32 size) {
++     upload_copies.clear();
++     u64 total_size_bytes = 0;
++     u64 largest_copy = 0;
++@@ -1764,6 +1809,9 @@ bool BufferCache<P>::SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 si
++     if (total_size_bytes == 0) {
++         return true;
++     }
+++    if constexpr (requires { runtime.MarkStorageSourceWritten(buffer); }) {
+++        runtime.MarkStorageSourceWritten(buffer);
+++    }
++     const std::span<BufferCopy> copies_span(upload_copies.data(), upload_copies.size());
++     UploadMemory(buffer, total_size_bytes, largest_copy, copies_span);
++     any_buffer_uploaded = true;
++@@ -1935,6 +1983,8 @@ void BufferCache<P>::DownloadBufferMemory(Buffer& buffer, DAddr device_addr, u64
++ 
++ template <class P>
++ void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
+++    botty_synced_ranges.fill({});
+++    botty_synced_vertex_buffers.fill({});
++     if constexpr (requires { runtime.OnBufferDeleted(slot_buffers[buffer_id]); }) {
++         runtime.OnBufferDeleted(slot_buffers[buffer_id]);
++     }
++@@ -2011,10 +2061,36 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
++         return NULL_BINDING;
++     }
++ 
+++    // Cache layout resolution, never the descriptor words themselves (Lichii #175).
+++    // Unique address-space ID and page-table serial cover destruction and same-kind remaps.
+++    const u64 size_word = gpu_memory->Read<u64>(ssbo_addr + 8);
+++    struct Entry {
+++        size_t owner{};
+++        u64 serial{}, address{}, size_word{};
+++        u32 alignment{};
+++        bool written{}, valid{};
+++        Binding binding{};
+++    };
+++    thread_local std::array<std::array<Entry, 4>, 64> binding_cache{};
+++    auto& set = binding_cache[((gpu_addr ^ size_word) * 0x9E3779B97F4A7C15ULL) >> 58];
+++    const u64 serial = gpu_memory->MapSerial();
+++    const u32 alignment = runtime.GetStorageBufferAlignment();
+++    if (BottyDrawTuning()) {
+++        for (size_t way = 0; way < set.size(); ++way) {
+++            const auto& entry = set[way];
+++            if (entry.valid && entry.owner == gpu_memory->GetID() && entry.serial == serial &&
+++                entry.address == gpu_addr && entry.size_word == size_word &&
+++                entry.alignment == alignment && entry.written == is_written) {
+++                const Binding result = entry.binding;
+++                std::rotate(set.begin(), set.begin() + way, set.begin() + way + 1);
+++                return result;
+++            }
+++        }
+++    }
++     const auto size = [&]() {
++         const u32 memory_layout_size =
++             static_cast<u32>(gpu_memory->GetMemoryLayoutSize(gpu_addr));
++-        const u64 next_qword = gpu_memory->Read<u64>(ssbo_addr + 8);
+++        const u64 next_qword = size_word;
++         const u32 packed_size = static_cast<u32>(next_qword);
++         const bool next_qword_is_size = static_cast<u32>(next_qword >> 32) == 0 &&
++                                         packed_size != 0 &&
++@@ -2026,7 +2102,6 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
++     }();
++ 
++     // Alignment only applies to the offset of the buffer
++-    const u32 alignment = runtime.GetStorageBufferAlignment();
++     const GPUVAddr aligned_gpu_addr = Common::AlignDown(gpu_addr, alignment);
++     const u32 aligned_size = static_cast<u32>(gpu_addr - aligned_gpu_addr) + size;
++ 
++@@ -2051,6 +2126,10 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
++         .size = binding_size,
++         .buffer_id = BufferId{},
++     };
+++    if (BottyDrawTuning() && gpu_memory->MapSerial() == serial) {
+++        std::rotate(set.begin(), set.end() - 1, set.end());
+++        set[0] = {gpu_memory->GetID(), serial, gpu_addr, size_word, alignment, is_written, true, binding};
+++    }
++     return binding;
++ }
++ 
++diff --git a/src/video_core/buffer_cache/buffer_cache_base.h b/src/video_core/buffer_cache/buffer_cache_base.h
++index 26bf3dd..d15192b 100644
++--- a/src/video_core/buffer_cache/buffer_cache_base.h
+++++ b/src/video_core/buffer_cache/buffer_cache_base.h
++@@ -343,6 +343,71 @@ public:
++     Runtime& runtime;
++     bool any_buffer_uploaded = false;
++ 
+++    /// EDEN_BOTTY_DRAW_TUNING=0 turns off the per-draw shortcuts below. From viejunerd/Eglantine-PS5-
+++    /// tools/eglantine-patches/0017, after MythosOfs/Orchid a3be6e11b, 5ffe9eb53, 4476c8671 and
+++    /// 2e0b577bb.
+++    static bool BottyDrawTuning() {
+++        static const bool enabled = [] {
+++            const char* value = std::getenv("EDEN_BOTTY_DRAW_TUNING");
+++            return value == nullptr || value[0] != '0';
+++        }();
+++        return enabled;
+++    }
+++    /// Each vertex buffer slot as last synchronized: skipped while none of its pages became CPU
+++    /// modified since (MemoryTrackerBase::CpuWriteEpoch).
+++    struct BottySyncedVertexBuffer {
+++        BufferId buffer_id{};
+++        DAddr device_addr{};
+++        u32 size{};
+++        u64 epoch{~u64{0}};
+++    };
+++    std::array<BottySyncedVertexBuffer, NUM_VERTEX_BUFFERS> botty_synced_vertex_buffers{};
+++    /// Ranges SynchronizeBuffer checked, by address: checked again only once a page of theirs
+++    /// became CPU modified (uniform, storage and index buffers, besides the vertex buffers).
+++    struct BottySyncedRange {
+++        const void* buffer{};
+++        DAddr device_addr{};
+++        u32 size{};
+++        u64 epoch{~u64{0}};
+++    };
+++    std::array<BottySyncedRange, 512> botty_synced_ranges{};
+++    /// Ranges recently added to gpu_modified_ranges: adding one again before the set lost any
+++    /// range is a no-op (Bananza's culling draws mark the same storage ranges written draw after
+++    /// draw). The PS5 build's set also drops readback snapshots of what is added: that is still
+++    /// done for every write, only the insertion is skipped.
+++    struct BottyRecentRange {
+++        DAddr device_addr{};
+++        u64 size{};
+++        u64 removals{~u64{0}};
+++    };
+++    std::array<BottyRecentRange, 8> botty_recent_gpu_ranges{};
+++    size_t botty_recent_gpu_next{};
+++    template <class Set>
+++    void BottyAddRangeOnce(Set& set, DAddr device_addr, u64 size) {
+++        if (!BottyDrawTuning()) {
+++            set.Add(device_addr, size);
+++            return;
+++        }
+++        if constexpr (requires { set.ReadbackCache().Invalidate(device_addr, size); }) {
+++            set.ReadbackCache().Invalidate(device_addr, size);
+++        }
+++        Common::RangeSet<DAddr>& ranges = set;
+++        const u64 removals = ranges.Removals();
+++        for (const BottyRecentRange& range : botty_recent_gpu_ranges) {
+++            if (range.device_addr == device_addr && range.size == size &&
+++                range.removals == removals) {
+++                return;
+++            }
+++        }
+++        // Writes elsewhere remove ranges often enough that the table above misses most repeats;
+++        // a lookup is still far cheaper than an insertion that merges nothing new.
+++        if (!ranges.Contains(device_addr, size)) {
+++            ranges.Add(device_addr, size);
+++        }
+++        botty_recent_gpu_ranges[botty_recent_gpu_next++ % botty_recent_gpu_ranges.size()] = {
+++            device_addr, size, removals};
+++    }
+++
++ private:
++     template <typename Func>
++     static void ForEachEnabledBit(u32 enabled_mask, Func&& func) {
++@@ -453,6 +518,7 @@ private:
++     void TouchBuffer(Buffer& buffer, BufferId buffer_id) noexcept;
++ 
++     bool SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size);
+++    bool SynchronizeBufferPages(Buffer& buffer, DAddr device_addr, u32 size);
++ 
++     void UploadMemory(Buffer& buffer, u64 total_size_bytes, u64 largest_copy,
++                       std::span<BufferCopy> copies);
++diff --git a/src/video_core/buffer_cache/memory_tracker_base.h b/src/video_core/buffer_cache/memory_tracker_base.h
++index b8547f3..9481769 100644
++--- a/src/video_core/buffer_cache/memory_tracker_base.h
+++++ b/src/video_core/buffer_cache/memory_tracker_base.h
++@@ -70,6 +70,28 @@ public:
++         });
++     }
++ 
+++    /// A value that stays the same while no page of the region becomes CPU modified, or ~0 when
+++    /// part of it is not tracked yet (the sum of its 4 MiB regions' epochs, which only grow).
+++    [[nodiscard]] u64 CpuWriteEpoch(VAddr cpu_addr, u64 size) const noexcept {
+++        if (size == 0) {
+++            return 0;
+++        }
+++        const u64 first = cpu_addr >> HIGHER_PAGE_BITS;
+++        const u64 last = (cpu_addr + size - 1) >> HIGHER_PAGE_BITS;
+++        if (last < first || last >= NUM_HIGH_PAGES) {
+++            return ~u64{0};
+++        }
+++        u64 sum = 0;
+++        for (u64 page = first; page <= last; ++page) {
+++            const Manager* const manager = top_tier[page];
+++            if (manager == nullptr) {
+++                return ~u64{0};
+++            }
+++            sum += manager->cpu_epoch;
+++        }
+++        return sum;
+++    }
+++
++     /// Mark region as CPU modified, notifying the device_tracker about this change
++     void MarkRegionAsCpuModified(VAddr dirty_cpu_addr, u64 query_size) {
++         IteratePages<true>(dirty_cpu_addr, query_size, [](Manager* manager, u64 offset, size_t size) {
++diff --git a/src/video_core/buffer_cache/usage_tracker.h b/src/video_core/buffer_cache/usage_tracker.h
++index 6f84e46..5fd64d7 100644
++--- a/src/video_core/buffer_cache/usage_tracker.h
+++++ b/src/video_core/buffer_cache/usage_tracker.h
++@@ -6,7 +6,11 @@
++ 
++ #pragma once
++ 
+++#include <algorithm>
+++#include <vector>
+++
++ #include "common/alignment.h"
+++#include "common/div_ceil.h"
++ #include "common/common_types.h"
++ 
++ namespace VideoCommon {
++@@ -24,9 +28,11 @@ public:
++ 
++     void Reset() noexcept {
++         std::ranges::fill(pages, 0ULL);
+++        full_begin = full_end = 0;
++     }
++ 
++     void Track(u64 offset, u64 size) noexcept {
+++        if (size == 0) return;
++         const size_t page = offset >> BUFFER_PAGE_SHIFT;
++         const size_t page_end = (offset + size) >> BUFFER_PAGE_SHIFT;
++         if (page_end < page || page_end >= pages.size()) {
++@@ -36,20 +42,20 @@ public:
++         if (page == page_end) {
++             return;
++         }
++-        for (size_t i = page + 1; i < page_end; i++) {
++-            pages[i] = ~u64{0};
++-        }
+++        FillPages(page + 1, page_end);
++         const size_t offset_end = offset + size;
++         const size_t offset_end_page_aligned = Common::AlignDown(offset_end, BUFFER_PAGE_BYTES);
++         TrackPage(page_end, offset_end_page_aligned, offset_end - offset_end_page_aligned);
++     }
++ 
++     [[nodiscard]] bool IsUsed(u64 offset, u64 size) const noexcept {
+++        if (size == 0) return false;
++         const size_t page = offset >> BUFFER_PAGE_SHIFT;
++         const size_t page_end = (offset + size) >> BUFFER_PAGE_SHIFT;
++         if (page_end < page || page_end >= pages.size()) {
++             return false;
++         }
+++        if (page == page_end) return IsPageUsed(page, offset, size);
++         if (IsPageUsed(page, offset, size)) {
++             return true;
++         }
++@@ -64,25 +70,50 @@ public:
++     }
++ 
++ private:
++-    void TrackPage(u64 page, u64 offset, u64 size) noexcept {
++-        const size_t offset_in_page = offset % BUFFER_PAGE_BYTES;
++-        const size_t first_bit = offset_in_page >> BUFFER_BYTES_PER_BITSHIFT;
++-        const size_t num_bits = std::min<size_t>(size, BUFFER_PAGE_BYTES) >> BUFFER_BYTES_PER_BITSHIFT;
++-        const size_t mask = ~u64{0} >> (64 - num_bits);
++-        pages[page] |= (~u64{0} & mask) << first_bit;
+++    // Pages in [full_begin, full_end) are all ones already (only Reset clears a page): fill around
+++    // that run and grow it, so tracking a multi-megabyte binding again costs nothing once filled
+++    // (Lichii #184, from 999sian's #161).
+++    void FillPages(size_t begin, size_t end) noexcept {
+++        if (begin >= end) {
+++            return;
+++        }
+++        if (end < full_begin || begin > full_end) {
+++            std::fill(pages.begin() + begin, pages.begin() + end, ~u64{0});
+++            if (end - begin > full_end - full_begin) {
+++                full_begin = begin;
+++                full_end = end;
+++            }
+++            return;
+++        }
+++        if (begin < full_begin) {
+++            std::fill(pages.begin() + begin, pages.begin() + full_begin, ~u64{0});
+++        }
+++        if (end > full_end) {
+++            std::fill(pages.begin() + full_end, pages.begin() + end, ~u64{0});
+++        }
+++        full_begin = (std::min)(begin, full_begin);
+++        full_end = (std::max)(end, full_end);
++     }
++ 
+++    static u64 PageMask(u64 offset, u64 size) noexcept {
+++        const u64 begin = offset % BUFFER_PAGE_BYTES;
+++        const u64 end = (std::min<u64>)(BUFFER_PAGE_BYTES, begin + size);
+++        const u64 first = begin >> BUFFER_BYTES_PER_BITSHIFT;
+++        const u64 last = Common::DivCeil(end, u64{1} << BUFFER_BYTES_PER_BITSHIFT);
+++        const u64 count = last - first;
+++        return count == 64 ? ~u64{0} : ((u64{1} << count) - 1) << first;
+++    }
+++    void TrackPage(u64 page, u64 offset, u64 size) noexcept {
+++        pages[page] |= PageMask(offset, size);
+++    }
++     bool IsPageUsed(u64 page, u64 offset, u64 size) const noexcept {
++-        const size_t offset_in_page = offset % BUFFER_PAGE_BYTES;
++-        const size_t first_bit = offset_in_page >> BUFFER_BYTES_PER_BITSHIFT;
++-        const size_t num_bits = std::min<size_t>(size, BUFFER_PAGE_BYTES) >> BUFFER_BYTES_PER_BITSHIFT;
++-        const size_t mask = ~u64{0} >> (64 - num_bits);
++-        const size_t mask2 = (~u64{0} & mask) << first_bit;
++-        return (pages[page] & mask2) != 0;
+++        return (pages[page] & PageMask(offset, size)) != 0;
++     }
++ 
++ private:
++     std::vector<u64> pages;
+++    size_t full_begin{};
+++    size_t full_end{};
++ };
++ 
++ } // namespace VideoCommon
++diff --git a/src/video_core/buffer_cache/word_manager.h b/src/video_core/buffer_cache/word_manager.h
++index 76d608b..911e522 100644
++--- a/src/video_core/buffer_cache/word_manager.h
+++++ b/src/video_core/buffer_cache/word_manager.h
++@@ -51,6 +51,9 @@ struct WordManager {
++     }
++     explicit WordManager() = default;
++ 
+++    /// Grows whenever pages here become CPU modified (MemoryTrackerBase::CpuWriteEpoch).
+++    u64 cpu_epoch{1};
+++
++     static u64 ExtractBits(u64 word, size_t page_start, size_t page_end) {
++         constexpr size_t number_bits = sizeof(u64) * 8;
++         const size_t limit_page_end = number_bits - (std::min)(page_end, number_bits);
++@@ -126,6 +129,8 @@ struct WordManager {
++             }
++             if (enable) {
++                 state_words[index] |= mask;
+++                if (type == Type::CPU)
+++                    ++cpu_epoch;
++                 if (type == Type::CPU || type == Type::CachedCPU)
++                     untracked_words[index] |= mask;
++                 if (type == Type::CPU)
++@@ -248,6 +253,7 @@ struct WordManager {
++         auto const untracked_words = Span(Type::Untracked);
++         auto const cpu_words = Span(Type::CPU);
++         std::vector<std::pair<VAddr, u64>> ranges;
+++        ++cpu_epoch;
++         for (u64 word_index = 0; word_index < num_words; ++word_index) {
++             const u64 cached_bits = cached_words[word_index];
++             CollectChangedRanges(false, word_index, untracked_words[word_index], cached_bits, ranges);
++diff --git a/src/video_core/memory_manager.cpp b/src/video_core/memory_manager.cpp
++index d5838a3..dbbf126 100644
++--- a/src/video_core/memory_manager.cpp
+++++ b/src/video_core/memory_manager.cpp
++@@ -127,6 +127,7 @@ GPUVAddr MemoryManager::PageTableOp(GPUVAddr gpu_addr, [[maybe_unused]] DAddr de
++         remaining_size -= page_size;
++     }
++     kind_map.Map(gpu_addr, gpu_addr + size, kind);
+++    map_serial.fetch_add(1, std::memory_order_release);
++     return gpu_addr;
++ }
++ 
++@@ -168,6 +169,7 @@ GPUVAddr MemoryManager::BigPageTableOp(GPUVAddr gpu_addr, [[maybe_unused]] DAddr
++         std::unique_lock<std::mutex> lock(guard);
++         kind_map.Map(gpu_addr, gpu_addr + size, kind);
++     }
+++    map_serial.fetch_add(1, std::memory_order_release);
++     return gpu_addr;
++ }
++ 
++diff --git a/src/video_core/memory_manager.h b/src/video_core/memory_manager.h
++index 0897856..3ed2931 100644
++--- a/src/video_core/memory_manager.h
+++++ b/src/video_core/memory_manager.h
++@@ -45,6 +45,8 @@ public:
++ 
++     static constexpr bool HAS_FLUSH_INVALIDATION = true;
++ 
+++    u64 MapSerial() const noexcept { return map_serial.load(std::memory_order_acquire); }
+++
++     inline size_t GetID() const noexcept {
++         return unique_identifier;
++     }
++@@ -225,6 +227,7 @@ private:
++     static constexpr size_t continuous_bits = 64;
++ 
++     const size_t unique_identifier;
+++    std::atomic<u64> map_serial{1};
++     VideoCommon::InvalidationAccumulator accumulator;
++ 
++     static std::atomic<size_t> unique_identifier_generator;
++diff --git a/src/video_core/page_filter.h b/src/video_core/page_filter.h
++new file mode 100644
++index 0000000..440182c
++--- /dev/null
+++++ b/src/video_core/page_filter.h
++@@ -0,0 +1,72 @@
+++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+++// SPDX-License-Identifier: GPL-3.0-or-later
+++
+++#pragma once
+++
+++#include <algorithm>
+++#include <atomic>
+++#include <memory>
+++
+++#include "common/common_types.h"
+++
+++namespace VideoCommon {
+++
+++/// The 4 KiB device pages a cache has ever registered objects on. Bits are never cleared, so a
+++/// clear bit proves the cache holds nothing there and an invalidation of those pages does nothing
+++/// (Lichii #250).
+++class PageFilter {
+++public:
+++    PageFilter() : words{std::make_unique<std::atomic<u64>[]>(NumWords)} {}
+++
+++    void Mark(u64 address, u64 size) {
+++        if (size == 0) {
+++            return;
+++        }
+++        const u64 first = address >> PageBits;
+++        const u64 last = (address + size - 1) >> PageBits;
+++        if (last < first || last >= NumWords * 64) {
+++            overflow.store(true, std::memory_order_relaxed);
+++            return;
+++        }
+++        for (u64 page = first; page <= last;) {
+++            const u64 bit = page % 64;
+++            const u64 count = (std::min<u64>)(64 - bit, last - page + 1);
+++            const u64 mask = (count == 64 ? ~u64{0} : (u64{1} << count) - 1) << bit;
+++            auto& word = words[page / 64];
+++            if ((word.load(std::memory_order_relaxed) & mask) != mask) {
+++                word.fetch_or(mask, std::memory_order_relaxed);
+++            }
+++            page += count;
+++        }
+++    }
+++
+++    /// Whether the cache may hold objects on [address, address + size).
+++    [[nodiscard]] bool Any(u64 address, u64 size) const {
+++        if (size == 0) {
+++            return false;
+++        }
+++        const u64 first = address >> PageBits;
+++        const u64 last = (address + size - 1) >> PageBits;
+++        if (last < first || last >= NumWords * 64 || overflow.load(std::memory_order_relaxed)) {
+++            return true;
+++        }
+++        for (u64 page = first; page <= last;) {
+++            const u64 bit = page % 64;
+++            const u64 count = (std::min<u64>)(64 - bit, last - page + 1);
+++            const u64 mask = (count == 64 ? ~u64{0} : (u64{1} << count) - 1) << bit;
+++            if (words[page / 64].load(std::memory_order_relaxed) & mask) {
+++                return true;
+++            }
+++            page += count;
+++        }
+++        return false;
+++    }
+++
+++private:
+++    static constexpr u64 PageBits = 12;
+++    static constexpr u64 NumWords = (u64{1} << (36 - PageBits)) / 64; // 2 MiB of bits
+++    std::unique_ptr<std::atomic<u64>[]> words;
+++    std::atomic<bool> overflow{};
+++};
+++
+++} // namespace VideoCommon
++diff --git a/src/video_core/query_cache/query_cache.h b/src/video_core/query_cache/query_cache.h
++index b8c1bc4..5795f9b 100644
++--- a/src/video_core/query_cache/query_cache.h
+++++ b/src/video_core/query_cache/query_cache.h
++@@ -316,6 +316,7 @@ void QueryCacheBase<Traits>::CounterReport(GPUVAddr addr, QueryType counter_type
++     {
++         std::scoped_lock lock(cache_mutex);
++         auto it1 = cached_queries.try_emplace(cont_addr);
+++        page_filter.Mark(cpu_addr, 16);
++         auto& sub_container = it1.first->second;
++         auto it_current = sub_container.find(base);
++         if (it_current == sub_container.end()) {
++diff --git a/src/video_core/query_cache/query_cache_base.h b/src/video_core/query_cache/query_cache_base.h
++index d73e903..dec4afd 100644
++--- a/src/video_core/query_cache/query_cache_base.h
+++++ b/src/video_core/query_cache/query_cache_base.h
++@@ -18,6 +18,7 @@
++ #include "common/common_types.h"
++ #include "video_core/control/channel_state_cache.h"
++ #include "video_core/host1x/gpu_device_memory_manager.h"
+++#include "video_core/page_filter.h"
++ #include "video_core/query_cache/query_base.h"
++ #include "video_core/query_cache/types.h"
++ 
++@@ -41,6 +42,9 @@ class QueryCacheBase : public VideoCommon::ChannelSetupCaches<VideoCommon::Chann
++     using RuntimeType = typename Traits::RuntimeType;
++ 
++ public:
+++    /// Device pages this cache ever registered objects on (InnerInvalidation skips the rest).
+++    VideoCommon::PageFilter page_filter;
+++
++     union QueryLocation {
++         BitField<27, 5, u32> stream_id;
++         BitField<0, 27, u32> query_id;
++diff --git a/src/video_core/renderer_vulkan/vk_buffer_cache.cpp b/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
++index 1a33189..b7e6bc9 100644
++--- a/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
+++++ b/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
++@@ -5,6 +5,7 @@
++ // SPDX-License-Identifier: GPL-2.0-or-later
++ 
++ #include <algorithm>
+++#include <cstdio>
++ #include <array>
++ #include <cstring>
++ #include <span>
++@@ -387,7 +388,8 @@ VkFormat BufferCacheRuntime::TexelBufferFormat(VideoCore::Surface::PixelFormat f
++ }
++ 
++ void BufferCacheRuntime::FreeDeferredStagingBuffer(StagingBufferRef& ref) {
++-    staging_pool.FreeDeferred(ref);
+++    // Only ever called once the fence or tick of the buffer's copy has passed.
+++    staging_pool.FreeDeferred(ref, true);
++ }
++ 
++ u64 BufferCacheRuntime::GetDeviceLocalMemory() const {
++@@ -465,6 +467,7 @@ void BufferCacheRuntime::CopyBuffer(VkBuffer dst_buffer, VkBuffer src_buffer,
++         .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
++     };
++ 
+++    multi_range_buffers.InvalidateOwner(dst_buffer);
++     // Measuring a popular game, this number never exceeds the specified size once data is warmed up
++     boost::container::small_vector<VkBufferCopy, 8> vk_copies(copies.size());
++     std::ranges::transform(copies, vk_copies.begin(), MakeBufferCopy);
++@@ -519,6 +522,7 @@ void BufferCacheRuntime::PostCopyBarrier() {
++ }
++ 
++ void BufferCacheRuntime::ClearBuffer(VkBuffer dest_buffer, u32 offset, size_t size, u32 value) {
+++    multi_range_buffers.InvalidateOwner(dest_buffer);
++     if (dest_buffer == VK_NULL_HANDLE) {
++         return;
++     }
++@@ -602,12 +606,25 @@ void BufferCacheRuntime::BindIndexBuffer(PrimitiveTopology topology, IndexFormat
++         ReserveNullBuffer();
++         vk_buffer = *null_buffer;
++     }
+++    // The same index buffer is still bound in this command buffer: skip the rebind (Lichii #184,
+++    // from 999sian's #161).
+++    const u64 epoch = scheduler.RecordingEpoch();
+++    if (bound_index_valid && vk_buffer == bound_index_buffer && vk_offset == bound_index_offset &&
+++        vk_index_type == bound_index_type && epoch == bound_index_epoch) {
+++        return;
+++    }
+++    bound_index_valid = true;
+++    bound_index_buffer = vk_buffer;
+++    bound_index_offset = vk_offset;
+++    bound_index_type = vk_index_type;
+++    bound_index_epoch = epoch;
++     scheduler.Record([vk_buffer, vk_offset, vk_index_type](vk::CommandBuffer cmdbuf) {
++         cmdbuf.BindIndexBuffer(vk_buffer, vk_offset, vk_index_type);
++     });
++ }
++ 
++ void BufferCacheRuntime::BindQuadIndexBuffer(PrimitiveTopology topology, u32 first, u32 count) {
+++    bound_index_valid = false;
++     if (count == 0) {
++         ReserveNullBuffer();
++         scheduler.Record([this](vk::CommandBuffer cmdbuf) {
++diff --git a/src/video_core/renderer_vulkan/vk_buffer_cache.h b/src/video_core/renderer_vulkan/vk_buffer_cache.h
++index fff1f81..39d50be 100644
++--- a/src/video_core/renderer_vulkan/vk_buffer_cache.h
+++++ b/src/video_core/renderer_vulkan/vk_buffer_cache.h
++@@ -200,6 +200,14 @@ public:
++ 
++     bool BindMultiRangeStorageBuffer(u64 key, bool is_written);
++ 
+++    void MarkStorageSourceGpuWritten(const Buffer& buffer) {
+++        multi_range_buffers.MarkGpuWritten(buffer.Handle());
+++    }
+++
+++    void MarkStorageSourceWritten(const Buffer& buffer) {
+++        multi_range_buffers.InvalidateOwner(buffer.Handle());
+++    }
+++
++     void InvalidateMultiRange(u64 key) {
++         multi_range_buffers.Invalidate(key);
++     }
++@@ -267,6 +275,13 @@ private:
++ 
++     bool limit_dynamic_storage_buffers = false;
++     u32 max_dynamic_storage_buffers = (std::numeric_limits<u32>::max)();
+++
+++    /// The index buffer BindIndexBuffer recorded last, at scheduler recording epoch bound_index_epoch.
+++    VkBuffer bound_index_buffer = VK_NULL_HANDLE;
+++    VkDeviceSize bound_index_offset = 0;
+++    VkIndexType bound_index_type = VK_INDEX_TYPE_UINT32;
+++    u64 bound_index_epoch = 0;
+++    bool bound_index_valid = false;
++ };
++ 
++ struct BufferCacheParams {
++diff --git a/src/video_core/renderer_vulkan/vk_multi_range_buffer.cpp b/src/video_core/renderer_vulkan/vk_multi_range_buffer.cpp
++index 4d84390..6980378 100644
++--- a/src/video_core/renderer_vulkan/vk_multi_range_buffer.cpp
+++++ b/src/video_core/renderer_vulkan/vk_multi_range_buffer.cpp
++@@ -221,7 +221,8 @@ MultiRangeRef MultiRangeBufferCache::Get(const Device& device, Scheduler& schedu
++     const auto it = entries.find(key);
++     if (it != entries.end() && it->second.geometry == geometry && it->second.size == total) {
++         Entry& entry = it->second;
++-        if (entry.content != content) {
+++        if (entry.content != content || std::any_of(sources.begin(), sources.end(),
+++                [this](const MultiRangeSource& s) { return gpu_written_owners.contains(s.handle); })) {
++             entry.content = content;
++             entry.dirty = true;
++         }
++@@ -240,6 +241,7 @@ MultiRangeRef MultiRangeBufferCache::Get(const Device& device, Scheduler& schedu
++         return ref;
++     }
++     if (it != entries.end()) {
+++        ForgetOwners(key, it->second);
++         RetireEntry(scheduler, it->second);
++         entries.erase(it);
++     }
++@@ -275,6 +277,7 @@ MultiRangeRef MultiRangeBufferCache::Get(const Device& device, Scheduler& schedu
++             .pQueueFamilyIndices = nullptr,
++         };
++         entry.gathered = memory_allocator.CreateBuffer(gather_ci, MemoryUsage::DeviceLocal);
+++        for (const MultiRangeSource& source : sources) entry.owners.push_back(source.handle);
++         entry.dirty = true;
++     }
++     if (device.IsBufferDeviceAddressSupported()) {
++@@ -297,7 +300,11 @@ MultiRangeRef MultiRangeBufferCache::Get(const Device& device, Scheduler& schedu
++         ref.sparse = false;
++         ref.needs_gather = true;
++     }
++-    entries.emplace(key, std::move(entry));
+++    auto [inserted, fresh] = entries.emplace(key, std::move(entry));
+++    (void)fresh;
+++    if (!inserted->second.sparse_handle) {
+++        for (VkBuffer owner : inserted->second.owners) gathered_owners[owner].insert(key);
+++    }
++     return ref;
++ }
++ 
++@@ -308,6 +315,7 @@ void MultiRangeBufferCache::MarkGathered(u64 key) {
++ }
++ 
++ void MultiRangeBufferCache::DropOwner(Scheduler& scheduler, VkBuffer owner) {
+++    gpu_written_owners.erase(owner);
++     if (owner == VK_NULL_HANDLE) {
++         return;
++     }
++@@ -324,11 +332,33 @@ void MultiRangeBufferCache::DropOwner(Scheduler& scheduler, VkBuffer owner) {
++             ++it;
++             continue;
++         }
+++        ForgetOwners(it->first, entry);
++         RetireEntry(scheduler, entry);
++         it = entries.erase(it);
++     }
++ }
++ 
+++void MultiRangeBufferCache::ForgetOwners(u64 key, const Entry& entry) {
+++    if (entry.sparse_handle) return;
+++    for (VkBuffer owner : entry.owners) {
+++        const auto it = gathered_owners.find(owner);
+++        if (it == gathered_owners.end()) continue;
+++        it->second.erase(key);
+++        if (it->second.empty()) gathered_owners.erase(it);
+++    }
+++}
+++
+++void MultiRangeBufferCache::MarkGpuWritten(VkBuffer owner) {
+++    gpu_written_owners.insert(owner);
+++    InvalidateOwner(owner);
+++}
+++
+++void MultiRangeBufferCache::InvalidateOwner(VkBuffer owner) {
+++    const auto it = gathered_owners.find(owner);
+++    if (it == gathered_owners.end()) return;
+++    for (u64 key : it->second) Invalidate(key);
+++}
+++
++ void MultiRangeBufferCache::Invalidate(u64 key) {
++     if (auto const it = entries.find(key); it != entries.end()) {
++         it->second.dirty = true;
++diff --git a/src/video_core/renderer_vulkan/vk_multi_range_buffer.h b/src/video_core/renderer_vulkan/vk_multi_range_buffer.h
++index f40d3aa..676d6d6 100644
++--- a/src/video_core/renderer_vulkan/vk_multi_range_buffer.h
+++++ b/src/video_core/renderer_vulkan/vk_multi_range_buffer.h
++@@ -4,6 +4,8 @@
++ #pragma once
++ 
++ #include <span>
+++#include <unordered_map>
+++#include <unordered_set>
++ #include <vector>
++ 
++ #include <boost/container/static_vector.hpp>
++@@ -56,6 +58,8 @@ public:
++     void MarkGathered(u64 key);
++ 
++     void Invalidate(u64 key);
+++    void InvalidateOwner(VkBuffer owner);
+++    void MarkGpuWritten(VkBuffer owner);
++ 
++     void DropOwner(Scheduler& scheduler, VkBuffer owner);
++ 
++@@ -96,6 +100,12 @@ private:
++ 
++     void DrainRetired(Scheduler& scheduler);
++ 
+++    // Index gathered copies by source; writes in the same scheduler tick must invalidate too.
+++    std::unordered_map<VkBuffer, std::unordered_set<u64>> gathered_owners;
+++    // Shader writes are announced before execution. Never retain gathered copies of
+++    // these sources across draws: a later binding in the same draw can gather pre-write data.
+++    std::unordered_set<VkBuffer> gpu_written_owners;
+++    void ForgetOwners(u64 key, const Entry& entry);
++     ::Common::unordered_map<u64, Entry> entries;
++     boost::container::static_vector<Retired, MAX_RETIRED> retired;
++     u32 sparse_memory_type_bits{};
++diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++index f43bea1..0eaced8 100644
++--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++@@ -746,7 +746,18 @@ void RasterizerVulkan::InvalidateRegion(DAddr addr, u64 size, VideoCommon::Cache
++ }
++ 
++ void RasterizerVulkan::InnerInvalidation(std::span<const std::pair<DAddr, std::size_t>> sequences) {
++-    {
+++    // The GPU's own cached writes (constant buffer data, every draw): most land where no image,
+++    // query or shader was ever registered, which page_filter tells without the caches' locks
+++    // (Lichii #250).
+++    const auto any = [&](const VideoCommon::PageFilter& filter) {
+++        for (const auto& [addr, size] : sequences) {
+++            if (filter.Any(addr, size)) {
+++                return true;
+++            }
+++        }
+++        return false;
+++    };
+++    if (any(texture_cache.page_filter)) {
++         std::scoped_lock lock{texture_cache.mutex};
++         for (const auto& [addr, size] : sequences) {
++             texture_cache.WriteMemory(addr, size);
++@@ -758,11 +769,11 @@ void RasterizerVulkan::InnerInvalidation(std::span<const std::pair<DAddr, std::s
++             buffer_cache.WriteMemory(addr, size);
++         }
++     }
++-    {
++-        for (const auto& [addr, size] : sequences) {
++-            query_cache.InvalidateRegion(addr, size);
++-            pipeline_cache.InvalidateRegion(addr, size);
++-        }
+++    if (any(query_cache.page_filter)) {
+++        for (const auto& [addr, size] : sequences) query_cache.InvalidateRegion(addr, size);
+++    }
+++    if (any(pipeline_cache.page_filter)) {
+++        for (const auto& [addr, size] : sequences) pipeline_cache.InvalidateRegion(addr, size);
++     }
++ }
++ 
++diff --git a/src/video_core/renderer_vulkan/vk_scheduler.cpp b/src/video_core/renderer_vulkan/vk_scheduler.cpp
++index 4a7a7d5..17f477b 100644
++--- a/src/video_core/renderer_vulkan/vk_scheduler.cpp
+++++ b/src/video_core/renderer_vulkan/vk_scheduler.cpp
++@@ -389,6 +389,7 @@ void Scheduler::AllocateNewContext() {
++ }
++ 
++ void Scheduler::InvalidateState() {
+++    ++recording_epoch;
++     state.graphics_pipeline = nullptr;
++     state.rescaling_defined = false;
++     state.descriptor_buffer_bound = false;
++@@ -406,6 +407,7 @@ void Scheduler::EndRenderPass()
++         if (!state.renderpass) {
++             return;
++         }
+++        ++recording_epoch;
++ 
++         query_cache->CounterClose(VideoCommon::QueryType::StreamingByteCount);
++ 
++diff --git a/src/video_core/renderer_vulkan/vk_scheduler.h b/src/video_core/renderer_vulkan/vk_scheduler.h
++index d4bc8d0..0963a32 100644
++--- a/src/video_core/renderer_vulkan/vk_scheduler.h
+++++ b/src/video_core/renderer_vulkan/vk_scheduler.h
++@@ -169,6 +169,12 @@ public:
++         return *master_semaphore;
++     }
++ 
+++    /// Changes whenever recorded command buffer state may have been reset (InvalidateState, the end
+++    /// of a render pass), so a binding recorded at the same epoch is still bound (Lichii #184).
+++    [[nodiscard]] u64 RecordingEpoch() const noexcept {
+++        return recording_epoch;
+++    }
+++
++     std::mutex submit_mutex;
++ 
++ private:
++@@ -312,6 +318,7 @@ private:
++     std::function<void()> on_submit;
++ 
++     State state;
+++    u64 recording_epoch{};
++ 
++     u32 num_renderpass_images = 0;
++     std::array<VkImage, 9> renderpass_images{};
++diff --git a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
++index 7b6571d..627da0b 100644
++--- a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
+++++ b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
++@@ -107,7 +107,7 @@ StagingBufferRef StagingBufferPool::Request(size_t size, MemoryUsage usage, bool
++     return GetStagingBuffer(size, usage, deferred);
++ }
++ 
++-void StagingBufferPool::FreeDeferred(StagingBufferRef& ref) {
+++void StagingBufferPool::FreeDeferred(StagingBufferRef& ref, bool completed) {
++     auto& entries = GetCache(ref.usage)[ref.log2_level].entries;
++     const auto is_this_one = [&ref](const StagingBuffer& entry) {
++         return entry.index == ref.index;
++@@ -115,7 +115,7 @@ void StagingBufferPool::FreeDeferred(StagingBufferRef& ref) {
++     auto it = std::find_if(entries.begin(), entries.end(), is_this_one);
++     ASSERT(it != entries.end());
++     ASSERT(it->deferred);
++-    it->tick = scheduler.CurrentTick();
+++    it->tick = completed ? 0 : scheduler.CurrentTick();
++     it->deferred = false;
++ }
++ 
++diff --git a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
++index 6d967ab..86ed482 100644
++--- a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
+++++ b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
++@@ -38,7 +38,8 @@ public:
++     ~StagingBufferPool();
++ 
++     StagingBufferRef Request(size_t size, MemoryUsage usage, bool deferred = false);
++-    void FreeDeferred(StagingBufferRef& ref);
+++    /// completed: the GPU is done with it (its fence passed), so it can be handed out right away.
+++    void FreeDeferred(StagingBufferRef& ref, bool completed = false);
++ 
++     [[nodiscard]] VkBuffer StreamBuf() const noexcept {
++         return *stream_buffer;
++@@ -104,6 +105,7 @@ private:
++         return iter / region_size;
++     }
++ 
+++    unsigned idle_trim_frames{};
++     const Device& device;
++     MemoryAllocator& memory_allocator;
++     Scheduler& scheduler;
++diff --git a/src/video_core/shader_cache.cpp b/src/video_core/shader_cache.cpp
++index f1aff28..2a9a147 100644
++--- a/src/video_core/shader_cache.cpp
+++++ b/src/video_core/shader_cache.cpp
++@@ -5,6 +5,7 @@
++ // SPDX-License-Identifier: GPL-2.0-or-later
++ 
++ #include <algorithm>
+++#include <functional>
++ #include <array>
++ #include <vector>
++ #include <boost/container/small_vector.hpp>
++@@ -131,6 +132,7 @@ void ShaderCache::Register(std::unique_ptr<ShaderInfo> data, VAddr addr, size_t
++ 
++     const VAddr addr_end = addr + size;
++     Entry* const entry = NewEntry(addr, addr_end, data.get());
+++    page_filter.Mark(addr, size);
++ 
++     const u64 page_end = (addr_end + YUZU_PAGESIZE - 1) >> YUZU_PAGEBITS;
++     for (u64 page = addr >> YUZU_PAGEBITS; page < page_end; ++page) {
++@@ -174,10 +176,17 @@ void ShaderCache::RemovePendingShaders() {
++     marked_for_removal.clear();
++ 
++     if (!removed_shaders.empty()) {
++-        // Remove the given shaders from the cache
++-        std::erase_if(storage, [&removed_shaders](const std::unique_ptr<ShaderInfo>& shader) {
++-            return std::ranges::find(removed_shaders, shader.get()) != removed_shaders.end();
++-        });
+++        if (removed_shaders.size() > 16) {
+++            std::ranges::sort(removed_shaders, std::less<ShaderInfo*>{});
+++            std::erase_if(storage, [&removed_shaders](const std::unique_ptr<ShaderInfo>& shader) {
+++                return std::binary_search(removed_shaders.begin(), removed_shaders.end(),
+++                                          shader.get(), std::less<ShaderInfo*>{});
+++            });
+++        } else {
+++            std::erase_if(storage, [&removed_shaders](const std::unique_ptr<ShaderInfo>& shader) {
+++                return std::ranges::find(removed_shaders, shader.get()) != removed_shaders.end();
+++            });
+++        }
++     }
++ }
++ 
++diff --git a/src/video_core/shader_cache.h b/src/video_core/shader_cache.h
++index 997f2b0..b297416 100644
++--- a/src/video_core/shader_cache.h
+++++ b/src/video_core/shader_cache.h
++@@ -18,6 +18,7 @@
++ #include <ranges>
++ #include "video_core/control/channel_state_cache.h"
++ #include "video_core/host1x/gpu_device_memory_manager.h"
+++#include "video_core/page_filter.h"
++ #include "video_core/rasterizer_interface.h"
++ #include "video_core/shader_environment.h"
++ 
++@@ -57,6 +58,9 @@ class ShaderCache : public VideoCommon::ChannelSetupCaches<VideoCommon::ChannelI
++     };
++ 
++ public:
+++    /// Device pages this cache ever registered objects on (InnerInvalidation skips the rest).
+++    VideoCommon::PageFilter page_filter;
+++
++     /// @brief Removes shaders inside a given region
++     /// @note Checks for ranges
++     /// @param addr Start address of the invalidation
++diff --git a/src/video_core/texture_cache/descriptor_table.h b/src/video_core/texture_cache/descriptor_table.h
++index e40c128..ba46991 100644
++--- a/src/video_core/texture_cache/descriptor_table.h
+++++ b/src/video_core/texture_cache/descriptor_table.h
++@@ -7,6 +7,7 @@
++ #pragma once
++ 
++ #include <algorithm>
+++#include <bit>
++ #include <vector>
++ 
++ #include "common/alignment.h"
++@@ -30,7 +31,8 @@ public:
++     }
++ 
++     void Invalidate() noexcept {
++-        std::ranges::fill(read_descriptors, 0);
+++        const size_t words = (std::min)(read_descriptors.size(), size_t{current_limit} / 64 + 1);
+++        std::fill_n(read_descriptors.begin(), words, u64{0});
++     }
++ 
++     [[nodiscard]] std::pair<T, bool> Read(Tegra::MemoryManager const& gpu_memory, u32 index) noexcept {
++@@ -53,15 +55,11 @@ public:
++     void Refresh(GPUVAddr gpu_addr, u32 limit) noexcept {
++         current_gpu_addr = gpu_addr;
++         current_limit = limit;
++-        // Mario Brothership reallocates a lot of times, so use aggressive pre-alloc sizes
++-        // std::vector<T> by default uses quadratic growth, but that isn't even enough to satisfy brothership
++-        const size_t num_descriptors = ((limit + 0x80000) & (~0x7ffff)) + 1;
++-        size_t old_size = read_descriptors.size();
++-        read_descriptors.resize(Common::DivCeil(num_descriptors, 64U));
++-        old_size = (std::min)(old_size, read_descriptors.size());
++-        std::fill(read_descriptors.begin(), read_descriptors.begin() + old_size, 0);
++-        //
++-        descriptors.resize(num_descriptors);
+++        // Geometric growth avoids a minimum half-million descriptors per small table.
+++        const size_t num_descriptors = std::bit_ceil(size_t{limit} + 1);
+++        read_descriptors.resize(Common::DivCeil(num_descriptors, size_t{64}));
+++        Invalidate();
+++        if (descriptors.size() < num_descriptors) descriptors.resize(num_descriptors);
++     }
++ 
++     std::vector<u64> read_descriptors;
++diff --git a/src/video_core/texture_cache/texture_cache.h b/src/video_core/texture_cache/texture_cache.h
++index 640bd38..2d7fef9 100644
++--- a/src/video_core/texture_cache/texture_cache.h
+++++ b/src/video_core/texture_cache/texture_cache.h
++@@ -2162,6 +2162,7 @@ void TextureCache<P>::RegisterImage(ImageId image_id) {
++     if (False(image.flags & ImageFlagBits::Sparse)) {
++         auto map_id =
++             slot_map_views.insert(image.gpu_addr, image.cpu_addr, image.guest_size_bytes, image_id);
+++        page_filter.Mark(image.cpu_addr, image.guest_size_bytes);
++         ForEachCPUPage(image.cpu_addr, image.guest_size_bytes,
++                        [this, map_id](u64 page) { page_table[page].push_back(map_id); });
++         image.map_view_id = map_id;
++@@ -2171,6 +2172,7 @@ void TextureCache<P>::RegisterImage(ImageId image_id) {
++     ForEachSparseSegment(
++         image, [this, image_id, &sparse_maps](GPUVAddr gpu_addr, DAddr cpu_addr, size_t size) {
++             auto map_id = slot_map_views.insert(gpu_addr, cpu_addr, size, image_id);
+++            page_filter.Mark(cpu_addr, size);
++             ForEachCPUPage(cpu_addr, size,
++                            [this, map_id](u64 page) { page_table[page].push_back(map_id); });
++             sparse_maps.push_back(map_id);
++diff --git a/src/video_core/texture_cache/texture_cache_base.h b/src/video_core/texture_cache/texture_cache_base.h
++index 8a2318c..5172d3c 100644
++--- a/src/video_core/texture_cache/texture_cache_base.h
+++++ b/src/video_core/texture_cache/texture_cache_base.h
++@@ -15,6 +15,7 @@
++ // TODO: find out which don't require stable iters
++ #include <unordered_map>
++ #include "common/container/unordered_map.h"
+++#include "video_core/page_filter.h"
++ #include "common/container/unordered_set.h"
++ #include <vector>
++ #include <boost/container/small_vector.hpp>
++@@ -150,6 +151,9 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
++     };
++ 
++ public:
+++    /// Device pages this cache ever registered objects on (InnerInvalidation skips the rest).
+++    VideoCommon::PageFilter page_filter;
+++
++     explicit TextureCache(Runtime&, Tegra::MaxwellDeviceMemoryManager&);
++ 
++     /// Notify the cache that a new frame has been queued
++diff --git a/src/video_core/texture_cache/util.cpp b/src/video_core/texture_cache/util.cpp
++index e55d075..ca41ea6 100644
++--- a/src/video_core/texture_cache/util.cpp
+++++ b/src/video_core/texture_cache/util.cpp
++@@ -961,22 +961,20 @@ void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8
++             const auto bpp_div = recompression_setting == Settings::AstcRecompression::Bc1 ? 2 : 1;
++ 
++             const u32 plane_dim = copy.image_extent.width * copy.image_extent.height;
++-            const u32 level_size = plane_dim * copy.image_extent.depth *
++-                                   copy.image_subresource.num_layers *
++-                                   BytesPerBlock(PixelFormat::A8B8G8R8_UNORM);
++-            decode_scratch.resize_destructive(level_size);
++-
++-            Tegra::Texture::ASTC::Decompress(
++-                input_offset, copy.image_extent.width, copy.image_extent.height,
++-                copy.image_subresource.num_layers * copy.image_extent.depth, tile_size.width,
++-                tile_size.height, decode_scratch);
++-
++-            compress(decode_scratch, copy.image_extent.width, copy.image_extent.height,
++-                     copy.image_subresource.num_layers * copy.image_extent.depth,
++-                     output.subspan(output_offset));
++-
++             const u32 aligned_plane_dim = Common::AlignUp(copy.image_extent.width, 4) *
++                                           Common::AlignUp(copy.image_extent.height, 4);
+++            const u32 slices = copy.image_subresource.num_layers * copy.image_extent.depth;
+++            const size_t input_slice = size_t{Common::DivideUp(copy.image_extent.width, tile_size.width)} *
+++                                      Common::DivideUp(copy.image_extent.height, tile_size.height) * 16;
+++            const size_t output_slice = aligned_plane_dim / bpp_div;
+++            decode_scratch.resize_destructive(size_t{plane_dim} * BytesPerBlock(PixelFormat::A8B8G8R8_UNORM));
+++            for (u32 slice = 0; slice < slices; ++slice) {
+++                Tegra::Texture::ASTC::Decompress(input_offset.subspan(slice * input_slice),
+++                    copy.image_extent.width, copy.image_extent.height, 1, tile_size.width,
+++                    tile_size.height, decode_scratch);
+++                compress(decode_scratch, copy.image_extent.width, copy.image_extent.height, 1,
+++                         output.subspan(output_offset + slice * output_slice));
+++            }
++ 
++             copy.buffer_size =
++                 (aligned_plane_dim * copy.image_extent.depth * copy.image_subresource.num_layers) /
 diff --git a/tools/install-ftp.py b/tools/install-ftp.py
 index 4754373..b1f7242 100644
 --- a/tools/install-ftp.py
@@ -3326,10 +4953,52 @@ index 0000000..5727625
 +    assert mark in (vulkan / path).read_text(), f'{path} is not patched'
 +print('RADV: refused SPIR-V logged, its pipeline not built')
 diff --git a/tools/prepare-build.sh b/tools/prepare-build.sh
-index 6fc17c5..87df74e 100644
+index 6fc17c5..9114d0c 100644
 --- a/tools/prepare-build.sh
 +++ b/tools/prepare-build.sh
-@@ -98,7 +98,8 @@ if [[ -f $radv_release/lib/libvulkan_radeon.ps5.a ]]; then
+@@ -37,19 +37,30 @@ if [[ ! -f $eden/CMakeLists.txt || $(cat "$eden/.unpacked-from" 2>/dev/null) !=
+ fi
+ printf '%s\n' '67bada77f8a43a90da2e94e89b8e7da73c256989' > "$eden/GIT-COMMIT"
+ printf '%s\n' 'ps5-headless' > "$eden/GIT-REFSPEC"
+-# Fixes to Eden's own source (tools/eden-patches, in name order), each applied once: a patch that
+-# reverses cleanly is already in the tree. One that neither reverses nor applies was changed after
+-# an earlier version of it went in: the files it touches come back from the pinned archive first.
++# Reconstruct the complete ordered series when any patch changes. Restoring just the files
++# of a later patch can silently discard earlier fixes to those same files.
+ command -v patch >/dev/null || { echo "patch is required (apt install patch)" >&2; exit 1; }
+-for eden_patch in tools/eden-patches/*.diff; do
+-    if patch -d "$eden" -p1 -R --dry-run -s -f < "$eden_patch" >/dev/null 2>&1; then continue; fi
+-    step "Eden patch $(basename "$eden_patch")"
+-    if ! patch -d "$eden" -p1 -N --dry-run -s -f < "$eden_patch" >/dev/null 2>&1; then
+-        sed -n 's|^+++ b/||p' "$eden_patch" | sed 's|^|*/|' |
+-            xargs tar -xzf ".deps/$eden_archive" --wildcards --strip-components=1 -C "$eden"
++series=$(sha256sum tools/eden-patches/*.diff | sha256sum | cut -d ' ' -f1)
++if [[ $(cat "$eden/.botty-patch-series" 2>/dev/null) != "$series" ]]; then
++    if [[ -d $eden/.cache ]]; then
++        rm -rf "$scratch/source-cache"
++        mv "$eden/.cache" "$scratch/source-cache"
+     fi
+-    patch -d "$eden" -p1 -N -s < "$eden_patch" || { echo "$eden_patch does not apply to Eden's source" >&2; exit 1; }
+-done
++    rm -rf "$eden"
++    mkdir -p "$eden"
++    tar -xzf ".deps/$eden_archive" --strip-components=1 -C "$eden"
++    if [[ -d $scratch/source-cache ]]; then mv "$scratch/source-cache" "$eden/.cache"; fi
++    printf '%s\n' "$eden_archive" > "$eden/.unpacked-from"
++    printf '%s\n' '67bada77f8a43a90da2e94e89b8e7da73c256989' > "$eden/GIT-COMMIT"
++    printf '%s\n' ps5-headless > "$eden/GIT-REFSPEC"
++    for eden_patch in tools/eden-patches/*.diff; do
++        step "Eden patch $(basename "$eden_patch")"
++        patch --fuzz=0 -d "$eden" -p1 -N -s < "$eden_patch" || {
++            echo "$eden_patch does not apply to Eden's source" >&2; exit 1;
++        }
++    done
++    printf '%s\n' "$series" > "$eden/.botty-patch-series"
++fi
+ # Optional: seed Eden's package cache from another checkout's (CI reuses a development cache).
+ if [[ -n ${EDEN_CPM_CACHE_SEED:-} && ! -d $eden/.cache/cpm ]]; then
+     step "Eden package cache from $EDEN_CPM_CACHE_SEED"
+@@ -98,7 +109,8 @@ if [[ -f $radv_release/lib/libvulkan_radeon.ps5.a ]]; then
      elif ! python3 -B tools/patch-radv-wsi.py --check "$radv_release/EDEN_WSI_SHA256" ||
           ! python3 -B tools/patch-radv-gs-compute.py --check "$radv_release/EDEN_GS_SHA256" ||
           ! python3 -B tools/patch-radv-disk-cache.py --check "$radv_release/EDEN_DISK_CACHE_SHA256" ||
@@ -3339,3 +5008,101 @@ index 6fc17c5..87df74e 100644
          step "RADV: this repository's adaptation of the driver changed"
          bash tools/build-radv-dependencies.sh
          rm -f build/radv-isolated/libvulkan_radeon.ps5.a
+diff --git a/tools/prepare-vulkan-port.py b/tools/prepare-vulkan-port.py
+index 47f23b9..84d8640 100644
+--- a/tools/prepare-vulkan-port.py
++++ b/tools/prepare-vulkan-port.py
+@@ -604,6 +604,75 @@ adapt('src/video_core/renderer_vulkan/vk_present_manager.cpp', 'vulkan_present_m
+     ('frame_cv.wait(queue_lock, [this] { return present_queue.empty(); });',
+      'frame_cv.wait(queue_lock, [this] { return present_failure || present_queue.empty(); });'),
+ ])
++adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_staging_buffer_pool.cpp', [
++    ('#include "video_core/vulkan_common/vulkan_wrapper.h"\n',
++     '#include "video_core/vulkan_common/vulkan_wrapper.h"\n#include <atomic>\n#include <cstdio>\n#include "staging_buffers.h"\n'),
++    ('    const auto is_free = [this](const StagingBuffer& entry) {\n'
++     '        return !entry.deferred && scheduler.IsFree(entry.tick);\n'
++     '    };',
++     '    const auto is_free = [this, size](const StagingBuffer& entry) {\n'
++     '        return !entry.deferred && scheduler.IsFree(entry.tick) &&\n'
++     '               ::Eden::StagingBuffers::Holds(entry.mapped_span.size(), entry.log2_level) >= size;\n'
++     '    };'),
++    ('    auto const log2_size = Common::Log2Ceil<u32>(u32(size));\n',
++     '    auto const log2_size = Common::Log2Ceil<u32>(u32(size));\n'
++     '    const bool exact = ::Eden::StagingBuffers::Exact(size, usage != MemoryUsage::DeviceLocal);\n'
++     '    const VkDeviceSize made = ::Eden::StagingBuffers::Size(size, log2_size, exact);\n'
++     '    if (exact) {\n'
++     '        // Kept buffers of this power of two too small for the transfer go before it is made.\n'
++     '        ::Eden::StagingBuffers::ReleaseFrom(GetCache(usage)[log2_size], [this, size](const StagingBuffer& entry) {\n'
++     '            return !entry.deferred && scheduler.IsFree(entry.tick) &&\n'
++     '                   ::Eden::StagingBuffers::Holds(entry.mapped_span.size(), entry.log2_level) < size;\n'
++     '        });\n'
++     '    }\n'),
++    ('    ReleaseCache(MemoryUsage::Download);\n}\n',
++     '    ReleaseCache(MemoryUsage::Download);\n'
++     '    // Bound idle staging memory after loading bursts without scanning every draw/frame.\n'
++     '    if (++idle_trim_frames % 16 == 0) {\n'
++     '        ::Eden::StagingBuffers::TrimIdle(\n'
++     '            std::array<StagingBuffersCache*, 3>{&device_local_cache, &upload_cache, &download_cache},\n'
++     '            [this](const StagingBuffer& entry) { return !entry.deferred && scheduler.IsFree(entry.tick); },\n'
++     '            std::uint64_t{256} << 20);\n'
++     '    }\n'
++     '}\n'),
++    ('        .size = 1ULL << log2_size,\n', '        .size = made,\n'),
++    ('    vk::Buffer buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n',
++     '    vk::Buffer buffer;\n'
++     '    try {\n'
++     '        buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
++     '    } catch (const vk::Exception& refused) {\n'
++     '        if (refused.GetResult() != VK_ERROR_OUT_OF_DEVICE_MEMORY) {\n'
++     '            throw;\n'
++     '        }\n'
++     '        // Refused: the kept buffers the GPU is done with go, and the buffer is asked for once\n'
++     '        // more. Refused again, the error goes on as before.\n'
++     '        const auto idle = [this](const StagingBuffer& entry) {\n'
++     '            return !entry.deferred && scheduler.IsFree(entry.tick);\n'
++     '        };\n'
++     '        ::Eden::StagingBuffers::Released released;\n'
++     '        for (StagingBuffersCache* const cache : {&device_local_cache, &upload_cache, &download_cache}) {\n'
++     '            for (StagingBuffers& level : *cache) {\n'
++     '                released += ::Eden::StagingBuffers::ReleaseFrom(level, idle);\n'
++     '            }\n'
++     '        }\n'
++     '        std::fprintf(stderr, "EDEN_STAGING_OOM asked=%zu made=%llu released=%zu buffers (%llu MiB)\\n", size,\n'
++     '                     static_cast<unsigned long long>(made), released.buffers,\n'
++     '                     static_cast<unsigned long long>(released.bytes >> 20));\n'
++     '        buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
++     '    }\n'
++     '    // A large buffer smaller than the power of two: the 1st, 2nd, 4th, 8th ... in the log.\n'
++     '    if (exact && made >= (VkDeviceSize{64} << 20) && made < (VkDeviceSize{1} << log2_size)) {\n'
++     '        static std::atomic<unsigned long long> large{0};\n'
++     '        const auto times = large.fetch_add(1, std::memory_order_relaxed) + 1;\n'
++     '        if ((times & (times - 1)) == 0) {\n'
++     '            std::fprintf(stderr, "EDEN_STAGING_EXACT %llu MiB made for a transfer of %llu MiB, not the %llu MiB of the "\n'
++     '                         "next power of two (%llu so far)\\n",\n'
++     '                         static_cast<unsigned long long>(made >> 20), static_cast<unsigned long long>(size >> 20),\n'
++     '                         static_cast<unsigned long long>((VkDeviceSize{1} << log2_size) >> 20), times);\n'
++     '        }\n'
++     '    }\n'),
++])
++
+ # Descriptor buffers: Eden's null buffer (nullDescriptor devices) has device address 0,
+ # but WriteDescriptorBuffer passed it with the binding's range. RADV then builds a real
+ # descriptor at GPU address 0; desktop kernels only log the resulting page fault, the PS5
+@@ -1646,7 +1715,7 @@ probes = {
+          '        }\n'
+          '    }\n'
+          '    retired.push_back(Retired{'),
+-        ('    entries.emplace(key, std::move(entry));',
++        ('    auto [inserted, fresh] = entries.emplace(key, std::move(entry));',
+          '    if (::Eden::DevVulkan::trace_pipelines) {\n'
+          '        static unsigned created = 0;\n'
+          '        if (++created <= 256) {\n'
+@@ -1657,7 +1726,7 @@ probes = {
+          '            ::Eden::Report("multirange", text);\n'
+          '        }\n'
+          '    }\n'
+-         '    entries.emplace(key, std::move(entry));'),
++         '    auto [inserted, fresh] = entries.emplace(key, std::move(entry));'),
+     ],
+     'vk_buffer_cache': [
+         ('#include <algorithm>', '#include <algorithm>\n#include "dev_vulkan.h"'),

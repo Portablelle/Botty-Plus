@@ -24,4 +24,9 @@ trap 'rm -rf -- "$fixture"' EXIT
 "$cc" "$tests/lifecycle_check.c" "$engine/src/lifecycle.c" -o "$output/lifecycle-check"
 "$output/lifecycle-check"
 python3 -m unittest discover -s "$tests" -p 'test_*.py' -v
+python3 "$tests/check_performance.py" "$engine" "$output/performance"
+python3 "$tests/check_copy_coherence.py" "$engine" "$output/coherence"
+python3 "$tests/check_patch_series.py" "$engine"
+python3 "$tests/check_bitmap_performance.py" "$engine"
+python3 "$tests/check_astc_performance.py" "$engine"
 echo 'Engine configuration, content roots, UltraCam, lifecycle and provenance checks PASS'

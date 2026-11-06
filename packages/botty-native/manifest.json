@@ -58,8 +58,8 @@
     },
     {
       "path": "emulation/botty-engine.json",
-      "size": 18174,
-      "sha256": "8997752db9861c63b36910ad7078bd96715ed2bab94c5402815adacc953973a3"
+      "size": 18808,
+      "sha256": "4b86045db038ad5485b7a477b4becfe0d97996781d75b768da86b7028028afbb"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -68,18 +68,18 @@
     },
     {
       "path": "emulation/eboot.bin",
-      "size": 75707950,
-      "sha256": "9fc5d0bdd8e6e335475e982f5e53611994595ff1903458eb9893ebe1b37447d1"
+      "size": 77245726,
+      "sha256": "59b006795e2f08e6b88e33c34a4c335ecf95c209c4a3d30970f647d8b964b984"
     },
     {
       "path": "emulation/lapy-manifest.json",
       "size": 608,
-      "sha256": "32ce9e5caa1db9556248f78c83044077e9e413ccfe01f68d043d34c02c4e3f13"
+      "sha256": "5e641fd73fbb886c1644648a5ca663652204bc5d5f8c00ec04e177e38a563a7a"
     },
     {
       "path": "emulation/lapy.elf",
       "size": 155224,
-      "sha256": "e3ff7fa980d7d0f26c91e9c5218c0a07e301119ba84e82d4c74ec2e7813b744f"
+      "sha256": "7d23db6193f232e4e6f49e1c294b45235db19e044b8dc6e5a798a50b8d51c064"
     },
     {
       "path": "emulation/launcher-runtime.json",
@@ -454,7 +454,7 @@
     {
       "path": "emulation-runtime.json",
       "size": 673,
-      "sha256": "8bc619b9443a632859bb604f44475febcde73d4198a16cdffa8cbd81dc9f4496"
+      "sha256": "f9d79c9c0d65f4e6c9a03a42851e72b033880d0abe126e23506af82cb008678a"
     },
     {
       "path": "sce_module/libc.prx",
