@@ -246,8 +246,8 @@ source-only repackaging refuses a stale archive from an earlier engine build.
 The standalone patch adapts shared EdGlantine optimizations to Botty's pinned
 ProsperoEden 1.005, retaining the existing title, data paths, settings and engine
 fixes. It does not enable Switch 2 memory layouts or change emulation accuracy.
-The candidate changes source; the published `packages/` engine is not implicitly
-replaced or deployed by editing this patch.
+The repository's `packages/` delivery includes the rebuilt engine, matching
+provenance receipts and complete corresponding sources in checked parts.
 
 | Area | Behavior |
 | --- | --- |
