@@ -2,8 +2,8 @@
   "schema": 1,
   "app": "Botty+",
   "titleId": "PPSA99071",
-  "version": "02.000.003",
-  "releaseVersion": "2.0.3",
+  "version": "02.000.004",
+  "releaseVersion": "2.0.4",
   "milestone": 4,
   "hardwareValidated": false,
   "registrationVerified": false,
@@ -24,7 +24,7 @@
     {
       "path": "assets/build.txt",
       "size": 38,
-      "sha256": "79f852afb6b5961b524029f5b657219dc3cccefe66555fd8aaaf2205c474c0e7"
+      "sha256": "0ef9c1afbde2a0abafeab68fe6196fc7847255218c9f2415bd31ff19e97ce044"
     },
     {
       "path": "assets/courier.rgba",
@@ -54,12 +54,12 @@
     {
       "path": "eboot.bin",
       "size": 33262524,
-      "sha256": "c3b6b48f61d581d4662d9eb64fee208722f1790fd2c8fe18c34bbdcf620e64f1"
+      "sha256": "e9a8106ce367e167001a3989893a762eed9c29465ebe276772f0f5fdf6bf6ab7"
     },
     {
       "path": "emulation/botty-engine.json",
       "size": 18907,
-      "sha256": "390dc7bb778f8b8b334ead59a9d3b0b2bf04859df9da482f28ae7a1e6dc277b2"
+      "sha256": "d05f353d3fd6c28d5602b5fd64ed95f33a3e27338461a4892b09a463784a63d8"
     },
     {
       "path": "emulation/core-homebrew.nro",
@@ -469,7 +469,7 @@
     {
       "path": "emulation-runtime.json",
       "size": 673,
-      "sha256": "8a798bfc98d1ddbdf5dcbe3b2be30ed34026e966cbc0dfd050600f2ff5a14864"
+      "sha256": "ed7b287dbcaf6be8c3ca235bb9f61bc8fbc6a635bdf0f371be583cd1b28ca38b"
     },
     {
       "path": "sce_module/libc.prx",
@@ -484,7 +484,7 @@
     {
       "path": "sce_sys/param.json",
       "size": 903,
-      "sha256": "08d666bb8b7999195030b96ef3324e8dfc0409797db10410d296b73e297cc6b9"
+      "sha256": "cccccbef7827254b3233e88e4eb11bb90c8afc580e62e3a93f1808ee30b7ee0d"
     },
     {
       "path": "sce_sys/pic0.dds",
