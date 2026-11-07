@@ -79,6 +79,9 @@
     "ultracam/botw/exefs/main.npdm",
     "ultracam/botw/exefs/subsdk3",
     "ultracam/botw/romfs/UltraCam/maxlastbreath.ini",
+    "ultracam/botw190/LICENSE.md",
+    "ultracam/botw190/NOTICE.md",
+    "ultracam/botw190/patches.json",
     "ultracam/manifest.json"
   ]
 }
