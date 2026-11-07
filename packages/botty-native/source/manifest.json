@@ -1,73 +1,73 @@
 {
   "schema": 1,
   "archive": "botty-native-source.tar.gz",
-  "size": 1191838825,
-  "sha256": "fc5a06a540887460505fb616bac98768308498bf1c20b9e3fe6ee4700074ef39",
+  "size": 1191840024,
+  "sha256": "5b81721426b4075c936805b93a4b8cc09969f0f27d6056b596e3dfe4fb3031f9",
   "parts": [
     {
       "path": "source/native-source.part001",
       "size": 94371840,
-      "sha256": "b48dc6215d59a55c3235e3b332df6038f0e61fee4a9aea78ae8cd0a28793e370"
+      "sha256": "e109387554d103b4a4c2b4cfe97c68995c78e52a8d011da1fbb874d08d8c623d"
     },
     {
       "path": "source/native-source.part002",
       "size": 94371840,
-      "sha256": "e0ed999d951f4437d0ab003476f72a03ae0c6dc0c45a999d021df9213cdebf15"
+      "sha256": "9e6e492e05d3dd1e3a9219c817123476a9f8136053055ef9fef4a40a987d0a6d"
     },
     {
       "path": "source/native-source.part003",
       "size": 94371840,
-      "sha256": "e9076bbb4574b3a8931e12dacd178a66f607e56221ae71180b38af8e92cfef83"
+      "sha256": "4f675ed82cbac561cbcaa34313aa9165531876d33723aa98ca4bdd0b0f3ece1f"
     },
     {
       "path": "source/native-source.part004",
       "size": 94371840,
-      "sha256": "9e9b7b131973279176898b23dc246584eb59d208bce6342333589b1603d13664"
+      "sha256": "86202842e79f6b90e78ca343cad908707a1c4553cac0c1ffe2725e41a4b6f56c"
     },
     {
       "path": "source/native-source.part005",
       "size": 94371840,
-      "sha256": "51f57cb15d5539242af07758e4dd9d3fd7980cf84f5bba0127b8772d509a2c8f"
+      "sha256": "1a37c9ab2025079be6b31c3dad9d2cc82d38e0658f267a8d1fe3d2312a995b03"
     },
     {
       "path": "source/native-source.part006",
       "size": 94371840,
-      "sha256": "2654814d1c6d710a3adf88d94055a26a8730bbc2cbb4708038a89c9933cb7abd"
+      "sha256": "2efb8f2dd94a4bd224d55199e549dbc84e47934ef70ac9250bee6e2f89917720"
     },
     {
       "path": "source/native-source.part007",
       "size": 94371840,
-      "sha256": "2581a26b3a1b7513147ee1955d51c1f838e447a5fee3b93a0d40a93177041ace"
+      "sha256": "3d2589412aac72c79bd51fc1f6b045de1fbcad45ae0714f52ac264604e7a3e38"
     },
     {
       "path": "source/native-source.part008",
       "size": 94371840,
-      "sha256": "e10be8d9134c535273e006f405e11f97cbb269b03004ded0d2c6101e1721de2d"
+      "sha256": "5807d96ab7e9b9fb4e34e16d8310fd0e8bf3a60c5c5c2c29b82e379cdf2a1a3b"
     },
     {
       "path": "source/native-source.part009",
       "size": 94371840,
-      "sha256": "5f35be02fd3fe9bdd9986fdb81a808fae5ca919deddef2525072ffd4aee1c09c"
+      "sha256": "68cea71ebb598358618a80020766d1408c284f520843cb469700fea2470be59c"
     },
     {
       "path": "source/native-source.part010",
       "size": 94371840,
-      "sha256": "c4bf0fb725fd5fa2d9ddb609bb9bd148bde0a2bd28a8c0e218d6d228de4648d0"
+      "sha256": "b9bc0b483b265609b4a89bb1f8362885926e874f57328c824f488e373039f59b"
     },
     {
       "path": "source/native-source.part011",
       "size": 94371840,
-      "sha256": "1767e93ef6ed7068ffe335f5be2d790dcbbd0aa9b2926fba9a78f27cf175960a"
+      "sha256": "937c0943331881132c150b4fdaacc626807e7794798d6cc6465ef0b3cf44b40e"
     },
     {
       "path": "source/native-source.part012",
       "size": 94371840,
-      "sha256": "31449cffb1b9e10526738ae10d38df9d42981fb09baa4367e489b202c40cd21c"
+      "sha256": "8a1a4af2000da2f8f55ee170d6dc09e6cd726cbaa9b33c4f7f005ba7c2cd6039"
     },
     {
       "path": "source/native-source.part013",
-      "size": 59376745,
-      "sha256": "f8bc2f0482a14d9c1ddfae985de504a7efda904dcfcad244debfb964a39076ca"
+      "size": 59377944,
+      "sha256": "3810895dffedbcfe92a23294b62379fa0934279f0146d510e1c878a462b87e4e"
     }
   ]
 }

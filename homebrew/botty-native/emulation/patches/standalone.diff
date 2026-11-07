@@ -2462,7 +2462,7 @@ index 036995a..cd2c69f 100644
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FolderInfo, keys, firmware, games)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(UpdateOffer, version, size, installable, notes, notes_truncated)
 diff --git a/headless/prosperoeden/pe/ui/services.hpp b/headless/prosperoeden/pe/ui/services.hpp
-index 47e8859..34c6209 100644
+index 47e8859..31bcd97 100644
 --- a/headless/prosperoeden/pe/ui/services.hpp
 +++ b/headless/prosperoeden/pe/ui/services.hpp
 @@ -13,6 +13,7 @@
@@ -2488,7 +2488,7 @@ index 47e8859..34c6209 100644
      std::vector<Cheat> cheats; // its cheats when it lists several; empty for a single one
      // Cheats and nothing else: the Cheats list has it (Services::cheats), not the Mods list.
      bool cheats_only = false;
-+    std::string display_name; // optional label; name remains the saved folder identity
++    std::string display_name{}; // optional label; name remains the saved folder identity
 +    bool superseded = false; // ignored while the integrated BOTW profile is active
  };
  
