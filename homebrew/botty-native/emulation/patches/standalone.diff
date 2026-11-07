@@ -1649,7 +1649,7 @@ index 689aead..422e852 100644
  void PinWorker(unsigned index, cpuset_t& affinity) {
      if (!worker_topology_ready || index >= worker_cpus.size() ||
 diff --git a/headless/prosperoeden/eden_services.cpp b/headless/prosperoeden/eden_services.cpp
-index 1d5a8a3..069e30e 100644
+index 1d5a8a3..1a2a06c 100644
 --- a/headless/prosperoeden/eden_services.cpp
 +++ b/headless/prosperoeden/eden_services.cpp
 @@ -7,10 +7,13 @@
@@ -1700,7 +1700,7 @@ index 1d5a8a3..069e30e 100644
              if (const std::string folder = GameFolderOf(file); game.title_id && !folder.empty()) {
                  const std::lock_guard folders(game_folders_lock_);
                  game_folders_[game.title_id] = folder;
-@@ -956,6 +964,18 @@ static_assert(std::size(pe::ui::kSpeedLimitPercents) == std::size(Eden::kSpeedLi
+@@ -956,6 +964,19 @@ static_assert(std::size(pe::ui::kSpeedLimitPercents) == std::size(Eden::kSpeedLi
  pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      const Eden::GameSettings saved = Eden::LoadGameSettings(title_id);
      pe::ui::GameSettings result;
@@ -1712,14 +1712,15 @@ index 1d5a8a3..069e30e 100644
 +        Eden::Report("ultracam",("Config detected effective BOTW version: "+std::string(version)).c_str());
 +        result.ultracam_available=Eden::BotwProfile::Compatible(title_id,version);
 +        result.ultracam_190=Eden::BotwProfile::Is190(version);
-+        result.ultracam_note=result.ultracam_190 ? "BOTW 1.9.0 FPS + Graphics (experimental). FPS target, FOV and camera far clip only. Native resolution and freecam are unavailable." :
-+            result.ultracam_available ? "UltraCam 1.0.1 | BOTW 1.6.0. FPS is a target, not a guarantee." : ("Requires BOTW 1.6.0 or 1.9.0. Detected update: "+std::string(version[0]?version:"none")+".");
++        result.ultracam_note=result.ultracam_190 ? "BOTW 1.9.0 FPS (experimental). Controls FPS, FOV and far clip. Replaces the legacy standalone FPS patch while enabled. Enabling this profile also enables Mods." :
++            result.ultracam_available ? "BOTW 1.6.0 | UltraCam by MaxLastBreath. Enabling this profile also enables Mods. FPS is a target, not a guarantee." : ("Requires BOTW 1.6.0 or 1.9.0. Detected update: "+std::string(version[0]?version:"none")+".");
 +        result.ultracam=Eden::BotwProfile::Load(version);
++        if (!Eden::LoadModsEnabled(title_id)) result.ultracam[Eden::UltraCam::Enabled] = 0;
 +    }
      result.renderer = saved.renderer;
      result.resolution = saved.resolution;
      result.filter = saved.upscaling_filter;
-@@ -983,6 +1003,13 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
+@@ -983,6 +1004,22 @@ pe::ui::GameSettings EdenServices::game_settings(std::uint64_t title_id) {
      return result;
  }
  
@@ -1727,12 +1728,48 @@ index 1d5a8a3..069e30e 100644
 +    const std::lock_guard lock(bridge_);
 +    char version[64]{};const auto rom=local_roms_.find(title_id);
 +    if(rom!=local_roms_.end())eden_game_effective_version(rom->second.c_str(),Eden::AssetsPath("keys").c_str(),title_id,version,sizeof(version));
-+    return Eden::BotwProfile::Save(title_id,version,values,error);
++    // Enabling a profile revives Mods just like enabling an ordinary mod.
++    const bool revive = values[Eden::UltraCam::Enabled] && !Eden::LoadModsEnabled(title_id);
++    if (revive && (!Eden::BotwProfile::Compatible(title_id,version) || !Eden::UltraCam::Valid(values))) {
++        error = "Requires a supported BOTW version and valid profile settings.";
++        return false;
++    }
++    if (revive && !Eden::SaveModsEnabled(title_id,true)) { error = "Could not enable this game's Mods switch."; return false; }
++    const bool saved = Eden::BotwProfile::Save(title_id,version,values,error);
++    if (!saved && revive && !Eden::SaveModsEnabled(title_id,false)) error += " Could not restore the game's Mods switch.";
++    return saved;
 +}
 +
  bool EdenServices::set_game_settings(std::uint64_t title_id, const pe::ui::GameSettings& settings) {
      Eden::GameSettings value;
      value.renderer = settings.renderer;
+@@ -1338,7 +1375,12 @@ std::vector<pe::ui::Mod> EdenServices::mods(std::uint64_t title_id) {
+     std::vector<pe::ui::Mod> result;
+     const auto off = Eden::LoadDisabledMods(title_id);
+     const auto chosen = Eden::LoadChosenCheats(title_id);
++    const bool botw = title_id == Eden::UltraCam::kTitle;
++    const bool profile190 = botw && game_settings(title_id).ultracam_190 &&
++                            Eden::BotwProfile::Load190()[Eden::UltraCam::Enabled] && Eden::LoadModsEnabled(title_id);
+     for (const Eden::Mods::Mod& mod : Eden::Mods::List(ModPlaces(title_id), title_id)) {
++        // Managed profiles have one control surface, never a second Mods toggle.
++        if (botw && (mod.name == Eden::UltraCam::kName || mod.name == Eden::BotwProfile::kName190)) continue;
+         std::string kind;
+         const auto add = [&kind](const char* text) {
+             if (!kind.empty()) kind += ", ";
+@@ -1349,6 +1391,13 @@ std::vector<pe::ui::Mod> EdenServices::mods(std::uint64_t title_id) {
+         if (mod.kinds & Eden::Mods::kCheats) add(TR("Cheats"));
+         result.push_back({mod.name, kind, std::find(off.begin(), off.end(), mod.name) == off.end(), {},
+                           Eden::Mods::CheatsOnly(mod)});
++        if (botw && (mod.name == Eden::BotwProfile::kManual190 || mod.name == "!!!BOTW 1.9.0 60 FPS")) {
++            auto& item = result.back();
++            item.display_name = "BOTW 1.9.0 standalone FPS (legacy)";
++            item.superseded = profile190;
++            item.kind = profile190 ? "Replaced by Config > BOTW profile" : "Manual patch; separate from BOTW profile";
++            if (profile190) item.enabled = false;
++        }
+         for (const auto& cheat : mod.cheats)
+             result.back().cheats.push_back(
+                 {cheat.name, std::find(chosen.begin(), chosen.end(), cheat.id) != chosen.end()});
 diff --git a/headless/prosperoeden/eden_services.h b/headless/prosperoeden/eden_services.h
 index a225640..9bc7c4c 100644
 --- a/headless/prosperoeden/eden_services.h
@@ -1948,7 +1985,7 @@ index 6dd9f86..1289864 100644
              else if(command=="tick"){tick(arg.empty()?60:std::stoi(arg));}
              else if(command=="capture"){capture(arg);}
 diff --git a/headless/prosperoeden/pe/ui/game_options.cpp b/headless/prosperoeden/pe/ui/game_options.cpp
-index a5f8184..369d8af 100644
+index a5f8184..ee1c910 100644
 --- a/headless/prosperoeden/pe/ui/game_options.cpp
 +++ b/headless/prosperoeden/pe/ui/game_options.cpp
 @@ -29,15 +29,6 @@ constexpr int kRowsShown = 5;
@@ -1998,7 +2035,7 @@ index a5f8184..369d8af 100644
 +            std::vector<std::string> choices;
 +            for(int choice=0;choice<definition.count;++choice)choices.emplace_back(definition.choices[choice].label);
 +            const bool supported=!game.ultracam_190 || i==Eden::UltraCam::Enabled || i==Eden::UltraCam::TargetFps || i==Eden::UltraCam::Distance || i==Eden::UltraCam::Fov;
-+            const std::string label=game.ultracam_190 && i==Eden::UltraCam::Enabled ? "BOTW 1.9.0 FPS (experimental)" :
++            const std::string label=i==Eden::UltraCam::Enabled ? "Enable profile" :
 +                game.ultracam_190 && i==Eden::UltraCam::Distance ? "Camera far clip" : definition.label;
 +            rows.push_back({label,choices,game.ultracam[i],supported?"":"Not available in 1.9.0",
 +                !supported || (!game.ultracam_available && (i!=Eden::UltraCam::Enabled || game.ultracam[i]==0))});
@@ -2221,7 +2258,7 @@ index 0704378..dd8e445 100644
      void press_game_options(Key key);
      // The RNG seed is typed on the system keyboard: opens it, and takes its answer when it closes.
 diff --git a/headless/prosperoeden/pe/ui/library.cpp b/headless/prosperoeden/pe/ui/library.cpp
-index d315f68..b763d82 100644
+index d315f68..851b45f 100644
 --- a/headless/prosperoeden/pe/ui/library.cpp
 +++ b/headless/prosperoeden/pe/ui/library.cpp
 @@ -34,8 +34,8 @@ constexpr Rect kDetail{1304.0f, 136.0f, 520.0f, 836.0f};
@@ -2248,7 +2285,7 @@ index d315f68..b763d82 100644
  constexpr const char *kKindNames[] = {TR("Console mode"), TR("Video"),    TR("Performance"),
                                        TR("Audio"),        TR("Controls"), TR("System"),
 -                                      TR("Language"),     TR("Mods"),     TR("Cheats"),
-+                                      TR("Language"),     TR("UltraCam"), TR("Mods"),     TR("Cheats"),
++                                      TR("Language"),     TR("BOTW profile"), TR("Mods"),     TR("Cheats"),
                                        TR("Save data"),    TR("Delete from console")};
  
  // The mod Eden makes of a game's cheats folder (headless/mods.h), named in the player's language.
@@ -2298,7 +2335,36 @@ index d315f68..b763d82 100644
      else if (kind == row_mods)
          draw_mods_pane(c, middle, active);
      else if (kind == row_cheats)
-@@ -1394,6 +1404,9 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+@@ -1222,7 +1232,9 @@ void Launcher::draw_mods_pane(Canvas &c, const Rect &pane, bool active)
+     if (mods_.empty())
+     {
+         text_block(c,
+-                   fill(tr("No mods for this game yet. Copy each mod's folder to {0}."),
++                   fill(tr(game.title_id == 0x01007EF00011E000ULL ?
++                       "BOTW profiles are configured in Config > BOTW profile. Copy other mods to {0}." :
++                       "No mods for this game yet. Copy each mod's folder to {0}."),
+                         {services_.mods_folder(game.title_id)}),
+                    pane.x + 8.0f, baseline(pane.y + 8.0f, 40.0f, t.size_text), t.size_text, 40.0f, t.body,
+                    pane.w - 16.0f, 6, kShrink);
+@@ -1255,12 +1267,15 @@ void Launcher::draw_mods_pane(Canvas &c, const Rect &pane, bool active)
+         const float top = row_top(row);
+         list.push_opacity(active ? mod_rows_.row_alpha(row, height) : 1.0f);
+         // Its name as the player's folder has it, what it changes under it, its switch.
+-        text_fit(c, mod.name, pane.x + 28.0f, baseline(top + 10.0f, 36.0f, t.size_text), t.size_text,
++        text_fit(c, mod.display_name.empty() ? mod.name : mod.display_name, pane.x + 28.0f, baseline(top + 10.0f, 36.0f, t.size_text), t.size_text,
+                  mod.enabled && live ? t.value : t.meta, pane.w - 28.0f - 120.0f);
+         text_shrink(c, mod.kind, pane.x + 28.0f, baseline(top + 46.0f, 26.0f, 18.0f), 18.0f, t.meta,
+                     pane.w - 28.0f - 120.0f);
+         list.push_opacity(live ? 1.0f : 0.4f);
+-        toggle(c, right, top + height * 0.5f, mod.enabled ? 1.0f : 0.0f);
++        if (mod.superseded)
++            text_shrink(c, tr("Replaced"), right - 96.0f, baseline(top + 25.0f, 36.0f, 18.0f), 18.0f, t.meta, 96.0f);
++        else
++            toggle(c, right, top + height * 0.5f, mod.enabled ? 1.0f : 0.0f);
+         list.pop_opacity();
+         list.pop_opacity();
+     }
+@@ -1394,6 +1409,9 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
      case row_controls:
          about = tr("Controller shortcuts and supported features.");
          break;
@@ -2308,7 +2374,7 @@ index d315f68..b763d82 100644
      case row_language:
          about = tr("The language games use when they offer it.");
          break;
-@@ -1401,7 +1414,7 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
+@@ -1401,7 +1419,7 @@ void Launcher::draw_explain_pane(Canvas &c, const Rect &pane, int kind)
          break;
      }
      // What the focused switch does says more than what its kind is about.
@@ -2317,6 +2383,18 @@ index d315f68..b763d82 100644
      const std::string words = !detail.empty() ? detail : std::string{about};
      if (!words.empty())
      {
+@@ -1464,6 +1482,11 @@ void Launcher::press_mods(Key key)
+         if (mods_.empty())
+             return;
+         Mod &mod = mods_[static_cast<std::size_t>(mod_rows_.selected)];
++        if (mod.superseded) {
++            say(tr("Replaced by BOTW profile. Change its settings in Config > BOTW profile."));
++            cue(Cue::back);
++            return;
++        }
+         // With the game's Mods switch off (the Library's), choosing a mod turns the switch on and
+         // that mod with it: nobody switches a mod in a list that is switched off.
+         const bool revive = !game.mods_enabled;
 diff --git a/headless/prosperoeden/pe/ui/runtime_launcher.cpp b/headless/prosperoeden/pe/ui/runtime_launcher.cpp
 index 0225871..6009d70 100644
 --- a/headless/prosperoeden/pe/ui/runtime_launcher.cpp
@@ -2366,10 +2444,10 @@ index b2c1866..98f27d2 100644
      void update(float);
      void draw(gfx::DrawList&);
 diff --git a/headless/prosperoeden/pe/ui/runtime_models.hpp b/headless/prosperoeden/pe/ui/runtime_models.hpp
-index 036995a..2a0f88d 100644
+index 036995a..cd2c69f 100644
 --- a/headless/prosperoeden/pe/ui/runtime_models.hpp
 +++ b/headless/prosperoeden/pe/ui/runtime_models.hpp
-@@ -16,8 +16,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Download, key, file, name, sourc
+@@ -16,10 +16,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Download, key, file, name, sourc
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Recent, file, title, cover)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Home, setup_ready, status, launch_failed, last_file, last_exists, last_title, last_caption, last_caption_warning, last_cover, last_title_id, last_addons, last_language, last_mods, last_mods_on, recents, system_status)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Profile, name, playing)
@@ -2378,10 +2456,13 @@ index 036995a..2a0f88d 100644
 +NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Preferences, hud, volume, mute, detailed_logging, immediate_logs, renderer, resolution, filter, astc, refresh, output, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, vibration, vibration_strength, language, menu_volume, theme, large_text, high_contrast, reduce_motion, block_list, async_shaders, fast_gpu, unsafe_cpu, unsafe_dma, reactive_flushing, skip_invalidation, compact_memory, mapping, hud_size, hud_corner, hud_colors, hud_fields, menu_bind, wallpaper, update_notices, speed_limit)
 +NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameSettings, ultracam_available, ultracam_190, ultracam_note, ultracam, renderer, resolution, filter, astc, refresh, hud, hud_size, hud_corner, frame_gen, frame_gen_method, frame_gen_target, frame_gen_multiplier, post_processing, volume, mute, vibration, language, controller, own_mapping, mapping, performance, rng_seed, speed_limit)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cheat, name, enabled)
- NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats, cheats_only)
+-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats, cheats_only)
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Mod, name, kind, enabled, cheats, cheats_only, display_name, superseded)
  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameCheat, mod, name, enabled)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FolderInfo, keys, firmware, games)
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(UpdateOffer, version, size, installable, notes, notes_truncated)
 diff --git a/headless/prosperoeden/pe/ui/services.hpp b/headless/prosperoeden/pe/ui/services.hpp
-index 47e8859..2b63df5 100644
+index 47e8859..31bcd97 100644
 --- a/headless/prosperoeden/pe/ui/services.hpp
 +++ b/headless/prosperoeden/pe/ui/services.hpp
 @@ -13,6 +13,7 @@
@@ -2403,7 +2484,16 @@ index 47e8859..2b63df5 100644
      int renderer = -1;   // 0 OpenGL, 1 Vulkan
      int resolution = -1; // index into Services::resolution_labels
      int filter = -1;     // index into Services::filter_labels
-@@ -633,6 +638,9 @@ class Services
+@@ -432,6 +437,8 @@ struct Mod
+     std::vector<Cheat> cheats; // its cheats when it lists several; empty for a single one
+     // Cheats and nothing else: the Cheats list has it (Services::cheats), not the Mods list.
+     bool cheats_only = false;
++    std::string display_name{}; // optional label; name remains the saved folder identity
++    bool superseded = false; // ignored while the integrated BOTW profile is active
+ };
+ 
+ // One cheat of a game as the Cheats list has it, whichever file it came from: a mod's cheats
+@@ -633,6 +640,9 @@ class Services
          return false;
      }
  
